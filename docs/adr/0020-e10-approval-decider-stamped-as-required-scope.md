@@ -51,3 +51,37 @@ trừ khi Elmich tách hai người (QE-16). Scope của từng approval và th�
   và run không tiếp tục; approval của tenant khác trả not found.
 - Danh sách `/approvals` vẫn hiện approval cho người không quyết được; ẩn chúng là
   việc khác, chưa làm.
+- **Khác workspace không thuộc quyết định này.** RLS của `platform.approval_requests` và
+  `approval_decisions` chỉ lọc tenant, và lát A không đổi chúng. Approval của workspace
+  khác trong cùng tenant là việc của
+  `.claude/plans/platform-runtime/approval-audit-and-workspace/issues/02` (lọc ở
+  repository, không đổi RLS; đổi RLS sang dạng workspace là một quyết định riêng).
+- **`platform_admin` qua được `required_scope`**, vì lệnh kiểm đi qua cùng
+  `authorization.require`, nơi `ScopeAuthorizationService.is_allowed` có một luật admin
+  duy nhất. Ghim bằng test unit
+  `test_platform_admin_passes_the_stamped_scope_through_the_same_rule`.
+- Dạng tên scope có một chủ: CHECK `ck_approval_requests_required_scope`. Giá trị sai dạng
+  hoặc không phải chuỗi làm INSERT lỗi, run kết thúc `failed`, không có dòng approval.
+- Dấu ghi một lần: `add` ghi, `save` không; `dw_app` chỉ còn UPDATE trên `status`,
+  `decided_at`, `version` của `approval_requests` (migration `5d3965984679`).
+
+## Sửa đổi 2026-10-05 (tạm, lát A; chờ Đạt duyệt ở QO-2)
+
+Năm quyết định tạm của lead khi làm lát A, ghi lại ở đây vì chúng thu hẹp hoặc thêm vào
+phần Quyết định ở trên:
+
+1. Test âm "approval của tenant khác trả not found" giữ nguyên; phần "hoặc workspace
+   khác" của ticket A chuyển sang platform-runtime/approval-audit-and-workspace/02. Không
+   đổi policy RLS của hai bảng approval.
+2. `platform_admin` qua được dấu (Hệ quả ở trên); không thêm luật nào chặn admin riêng.
+3. API trả thêm `requested_by_me: bool` cạnh `required_scope`. Lý do: người yêu cầu rút
+   yêu cầu của mình không cần scope, và trang không biết yêu cầu nào là của người xem nếu
+   thiếu nó. Là một boolean tính ở server, nên không id thành viên nào khác tới trình
+   duyệt. Trang khóa nút bằng `required_scope` và `hasScope` của phiên; không suy từ tiền
+   tố `approval_type`.
+4. CHECK của cột là chủ duy nhất của dạng tên scope (không có kiểm ở tầng domain để dùng
+   lại); runner chuyển giá trị nguyên vẹn, không ép kiểu, không bỏ.
+5. Thu UPDATE toàn bảng của `dw_app` trên `approval_requests`, cấp lại UPDATE theo cột
+   (`status`, `decided_at`, `version`): Postgres không thu được một cột khỏi quyền UPDATE
+   toàn bảng. Việc này cũng khóa `approval_type`, `requested_by`, `payload`, vốn không code
+   nào sửa.

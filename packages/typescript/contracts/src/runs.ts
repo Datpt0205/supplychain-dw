@@ -13,6 +13,14 @@ export const approvalSchema = z.object({
   decided_at: z.string().nullable(),
   /** The server refuses a blank comment for these; the form must require one. */
   requires_comment: z.boolean(),
+  /**
+   * The scope a decider must hold besides `approvals.decide`, stamped when the
+   * request was raised (ADR 0020). The server enforces it; a page reads it to
+   * say why a decision is locked, never to infer one from `approval_type`.
+   */
+  required_scope: z.string().nullable(),
+  /** The viewer raised this request, so may withdraw it without any scope. */
+  requested_by_me: z.boolean(),
 });
 export type Approval = z.infer<typeof approvalSchema>;
 

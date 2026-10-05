@@ -963,6 +963,10 @@ export interface components {
             };
             /** Reason */
             reason: string;
+            /** Requested By Me */
+            requested_by_me: boolean;
+            /** Required Scope */
+            required_scope: string | null;
             /** Requires Comment */
             requires_comment: boolean;
             /** Run Id */

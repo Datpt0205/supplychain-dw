@@ -173,6 +173,21 @@
             "title": "Reason",
             "type": "string"
           },
+          "requested_by_me": {
+            "title": "Requested By Me",
+            "type": "boolean"
+          },
+          "required_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Scope"
+          },
           "requires_comment": {
             "title": "Requires Comment",
             "type": "boolean"
@@ -203,7 +218,9 @@
           "payload",
           "created_at",
           "decided_at",
-          "requires_comment"
+          "requires_comment",
+          "required_scope",
+          "requested_by_me"
         ],
         "title": "ApprovalView",
         "type": "object"

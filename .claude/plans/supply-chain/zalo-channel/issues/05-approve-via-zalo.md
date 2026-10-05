@@ -146,3 +146,9 @@ NULL AND revoked_at IS NULL` (một mã mở mỗi người mỗi approval).
 - Lệch có chủ ý với câu chữ của Đạt: loại approval nghiêm (`supply_chain.product_action.`)
   đòi nhận xét, nên lệnh duyệt là `DUYỆT 4821 <nhận xét>`; sàn nền tảng không bị kênh làm
   yếu (ADR 0014 điểm 6).
+- 2026-10-05 (từ lát A, `approval-decider-scope/issues/01`): approval nay có thể mang
+  `required_scope` (ADR 0020), và chỉ `ApproveAndResumeService.decide` kiểm nó, trước mọi
+  ghi và trước `runner.resume`. Z5 phải quyết qua đúng `ApproveAndResumeService.decide`,
+  không ghi `approval_decisions` hay gọi `runner.resume` theo đường riêng; nếu không, một
+  lệnh `DUYỆT` trên Zalo của người có `approvals.decide` mà thiếu dấu (vd thiếu
+  `supply_chain.approve.bod`) sẽ qua mặt luật "chỉ BGĐ quyết".

@@ -180,6 +180,8 @@ approval_requests = sa.Table(
     ),
     sa.Column("decided_at", sa.TIMESTAMP(timezone=True), nullable=True),
     sa.Column("version", sa.Integer, nullable=False, server_default="1"),
+    # Its shape is checked by `ck_approval_requests_required_scope` (5d3965984679).
+    sa.Column("required_scope", sa.Text, nullable=True),
 )
 
 approval_decisions = sa.Table(

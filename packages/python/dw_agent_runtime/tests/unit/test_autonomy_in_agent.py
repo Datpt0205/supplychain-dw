@@ -48,13 +48,17 @@ async def _saved(payload: BaseModel, run_context: RunContext) -> LeadOutput:
     return LeadOutput(lead_id="q-1")
 
 
-def _spec(model: MockChatModel, offered: tuple[ToolDefinition, ...] = (QUOTE,)) -> AgentSpec:
+def _spec(
+    model: MockChatModel,
+    offered: tuple[ToolDefinition, ...] = (QUOTE,),
+    input_model: type[BaseModel] = LeadInput,
+) -> AgentSpec:
     registry = ToolRegistry()
     for definition in offered:
         registry.register(
             RegisteredTool(
                 definition=definition,
-                input_model=LeadInput,
+                input_model=input_model,
                 output_model=LeadOutput,
                 handler=_saved,
             )
@@ -111,6 +115,46 @@ async def test_the_same_tool_waits_at_a1_and_runs_at_a3() -> None:
     assert "__interrupt__" in at_a1, "A1 must stop and ask before an external write"
     assert "__interrupt__" not in at_a3, "A3 must run an idempotent external write unasked"
     assert at_a3["messages"][-1].content == "xong"
+
+
+class _ScopeNamedInput(BaseModel):
+    """A tool whose own argument happens to share the stamp's name."""
+
+    company: str
+    required_scope: str
+
+
+async def test_a_model_cannot_stamp_who_may_decide() -> None:
+    """ADR 0020: `required_scope` comes from the node, never from the model.
+
+    The runner stamps the approval from the interrupt's top-level keys. A tool
+    call's arguments, which the model writes, travel nested under `payload`, so
+    even an argument named `required_scope` cannot reach the stamp.
+    """
+    model = MockChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "crm__save_quote",
+                        "args": {"company": "a", "required_scope": "platform.anyone"},
+                        "id": "q1",
+                    }
+                ],
+            ),
+            AIMessage(content="xong"),
+        ],
+        mock_reply="[mock]",
+    )
+
+    state = await build_agent(
+        _spec(model, input_model=_ScopeNamedInput), checkpointer=InMemorySaver()
+    ).ainvoke({"messages": [HumanMessage("lưu báo giá")]}, THREAD, context=_at("A1"))
+
+    (pause,) = state["__interrupt__"]
+    assert "required_scope" not in pause.value
+    assert pause.value["payload"]["required_scope"] == "platform.anyone"
 
 
 async def test_a3_still_waits_for_a_non_idempotent_external_write() -> None:

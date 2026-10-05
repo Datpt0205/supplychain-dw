@@ -55,7 +55,7 @@ means platform code, an upstream candidate (ADR 0011).
 | Z5    | `zalo-channel/issues/05-approve-via-zalo.md`                        | partly  | ready-for-agent | Z4, Z2, A, S2                       |
 | Z6    | `zalo-channel/issues/06-read-only-qa.md`                            | partly  | ready-for-agent | Z4                                  |
 | ZL    | `zalo-channel/issues/07-live-run.md`                                | —       | ready-for-human | Z1–Z6, H2                           |
-| A     | `approval-decider-scope/issues/01-required-scope.md`                | yes     | ready-for-agent | P                                   |
+| A     | `approval-decider-scope/issues/01-required-scope.md`                | yes     | resolved        | P                                   |
 | D     | `case-documents/issues/01-case-documents.md`                        | no      | ready-for-agent | P                                   |
 | S1    | `stage-1/issues/01-product-case-steps-1-5.md`                       | no      | ready-for-agent | P, D                                |
 | S2    | `stage-1/issues/02-bod-review-step-6.md`                            | no      | ready-for-agent | S1, A                               |
@@ -86,10 +86,10 @@ email as a second channel.
 
 ## Slice log
 
-| Slice | Commit | What                               |
-| ----- | ------ | ---------------------------------- |
+| Slice  | Commit    | What                                                                     |
+| ------ | --------- | ------------------------------------------------------------------------ |
 | P, ENV | `c2f04dc` | Port of `dw_supply_chain` onto the current platform; Elmich environment. |
-| U, Z1  | `51c0ef7` | Per-user login on 3200, `/settings`, Zalo link with a single-use token. |
+| U, Z1  | `51c0ef7` | Per-user login on 3200, `/settings`, Zalo link with a single-use token.  |
 
 ## Open — named, not fixed, still true after the port
 

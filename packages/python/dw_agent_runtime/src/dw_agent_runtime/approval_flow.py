@@ -124,6 +124,18 @@ class ApproveAndResumeService:
                     resource_type="approval_request",
                     resource_id=str(approval_id),
                 )
+                # Who may decide THIS request, stamped when it was raised
+                # (ADR 0020) and read from the row, never from today's policy.
+                # Through the same `require`, so the admin rule is the one
+                # rule; and before any write or resume, so a refusal leaves
+                # the request pending and the run parked.
+                if request.required_scope is not None:
+                    await authorization.require(
+                        context=context,
+                        action=request.required_scope,
+                        resource_type="approval_request",
+                        resource_id=str(approval_id),
+                    )
             if self.is_strict(request.approval_type):
                 self._enforce_strict_rules(request, comment, context)
             record = await self._resumable_run(context, request)

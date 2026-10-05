@@ -339,6 +339,137 @@ async def test_the_requester_still_cannot_approve_their_own_request() -> None:
         )
 
 
+BOD_SCOPE = "supply_chain.approve.bod"
+
+
+def make_stamped_request(required_scope: str | None) -> ApprovalRequest:
+    request = make_request("demo.dispatch", run_id=RUN_ID)
+    request.required_scope = required_scope
+    return request
+
+
+def decider(principal: uuid.UUID, *extra_scopes: str) -> AccessContext:
+    return AccessContext(
+        tenant_id=uuid.UUID(int=100),
+        workspace_id=uuid.UUID(int=101),
+        principal_id=principal,
+        roles=frozenset({"approver"}),
+        scopes=frozenset({"approvals.decide", *extra_scopes}),
+        plan_id="professional",
+    )
+
+
+async def _decide_as(
+    service: ApproveAndResumeService, context: AccessContext, *, approve: bool
+) -> ApprovalRequest:
+    return await service.decide(
+        approval_id=uuid.UUID(int=10),
+        approve=approve,
+        comment="",
+        context=context,
+        authorization=ScopeAuthorizationService(),
+    )
+
+
+@pytest.mark.parametrize("approve", [True, False], ids=["approve", "reject"])
+async def test_the_decide_right_alone_cannot_decide_a_stamped_request(approve: bool) -> None:
+    """ADR 0020: `approvals.decide` is necessary, and for a stamped request not
+    sufficient. Refused before anything is written and before the run resumes."""
+    request = make_stamped_request(BOD_SCOPE)
+    repo = FakeApprovalRepo(request=request)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner, repo=repo)
+
+    with pytest.raises(PermissionDeniedError) as refused:
+        await _decide_as(service, decider(APPROVER), approve=approve)
+
+    assert refused.value.details["action"] == BOD_SCOPE
+    assert request.status is ApprovalStatus.PENDING
+    assert request.version == 1
+    assert repo.decisions == []
+    assert runner.resumed == []
+    # Refused before the run was even looked at: nothing past the gate ran.
+    assert runner.asked == []
+
+
+async def test_the_stamped_scope_without_the_decide_right_is_not_enough() -> None:
+    """Both, not either: the stamp narrows `approvals.decide`, never replaces it."""
+    request = make_stamped_request(BOD_SCOPE)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner)
+    context = AccessContext(
+        tenant_id=uuid.UUID(int=100),
+        workspace_id=uuid.UUID(int=101),
+        principal_id=APPROVER,
+        roles=frozenset({"sc_bod"}),
+        scopes=frozenset({BOD_SCOPE}),
+        plan_id="professional",
+    )
+
+    with pytest.raises(PermissionDeniedError) as refused:
+        await _decide_as(service, context, approve=True)
+
+    assert refused.value.details["action"] == "approvals.decide"
+    assert runner.resumed == []
+
+
+async def test_a_holder_of_the_stamped_scope_decides_and_resumes() -> None:
+    request = make_stamped_request(BOD_SCOPE)
+    repo = FakeApprovalRepo(request=request)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner, repo=repo)
+
+    decided = await _decide_as(service, decider(APPROVER, BOD_SCOPE), approve=True)
+
+    assert decided.status is ApprovalStatus.APPROVED
+    assert len(repo.decisions) == 1
+    assert runner.resumed == [RUN_ID]
+
+
+async def test_platform_admin_passes_the_stamped_scope_through_the_same_rule() -> None:
+    """The stamp is checked by `authorization.require`, so the one admin rule in
+    `ScopeAuthorizationService.is_allowed` applies to it as to every scope.
+    Pinned so that a second, stricter check written beside it shows up here."""
+    request = make_stamped_request(BOD_SCOPE)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner)
+    context = AccessContext(
+        tenant_id=uuid.UUID(int=100),
+        workspace_id=uuid.UUID(int=101),
+        principal_id=APPROVER,
+        roles=frozenset({"platform_admin"}),
+        scopes=frozenset(),
+        plan_id="professional",
+    )
+
+    decided = await _decide_as(service, context, approve=True)
+
+    assert decided.status is ApprovalStatus.APPROVED
+    assert runner.resumed == [RUN_ID]
+
+
+async def test_the_requester_withdraws_a_stamped_request_without_the_scope() -> None:
+    """Taking back your own request is not deciding it (ADR 0020), stamped or not."""
+    request = make_stamped_request(BOD_SCOPE)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner)
+
+    withdrawn = await _decide_as(service, context_without_the_right(REQUESTER), approve=False)
+
+    assert withdrawn.status is ApprovalStatus.REJECTED
+    assert runner.resumed == [RUN_ID]
+
+
+async def test_the_requester_cannot_approve_their_own_stamped_request_without_the_scope() -> None:
+    request = make_stamped_request(BOD_SCOPE)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner)
+
+    with pytest.raises(PermissionDeniedError):
+        await _decide_as(service, decider(REQUESTER), approve=True)
+    assert runner.resumed == []
+
+
 async def test_a_bystander_without_the_right_cannot_reject_someone_elses() -> None:
     service = make_service(make_request("sales_chat.crm.add_person_note"), frozenset())
     with pytest.raises(PermissionDeniedError):

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
+import { Tooltip, Typography } from "antd";
 import { BadgeCheck, CircleX, ClipboardCheck, RefreshCw } from "lucide-react";
 import type { Approval } from "@dw/contracts";
 import {
@@ -69,6 +70,16 @@ export default function ApprovalsPage() {
     ),
   );
 
+  /**
+   * The scope stamped on this approval that the viewer lacks (ADR 0020), or
+   * null. Read from the approval itself and the session, never inferred from
+   * `approval_type`; the server refuses the decision either way.
+   */
+  function missingScope(approval: Approval): string | null {
+    const scope = approval.required_scope;
+    return scope !== null && !hasScope(scope) ? scope : null;
+  }
+
   /** A strict approval type refuses a blank comment server-side; say so here. */
   function missingComment(approval: Approval): boolean {
     return approval.requires_comment && !(comments[approval.id] ?? "").trim();
@@ -124,77 +135,115 @@ export default function ApprovalsPage() {
         />
       )}
 
-      {pending.map((approval) => (
-        <Card key={approval.id} className="overflow-hidden">
-          <CardHeader className="border-b bg-muted/40">
-            <CardTitle className="flex flex-col items-start gap-3 text-base sm:flex-row sm:items-center sm:justify-between">
-              <span>{approvalTitle(approval.approval_type)}</span>
-              <Badge variant={STATUS_BADGE[approval.status].variant}>
-                {STATUS_BADGE[approval.status].label}
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              <span className="font-mono text-xs">
-                {approval.approval_type}
-              </span>{" "}
-              — {approval.reason}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-5 text-sm">
-            <ToolApprovalPayload
-              payload={approval.payload}
-              className="bg-muted/50"
-            />
-            {!canDecide && (
-              <p className="text-xs text-muted-foreground">
-                Your roles do not carry <strong>approvals.decide</strong>, so
-                this request is read-only for you.
-              </p>
-            )}
-            {canDecide && (
-              <div className="rounded-xl border bg-muted/30 p-4">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-                  Your decision
+      {pending.map((approval) => {
+        const lacking = missingScope(approval);
+        const lockReason =
+          lacking === null
+            ? null
+            : `Chỉ người có quyền ${lacking} được quyết yêu cầu này`;
+        // Withdrawing your own request is not deciding it: the server lets the
+        // requester reject without the stamped scope, so the page does too.
+        const approveLocked = lacking !== null;
+        const rejectLocked = lacking !== null && !approval.requested_by_me;
+        // A disabled button takes no pointer events, so the tooltip hangs on a
+        // wrapper; the same sentence also sits beside the buttons as text.
+        const withLock = (locked: boolean, button: ReactNode) =>
+          locked ? (
+            <Tooltip title={lockReason}>
+              <span className="inline-flex">{button}</span>
+            </Tooltip>
+          ) : (
+            button
+          );
+        return (
+          <Card key={approval.id} className="overflow-hidden">
+            <CardHeader className="border-b bg-muted/40">
+              <CardTitle className="flex flex-col items-start gap-3 text-base sm:flex-row sm:items-center sm:justify-between">
+                <span>{approvalTitle(approval.approval_type)}</span>
+                <Badge variant={STATUS_BADGE[approval.status].variant}>
+                  {STATUS_BADGE[approval.status].label}
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                <span className="font-mono text-xs">
+                  {approval.approval_type}
+                </span>{" "}
+                — {approval.reason}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-5 text-sm">
+              <ToolApprovalPayload
+                payload={approval.payload}
+                className="bg-muted/50"
+              />
+              {!canDecide && (
+                <p className="text-xs text-muted-foreground">
+                  Your roles do not carry <strong>approvals.decide</strong>, so
+                  this request is read-only for you.
                 </p>
-                <Input
-                  value={comments[approval.id] ?? ""}
-                  onChange={(event) =>
-                    setComments((current) => ({
-                      ...current,
-                      [approval.id]: event.target.value,
-                    }))
-                  }
-                  placeholder={
-                    approval.requires_comment
-                      ? "Note explaining the decision (required)"
-                      : "Note explaining the decision (optional)"
-                  }
-                />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    onClick={() => void decide(approval, true)}
-                    disabled={
-                      busyId === approval.id || missingComment(approval)
+              )}
+              {canDecide && (
+                <div className="rounded-xl border bg-muted/30 p-4">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                    Your decision
+                  </p>
+                  <Input
+                    value={comments[approval.id] ?? ""}
+                    onChange={(event) =>
+                      setComments((current) => ({
+                        ...current,
+                        [approval.id]: event.target.value,
+                      }))
                     }
-                  >
-                    <BadgeCheck />
-                    {busyId === approval.id ? "Working…" : "Approve"}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => void decide(approval, false)}
-                    disabled={
-                      busyId === approval.id || missingComment(approval)
+                    placeholder={
+                      approval.requires_comment
+                        ? "Note explaining the decision (required)"
+                        : "Note explaining the decision (optional)"
                     }
-                  >
-                    <CircleX /> Reject
-                  </Button>
+                  />
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {withLock(
+                      approveLocked,
+                      <Button
+                        onClick={() => void decide(approval, true)}
+                        disabled={
+                          approveLocked ||
+                          busyId === approval.id ||
+                          missingComment(approval)
+                        }
+                      >
+                        <BadgeCheck />
+                        {busyId === approval.id ? "Working…" : "Approve"}
+                      </Button>,
+                    )}
+                    {withLock(
+                      rejectLocked,
+                      <Button
+                        variant="destructive"
+                        onClick={() => void decide(approval, false)}
+                        disabled={
+                          rejectLocked ||
+                          busyId === approval.id ||
+                          missingComment(approval)
+                        }
+                      >
+                        <CircleX /> Reject
+                      </Button>,
+                    )}
+                    {lockReason !== null && (
+                      <Typography.Text type="secondary">
+                        {lockReason}
+                        {approval.requested_by_me &&
+                          ". Bạn vẫn rút được yêu cầu của mình."}
+                      </Typography.Text>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ))}
+              )}
+            </CardContent>
+          </Card>
+        );
+      })}
 
       {decided.length > 0 && (
         <Card className="overflow-hidden">

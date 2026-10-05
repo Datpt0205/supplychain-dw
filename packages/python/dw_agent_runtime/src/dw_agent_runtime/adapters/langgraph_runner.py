@@ -661,7 +661,25 @@ class LangGraphWorkflowRunner:
             payload = first.value if hasattr(first, "value") else first
             if not isinstance(payload, dict):
                 payload = {"value": _jsonable(payload)}
-            approval_id = await self._create_approval(run_context, run_id, payload)
+            try:
+                approval_id = await self._create_approval(run_context, run_id, payload)
+            except Exception:
+                # The pause could not be recorded (a malformed `required_scope`
+                # refused by its CHECK, ADR 0020). `start` and `resume` call this
+                # outside their own failure handling, so without this the row
+                # stayed `running` over a checkpoint no request points at. Ended
+                # as failed, visibly, like the double pause above. The driver's
+                # text (SQL, constraint name) stays in the server log: the run's
+                # `error` is returned as is by `GET /runs/{id}`.
+                logger.exception(
+                    "could not record an approval request", extra={"run_id": str(run_id)}
+                )
+                await self._fail(
+                    run_context,
+                    run_id,
+                    InfrastructureError("the approval request could not be recorded"),
+                )
+                return
             await self.run_store.set_status(
                 run_context,
                 run_id,
@@ -698,6 +716,18 @@ class LangGraphWorkflowRunner:
     async def _create_approval(
         self, run_context: RunContext, run_id: uuid.UUID, payload: dict[str, Any]
     ) -> uuid.UUID:
+        """Raise the approval request a paused run waits on.
+
+        `payload` is the interrupt value a graph node wrote, from code and the
+        tenant's policy, never from model output: a tool call's own arguments
+        travel nested under `payload["payload"]` (`_ask_human`), so no model can
+        set a top-level key such as `required_scope`.
+
+        `required_scope` (ADR 0020) is passed through exactly as the node wrote
+        it, neither coerced nor dropped: its shape has one owner, the CHECK on
+        the column, and a malformed or non-string value fails this INSERT so the
+        run ends failed instead of raising a request nobody could rightly decide.
+        """
         approval = ApprovalRequest(
             id=self.id_generator.new_uuid(),
             tenant_id=TenantId(run_context.tenant_id),
@@ -707,6 +737,7 @@ class LangGraphWorkflowRunner:
             reason=str(payload.get("reason", "workflow requested human review")),
             payload=_jsonable(payload),
             run_id=run_id,
+            required_scope=payload.get("required_scope"),
         )
         context = access_context_from_run(run_context)
         async with self.uow_factory(context) as uow:
