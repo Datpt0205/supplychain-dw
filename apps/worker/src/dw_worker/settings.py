@@ -45,6 +45,9 @@ class WorkerSettings(BaseSettings):
     heartbeat_file: Path = Path("/tmp/dw-worker-heartbeat")  # nosec B108  # container liveness probe path
     heartbeat_interval_seconds: float = Field(default=5.0, gt=0, le=60)
     poll_interval_seconds: float = Field(default=1.0, gt=0, le=60)
+    # How often Supply Chain's follow-up sweep runs. Five minutes by default;
+    # a tester sets 60 to see a reminder land within the minute.
+    supply_chain_follow_up_interval_seconds: float = Field(default=300.0, ge=10, le=86400)
 
     # Prometheus scrape target for this process (Ops hardening Phase 5). 9464
     # is the OTel/Prometheus exporter's own convention default; dw-api has no

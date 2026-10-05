@@ -47,7 +47,9 @@ def _admin_url(explicit: str | None) -> str:
     user = os.environ.get("POSTGRES_USER")
     password = os.environ.get("POSTGRES_PASSWORD")
     host = os.environ.get("DW_DB_HOST", "127.0.0.1")
-    port = os.environ.get("DW_DB_PORT", "5432")
+    # The host port this checkout publishes Postgres on (.env), not 5432: that
+    # can be another checkout's database on the same machine.
+    port = os.environ.get("DW_DB_PORT") or os.environ.get("DW_POSTGRES_HOST_PORT", "5432")
     if not user or not password:
         raise SystemExit(
             "Set DW_ADMIN_DATABASE_URL, or POSTGRES_USER and POSTGRES_PASSWORD, "

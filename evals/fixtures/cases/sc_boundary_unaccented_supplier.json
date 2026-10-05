@@ -1,0 +1,12 @@
+{
+  "question": "po cua dong nai chua xong",
+  "model_answer": {
+    "kind": "list_cases",
+    "supplier_mention": "dong nai",
+    "active_only_quote": "chua xong"
+  },
+  "known_suppliers": [
+    "Công ty TNHH Đồng Nai",
+    "Sunhouse Co."
+  ]
+}

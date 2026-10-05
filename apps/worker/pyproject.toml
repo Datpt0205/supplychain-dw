@@ -20,6 +20,9 @@ dependencies = [
     # composition root, so it is declared here rather than borrowed from the
     # context packages that also depend on it.
     "dw-observability",
+    # The Supply Chain lane: its follow-up sweep and the adapters it runs on,
+    # imported by this process's composition root.
+    "dw-supply-chain",
     "pydantic>=2.10,<3",
     "pydantic-settings>=2.7,<3",
     "sqlalchemy[asyncio]>=2.0.36,<2.1",

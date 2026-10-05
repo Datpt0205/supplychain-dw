@@ -59,6 +59,7 @@ from dw_worker.consumers.reaper import INTERVAL_SECONDS as REAP_INTERVAL_SECONDS
 from dw_worker.consumers.reaper import ReapTarget, build_reaper_consumer
 from dw_worker.consumers.retention import INTERVAL_SECONDS as RETENTION_INTERVAL_SECONDS
 from dw_worker.consumers.retention import RetentionPrunePort, build_retention_consumer
+from dw_worker.consumers.supply_chain import build_follow_up_consumer, build_follow_up_sweep
 from dw_worker.health import beat
 from dw_worker.settings import WorkerSettings
 
@@ -130,6 +131,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     # Ops hardening Phase 4. Needs object storage too, not just a database -
     # export/purge touch three buckets and the vector index alongside Postgres.
     offboarding_consumer: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's follow-up sweep: a database is all it needs.
+    follow_up_consumer: Callable[[], Awaitable[None]] | None = None
 
     if settings.database_url:
         # ---- transactional outbox ----------------------------------------
@@ -186,6 +189,14 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         )
         spend_guard_retention = SqlSpendGuardRetention(session_factory=sessions, clock=clock)
         notifications_retention = SqlNotificationRetention(session_factory=sessions)
+        follow_up_consumer = build_follow_up_consumer(
+            build_follow_up_sweep(
+                sessions,
+                policies_dir=REPO_ROOT / "configs" / "policies",
+                ids=ids,
+                clock=clock,
+            )
+        )
         if settings.s3_endpoint_url:
             offboarding_consumer = build_offboarding_consumer(
                 TenantOffboardingLane(
@@ -220,8 +231,16 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         )
 
     # ---- BOUNDED CONTEXT LANES REGISTER HERE -----------------------------
-    # build_<context>_components(settings) → registry.register(...), and append
-    # a ReapTarget per job queue the context owns.
+    # Supply Chain: the follow-up sweep. It owns no job queue (the follow-ups
+    # table is state, not work waiting to be claimed), so it needs no
+    # ReapTarget. A later context adds its lane here the same way, and names
+    # it in `apps/worker/tests/unit/test_worker.py`.
+    if follow_up_consumer is not None:
+        registry.register(
+            "supply_chain_follow_ups",
+            follow_up_consumer,
+            interval_seconds=settings.supply_chain_follow_up_interval_seconds,
+        )
 
     # ---- periodic repair --------------------------------------------------
     # Registered last because both sweeps act on what everything above created,

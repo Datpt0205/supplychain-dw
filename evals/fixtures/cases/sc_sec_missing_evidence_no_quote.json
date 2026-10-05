@@ -1,0 +1,11 @@
+{
+  "question": "Cho tôi các PO của Sunhouse",
+  "model_answer": {
+    "kind": "list_cases",
+    "supplier_mention": "Sunhouse",
+    "state": "blocked"
+  },
+  "known_suppliers": [
+    "Sunhouse Co."
+  ]
+}

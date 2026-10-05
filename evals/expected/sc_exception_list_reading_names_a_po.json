@@ -1,0 +1,7 @@
+{
+  "outcome": "not_understood",
+  "ignored_fields": [],
+  "unusable_fields": [
+    "po_reference"
+  ]
+}

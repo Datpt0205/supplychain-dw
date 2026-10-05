@@ -29,7 +29,7 @@ COPY apps/web apps/web
 # at runtime). Compose passes them as build args; defaults suit local Docker.
 ARG NEXT_PUBLIC_AUTH_MODE=oidc
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-ARG NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:8080
+ARG NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:8686
 ARG NEXT_PUBLIC_KEYCLOAK_REALM=dw
 ARG NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=dw-web
 ARG NEXT_PUBLIC_CHAT_BASE_URL=http://localhost:8100

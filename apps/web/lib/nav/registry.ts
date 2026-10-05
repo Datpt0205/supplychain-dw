@@ -14,6 +14,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import type { NavItem } from "./types";
+import { supplyChainNav } from "../../app/supply-chain/_meta/nav";
 
 /**
  * Platform-level nav (not owned by any bounded context). Sending feedback is
@@ -131,5 +132,6 @@ const platformNav: NavItem[] = [
  */
 export const NAV_ITEMS: NavItem[] = [
   // <context navs plug in here>
+  ...supplyChainNav,
   ...platformNav,
 ];

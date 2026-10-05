@@ -1,0 +1,21 @@
+schema_version: "1.0"
+worker_id: supply_chain_advance_case
+worker_version: "1.0.0"
+domain: supply_chain
+graph_version: "1.0.0"
+# No model/prompt call in this graph (see workflows/advance_case_graph.py's
+# own docstring) — these three version fields are nominal placeholders, same
+# convention dw_agent_runtime.testing.demo_graph's own worker YAML already
+# uses for the same reason. They exist for provenance uniformity across
+# every worker_runs row, not because this graph reads any of them.
+prompt_bundle_version: "1.0.0"
+policy_version: "1.0.0"
+memory_policy_version: "1.0.0"
+# No tool call in this graph either — omitted rather than a fake pin, since
+# WorkerDefinition.toolset_version's own None is the honest value for a
+# worker that offers the model no tools at all (this graph never builds an
+# agent — see advance_case_graph.py). A worker that DOES call a tool still
+# owes this field a real, resolvable configs/toolsets/*.yaml pin.
+default_model_profile: balanced
+supported_channels: [web]
+autonomy_level: A2

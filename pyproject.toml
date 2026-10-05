@@ -20,6 +20,7 @@ dw-memory = { workspace = true }
 dw-connectors = { workspace = true }
 dw-observability = { workspace = true }
 dw-evals = { workspace = true }
+dw-supply-chain = { workspace = true }
 dw-api = { workspace = true }
 dw-docgen = { workspace = true }
 dw-worker = { workspace = true }
@@ -108,6 +109,7 @@ known-first-party = [
     "dw_observability",
     "dw_evals",
     "dw_api",
+    "dw_supply_chain",
     "dw_docgen",
     "dw_worker",
 ]
@@ -145,6 +147,7 @@ mypy_path = [
     "packages/python/dw_connectors/src",
     "packages/python/dw_observability/src",
     "packages/python/dw_evals/src",
+    "packages/python/dw_supply_chain/src",
     "apps/api/src",
     "apps/docgen/src",
     "apps/worker/src",
@@ -152,6 +155,7 @@ mypy_path = [
     "packages/python/dw_platform/tests/integration",
     "packages/python/dw_agent_runtime/tests/integration",
     "packages/python/dw_agent_runtime/tests/unit",
+    "packages/python/dw_supply_chain/tests/integration",
 ]
 explicit_package_bases = true
 namespace_packages = true
@@ -215,6 +219,7 @@ source = [
     "packages/python/dw_observability/src",
     "packages/python/dw_platform/src",
     "apps/api/src",
+    "packages/python/dw_supply_chain/src",
     "apps/docgen/src",
     "apps/worker/src",
 ]
@@ -244,7 +249,35 @@ root_packages = [
     "dw_connectors",
     "dw_observability",
     "dw_evals",
+    "dw_supply_chain",
 ]
+
+[[tool.importlinter.contracts]]
+# Contexts are independent: one importing another is a super-agent forming, and
+# the second one is always where it starts. The platform may not import a
+# context either — that direction is what keeps the skeleton reusable.
+name = "Supply Chain is independent"
+type = "forbidden"
+source_modules = ["dw_supply_chain"]
+forbidden_modules = ["dw_api", "dw_worker", "dw_docgen"]
+
+[[tool.importlinter.contracts]]
+# The other half of the comment above, which the scaffold's contract does not
+# check on its own: a platform package reaching into a context is the platform
+# becoming that product. `dw_evals` is deliberately absent — it grades a
+# context's refusals in that context's own code.
+name = "Platform packages do not import a bounded context"
+type = "forbidden"
+source_modules = [
+    "dw_kernel",
+    "dw_platform",
+    "dw_agent_runtime",
+    "dw_knowledge",
+    "dw_memory",
+    "dw_connectors",
+    "dw_observability",
+]
+forbidden_modules = ["dw_supply_chain"]
 
 [[tool.importlinter.contracts]]
 name = "Kernel is pure (stdlib only)"
@@ -276,7 +309,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Domain layers never import frameworks or providers"
 type = "forbidden"
-source_modules = ["dw_platform.domain"]
+source_modules = ["dw_platform.domain", "dw_supply_chain.domain"]
 forbidden_modules = [
     "fastapi",
     "sqlalchemy",

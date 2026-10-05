@@ -29,6 +29,7 @@ COPY packages/python/dw_memory/pyproject.toml packages/python/dw_memory/pyprojec
 COPY packages/python/dw_connectors/pyproject.toml packages/python/dw_connectors/pyproject.toml
 COPY packages/python/dw_observability/pyproject.toml packages/python/dw_observability/pyproject.toml
 COPY packages/python/dw_evals/pyproject.toml packages/python/dw_evals/pyproject.toml
+COPY packages/python/dw_supply_chain/pyproject.toml packages/python/dw_supply_chain/pyproject.toml
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-workspace --no-dev --package dw-api

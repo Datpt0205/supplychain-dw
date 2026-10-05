@@ -15,7 +15,7 @@ fi
 # .env.example gains keys over time and `make bootstrap` only writes .env when
 # it is absent, so a stale .env otherwise fails deep inside one child process
 # whose stack trace scrolls past in the shared log.
-for var in DW_API_DATABASE_URL DW_WORKER_DATABASE_URL DW_CHAT_DATABASE_URL; do
+for var in DW_API_DATABASE_URL DW_WORKER_DATABASE_URL; do
   [ -n "${!var:-}" ] || {
     echo "!! $var is missing — copy the new keys from .env.example into .env" >&2
     exit 1
@@ -26,7 +26,7 @@ done
 # `make dev`. Left alone the loser dies quietly in a shared log and the stack
 # looks half-up, so name the conflict and stop.
 busy=""
-for spec in "${DW_API_PORT:-8000}:API" "3000:web"; do
+for spec in "${DW_API_PORT:-8000}:API" "${DW_WEB_PORT:-3000}:web"; do
   port="${spec%%:*}"
   if ss -ltn "sport = :$port" 2>/dev/null | grep -q LISTEN; then
     busy="$busy  port $port (${spec##*:}) is already in use"$'\n'
@@ -36,8 +36,8 @@ if [ -n "$busy" ]; then
   echo "!! cannot start dev:" >&2
   printf '%s' "$busy" >&2
   echo "   Something already serves these - the Docker stack (\`make docker-down\`)," >&2
-  echo "   another \`make dev\`, or another checkout. Stop it, or set DW_API_PORT and" >&2
-  echo "   DW_CHAT_PORT to free ports." >&2
+  echo "   another \`make dev\`, or another checkout. Stop it, or set DW_API_PORT," >&2
+  echo "   DW_WEB_PORT and DW_CHAT_PORT to free ports." >&2
   exit 1
 fi
 
@@ -72,8 +72,8 @@ pids+=($!)
 
 pids+=($!)
 
-echo ">> starting web on :3000"
-pnpm --filter @dw/web dev &
+echo ">> starting web on :${DW_WEB_PORT:-3000}"
+pnpm --filter @dw/web dev --port "${DW_WEB_PORT:-3000}" &
 pids+=($!)
 
 wait

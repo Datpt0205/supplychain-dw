@@ -140,7 +140,15 @@ HIERARCHY = [
 # The token 'sub' is that id and the 'iss' is the browser-facing issuer, so we map
 # (issuer, keycloak_id) -> the existing platform user. Without this, an OIDC login
 # would be treated as a brand-new identity and lose the seeded role.
-KEYCLOAK_ISSUER = os.environ.get("DW_KEYCLOAK_ISSUER", "http://localhost:8686/realms/dw")
+# The issuer has one owner, DW_API_OIDC_ISSUER_URL — the value the API checks
+# `iss` against. DW_KEYCLOAK_ISSUER stays only as an explicit override (CI sets
+# it); a separate default here would stamp identities with an issuer no token
+# carries once Keycloak listens on another port.
+KEYCLOAK_ISSUER = (
+    os.environ.get("DW_KEYCLOAK_ISSUER")
+    or os.environ.get("DW_API_OIDC_ISSUER_URL")
+    or "http://localhost:8686/realms/dw"
+)
 KEYCLOAK_IDENTITIES = [
     # (keycloak_user_id, platform_subject)
     ("a0000000-0000-4000-8000-0000000000a1", "dev|an.nguyen"),

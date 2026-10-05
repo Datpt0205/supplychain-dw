@@ -1,0 +1,41 @@
+schema_version: "1.0"
+policy_id: supply_chain_action_duties
+policy_version: "1.0.0"
+
+# Mỗi bước chuyển trạng thái của PO case thuộc về một nhiệm vụ (duty). Người
+# thực hiện bước đó phải có scope supply_chain.duty.<duty>, do role cấp:
+#   ordering   → sc_operator (thu mua / điều phối đơn hàng)
+#   finance    → sc_finance (kế toán)
+#   qc         → sc_qc
+#   logistics  → sc_logistics
+#   warehouse  → sc_warehouse (kho)
+#   exceptions → mọi role vận hành (báo chặn, cần xem xét, chờ bên ngoài, tiếp tục)
+#
+# Đây là PLATFORM DEFAULT, dựng theo luồng Elmich "Product-to-Stock" và nguyên
+# tắc tách bạch đặt hàng / nhận hàng / thanh toán. Mỗi công ty tự ghi đè toàn bộ
+# document qua PUT /api/v1/supply-chain/action-duties (platform.policy_overrides,
+# cùng cơ chế SLA và approval matrix). Mỗi action phải có đúng một duty; document
+# thiếu action bị từ chối.
+#
+# Luật tách nhiệm vụ (platform.sod_rules) chặn một người giữ cùng lúc các duty
+# xung đột: ordering với finance, ordering với warehouse, ordering với qc,
+# warehouse với finance; và người cấu hình quy trình không vận hành case.
+action_duties:
+  request_deposit: ordering
+  confirm_deposit: finance
+  start_pre_production: ordering
+  start_production: ordering
+  send_to_qc: ordering
+  pass_qc: qc
+  fail_qc: qc
+  resume_from_rework: ordering
+  arrive_at_port: logistics
+  request_final_payment: ordering
+  confirm_payment: finance
+  start_warehouse_receiving: warehouse
+  complete: warehouse
+  wait_for_external: exceptions
+  flag_blocked: exceptions
+  flag_manual_review: exceptions
+  resume: exceptions
+  cancel: ordering

@@ -41,7 +41,15 @@ from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
 from dw_agent_runtime.model.run_policy import load_worker_run_policy
 from dw_api.bootstrap.container import ApiContainer
 from dw_api.bootstrap.identity import build_token_verifier
-from dw_api.bootstrap.paths import WORKER_RUN_POLICY
+from dw_api.bootstrap.paths import (
+    SUPPLY_CHAIN_ACTION_DUTIES,
+    SUPPLY_CHAIN_ADVANCE_CASE_WORKER,
+    SUPPLY_CHAIN_APPROVAL_MATRIX_POLICY,
+    SUPPLY_CHAIN_BRIEF_POLICY,
+    SUPPLY_CHAIN_FOLLOW_UP_POLICY,
+    SUPPLY_CHAIN_SLA_POLICY,
+    WORKER_RUN_POLICY,
+)
 from dw_api.bootstrap.runtime import build_runtime
 from dw_api.bootstrap.storage import (
     build_attachment_storage,
@@ -54,6 +62,7 @@ from dw_api.settings import ApiSettings
 from dw_kernel.ports import SystemClock, Uuid7Generator
 from dw_platform.adapters.cache import NullCache, ValkeyCache
 from dw_platform.adapters.persistence.admin_console_repo import SqlAdminConsoleRepository
+from dw_platform.adapters.persistence.approval_queries import SqlPendingApprovalQuery
 from dw_platform.adapters.persistence.caching_lookup import CachingMembershipLookup
 from dw_platform.adapters.persistence.directory import SqlWorkspaceDirectory
 from dw_platform.adapters.persistence.hierarchy_repo import SqlHierarchyRepository
@@ -62,6 +71,7 @@ from dw_platform.adapters.persistence.identity_provisioning import SqlIdentityBo
 from dw_platform.adapters.persistence.membership_admin import SqlMembershipAdminRepository
 from dw_platform.adapters.persistence.membership_lookup import SqlMembershipLookup
 from dw_platform.adapters.persistence.notifications import SqlNotificationRepository
+from dw_platform.adapters.persistence.policy_overrides import SqlPolicyOverrideRepository
 from dw_platform.adapters.persistence.provisioning_repo import SqlProvisioningRepository
 from dw_platform.adapters.persistence.separation_of_duties_repo import (
     SqlSeparationOfDutiesRepository,
@@ -247,6 +257,259 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     container.tool_registry = wiring.tool_registry
 
     # ---- BOUNDED CONTEXTS PLUG IN HERE -----------------------------------
+    # Supply Chain: built from the seam, never from a global. `container.runtime`
+    # carries the session factory, clock, ids, registries and gateways; anything
+    # this context needs beyond them is its own adapter. `authorization` has no
+    # seam field of its own (only platform-native handlers use it today, all
+    # built the same way — from this function's own local, same as here) so it
+    # comes from the closure directly rather than from `wiring.seam`.
+    from dw_agent_runtime.model.single_call import SingleCallModelGateway
+    from dw_supply_chain.action_duties import load_supply_chain_action_duties
+    from dw_supply_chain.adapters.persistence.delay_impact_repository import (
+        SqlDelayImpactAnalysisRepository,
+    )
+    from dw_supply_chain.adapters.persistence.follow_up_repository import SqlFollowUpRepository
+    from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
+    from dw_supply_chain.adapters.persistence.supplier_update_repository import (
+        SqlSupplierUpdateRepository,
+    )
+    from dw_supply_chain.application.handlers import (
+        AdvancePOCase,
+        AnalyzeDelayImpact,
+        AnswerCaseQuery,
+        CloseFollowUp,
+        CreatePOCase,
+        GetActionDuties,
+        GetApprovalMatrix,
+        GetAttentionQueue,
+        GetBriefPolicy,
+        GetDailyBrief,
+        GetFollowUpPolicy,
+        GetMissingUpdateStatus,
+        GetPOCase,
+        GetPortfolioSummary,
+        GetSLAEvaluation,
+        GetSLAPolicy,
+        ListCaseTransitions,
+        ListDelayImpactAnalyses,
+        ListFollowUps,
+        ListPOCases,
+        ListSupplierUpdates,
+        SetActionDutiesOverride,
+        SetApprovalMatrixOverride,
+        SetBriefPolicyOverride,
+        SetFollowUpPolicyOverride,
+        SetSLAPolicyOverride,
+        SubmitSupplierUpdate,
+        SummarizeDailyBrief,
+    )
+    from dw_supply_chain.approval_matrix import load_supply_chain_approval_matrix
+    from dw_supply_chain.brief_policy import load_supply_chain_brief_policy
+    from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
+    from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
+    from dw_supply_chain.workflows.advance_case_graph import (
+        APPROVAL_TYPE_PREFIX,
+        GRAPH_VERSION,
+        WORKER_ID,
+        build_advance_case_graph,
+    )
+
+    po_case_repo = SqlPOCaseRepository(wiring.seam.session_factory)
+    policy_override_repo = SqlPolicyOverrideRepository(wiring.seam.session_factory)
+    platform_default_sla_policy = load_supply_chain_sla_policy(SUPPLY_CHAIN_SLA_POLICY)
+    platform_default_approval_matrix = load_supply_chain_approval_matrix(
+        SUPPLY_CHAIN_APPROVAL_MATRIX_POLICY
+    )
+    platform_default_brief_policy = load_supply_chain_brief_policy(SUPPLY_CHAIN_BRIEF_POLICY)
+    platform_default_action_duties = load_supply_chain_action_duties(SUPPLY_CHAIN_ACTION_DUTIES)
+    supplier_update_repo = SqlSupplierUpdateRepository(wiring.seam.session_factory)
+    delay_impact_repo = SqlDelayImpactAnalysisRepository(wiring.seam.session_factory)
+    # Every Supply Chain model call is a one-call run with no runner around it,
+    # so nothing else would ever free its spend-ledger entry (failure-modes #6).
+    one_call_gateway = SingleCallModelGateway(inner=wiring.seam.gateway, ledger=wiring.seam.budget)
+    container.supply_chain_create_po_case = CreatePOCase(
+        repo=po_case_repo, authz=authorization, ids=wiring.seam.ids
+    )
+    container.supply_chain_get_po_case = GetPOCase(repo=po_case_repo, authz=authorization)
+    list_po_cases = ListPOCases(repo=po_case_repo, authz=authorization)
+    container.supply_chain_list_po_cases = list_po_cases
+    container.supply_chain_submit_supplier_update = SubmitSupplierUpdate(
+        po_case_repo=po_case_repo,
+        supplier_update_repo=supplier_update_repo,
+        gateway=one_call_gateway,
+        authz=authorization,
+        ids=wiring.seam.ids,
+    )
+    container.supply_chain_list_supplier_updates = ListSupplierUpdates(
+        po_case_repo=po_case_repo, supplier_update_repo=supplier_update_repo, authz=authorization
+    )
+    container.supply_chain_analyze_delay_impact = AnalyzeDelayImpact(
+        po_case_repo=po_case_repo,
+        supplier_update_repo=supplier_update_repo,
+        delay_impact_repo=delay_impact_repo,
+        gateway=one_call_gateway,
+        authz=authorization,
+        ids=wiring.seam.ids,
+    )
+    container.supply_chain_list_delay_impact_analyses = ListDelayImpactAnalyses(
+        po_case_repo=po_case_repo, delay_impact_repo=delay_impact_repo, authz=authorization
+    )
+    container.supply_chain_get_missing_update_status = GetMissingUpdateStatus(
+        po_case_repo=po_case_repo,
+        supplier_update_repo=supplier_update_repo,
+        policy_override_repo=policy_override_repo,
+        platform_default_policy=platform_default_sla_policy,
+        authz=authorization,
+        clock=wiring.seam.clock,
+    )
+    # Supply Chain is the first bounded context to actually register a graph
+    # through this seam — `graphs.register` before `workers.load_file`
+    # (the loader resolves the graph immediately, per `WorkerRegistry.
+    # load_file`'s own fail-fast contract). `repo` is captured by closure,
+    # never a concrete adapter imported inside the graph module itself.
+    wiring.seam.graphs.register(
+        WORKER_ID, GRAPH_VERSION, lambda: build_advance_case_graph(po_case_repo)
+    )
+    wiring.seam.workers.load_file(SUPPLY_CHAIN_ADVANCE_CASE_WORKER)
+    # Separation of duties + a mandatory comment for every approval this
+    # graph raises, platform-wide — not something a tenant's own approval-
+    # matrix override can weaken (see `approval_matrix.py`'s docstring).
+    # `|=` rather than `=`: a second bounded context adding its own prefix
+    # later must not silently drop this one.
+    wiring.approval_flow.strict_approval_prefixes = (
+        wiring.approval_flow.strict_approval_prefixes | frozenset({APPROVAL_TYPE_PREFIX})
+    )
+    container.supply_chain_advance_po_case = AdvancePOCase(
+        repo=po_case_repo,
+        authz=authorization,
+        policy_override_repo=policy_override_repo,
+        platform_default_approval_matrix=platform_default_approval_matrix,
+        platform_default_action_duties=platform_default_action_duties,
+        runner=wiring.runner,
+        ids=wiring.seam.ids,
+    )
+    container.supply_chain_list_case_transitions = ListCaseTransitions(
+        repo=po_case_repo, authz=authorization
+    )
+    container.supply_chain_get_sla_evaluation = GetSLAEvaluation(
+        po_case_repo=po_case_repo,
+        policy_override_repo=policy_override_repo,
+        platform_default_policy=platform_default_sla_policy,
+        authz=authorization,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_get_sla_policy = GetSLAPolicy(
+        policy_override_repo=policy_override_repo,
+        platform_default_policy=platform_default_sla_policy,
+        authz=authorization,
+    )
+    container.supply_chain_set_sla_policy_override = SetSLAPolicyOverride(
+        policy_override_repo=policy_override_repo,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_get_approval_matrix = GetApprovalMatrix(
+        policy_override_repo=policy_override_repo,
+        platform_default_matrix=platform_default_approval_matrix,
+        authz=authorization,
+    )
+    container.supply_chain_set_approval_matrix_override = SetApprovalMatrixOverride(
+        policy_override_repo=policy_override_repo,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_get_attention_queue = GetAttentionQueue(
+        po_case_repo=po_case_repo,
+        supplier_update_repo=supplier_update_repo,
+        policy_override_repo=policy_override_repo,
+        platform_default_policy=platform_default_sla_policy,
+        authz=authorization,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_answer_case_query = AnswerCaseQuery(
+        po_case_repo=po_case_repo,
+        # The SAME list handler the route uses: one place decides what a
+        # filter means and who may read the result.
+        list_cases=list_po_cases,
+        gateway=one_call_gateway,
+        authz=authorization,
+        ids=wiring.seam.ids,
+    )
+    container.supply_chain_get_portfolio_summary = GetPortfolioSummary(
+        po_case_repo=po_case_repo,
+        supplier_update_repo=supplier_update_repo,
+        policy_override_repo=policy_override_repo,
+        platform_default_policy=platform_default_sla_policy,
+        authz=authorization,
+        clock=wiring.seam.clock,
+    )
+    get_daily_brief = GetDailyBrief(
+        po_case_repo=po_case_repo,
+        supplier_update_repo=supplier_update_repo,
+        policy_override_repo=policy_override_repo,
+        platform_default_policy=platform_default_sla_policy,
+        platform_default_brief_policy=platform_default_brief_policy,
+        # The platform's own approval inbox, read through the narrow
+        # Protocol Supply Chain declares: the context never reads
+        # platform.approval_requests itself.
+        pending_approvals=SqlPendingApprovalQuery(wiring.seam.session_factory),
+        authz=authorization,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_get_daily_brief = get_daily_brief
+    container.supply_chain_summarize_daily_brief = SummarizeDailyBrief(
+        # The SAME brief handler the page reads: one place decides who may
+        # see the brief and what it holds, summarized or not.
+        get_daily_brief=get_daily_brief,
+        gateway=one_call_gateway,
+        ids=wiring.seam.ids,
+    )
+    container.supply_chain_get_action_duties = GetActionDuties(
+        policy_override_repo=policy_override_repo,
+        platform_default_duties=platform_default_action_duties,
+        authz=authorization,
+    )
+    container.supply_chain_set_action_duties_override = SetActionDutiesOverride(
+        policy_override_repo=policy_override_repo,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_get_brief_policy = GetBriefPolicy(
+        policy_override_repo=policy_override_repo,
+        platform_default_policy=platform_default_brief_policy,
+        authz=authorization,
+    )
+    container.supply_chain_set_brief_policy_override = SetBriefPolicyOverride(
+        policy_override_repo=policy_override_repo,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    follow_up_repo = SqlFollowUpRepository(wiring.seam.session_factory)
+    container.supply_chain_list_follow_ups = ListFollowUps(
+        follow_up_repo=follow_up_repo, authz=authorization
+    )
+    container.supply_chain_close_follow_up = CloseFollowUp(
+        follow_up_repo=follow_up_repo,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_get_follow_up_policy = GetFollowUpPolicy(
+        policy_override_repo=policy_override_repo,
+        platform_default_policy=load_supply_chain_follow_up_policy(SUPPLY_CHAIN_FOLLOW_UP_POLICY),
+        authz=authorization,
+    )
+    container.supply_chain_set_follow_up_policy_override = SetFollowUpPolicyOverride(
+        policy_override_repo=policy_override_repo,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+
     # Build your context from `container.runtime` (the RuntimeSeam) and attach
     # its handlers, then mount its router in `main.create_app`. Nothing above
     # this line may import a business package.

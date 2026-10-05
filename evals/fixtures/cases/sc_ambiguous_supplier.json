@@ -1,0 +1,12 @@
+{
+  "question": "PO của Elmich",
+  "model_answer": {
+    "kind": "list_cases",
+    "supplier_mention": "Elmich"
+  },
+  "known_suppliers": [
+    "Elmich Co.",
+    "Elmich Việt Nam",
+    "Sunhouse Co."
+  ]
+}

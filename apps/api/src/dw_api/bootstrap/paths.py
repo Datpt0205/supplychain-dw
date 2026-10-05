@@ -14,6 +14,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from dw_supply_chain.policy_files import FOLLOW_UP_POLICY_FILE, SLA_POLICY_FILE
+
 REPO_ROOT = Path(os.environ.get("DW_REPO_ROOT", str(Path(__file__).resolve().parents[5])))
 
 CONFIGS = REPO_ROOT / "configs"
@@ -31,6 +33,12 @@ POLICIES_DIR = CONFIGS / "policies"
 RUNTIME_COPY_CONFIG = CONFIGS / "copy" / "runtime@1.5.0.yaml"
 WORKER_RUN_POLICY = POLICIES_DIR / "worker_runs@1.0.0.yaml"
 ATTACHMENT_POLICY = POLICIES_DIR / "attachment_ingest@1.1.0.yaml"
+SUPPLY_CHAIN_SLA_POLICY = POLICIES_DIR / SLA_POLICY_FILE
+SUPPLY_CHAIN_FOLLOW_UP_POLICY = POLICIES_DIR / FOLLOW_UP_POLICY_FILE
+SUPPLY_CHAIN_APPROVAL_MATRIX_POLICY = POLICIES_DIR / "supply_chain_approval_matrix@1.0.0.yaml"
+SUPPLY_CHAIN_BRIEF_POLICY = POLICIES_DIR / "supply_chain_brief@1.0.0.yaml"
+SUPPLY_CHAIN_ACTION_DUTIES = POLICIES_DIR / "supply_chain_action_duties@1.0.0.yaml"
+SUPPLY_CHAIN_ADVANCE_CASE_WORKER = WORKERS_DIR / "supply_chain_advance_case.yaml"
 
 MOCK_MODEL_FIXTURES = REPO_ROOT / "evals" / "fixtures" / "mock_model"
 _RELEASE_MANIFEST_REF = REPO_ROOT / "contracts" / "release" / "manifest.ref"

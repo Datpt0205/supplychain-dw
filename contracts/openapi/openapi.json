@@ -1,6 +1,85 @@
 {
   "components": {
     "schemas": {
+      "AIWorkResponseView": {
+        "description": "A structured AI answer, the parts this feature fills.\n\nStructured data only, and `data_view` is a closed set of types a client\nrenders with its own components — nothing here is markup, a link, or an\naction a model chose. No `narrative`: no model writes one yet, and the\nclient composes its sentence from these fields. No `suggested_actions`:\nnothing here changes state yet (confirmation and execution come with\nthe first action that does).",
+        "properties": {
+          "candidates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/CitationView"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "data_view": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "case_link": "#/components/schemas/CaseLinkDataView",
+                    "case_table": "#/components/schemas/CaseTableDataView"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/CaseTableDataView"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CaseLinkDataView"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data View"
+          },
+          "ignored_fields": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedField"
+            },
+            "title": "Ignored Fields",
+            "type": "array"
+          },
+          "intent": {
+            "$ref": "#/components/schemas/CaseQueryKind"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/CaseQueryOutcome"
+          },
+          "understood": {
+            "$ref": "#/components/schemas/UnderstoodView"
+          },
+          "unusable_fields": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedField"
+            },
+            "title": "Unusable Fields",
+            "type": "array"
+          }
+        },
+        "required": [
+          "intent",
+          "outcome",
+          "understood",
+          "citations",
+          "ignored_fields",
+          "unusable_fields",
+          "candidates",
+          "data_view"
+        ],
+        "title": "AIWorkResponseView",
+        "type": "object"
+      },
       "AddOperatorRequest": {
         "properties": {
           "email": {
@@ -23,6 +102,31 @@
           "email"
         ],
         "title": "AddOperatorRequest",
+        "type": "object"
+      },
+      "AdvancePOCaseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/CaseAction"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "AdvancePOCaseRequest",
         "type": "object"
       },
       "ApprovalView": {
@@ -115,6 +219,40 @@
           "email"
         ],
         "title": "AssignOrgAdminRequest",
+        "type": "object"
+      },
+      "AttentionItemView": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/POCaseView"
+          },
+          "missing_update": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MissingUpdateStatusView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sla": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SLAEvaluationView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "case",
+          "sla",
+          "missing_update"
+        ],
+        "title": "AttentionItemView",
         "type": "object"
       },
       "AuditEventView": {
@@ -325,6 +463,192 @@
         "title": "BootstrapResponse",
         "type": "object"
       },
+      "BriefEntryView": {
+        "properties": {
+          "approval_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Action"
+          },
+          "case": {
+            "$ref": "#/components/schemas/POCaseView"
+          },
+          "days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days"
+          },
+          "limit_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Days"
+          },
+          "transition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseTransitionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "case",
+          "days",
+          "limit_days",
+          "transition",
+          "approval_action"
+        ],
+        "title": "BriefEntryView",
+        "type": "object"
+      },
+      "BriefGroupView": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/BriefEntryView"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "qualifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualifier"
+          },
+          "signal": {
+            "$ref": "#/components/schemas/BriefSignal"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "signal",
+          "qualifier",
+          "state",
+          "total",
+          "entries"
+        ],
+        "title": "BriefGroupView",
+        "type": "object"
+      },
+      "BriefSignal": {
+        "enum": [
+          "update_escalation_due",
+          "sla_breached",
+          "case_blocked",
+          "approval_pending",
+          "manual_review",
+          "supplier_reported_delay",
+          "update_reminder_due",
+          "waiting_external",
+          "rework",
+          "waiting_on_us",
+          "changed_recently"
+        ],
+        "title": "BriefSignal",
+        "type": "string"
+      },
+      "BriefSummarySentenceView": {
+        "properties": {
+          "group_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Group Keys",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "group_keys"
+        ],
+        "title": "BriefSummarySentenceView",
+        "type": "object"
+      },
+      "BriefSummaryStatus": {
+        "enum": [
+          "written",
+          "nothing_kept",
+          "nothing_written",
+          "nothing_to_summarize",
+          "unavailable"
+        ],
+        "title": "BriefSummaryStatus",
+        "type": "string"
+      },
+      "BriefSummaryView": {
+        "properties": {
+          "dropped": {
+            "title": "Dropped",
+            "type": "integer"
+          },
+          "sentences": {
+            "items": {
+              "$ref": "#/components/schemas/BriefSummarySentenceView"
+            },
+            "title": "Sentences",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BriefSummaryStatus"
+          }
+        },
+        "required": [
+          "status",
+          "sentences",
+          "dropped"
+        ],
+        "title": "BriefSummaryView",
+        "type": "object"
+      },
       "CancelResult": {
         "description": "Whether a run was actually stopped, not whether the request was understood.\n\n`False` is an ordinary answer: the turn had already finished, or another\nprocess holds it. A caller pressing Stop twice should get 200 both times —\nthe second one describes a thread that is already not running, which is what\nthey asked for.",
         "properties": {
@@ -337,6 +661,286 @@
           "cancelled"
         ],
         "title": "CancelResult",
+        "type": "object"
+      },
+      "CaseAction": {
+        "description": "Every guarded method above, named — the closed set an `AdvancePOCase`\ncaller may request.\n\nA closed enum, not a free string: this is a discrete choice a human\nmakes from a fixed set of buttons a real UI shows for the case's current\nstate, not free-form text a model interprets — the line between a model\ninterpreting and code deciding: no model output is ever used directly\nas a route.\nValues match each method's own name exactly, so the mapping in\n`application/handlers.py` needs no separate translation table to drift\nfrom this list.",
+        "enum": [
+          "request_deposit",
+          "confirm_deposit",
+          "start_pre_production",
+          "start_production",
+          "send_to_qc",
+          "pass_qc",
+          "arrive_at_port",
+          "request_final_payment",
+          "confirm_payment",
+          "start_warehouse_receiving",
+          "complete",
+          "resume_from_rework",
+          "resume",
+          "fail_qc",
+          "wait_for_external",
+          "flag_blocked",
+          "flag_manual_review",
+          "cancel"
+        ],
+        "title": "CaseAction",
+        "type": "string"
+      },
+      "CaseActionResultView": {
+        "properties": {
+          "case": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/POCaseView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status": {
+            "enum": [
+              "applied",
+              "pending_approval"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "CaseActionResultView",
+        "type": "object"
+      },
+      "CaseDuty": {
+        "enum": [
+          "ordering",
+          "finance",
+          "qc",
+          "logistics",
+          "warehouse",
+          "exceptions"
+        ],
+        "title": "CaseDuty",
+        "type": "string"
+      },
+      "CaseLinkDataView": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/POCaseView"
+          },
+          "type": {
+            "const": "case_link",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "case"
+        ],
+        "title": "CaseLinkDataView",
+        "type": "object"
+      },
+      "CaseQueryKind": {
+        "enum": [
+          "list_cases",
+          "open_case",
+          "unsupported"
+        ],
+        "title": "CaseQueryKind",
+        "type": "string"
+      },
+      "CaseQueryOutcome": {
+        "description": "What the reply to one question turned out to be. The first two run a\nlookup; every other one is a refusal that says why, never a widened or\nguessed answer.",
+        "enum": [
+          "list",
+          "open",
+          "not_understood",
+          "supplier_not_found",
+          "supplier_ambiguous",
+          "po_reference_missing",
+          "po_not_found",
+          "po_ambiguous"
+        ],
+        "title": "CaseQueryOutcome",
+        "type": "string"
+      },
+      "CaseQueryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "CaseQueryRequest",
+        "type": "object"
+      },
+      "CaseState": {
+        "description": "The Elmich product-to-stock happy path, plus the exceptions a real PO\nactually hits.\n\nDeclaration order is the happy-path order; the five exception states\nafter COMPLETED are not part of that sequence and are reached only\nthrough the interrupt/rework/cancel methods below, never by position.",
+        "enum": [
+          "po_created",
+          "waiting_deposit",
+          "deposit_confirmed",
+          "pre_production",
+          "production",
+          "qc",
+          "in_transit",
+          "arrived_port",
+          "waiting_payment",
+          "payment_completed",
+          "warehouse_receiving",
+          "completed",
+          "waiting_external",
+          "blocked",
+          "rework",
+          "manual_review",
+          "cancelled"
+        ],
+        "title": "CaseState",
+        "type": "string"
+      },
+      "CaseTableDataView": {
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/POCaseView"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "type": {
+            "const": "case_table",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "rows",
+          "has_more"
+        ],
+        "title": "CaseTableDataView",
+        "type": "object"
+      },
+      "CaseTransitionView": {
+        "properties": {
+          "from_state": {
+            "$ref": "#/components/schemas/CaseState"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "to_state": {
+            "$ref": "#/components/schemas/CaseState"
+          }
+        },
+        "required": [
+          "from_state",
+          "to_state",
+          "reason",
+          "occurred_at"
+        ],
+        "title": "CaseTransitionView",
+        "type": "object"
+      },
+      "CitationView": {
+        "description": "The question's own words one field was grounded in — reported\nwhatever the outcome, so a refusal can show what WAS understood.",
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/GroundedField"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "quote"
+        ],
+        "title": "CitationView",
+        "type": "object"
+      },
+      "CloseFollowUpRequest": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "CloseFollowUpRequest",
+        "type": "object"
+      },
+      "CreatePOCaseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "po_reference": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Po Reference",
+            "type": "string"
+          },
+          "supplier_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Supplier Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "po_reference",
+          "supplier_name"
+        ],
+        "title": "CreatePOCaseRequest",
         "type": "object"
       },
       "CreateTenantRequest": {
@@ -384,6 +988,59 @@
         "title": "CreateWorkspaceBody",
         "type": "object"
       },
+      "DailyBriefSummaryView": {
+        "properties": {
+          "brief": {
+            "$ref": "#/components/schemas/DailyBriefView"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/BriefSummaryView"
+          }
+        },
+        "required": [
+          "brief",
+          "summary"
+        ],
+        "title": "DailyBriefSummaryView",
+        "type": "object"
+      },
+      "DailyBriefView": {
+        "properties": {
+          "active_case_count": {
+            "title": "Active Case Count",
+            "type": "integer"
+          },
+          "approvals_visible": {
+            "title": "Approvals Visible",
+            "type": "boolean"
+          },
+          "flagged_case_count": {
+            "title": "Flagged Case Count",
+            "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/BriefGroupView"
+            },
+            "title": "Groups",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "active_case_count",
+          "flagged_case_count",
+          "approvals_visible",
+          "groups"
+        ],
+        "title": "DailyBriefView",
+        "type": "object"
+      },
       "DecisionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -415,6 +1072,74 @@
           "approve"
         ],
         "title": "DecisionRequest",
+        "type": "object"
+      },
+      "DelayImpactAnalysisView": {
+        "properties": {
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "delay_days": {
+            "title": "Delay Days",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "impacted_milestones": {
+            "items": {
+              "$ref": "#/components/schemas/ImpactedMilestoneView"
+            },
+            "title": "Impacted Milestones",
+            "type": "array"
+          },
+          "mitigation_options": {
+            "items": {
+              "$ref": "#/components/schemas/MitigationOptionView"
+            },
+            "title": "Mitigation Options",
+            "type": "array"
+          },
+          "po_case_id": {
+            "format": "uuid",
+            "title": "Po Case Id",
+            "type": "string"
+          },
+          "supplier_update_id": {
+            "format": "uuid",
+            "title": "Supplier Update Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "po_case_id",
+          "supplier_update_id",
+          "delay_days",
+          "impacted_milestones",
+          "assumptions",
+          "mitigation_options",
+          "created_at"
+        ],
+        "title": "DelayImpactAnalysisView",
         "type": "object"
       },
       "DemoUser": {
@@ -631,6 +1356,103 @@
         "title": "FeedbackView",
         "type": "object"
       },
+      "FollowUpItemView": {
+        "description": "An open follow-up. `mine`: the caller holds a scope it was handed to,\nso the caller is expected to act, and may close it.",
+        "properties": {
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FollowUpKind"
+          },
+          "limit_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Days"
+          },
+          "milestone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone"
+          },
+          "mine": {
+            "title": "Mine",
+            "type": "boolean"
+          },
+          "notified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notified At"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "po_case_id": {
+            "format": "uuid",
+            "title": "Po Case Id",
+            "type": "string"
+          },
+          "po_reference": {
+            "title": "Po Reference",
+            "type": "string"
+          },
+          "supplier_name": {
+            "title": "Supplier Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "po_case_id",
+          "po_reference",
+          "supplier_name",
+          "kind",
+          "milestone",
+          "days",
+          "limit_days",
+          "opened_at",
+          "notified_at",
+          "mine"
+        ],
+        "title": "FollowUpItemView",
+        "type": "object"
+      },
+      "FollowUpKind": {
+        "enum": [
+          "update_reminder",
+          "update_escalation",
+          "sla_breach"
+        ],
+        "title": "FollowUpKind",
+        "type": "string"
+      },
       "GrantMemberRequest": {
         "properties": {
           "department": {
@@ -663,6 +1485,17 @@
         ],
         "title": "GrantMemberRequest",
         "type": "object"
+      },
+      "GroundedField": {
+        "description": "One field of a reading, named. It keys a citation (the question's own\nwords a field was grounded in, kept whatever the outcome) and a refusal's\nreason: a field that could not be grounded, or one that was grounded but\nthat the chosen kind of answer cannot apply.",
+        "enum": [
+          "supplier",
+          "po_reference",
+          "state",
+          "active_only"
+        ],
+        "title": "GroundedField",
+        "type": "string"
       },
       "HTTPValidationError": {
         "properties": {
@@ -781,6 +1614,23 @@
           "email"
         ],
         "title": "IdentityRefView",
+        "type": "object"
+      },
+      "ImpactedMilestoneView": {
+        "properties": {
+          "estimated_delay_days": {
+            "title": "Estimated Delay Days",
+            "type": "integer"
+          },
+          "milestone": {
+            "$ref": "#/components/schemas/CaseState"
+          }
+        },
+        "required": [
+          "milestone",
+          "estimated_delay_days"
+        ],
+        "title": "ImpactedMilestoneView",
         "type": "object"
       },
       "InboxView": {
@@ -1166,6 +2016,56 @@
         "title": "MemoryItemView",
         "type": "object"
       },
+      "MissingUpdateStatus": {
+        "enum": [
+          "on_track",
+          "reminder_due",
+          "escalation_due"
+        ],
+        "title": "MissingUpdateStatus",
+        "type": "string"
+      },
+      "MissingUpdateStatusView": {
+        "properties": {
+          "age_days": {
+            "title": "Age Days",
+            "type": "integer"
+          },
+          "reference_at": {
+            "format": "date-time",
+            "title": "Reference At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MissingUpdateStatus"
+          }
+        },
+        "required": [
+          "status",
+          "reference_at",
+          "age_days"
+        ],
+        "title": "MissingUpdateStatusView",
+        "type": "object"
+      },
+      "MitigationOptionView": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "tradeoff": {
+            "title": "Tradeoff",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "tradeoff"
+        ],
+        "title": "MitigationOptionView",
+        "type": "object"
+      },
       "NewTenantView": {
         "properties": {
           "name": {
@@ -1367,6 +2267,63 @@
         "title": "OperatorView",
         "type": "object"
       },
+      "POCaseView": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "interrupted_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "po_reference": {
+            "title": "Po Reference",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CaseState"
+          },
+          "supplier_name": {
+            "title": "Supplier Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "po_reference",
+          "supplier_name",
+          "state",
+          "interrupted_state",
+          "created_at",
+          "version"
+        ],
+        "title": "POCaseView",
+        "type": "object"
+      },
       "Page_ApprovalView_": {
         "description": "A page of results and the cursor that continues it.\n\n``next_cursor`` is ``None`` on the last page, and that — not an empty\n``items`` — is the client's stop condition: a filtered listing can return an\nempty page in the middle of a run and still have more rows behind it.",
         "properties": {
@@ -1512,6 +2469,35 @@
         "title": "Page",
         "type": "object"
       },
+      "Page_POCaseView_": {
+        "description": "A page of results and the cursor that continues it.\n\n``next_cursor`` is ``None`` on the last page, and that — not an empty\n``items`` — is the client's stop condition: a filtered listing can return an\nempty page in the middle of a run and still have more rows behind it.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/POCaseView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
       "PermissionSetView": {
         "properties": {
           "key": {
@@ -1536,6 +2522,45 @@
           "scopes"
         ],
         "title": "PermissionSetView",
+        "type": "object"
+      },
+      "PortfolioSummaryView": {
+        "properties": {
+          "active_case_count": {
+            "title": "Active Case Count",
+            "type": "integer"
+          },
+          "by_state": {
+            "items": {
+              "$ref": "#/components/schemas/StateSummaryView"
+            },
+            "title": "By State",
+            "type": "array"
+          },
+          "by_supplier": {
+            "items": {
+              "$ref": "#/components/schemas/SupplierSummaryView"
+            },
+            "title": "By Supplier",
+            "type": "array"
+          },
+          "sla_breached_count": {
+            "title": "Sla Breached Count",
+            "type": "integer"
+          },
+          "update_overdue_count": {
+            "title": "Update Overdue Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active_case_count",
+          "sla_breached_count",
+          "update_overdue_count",
+          "by_state",
+          "by_supplier"
+        ],
+        "title": "PortfolioSummaryView",
         "type": "object"
       },
       "ReadinessResponse": {
@@ -1698,6 +2723,96 @@
         "title": "RunView",
         "type": "object"
       },
+      "SLAConfirmationStatus": {
+        "description": "Whether a milestone's duration is real policy yet.\n\n`PENDING_BUSINESS_CONFIRMATION` marks a number nobody has confirmed,\nsuch as Elmich's reference values, which 1.0.0 shipped that way.\n`CONFIRMED` is the only status a caller may treat as an enforceable\nthreshold. The shipped 1.1.0 test values set it on Đạt's instruction; a\ncustomer's real numbers are that tenant's own override.",
+        "enum": [
+          "pending_business_confirmation",
+          "confirmed"
+        ],
+        "title": "SLAConfirmationStatus",
+        "type": "string"
+      },
+      "SLAEvaluationStatus": {
+        "enum": [
+          "not_applicable",
+          "not_evaluable",
+          "on_track",
+          "breached"
+        ],
+        "title": "SLAEvaluationStatus",
+        "type": "string"
+      },
+      "SLAEvaluationView": {
+        "properties": {
+          "age_days": {
+            "title": "Age Days",
+            "type": "integer"
+          },
+          "entered_current_state_at": {
+            "format": "date-time",
+            "title": "Entered Current State At",
+            "type": "string"
+          },
+          "milestone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SLAEvaluationStatus"
+          },
+          "threshold_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold Days"
+          }
+        },
+        "required": [
+          "status",
+          "milestone",
+          "entered_current_state_at",
+          "age_days",
+          "threshold_days"
+        ],
+        "title": "SLAEvaluationView",
+        "type": "object"
+      },
+      "SLAMilestone": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "duration": {
+            "pattern": "^\\d+d$",
+            "title": "Duration",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SLAConfirmationStatus"
+          }
+        },
+        "required": [
+          "duration",
+          "status"
+        ],
+        "title": "SLAMilestone",
+        "type": "object"
+      },
       "SetManagerBody": {
         "properties": {
           "manager_user_id": {
@@ -1805,6 +2920,403 @@
           "granted_at"
         ],
         "title": "SodWaiverView",
+        "type": "object"
+      },
+      "StateSummaryView": {
+        "properties": {
+          "case_count": {
+            "title": "Case Count",
+            "type": "integer"
+          },
+          "oldest_in_state_days": {
+            "title": "Oldest In State Days",
+            "type": "integer"
+          },
+          "sla_breached_count": {
+            "title": "Sla Breached Count",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CaseState"
+          },
+          "update_overdue_count": {
+            "title": "Update Overdue Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "case_count",
+          "sla_breached_count",
+          "update_overdue_count",
+          "oldest_in_state_days"
+        ],
+        "title": "StateSummaryView",
+        "type": "object"
+      },
+      "SubmitSupplierUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "raw_text": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Raw Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "raw_text"
+        ],
+        "title": "SubmitSupplierUpdateRequest",
+        "type": "object"
+      },
+      "SupplierEventType": {
+        "enum": [
+          "production_delay",
+          "qc_issue",
+          "shipment_update",
+          "deposit_confirmation",
+          "document_submitted",
+          "no_official_update",
+          "other"
+        ],
+        "title": "SupplierEventType",
+        "type": "string"
+      },
+      "SupplierSummaryView": {
+        "properties": {
+          "case_count": {
+            "title": "Case Count",
+            "type": "integer"
+          },
+          "escalation_due_count": {
+            "title": "Escalation Due Count",
+            "type": "integer"
+          },
+          "longest_silence_days": {
+            "title": "Longest Silence Days",
+            "type": "integer"
+          },
+          "sla_breached_count": {
+            "title": "Sla Breached Count",
+            "type": "integer"
+          },
+          "supplier_name": {
+            "title": "Supplier Name",
+            "type": "string"
+          },
+          "update_overdue_count": {
+            "title": "Update Overdue Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "supplier_name",
+          "case_count",
+          "update_overdue_count",
+          "escalation_due_count",
+          "sla_breached_count",
+          "longest_silence_days"
+        ],
+        "title": "SupplierSummaryView",
+        "type": "object"
+      },
+      "SupplierUpdateCadence": {
+        "additionalProperties": false,
+        "description": "How long a case may go without a supplier update: a reminder is due\nafter `reminder_after`, an escalation after `escalation_after`. \"0d\"\nmakes a reminder due at once, which is how a tenant tests the chain.",
+        "properties": {
+          "escalation_after": {
+            "pattern": "^\\d+d$",
+            "title": "Escalation After",
+            "type": "string"
+          },
+          "reminder_after": {
+            "pattern": "^\\d+d$",
+            "title": "Reminder After",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reminder_after",
+          "escalation_after"
+        ],
+        "title": "SupplierUpdateCadence",
+        "type": "object"
+      },
+      "SupplierUpdateView": {
+        "properties": {
+          "affected_po": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affected Po"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "delay_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delay Days"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/SupplierEventType"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "po_case_id": {
+            "format": "uuid",
+            "title": "Po Case Id",
+            "type": "string"
+          },
+          "proposed_action": {
+            "title": "Proposed Action",
+            "type": "string"
+          },
+          "raw_text": {
+            "title": "Raw Text",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requires_confirmation": {
+            "title": "Requires Confirmation",
+            "type": "boolean"
+          },
+          "source_ref": {
+            "title": "Source Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "po_case_id",
+          "raw_text",
+          "event_type",
+          "affected_po",
+          "delay_days",
+          "reason",
+          "proposed_action",
+          "confidence",
+          "source_ref",
+          "requires_confirmation",
+          "created_at"
+        ],
+        "title": "SupplierUpdateView",
+        "type": "object"
+      },
+      "SupplyChainActionDuties": {
+        "additionalProperties": false,
+        "properties": {
+          "action_duties": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CaseDuty"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/CaseAction"
+            },
+            "title": "Action Duties",
+            "type": "object"
+          },
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version",
+          "action_duties"
+        ],
+        "title": "SupplyChainActionDuties",
+        "type": "object"
+      },
+      "SupplyChainApprovalMatrix": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_required_actions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CaseAction"
+            },
+            "title": "Approval Required Actions",
+            "type": "array",
+            "uniqueItems": true
+          },
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version"
+        ],
+        "title": "SupplyChainApprovalMatrix",
+        "type": "object"
+      },
+      "SupplyChainBriefPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "signal_order": {
+            "items": {
+              "$ref": "#/components/schemas/BriefSignal"
+            },
+            "title": "Signal Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version",
+          "signal_order"
+        ],
+        "title": "SupplyChainBriefPolicy",
+        "type": "object"
+      },
+      "SupplyChainFollowUpPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "recipients": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/FollowUpKind"
+            },
+            "title": "Recipients",
+            "type": "object"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version",
+          "recipients"
+        ],
+        "title": "SupplyChainFollowUpPolicy",
+        "type": "object"
+      },
+      "SupplyChainSLAPolicy": {
+        "additionalProperties": false,
+        "description": "The versioned answer to \"how long should each PO milestone take\".\n\n`sla` is a dict keyed by milestone name rather than one field per\nmilestone — same shape as `RetentionPolicy.classes` in dw_platform: the\nset of milestones is data (today the doc's six names; DW-SC-01 will add\nmore once it exists), not a fixed set this code has to be edited to grow.",
+        "properties": {
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sla": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SLAMilestone"
+            },
+            "title": "Sla",
+            "type": "object"
+          },
+          "supplier_update": {
+            "$ref": "#/components/schemas/SupplierUpdateCadence"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version",
+          "sla",
+          "supplier_update"
+        ],
+        "title": "SupplyChainSLAPolicy",
         "type": "object"
       },
       "TenantSettingsView": {
@@ -1979,6 +3491,55 @@
           "details"
         ],
         "title": "TimelineEvent",
+        "type": "object"
+      },
+      "UnderstoodView": {
+        "description": "What the answer applied, each value decided by code: a supplier is\nalways a stored name, never the model's mention; a PO reference is the\nstored one once the case was found (the question's own spelling when it\nwas not).",
+        "properties": {
+          "active_only": {
+            "title": "Active Only",
+            "type": "boolean"
+          },
+          "po_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Po Reference"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supplier_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Name"
+          }
+        },
+        "required": [
+          "state",
+          "supplier_name",
+          "active_only",
+          "po_reference"
+        ],
+        "title": "UnderstoodView",
         "type": "object"
       },
       "UpdateTenantBody": {
@@ -4502,6 +6063,1172 @@
         "summary": "Get Timeline",
         "tags": [
           "runs"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/action-duties": {
+      "get": {
+        "description": "Which duty each case step belongs to for the caller's own tenant —\ntheir own override if they have set one, the platform default\notherwise.",
+        "operationId": "get_action_duties_route_api_v1_supply_chain_action_duties_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainActionDuties"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Action Duties Route",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "description": "Replaces the caller's tenant's own step-to-duty mapping, whole.\nEvery action must have a duty. No `Idempotency-Key`, same reasoning\nas `/sla-policy`'s own `PUT`.",
+        "operationId": "set_action_duties_override_route_api_v1_supply_chain_action_duties_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainActionDuties"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainActionDuties"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Action Duties Override Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/approval-matrix": {
+      "get": {
+        "description": "The caller's own tenant's effective approval matrix — their own\noverride if they have set one, the platform default (nothing\ngated) otherwise.",
+        "operationId": "get_approval_matrix_route_api_v1_supply_chain_approval_matrix_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainApprovalMatrix"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Approval Matrix Route",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "description": "Replaces the caller's tenant's own approval matrix, whole. No\n`Idempotency-Key`, same reasoning as `/sla-policy`'s own `PUT`.",
+        "operationId": "set_approval_matrix_override_route_api_v1_supply_chain_approval_matrix_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainApprovalMatrix"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainApprovalMatrix"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Approval Matrix Override Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/attention-queue": {
+      "get": {
+        "operationId": "get_attention_queue_route_api_v1_supply_chain_attention_queue_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AttentionItemView"
+                  },
+                  "title": "Response Get Attention Queue Route Api V1 Supply Chain Attention Queue Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Attention Queue Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/brief-policy": {
+      "get": {
+        "description": "The caller's own tenant's effective brief order — their own\noverride if they have set one, the platform default otherwise.",
+        "operationId": "get_brief_policy_route_api_v1_supply_chain_brief_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainBriefPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Brief Policy Route",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "description": "Replaces the caller's tenant's own brief order, whole. Every\nsignal must be listed exactly once: an override reorders the brief,\nit cannot hide a group from it. No `Idempotency-Key`, same reasoning\nas `/sla-policy`'s own `PUT`.",
+        "operationId": "set_brief_policy_override_route_api_v1_supply_chain_brief_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainBriefPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainBriefPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Brief Policy Override Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/case-query": {
+      "post": {
+        "description": "A question about PO cases, answered as structured work.\nNo `Idempotency-Key`: it changes nothing, and a stored reply replayed\nunder a key would skip the handler's own authorization.",
+        "operationId": "answer_case_query_route_api_v1_supply_chain_case_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIWorkResponseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer Case Query Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/control-tower/summary": {
+      "get": {
+        "operationId": "get_portfolio_summary_route_api_v1_supply_chain_control_tower_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioSummaryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Portfolio Summary Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/daily-brief": {
+      "get": {
+        "description": "What needs handling now, grouped by deterministic signal and\nordered by the caller's tenant's own brief policy.",
+        "operationId": "get_daily_brief_route_api_v1_supply_chain_daily_brief_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyBriefView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Daily Brief Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/daily-brief/summary": {
+      "post": {
+        "description": "The brief, with a model's summary of it that code has checked.\nA POST because it spends a model call; asked for explicitly, never on\npage load. No `Idempotency-Key`: it changes nothing, and a stored\nreply replayed under a key would skip the handler's own\nauthorization.",
+        "operationId": "summarize_daily_brief_route_api_v1_supply_chain_daily_brief_summary_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyBriefSummaryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Summarize Daily Brief Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/follow-up-policy": {
+      "get": {
+        "operationId": "get_follow_up_policy_route_api_v1_supply_chain_follow_up_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainFollowUpPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Follow Up Policy Route",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "description": "Replaces the tenant's own routing, whole; every kind must still\nreach someone. No `Idempotency-Key`, as for the other policies.",
+        "operationId": "set_follow_up_policy_override_route_api_v1_supply_chain_follow_up_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainFollowUpPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainFollowUpPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Follow Up Policy Override Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/follow-ups": {
+      "get": {
+        "description": "The tenant's open follow-ups, newest first; the caller's own marked.",
+        "operationId": "list_follow_ups_route_api_v1_supply_chain_follow_ups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FollowUpItemView"
+                  },
+                  "title": "Response List Follow Ups Route Api V1 Supply Chain Follow Ups Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Follow Ups Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/follow-ups/{follow_up_id}/done": {
+      "post": {
+        "description": "Mark a follow-up handled. Only someone it was handed to may.",
+        "operationId": "close_follow_up_route_api_v1_supply_chain_follow_ups__follow_up_id__done_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "follow_up_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Follow Up Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseFollowUpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Follow Up Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases": {
+      "get": {
+        "operationId": "list_po_cases_api_v1_supply_chain_po_cases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Opaque cursor from a previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from a previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Only cases in this state.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CaseState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only cases in this state.",
+              "title": "State"
+            }
+          },
+          {
+            "description": "Only this supplier's cases — an exact match on the stored name.",
+            "in": "query",
+            "name": "supplier_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "pattern": "^[^\\x00]*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this supplier's cases — an exact match on the stored name.",
+              "title": "Supplier Name"
+            }
+          },
+          {
+            "description": "Only active cases — every state the server does not treat as terminal, the same set the Control Tower counts.",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only active cases — every state the server does not treat as terminal, the same set the Control Tower counts.",
+              "title": "Active Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_POCaseView_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Po Cases",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "post": {
+        "operationId": "create_po_case_api_v1_supply_chain_po_cases_post",
+        "parameters": [
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePOCaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/POCaseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Po Case",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}": {
+      "get": {
+        "operationId": "get_po_case_api_v1_supply_chain_po_cases__case_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/POCaseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Po Case",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/delay-impact-analyses": {
+      "get": {
+        "operationId": "get_delay_impact_analyses_api_v1_supply_chain_po_cases__case_id__delay_impact_analyses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DelayImpactAnalysisView"
+                  },
+                  "title": "Response Get Delay Impact Analyses Api V1 Supply Chain Po Cases  Case Id  Delay Impact Analyses Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Delay Impact Analyses",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/missing-update-status": {
+      "get": {
+        "operationId": "get_missing_update_status_route_api_v1_supply_chain_po_cases__case_id__missing_update_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissingUpdateStatusView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Missing Update Status Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/sla-evaluation": {
+      "get": {
+        "operationId": "get_sla_evaluation_route_api_v1_supply_chain_po_cases__case_id__sla_evaluation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SLAEvaluationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Sla Evaluation Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/supplier-updates": {
+      "get": {
+        "operationId": "get_supplier_updates_api_v1_supply_chain_po_cases__case_id__supplier_updates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupplierUpdateView"
+                  },
+                  "title": "Response Get Supplier Updates Api V1 Supply Chain Po Cases  Case Id  Supplier Updates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Supplier Updates",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "post": {
+        "operationId": "create_supplier_update_api_v1_supply_chain_po_cases__case_id__supplier_updates_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitSupplierUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierUpdateView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Supplier Update",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/supplier-updates/{update_id}/delay-impact-analysis": {
+      "post": {
+        "operationId": "create_delay_impact_analysis_api_v1_supply_chain_po_cases__case_id__supplier_updates__update_id__delay_impact_analysis_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Update Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DelayImpactAnalysisView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Delay Impact Analysis",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/transitions": {
+      "get": {
+        "operationId": "get_case_transitions_api_v1_supply_chain_po_cases__case_id__transitions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CaseTransitionView"
+                  },
+                  "title": "Response Get Case Transitions Api V1 Supply Chain Po Cases  Case Id  Transitions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Case Transitions",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "post": {
+        "operationId": "create_po_case_transition_api_v1_supply_chain_po_cases__case_id__transitions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdvancePOCaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseActionResultView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Po Case Transition",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/sla-policy": {
+      "get": {
+        "description": "The caller's own tenant's effective SLA policy — their own\noverride if they have set one, the platform default otherwise.",
+        "operationId": "get_sla_policy_route_api_v1_supply_chain_sla_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainSLAPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Sla Policy Route",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "description": "Replaces the caller's tenant's own SLA policy, whole. No\n`Idempotency-Key`: a `PUT` replacing the same key with the same body\nis already idempotent on its own, unlike the `POST`-create routes\nabove where a retry could otherwise create a second resource.",
+        "operationId": "set_sla_policy_override_route_api_v1_supply_chain_sla_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainSLAPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainSLAPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Sla Policy Override Route",
+        "tags": [
+          "supply_chain"
         ]
       }
     }

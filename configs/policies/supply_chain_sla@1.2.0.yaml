@@ -1,0 +1,67 @@
+schema_version: "1.0"
+policy_id: supply_chain_sla
+policy_version: "1.2.0"
+
+# Các mốc SLA của luồng PO. File này là PLATFORM DEFAULT (tenant_id=None),
+# không phải số của riêng khách hàng nào: mỗi tenant ghi đè TOÀN BỘ document
+# qua PUT /api/v1/supply-chain/sla-policy, và GetSLAPolicy/GetSLAEvaluation đọc
+# bản của tenant trước, chỉ rơi về file này khi tenant chưa đặt số.
+#
+# 1.1.0 (2026-09-28): số NHỎ để test nhanh, do Đạt giao chọn ("chọn để dễ
+# test, đừng thực tế quá"). Đơn vị nhỏ nhất là ngày, nên 1d là mức ngắn nhất
+# có nghĩa: một case nằm ở bước chờ từ 24 giờ trở lên là trễ SLA. Mọi mốc là
+# `confirmed` để việc đánh giá SLA thật sự chạy; một mốc
+# `pending_business_confirmation` vẫn cho ra not_evaluable như trước.
+# Trước khi có khách hàng thật, tenant đó phải tự đặt số của mình.
+#
+# Số tham khảo của Elmich (bảng SLA trong DW_Platform_Pivot_Procurement_to_
+# SupplyChain.md, CHƯA được Elmich xác nhận): bm04 4d, supplier_confirmation 5d,
+# deposit 10d, port_arrival 21d, payment 10d, warehouse_receipt 5d. Đó là nội
+# dung của 1.0.0 (`git show 0f47d48:configs/policies/supply_chain_sla@1.0.0.yaml`).
+#
+# 1.2.0 (2026-09-28): thêm `supplier_update`: sau bao lâu không có cập nhật
+# của NCC thì tới hạn NHẮC, sau bao lâu thì tới hạn LEO THANG (trước đây là
+# hằng số 5/10 ngày trong code). Cũng là số ngắn để test: nhắc sau 1 ngày, leo
+# thang sau 2 ngày. "0d" cho nhắc là tới hạn ngay, cách một tenant test nhanh
+# cả chuỗi nhắc/leo thang qua override. Override đã lưu trước 1.2.0 được
+# migration bổ sung 5d/10d, đúng con số họ đang chạy.
+#
+# bm04/supplier_confirmation thuộc giai đoạn TRƯỚC khi có PO (DW-SC-01, chưa
+# xây), nên chưa có CaseState nào gắn với chúng; domain/sla_evaluation.py
+# không map hai mốc này. Bốn mốc còn lại tương ứng các bước PO trở đi.
+sla:
+  bm04:
+    duration: 2d
+    status: confirmed
+    description: Chốt Profile / BM04 — trước PO, thuộc DW-SC-01 (chưa xây)
+
+  supplier_confirmation:
+    duration: 2d
+    status: confirmed
+    description: Chốt sản phẩm với NCC — trước PO, thuộc DW-SC-01 (chưa xây)
+
+  deposit:
+    duration: 1d
+    status: confirmed
+    description: POCase WAITING_DEPOSIT → DEPOSIT_CONFIRMED
+
+  port_arrival:
+    duration: 2d
+    status: confirmed
+    description: POCase IN_TRANSIT → ARRIVED_PORT
+
+  payment:
+    duration: 1d
+    status: confirmed
+    description: POCase WAITING_PAYMENT → PAYMENT_COMPLETED
+
+  warehouse_receipt:
+    duration: 1d
+    status: confirmed
+    description: POCase PAYMENT_COMPLETED → WAREHOUSE_RECEIVING (nhập kho)
+
+# NCC im lặng bao lâu thì nhắc, bao lâu thì leo thang (tính từ cập nhật gần
+# nhất, hoặc từ lúc tạo case nếu chưa có cập nhật nào).
+supplier_update:
+  reminder_after: 1d
+  escalation_after: 2d

@@ -14,7 +14,9 @@ of them are configuration:
     pyproject.toml                        mypy mypy_path
     pyproject.toml                        coverage source
     pyproject.toml                        import-linter root_packages
-    pyproject.toml                        the independence contract
+    pyproject.toml                        the independence contracts (context ->
+                                          apps, platform -> context, context <->
+                                          context once there are two)
     apps/api/.../bootstrap/wiring.py      build from the RuntimeSeam
     apps/api/.../main.py                  mount the router
     apps/api/pyproject.toml               declare the dependency
@@ -59,8 +61,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -465,7 +469,98 @@ source_modules = ["{ctx.package}"]
 forbidden_modules = ["dw_api", "dw_worker", "dw_docgen"]
 """
     text = text[:after_block] + contract + text[after_block:]
+    text = _guard_contexts(text, ctx)
     _write(path, text)
+
+
+# The contract whose `forbidden_modules` is the list of every context. It is the
+# one owner of that list: the context <-> context contract below is rebuilt
+# from it, so the two cannot name different sets.
+_PLATFORM_CONTRACT = "Platform packages do not import a bounded context"
+# Its `source_modules` are the platform packages, read from the contract that
+# already lists them rather than typed out a second time here.
+_PLATFORM_SOURCES_CONTRACT = "Platform packages do not import app composition roots"
+_INDEPENDENCE_CONTRACT = "Bounded contexts do not import each other"
+
+
+def _contract_span(text: str, name: str) -> tuple[int, int] | None:
+    """Where the `[[tool.importlinter.contracts]]` block named `name` starts and ends."""
+    at = text.find(f'name = "{name}"\n')
+    if at < 0:
+        return None
+    start = text.rfind("[[tool.importlinter.contracts]]", 0, at)
+    following = text.find("\n[[", at)
+    return start, len(text) if following < 0 else following + 1
+
+
+def _contract(text: str, name: str) -> dict[str, Any] | None:
+    span = _contract_span(text, name)
+    if span is None:
+        return None
+    contract: dict[str, Any] = tomllib.loads(text[span[0] : span[1]])["tool"]["importlinter"][
+        "contracts"
+    ][0]
+    return contract
+
+
+def _toml_list(key: str, values: list[str]) -> str:
+    return f"{key} = [\n" + "".join(f'    "{v}",\n' for v in values) + "]\n"
+
+
+def _replace_list(text: str, span: tuple[int, int], key: str, values: list[str]) -> str:
+    block = text[span[0] : span[1]]
+    found = re.search(rf"^{key} = \[.*?\]\n", block, flags=re.MULTILINE | re.DOTALL)
+    if found is None:
+        raise ScaffoldError(f"import-linter: no {key} in the contract being extended")
+    block = block[: found.start()] + _toml_list(key, values) + block[found.end() :]
+    return text[: span[0]] + block + text[span[1] :]
+
+
+def _guard_contexts(text: str, ctx: Context) -> str:
+    """Forbid the platform from importing this context, and contexts each other.
+
+    A contract that lists only the contexts that existed when it was written
+    reads as covering every context while the next one goes unguarded, so both
+    contracts are extended here, where a context is born, and nowhere by hand.
+    """
+    platform = _contract(text, _PLATFORM_CONTRACT)
+    span = _contract_span(text, _PLATFORM_CONTRACT)
+    if platform is None or span is None:
+        sources = _contract(text, _PLATFORM_SOURCES_CONTRACT)
+        if sources is None:
+            raise ScaffoldError(f"import-linter: no contract {_PLATFORM_SOURCES_CONTRACT!r}")
+        contexts = [ctx.package]
+        text += (
+            "\n[[tool.importlinter.contracts]]\n"
+            "# A platform package reaching into a context is the platform becoming that\n"
+            "# product. `dw_evals` is deliberately absent: it grades a context's refusals\n"
+            "# in that context's own code. scripts/new_context.py extends this list.\n"
+            f'name = "{_PLATFORM_CONTRACT}"\n'
+            'type = "forbidden"\n'
+            + _toml_list("source_modules", list(sources["source_modules"]))
+            + _toml_list("forbidden_modules", contexts)
+        )
+    else:
+        contexts = list(platform["forbidden_modules"])
+        if ctx.package in contexts:
+            raise ScaffoldError(f"{_PLATFORM_CONTRACT!r} already lists {ctx.package}")
+        contexts.append(ctx.package)
+        text = _replace_list(text, span, "forbidden_modules", contexts)
+
+    # CLAUDE.md: an `independence` contract the moment a second context exists.
+    if len(contexts) < 2:
+        return text
+    span = _contract_span(text, _INDEPENDENCE_CONTRACT)
+    if span is None:
+        return text + (
+            "\n[[tool.importlinter.contracts]]\n"
+            "# Where one context needs another's data, the consumer declares a Protocol\n"
+            "# and the composition root satisfies it; a direct import is a super-agent\n"
+            "# forming. scripts/new_context.py rebuilds this list from the one above.\n"
+            f'name = "{_INDEPENDENCE_CONTRACT}"\n'
+            'type = "independence"\n' + _toml_list("modules", contexts)
+        )
+    return _replace_list(text, span, "modules", contexts)
 
 
 def _patch_api(ctx: Context) -> None:

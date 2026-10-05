@@ -9,6 +9,7 @@ dependencies = [
     "dw-agent-runtime",
     "dw-knowledge",
     "dw-memory",
+    "dw-supply-chain",
     "dw-connectors",
     "dw-observability",
     # Object storage for knowledge documents and feedback attachments

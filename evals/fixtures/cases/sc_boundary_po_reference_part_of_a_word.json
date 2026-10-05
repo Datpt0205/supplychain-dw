@@ -1,0 +1,8 @@
+{
+  "question": "PO-1234 đang vướng gì?",
+  "model_answer": {
+    "kind": "open_case",
+    "po_reference_mention": "PO-12"
+  },
+  "known_suppliers": []
+}

@@ -240,11 +240,18 @@ jobs:
           docker compose --env-file .env -f infra/compose/docker-compose.yml --profile infra up -d
           docker compose --env-file .env -f infra/compose/docker-compose.yml --profile infra up -d --wait postgres qdrant valkey s3 keycloak docgen docgen-gateway
       - name: Integration tests
-        run: uv run pytest -m integration
+        # .env exported, as `make test-integration` does locally: some suites
+        # read QDRANT_URL / DW_DOCGEN_URL from the environment, and this repo's
+        # infra ports are not the defaults they fall back to.
+        run: |
+          set -a; . ./.env; set +a
+          uv run pytest -m integration
       - name: E2E tests
         # Its own marker, so `-m integration` never collected it and the step
         # above only claimed to run it. Exit 5 is "no tests collected".
-        run: uv run pytest -m e2e || test $? -eq 5
+        run: |
+          set -a; . ./.env; set +a
+          uv run pytest -m e2e || test $? -eq 5
       - name: Stop infra
         if: always()
         run: docker compose --env-file .env -f infra/compose/docker-compose.yml --profile infra down -v
@@ -277,7 +284,9 @@ jobs:
       - name: "Smoke: document sandbox health"
         # Through the gateway: the sandbox itself is on an internal network and
         # cannot publish a port, which is the property that makes it a sandbox.
-        run: curl --fail --retry 40 --retry-delay 5 --retry-connrefused --retry-all-errors http://localhost:8110/health
+        run: |
+          set -a; . ./.env; set +a
+          curl --fail --retry 40 --retry-delay 5 --retry-connrefused --retry-all-errors "http://localhost:${DW_DOCGEN_HOST_PORT}/health"
       - name: "Smoke: web responds"
         # --retry-all-errors: docker-proxy answers "connection reset" (exit 56)
         # before the container listens, which --retry-connrefused does not cover.

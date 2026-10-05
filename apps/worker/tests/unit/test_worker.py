@@ -99,7 +99,7 @@ def test_a_host_with_no_infrastructure_wires_no_lane() -> None:
 
 
 def test_only_the_platform_lanes_are_wired() -> None:
-    """Six lanes a database alone is enough for, and no more.
+    """Seven lanes a database alone is enough for, and no more.
 
     The outbox, and retention twice. Retention joined the platform set the day
     memory got a lifecycle: `memory.items` is a platform table, so the platform
@@ -122,6 +122,10 @@ def test_only_the_platform_lanes_are_wired() -> None:
     `notifications_retention` is the sixth, on the same footing: the in-app
     inbox's 90 days live in `platform.prune_notifications()` itself.
 
+    `supply_chain_follow_ups` is the first context lane: Supply Chain's sweep
+    that turns due reminders, escalations and SLA breaches into follow-ups
+    and notifications. It owns no job queue, so it brings no ReapTarget.
+
     Naming the whole set is the point: a context's lane arriving in this process
     becomes a visible change rather than a silent one.
     """
@@ -133,6 +137,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "partitions",
         "spend_guard_retention",
         "notifications_retention",
+        "supply_chain_follow_ups",
     }
 
 
@@ -149,3 +154,17 @@ def test_the_offboarding_lane_needs_object_storage_too_not_just_a_database() -> 
         s3_endpoint_url="http://localhost:9000",
     )
     assert "offboarding" in build_registry(db_and_s3).all()
+
+
+def test_the_follow_up_sweep_runs_on_its_own_configurable_cadence() -> None:
+    """Five minutes unless the deployment says otherwise; a tester sets 60
+    to see a reminder land within the minute."""
+    default = build_registry(bare_settings(database_url="postgresql+asyncpg://dw:dw@localhost/dw"))
+    quick = build_registry(
+        bare_settings(
+            database_url="postgresql+asyncpg://dw:dw@localhost/dw",
+            supply_chain_follow_up_interval_seconds=60,
+        )
+    )
+    assert default.interval_for("supply_chain_follow_ups", 1.0) == 300.0
+    assert quick.interval_for("supply_chain_follow_ups", 1.0) == 60.0

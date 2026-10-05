@@ -1,0 +1,19 @@
+schema_version: "1.0"
+policy_id: supply_chain_approval_matrix
+policy_version: "1.0.0"
+
+# Platform default: RỖNG — không action nào bắt buộc duyệt cho tới khi 1
+# tenant tự bật qua PUT /api/v1/supply-chain/approval-matrix (tenant-write
+# half của TenantOverlay, cùng cơ chế đã xây cho supply_chain_sla). Đúng nếp
+# "ship mechanism, không bịa policy" — không tự chọn action nào "nên" cần
+# duyệt thay cho khách hàng.
+#
+# Mỗi entry trong approval_required_actions phải là 1 giá trị CaseAction
+# thật (dw_supply_chain.domain.po_case) — validate ở schema boundary, một
+# tên sai chính tả bị từ chối ngay khi ghi, không âm thầm không gate được gì.
+#
+# Việc "action cần duyệt có cần 2 người + lý do bắt buộc không" (separation
+# of duties) KHÔNG nằm trong file này — đó là sàn platform-wide
+# (strict_approval_prefixes = "supply_chain.case_action." tại composition
+# root), một tenant không tự nới lỏng được, xem .claude/PLAN.md.
+approval_required_actions: []

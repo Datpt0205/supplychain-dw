@@ -15,7 +15,7 @@ export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export const KEYCLOAK_URL =
-  process.env.NEXT_PUBLIC_KEYCLOAK_URL ?? "http://localhost:8080";
+  process.env.NEXT_PUBLIC_KEYCLOAK_URL ?? "http://localhost:8686";
 
 export const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM ?? "dw";
 

@@ -1,0 +1,11 @@
+{
+  "question": "PO của Their Secret Co.",
+  "model_answer": {
+    "kind": "list_cases",
+    "supplier_mention": "Their Secret Co."
+  },
+  "known_suppliers": [
+    "Sunhouse Co.",
+    "Elmich Co."
+  ]
+}

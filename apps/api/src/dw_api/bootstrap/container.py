@@ -69,6 +69,36 @@ from dw_platform.application.ports import (
 )
 from dw_platform.application.provisioning import ProvisioningService
 from dw_platform.application.separation_of_duties import SeparationOfDutiesService
+from dw_supply_chain.application.handlers import (
+    AdvancePOCase,
+    AnalyzeDelayImpact,
+    AnswerCaseQuery,
+    CloseFollowUp,
+    CreatePOCase,
+    GetActionDuties,
+    GetApprovalMatrix,
+    GetAttentionQueue,
+    GetBriefPolicy,
+    GetDailyBrief,
+    GetFollowUpPolicy,
+    GetMissingUpdateStatus,
+    GetPOCase,
+    GetPortfolioSummary,
+    GetSLAEvaluation,
+    GetSLAPolicy,
+    ListCaseTransitions,
+    ListDelayImpactAnalyses,
+    ListFollowUps,
+    ListPOCases,
+    ListSupplierUpdates,
+    SetActionDutiesOverride,
+    SetApprovalMatrixOverride,
+    SetBriefPolicyOverride,
+    SetFollowUpPolicyOverride,
+    SetSLAPolicyOverride,
+    SubmitSupplierUpdate,
+    SummarizeDailyBrief,
+)
 
 
 @dataclass(frozen=True)
@@ -124,6 +154,39 @@ class ApiContainer:
     entitlement: PlanEntitlementService
 
     run_store: SqlWorkerRunStore | None = None
+    # Typed directly rather than `object | None`: `apps/api/pyproject.toml`
+    # already declares `dw-supply-chain` a dependency (mounting its router
+    # makes this app an importer of it, CLAUDE.md's context-adding step 8),
+    # so there is no boundary left for `object` to guard — only a cast at
+    # every use site that a real type makes unnecessary.
+    supply_chain_create_po_case: CreatePOCase | None = None
+    supply_chain_get_po_case: GetPOCase | None = None
+    supply_chain_list_po_cases: ListPOCases | None = None
+    supply_chain_submit_supplier_update: SubmitSupplierUpdate | None = None
+    supply_chain_list_supplier_updates: ListSupplierUpdates | None = None
+    supply_chain_analyze_delay_impact: AnalyzeDelayImpact | None = None
+    supply_chain_list_delay_impact_analyses: ListDelayImpactAnalyses | None = None
+    supply_chain_get_missing_update_status: GetMissingUpdateStatus | None = None
+    supply_chain_advance_po_case: AdvancePOCase | None = None
+    supply_chain_list_case_transitions: ListCaseTransitions | None = None
+    supply_chain_get_sla_evaluation: GetSLAEvaluation | None = None
+    supply_chain_get_sla_policy: GetSLAPolicy | None = None
+    supply_chain_set_sla_policy_override: SetSLAPolicyOverride | None = None
+    supply_chain_get_approval_matrix: GetApprovalMatrix | None = None
+    supply_chain_set_approval_matrix_override: SetApprovalMatrixOverride | None = None
+    supply_chain_get_attention_queue: GetAttentionQueue | None = None
+    supply_chain_get_portfolio_summary: GetPortfolioSummary | None = None
+    supply_chain_answer_case_query: AnswerCaseQuery | None = None
+    supply_chain_get_daily_brief: GetDailyBrief | None = None
+    supply_chain_get_brief_policy: GetBriefPolicy | None = None
+    supply_chain_set_brief_policy_override: SetBriefPolicyOverride | None = None
+    supply_chain_summarize_daily_brief: SummarizeDailyBrief | None = None
+    supply_chain_get_action_duties: GetActionDuties | None = None
+    supply_chain_set_action_duties_override: SetActionDutiesOverride | None = None
+    supply_chain_list_follow_ups: ListFollowUps | None = None
+    supply_chain_close_follow_up: CloseFollowUp | None = None
+    supply_chain_get_follow_up_policy: GetFollowUpPolicy | None = None
+    supply_chain_set_follow_up_policy_override: SetFollowUpPolicyOverride | None = None
     # Holds one LISTEN connection for the process; started and stopped by the
     # app's lifespan, never by a request.
     run_events: RunStateListener | None = None

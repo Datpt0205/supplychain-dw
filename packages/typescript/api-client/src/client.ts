@@ -14,6 +14,18 @@ import {
   runSchema,
   timelineEventSchema,
   workspaceMemberSchema,
+  poCaseSchema,
+  supplierUpdateSchema,
+  delayImpactAnalysisSchema,
+  slaEvaluationSchema,
+  missingUpdateStatusSchema,
+  caseTransitionSchema,
+  attentionItemSchema,
+  followUpSchema,
+  portfolioSummarySchema,
+  aiWorkResponseSchema,
+  dailyBriefSchema,
+  dailyBriefSummarySchema,
   adminWorkspaceSchema,
   adminTenantSchema,
   adminRoleSchema,
@@ -43,12 +55,30 @@ import {
   type Run,
   type TimelineEvent,
   type WorkspaceMember,
+  type POCase,
+  type SupplierUpdate,
+  type DelayImpactAnalysis,
+  type SLAEvaluation,
+  type MissingUpdateStatus,
+  type CaseTransition,
+  type AttentionItem,
+  type FollowUp,
+  type PortfolioSummary,
+  type AIWorkResponse,
+  type DataView,
+  type DailyBrief,
+  type DailyBriefSummary,
+  type POCaseListFilter,
   pageSchema,
   pageQueryString,
   type Page,
   type PageParams,
 } from "@dw/contracts";
 import type { components } from "./generated/platform";
+import type {
+  components as SupplyChainComponents,
+  operations as SupplyChainOperations,
+} from "./generated/supply-chain";
 
 /**
  * Typed API client core. Endpoint methods generated from OpenAPI are layered on
@@ -143,6 +173,18 @@ const userRefSchema = z.object({
 });
 export type PlatformUserRef = z.infer<typeof userRefSchema>;
 
+/** `GET /po-cases`'s query parameters, from the types generated off the
+ * route itself: a parameter renamed on the server fails this package's
+ * typecheck, instead of the server silently ignoring the old name and
+ * answering every drill-down with the unfiltered list. */
+type ListPOCasesQuery = NonNullable<
+  SupplyChainOperations["list_po_cases_api_v1_supply_chain_po_cases_get"]["parameters"]["query"]
+>;
+
+/** `POST /case-query`'s body, from the route's own generated types. */
+type CaseQueryBody =
+  SupplyChainOperations["answer_case_query_route_api_v1_supply_chain_case_query_post"]["requestBody"]["content"]["application/json"];
+
 /** True only when A and B are the same type, both ways. */
 type SameType<A, B> = [A] extends [B]
   ? [B] extends [A]
@@ -151,6 +193,7 @@ type SameType<A, B> = [A] extends [B]
   : false;
 
 type Generated = components["schemas"];
+type SupplyChainGenerated = SupplyChainComponents["schemas"];
 
 // The hand-kept zod mirror must describe exactly what the route declares:
 // if either side drifts, these lines stop compiling instead of a response
@@ -158,6 +201,62 @@ type Generated = components["schemas"];
 // assignability alone misses a new OPTIONAL field — FastAPI leaves any
 // field with a default out of `required` — so every object's key set is
 // compared too.
+const _aiWorkResponseMirrorsTheRoute: [
+  SameType<AIWorkResponse, SupplyChainGenerated["AIWorkResponseView"]>,
+  SameType<
+    keyof AIWorkResponse,
+    keyof SupplyChainGenerated["AIWorkResponseView"]
+  >,
+  SameType<
+    keyof AIWorkResponse["understood"],
+    keyof SupplyChainGenerated["UnderstoodView"]
+  >,
+  SameType<
+    keyof AIWorkResponse["citations"][number],
+    keyof SupplyChainGenerated["CitationView"]
+  >,
+  SameType<
+    keyof Extract<DataView, { type: "case_table" }>,
+    keyof SupplyChainGenerated["CaseTableDataView"]
+  >,
+  SameType<
+    keyof Extract<DataView, { type: "case_link" }>,
+    keyof SupplyChainGenerated["CaseLinkDataView"]
+  >,
+] = [true, true, true, true, true, true];
+void _aiWorkResponseMirrorsTheRoute;
+
+const _dailyBriefMirrorsTheRoute: [
+  SameType<DailyBrief, SupplyChainGenerated["DailyBriefView"]>,
+  SameType<keyof DailyBrief, keyof SupplyChainGenerated["DailyBriefView"]>,
+  SameType<
+    keyof DailyBrief["groups"][number],
+    keyof SupplyChainGenerated["BriefGroupView"]
+  >,
+  SameType<
+    keyof DailyBrief["groups"][number]["entries"][number],
+    keyof SupplyChainGenerated["BriefEntryView"]
+  >,
+] = [true, true, true, true];
+void _dailyBriefMirrorsTheRoute;
+
+const _briefSummaryMirrorsTheRoute: [
+  SameType<DailyBriefSummary, SupplyChainGenerated["DailyBriefSummaryView"]>,
+  SameType<
+    keyof DailyBriefSummary,
+    keyof SupplyChainGenerated["DailyBriefSummaryView"]
+  >,
+  SameType<
+    keyof DailyBriefSummary["summary"],
+    keyof SupplyChainGenerated["BriefSummaryView"]
+  >,
+  SameType<
+    keyof DailyBriefSummary["summary"]["sentences"][number],
+    keyof SupplyChainGenerated["BriefSummarySentenceView"]
+  >,
+] = [true, true, true, true];
+void _briefSummaryMirrorsTheRoute;
+
 const _sodRuleMirrorsTheRoute: [
   SameType<AdminSodRule, Generated["SodRuleView"]>,
   SameType<keyof AdminSodRule, keyof Generated["SodRuleView"]>,
@@ -174,6 +273,12 @@ const _inboxMirrorsTheRoute: [
   SameType<keyof Inbox["items"][number], keyof Generated["NotificationView"]>,
 ] = [true, true, true];
 void _inboxMirrorsTheRoute;
+
+const _followUpMirrorsTheRoute: [
+  SameType<FollowUp, SupplyChainGenerated["FollowUpItemView"]>,
+  SameType<keyof FollowUp, keyof SupplyChainGenerated["FollowUpItemView"]>,
+] = [true, true];
+void _followUpMirrorsTheRoute;
 
 export class ApiClient {
   constructor(private readonly options: ApiClientOptions) {}
@@ -840,6 +945,152 @@ export class ApiClient {
   disconnectZalo(): Promise<void> {
     return this.requestNoContent("POST", "/api/v1/zalo/disconnect");
   }
+
+  // ---- supply chain ---------------------------------------------------
+
+  listPOCases(
+    params: PageParams & POCaseListFilter = {},
+  ): Promise<Page<POCase>> {
+    const query: ListPOCasesQuery = {
+      limit: params.limit,
+      // An empty cursor is no cursor — the same rule `pageQueryString` keeps.
+      cursor: params.cursor || undefined,
+      state: params.state,
+      supplier_name: params.supplierName,
+      active_only: params.activeOnly || undefined,
+    };
+    // URLSearchParams, not string concatenation: a supplier name is free
+    // text ("Quiet & Sons", diacritics) and must arrive as one exact value.
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== null) search.set(key, String(value));
+    }
+    const rendered = search.toString();
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases${rendered ? `?${rendered}` : ""}`,
+      pageSchema(poCaseSchema),
+    );
+  }
+
+  getPOCase(caseId: string): Promise<POCase> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${caseId}`,
+      poCaseSchema,
+    );
+  }
+
+  getSLAEvaluation(caseId: string): Promise<SLAEvaluation> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${caseId}/sla-evaluation`,
+      slaEvaluationSchema,
+    );
+  }
+
+  getMissingUpdateStatus(caseId: string): Promise<MissingUpdateStatus> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${caseId}/missing-update-status`,
+      missingUpdateStatusSchema,
+    );
+  }
+
+  listSupplierUpdates(caseId: string): Promise<SupplierUpdate[]> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${caseId}/supplier-updates`,
+      z.array(supplierUpdateSchema),
+    );
+  }
+
+  listDelayImpactAnalyses(caseId: string): Promise<DelayImpactAnalysis[]> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${caseId}/delay-impact-analyses`,
+      z.array(delayImpactAnalysisSchema),
+    );
+  }
+
+  listCaseTransitions(caseId: string): Promise<CaseTransition[]> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${caseId}/transitions`,
+      z.array(caseTransitionSchema),
+    );
+  }
+
+  /** The tenant's open follow-ups, newest first; the caller's own marked. */
+  listFollowUps(): Promise<FollowUp[]> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/follow-ups",
+      z.array(followUpSchema),
+    );
+  }
+
+  /** Mark a follow-up handled. 403 unless it was handed to the caller. */
+  closeFollowUp(id: string, note?: string): Promise<void> {
+    return this.requestNoContent(
+      "POST",
+      `/api/v1/supply-chain/follow-ups/${encodeURIComponent(id)}/done`,
+      { body: { note: note?.trim() ? note.trim() : null } },
+    );
+  }
+
+  listAttentionQueue(): Promise<AttentionItem[]> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/attention-queue",
+      z.array(attentionItemSchema),
+    );
+  }
+
+  /** One question about PO cases, answered as structured work. The answer
+   * is data the caller renders with its own components — nothing in it is
+   * markup, a link or an action. */
+  askCaseQuery(
+    question: string,
+    signal?: AbortSignal,
+  ): Promise<AIWorkResponse> {
+    const body: CaseQueryBody = { question };
+    return this.request(
+      "POST",
+      "/api/v1/supply-chain/case-query",
+      aiWorkResponseSchema,
+      { body, signal },
+    );
+  }
+
+  getPortfolioSummary(): Promise<PortfolioSummary> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/control-tower/summary",
+      portfolioSummarySchema,
+    );
+  }
+
+  /** What needs handling now, grouped by deterministic signal in the
+   * tenant's own order. */
+  getDailyBrief(): Promise<DailyBrief> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/daily-brief",
+      dailyBriefSchema,
+    );
+  }
+
+  /** The brief with a model's summary of it, every sentence already
+   * checked by the server. Spends a model call: ask on request only. */
+  summarizeDailyBrief(signal?: AbortSignal): Promise<DailyBriefSummary> {
+    return this.request(
+      "POST",
+      "/api/v1/supply-chain/daily-brief/summary",
+      dailyBriefSummarySchema,
+      { signal },
+    );
+  }
 }
 
 export type {
@@ -850,4 +1101,14 @@ export type {
   Run,
   TimelineEvent,
   WorkspaceMember,
+  POCase,
+  SupplierUpdate,
+  DelayImpactAnalysis,
+  SLAEvaluation,
+  MissingUpdateStatus,
+  CaseTransition,
+  AttentionItem,
+  PortfolioSummary,
+  POCaseListFilter,
+  AIWorkResponse,
 };

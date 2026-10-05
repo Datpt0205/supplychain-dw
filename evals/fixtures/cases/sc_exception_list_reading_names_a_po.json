@@ -1,0 +1,8 @@
+{
+  "question": "Cho tôi xem PO-123",
+  "model_answer": {
+    "kind": "list_cases",
+    "po_reference_mention": "PO-123"
+  },
+  "known_suppliers": []
+}

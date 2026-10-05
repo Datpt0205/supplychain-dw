@@ -1,0 +1,13 @@
+{
+  "question": "Cho tôi các PO của NCC Sunhouse đang chờ đặt cọc",
+  "model_answer": {
+    "kind": "list_cases",
+    "supplier_mention": "Sunhouse",
+    "state": "waiting_deposit",
+    "state_quote": "chờ đặt cọc"
+  },
+  "known_suppliers": [
+    "Sunhouse Co.",
+    "Elmich Co."
+  ]
+}

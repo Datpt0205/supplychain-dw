@@ -144,6 +144,77 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
         app.include_router(platform_router, prefix="/api/v1")
 
     # ---- BOUNDED CONTEXT ROUTERS MOUNT HERE ------------------------------
+    # Guarded on the dependency it needs: a context whose wiring is absent
+    # mounts nothing rather than mounting a route that 500s on every call.
+    if (
+        container.supply_chain_create_po_case is not None
+        and container.supply_chain_get_po_case is not None
+        and container.supply_chain_list_po_cases is not None
+        and container.supply_chain_submit_supplier_update is not None
+        and container.supply_chain_list_supplier_updates is not None
+        and container.supply_chain_analyze_delay_impact is not None
+        and container.supply_chain_list_delay_impact_analyses is not None
+        and container.supply_chain_get_missing_update_status is not None
+        and container.supply_chain_advance_po_case is not None
+        and container.supply_chain_list_case_transitions is not None
+        and container.supply_chain_get_sla_evaluation is not None
+        and container.supply_chain_get_sla_policy is not None
+        and container.supply_chain_set_sla_policy_override is not None
+        and container.supply_chain_get_approval_matrix is not None
+        and container.supply_chain_set_approval_matrix_override is not None
+        and container.supply_chain_get_attention_queue is not None
+        and container.supply_chain_get_portfolio_summary is not None
+        and container.supply_chain_answer_case_query is not None
+        and container.supply_chain_get_daily_brief is not None
+        and container.supply_chain_get_brief_policy is not None
+        and container.supply_chain_set_brief_policy_override is not None
+        and container.supply_chain_summarize_daily_brief is not None
+        and container.supply_chain_get_action_duties is not None
+        and container.supply_chain_set_action_duties_override is not None
+        and container.supply_chain_list_follow_ups is not None
+        and container.supply_chain_close_follow_up is not None
+        and container.supply_chain_get_follow_up_policy is not None
+        and container.supply_chain_set_follow_up_policy_override is not None
+    ):
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.routes import build_router as build_supply_chain_router
+
+        app.include_router(
+            build_supply_chain_router(
+                container.supply_chain_create_po_case,
+                container.supply_chain_get_po_case,
+                container.supply_chain_list_po_cases,
+                container.supply_chain_submit_supplier_update,
+                container.supply_chain_list_supplier_updates,
+                container.supply_chain_analyze_delay_impact,
+                container.supply_chain_list_delay_impact_analyses,
+                container.supply_chain_get_missing_update_status,
+                container.supply_chain_advance_po_case,
+                container.supply_chain_list_case_transitions,
+                container.supply_chain_get_sla_evaluation,
+                container.supply_chain_get_sla_policy,
+                container.supply_chain_set_sla_policy_override,
+                container.supply_chain_get_approval_matrix,
+                container.supply_chain_set_approval_matrix_override,
+                container.supply_chain_get_attention_queue,
+                container.supply_chain_get_portfolio_summary,
+                container.supply_chain_answer_case_query,
+                container.supply_chain_get_daily_brief,
+                container.supply_chain_get_brief_policy,
+                container.supply_chain_set_brief_policy_override,
+                container.supply_chain_summarize_daily_brief,
+                container.supply_chain_get_action_duties,
+                container.supply_chain_set_action_duties_override,
+                container.supply_chain_list_follow_ups,
+                container.supply_chain_close_follow_up,
+                container.supply_chain_get_follow_up_policy,
+                container.supply_chain_set_follow_up_policy_override,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
     # Guard each on the dependency it needs, as the platform routers above do:
     # a router that 500s on every call is worse than an absent one.
 

@@ -1,0 +1,8 @@
+{
+  "question": "PO nào trễ?",
+  "model_answer": {
+    "kind": "list_cases",
+    "state_quote": "trễ"
+  },
+  "known_suppliers": []
+}

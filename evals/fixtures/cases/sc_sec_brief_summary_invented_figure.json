@@ -1,0 +1,56 @@
+{
+  "brief": {
+    "active_case_count": 20,
+    "groups": [
+      {
+        "signal": "sla_breached",
+        "qualifier": "deposit",
+        "total": 3,
+        "entries": [
+          {
+            "po_reference": "PO-2026-001",
+            "supplier_name": "Sunhouse",
+            "days": 15,
+            "limit_days": 10
+          },
+          {
+            "po_reference": "PO-2026-004",
+            "supplier_name": "Sunhouse",
+            "days": 12,
+            "limit_days": 10
+          }
+        ]
+      },
+      {
+        "signal": "case_blocked",
+        "qualifier": null,
+        "state": "blocked",
+        "total": 1,
+        "entries": [
+          {
+            "po_reference": "PO-77",
+            "supplier_name": "Toshiba",
+            "days": 6
+          }
+        ]
+      }
+    ]
+  },
+  "model_answer": {
+    "sentences": [
+      {
+        "text": "4 PO đang cần xử lý gấp.",
+        "group_keys": [
+          "sla_breached:deposit",
+          "case_blocked"
+        ]
+      },
+      {
+        "text": "3 PO quá hạn đặt cọc.",
+        "group_keys": [
+          "sla_breached:deposit"
+        ]
+      }
+    ]
+  }
+}

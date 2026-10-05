@@ -1,0 +1,9 @@
+{
+  "question": "Cho tôi các PO",
+  "model_answer": {
+    "kind": "list_cases",
+    "state": "qc",
+    "state_quote": "đang QC"
+  },
+  "known_suppliers": []
+}

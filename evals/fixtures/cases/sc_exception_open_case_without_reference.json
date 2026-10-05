@@ -1,0 +1,7 @@
+{
+  "question": "Case nào đang vướng?",
+  "model_answer": {
+    "kind": "open_case"
+  },
+  "known_suppliers": []
+}
