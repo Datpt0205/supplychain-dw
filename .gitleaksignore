@@ -17,3 +17,8 @@
 # so the same rule matched the comment. Rewritten so the phrase is described,
 # not quoted; this fingerprint covers the one commit that carries the quote.
 8c46c65566ee25b330580a9f1b0476b7e7e4cbee:.gitleaksignore:generic-api-key:11
+
+# Test placeholders that prove the settings hide the Zalo token and link secret,
+# not real credentials (apps/worker/tests/unit/test_zalo_poll_consumer.py).
+51c0ef7f293895848ad0b9946492d71852cd5a27:apps/worker/tests/unit/test_zalo_poll_consumer.py:generic-api-key:56
+51c0ef7f293895848ad0b9946492d71852cd5a27:apps/worker/tests/unit/test_zalo_poll_consumer.py:generic-api-key:56
