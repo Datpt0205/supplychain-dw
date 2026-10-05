@@ -47,6 +47,8 @@ from dw_platform.adapters.persistence.zalo_link_repo import (
 from dw_platform.retention_policy import load_retention_policy
 from dw_worker.composition import (
     REPO_ROOT,
+    build_case_document_storage,
+    build_case_documents_bucket,
     build_embeddings,
     build_export_bucket,
     build_feedback_bucket,
@@ -64,7 +66,11 @@ from dw_worker.consumers.reaper import INTERVAL_SECONDS as REAP_INTERVAL_SECONDS
 from dw_worker.consumers.reaper import ReapTarget, build_reaper_consumer
 from dw_worker.consumers.retention import INTERVAL_SECONDS as RETENTION_INTERVAL_SECONDS
 from dw_worker.consumers.retention import RetentionPrunePort, build_retention_consumer
-from dw_worker.consumers.supply_chain import build_follow_up_consumer, build_follow_up_sweep
+from dw_worker.consumers.supply_chain import (
+    build_document_orphan_sweep,
+    build_follow_up_consumer,
+    build_follow_up_sweep,
+)
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
 from dw_worker.health import beat
 from dw_worker.settings import WorkerSettings
@@ -140,10 +146,12 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     # and ZALO_UPDATES_MODE=poll.
     zalo_poll_consumer: Callable[[], Awaitable[None]] | None = None
     # Ops hardening Phase 4. Needs object storage too, not just a database -
-    # export/purge touch three buckets and the vector index alongside Postgres.
+    # export/purge touch four buckets and the vector index alongside Postgres.
     offboarding_consumer: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's follow-up sweep: a database is all it needs.
     follow_up_consumer: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's case-document orphan sweep: a database and the bucket.
+    document_orphans: RetentionPrunePort | None = None
 
     if settings.database_url:
         # ---- transactional outbox ----------------------------------------
@@ -224,9 +232,13 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                     artifacts=build_object_storage(settings),
                     exports=build_export_bucket(settings),
                     attachments=build_feedback_bucket(settings),
+                    case_documents=build_case_documents_bucket(settings),
                     vector_index=build_vector_index(settings),
                     clock=clock,
                 )
+            )
+            document_orphans = build_document_orphan_sweep(
+                sessions, build_case_document_storage(settings), clock=clock
             )
         registry.register(
             "outbox",
@@ -260,6 +272,14 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
             "supply_chain_follow_ups",
             follow_up_consumer,
             interval_seconds=settings.supply_chain_follow_up_interval_seconds,
+        )
+    # Case-document objects no row holds (ADR 0021): housekeeping on the
+    # retention cadence, through the retention consumer's error handling.
+    if document_orphans is not None:
+        registry.register(
+            "supply_chain_document_orphans",
+            build_retention_consumer(document_orphans),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
         )
 
     # ---- channels ----------------------------------------------------------

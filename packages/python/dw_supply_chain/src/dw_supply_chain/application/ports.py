@@ -15,6 +15,11 @@ from typing import Protocol
 from dw_kernel.pagination import Page, PageQuery, PageRequest
 from dw_platform.application.access_context import AccessContext
 from dw_platform.domain.audit import AuditEvent
+from dw_supply_chain.domain.case_document import (
+    CaseDocument,
+    CaseDocumentId,
+    DocumentType,
+)
 from dw_supply_chain.domain.delay_impact import DelayImpactAnalysis
 from dw_supply_chain.domain.follow_up import FollowUpDue, FollowUpKind, FollowUpStatus
 from dw_supply_chain.domain.po_case import (
@@ -342,3 +347,83 @@ class FollowUpNotifierPort(Protocol):
         body: str,
         link: str | None,
     ) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class NewCaseDocument:
+    """A document about to be recorded on a PO case: everything but its
+    version, which the insert computes, and its upload time, which the
+    database stamps. No case kind yet: a PO case is the only one, and the
+    product-development case (stage-1 ticket 01) adds the field together with
+    the column it selects, so nothing can declare a kind the insert ignores."""
+
+    id: CaseDocumentId
+    case_id: uuid.UUID
+    doc_type: DocumentType
+    object_key: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    sha256: str
+
+
+class CaseDocumentRepositoryPort(Protocol):
+    """Records of case documents. Append-only: no update, no delete."""
+
+    async def add(
+        self, context: AccessContext, document: NewCaseDocument, *, audit: AuditEvent
+    ) -> CaseDocument:
+        """Insert with `version` one past the case's highest for this type,
+        and `audit` in the same transaction. `ConflictError` when a concurrent
+        upload took that version first; the client retries."""
+        ...
+
+    async def list_for_case(self, context: AccessContext, case_id: uuid.UUID) -> list[CaseDocument]:
+        """The PO case's documents, by type and then newest version first."""
+        ...
+
+    async def get(self, context: AccessContext, document_id: CaseDocumentId) -> CaseDocument | None:
+        """The caller's document, or None: another tenant's or another
+        workspace's reads as absent."""
+        ...
+
+
+class CaseDocumentStoragePort(Protocol):
+    """The bytes of case documents, by the key the server built (ADR 0021).
+    Declared here, satisfied by an adapter on the deployment's S3 client."""
+
+    async def put(self, key: str, data: bytes, content_type: str) -> None: ...
+
+    async def get(self, key: str) -> bytes:
+        """`NotFoundError` when no object has this key."""
+        ...
+
+    async def delete(self, key: str) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class StoredObject:
+    key: str
+    last_modified: datetime
+
+
+class CaseDocumentObjectListingPort(Protocol):
+    """What the orphan sweep reads from the bucket, a page at a time."""
+
+    async def list_after(
+        self, prefix: str, *, start_after: str | None, limit: int
+    ) -> list[StoredObject]:
+        """Up to `limit` objects under `prefix`, in key order, after
+        `start_after` (from the beginning when None)."""
+        ...
+
+    async def delete(self, key: str) -> None: ...
+
+
+class CaseDocumentKeysPort(Protocol):
+    """The one question the orphan sweep asks the database, under the
+    tenant and workspace its keys name."""
+
+    async def existing_keys(self, context: AccessContext, keys: Sequence[str]) -> set[str]:
+        """Which of `keys` a document row of `context`'s workspace holds."""
+        ...

@@ -34,11 +34,24 @@ and that is the whole contract. Everything else happens around the handler:
   reservation is released, and idempotency silently degrades to the behaviour
   this module replaced. Failing open on our own wiring mistake is the safe
   direction; failing closed would reject the client's legitimate retry.
+
+A multipart route (a file upload) cannot be fingerprinted from the raw body:
+FastAPI parses a form through ``request.form()``, which consumes the stream, so
+``request.body()`` in a dependency raises "Stream consumed"; and the body holds
+a boundary the browser picks afresh on every send, so a retry's bytes never
+match the first attempt's. Such a route depends on
+:func:`get_form_idempotent_operation` and claims the key itself, from the
+fields it parsed::
+
+    await idempotency.claim_fields({"doc_type": ..., "sha256": ...})
+
+before it acts. The rest (replay, conflict, release on failure) is the same.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import json
+from collections.abc import AsyncIterator, Mapping
 from typing import Annotated, TypeVar
 
 from fastapi import Depends, Header, Request
@@ -89,10 +102,16 @@ class IdempotentOperation:
         idempotency: HttpIdempotency | None,
         context: AccessContext,
         key: str | None,
+        *,
+        method: str,
+        target: str,
     ) -> None:
         self._idempotency = idempotency
         self._context = context
         self._key = key
+        self._method = method
+        self._target = target
+        self._claimed = False
         self._recorded = False
 
     async def claim(self, fingerprint: RequestFingerprint) -> None:
@@ -104,6 +123,24 @@ class IdempotentOperation:
         )
         if stored is not None:
             raise ReplayedResponse(stored)
+        self._claimed = True
+
+    async def claim_fields(self, fields: Mapping[str, str]) -> None:
+        """Reserve the key for a request identified by its parsed ``fields``.
+
+        For a route whose body is not stable bytes (multipart). The route
+        passes every field that makes the request what it is, a file as its
+        hash; the same fields in any order fingerprint alike, and the method,
+        path and workspace are part of it as for every other route."""
+        body = json.dumps(dict(fields), sort_keys=True, ensure_ascii=False).encode()
+        await self.claim(
+            RequestFingerprint.of(
+                method=self._method,
+                path=self._target,
+                workspace_id=self._context.workspace_id,
+                body=body,
+            )
+        )
 
     async def record(self, result: ModelT, *, status_code: int = 200) -> ModelT:
         """Store ``result`` as this key's answer and hand it back unchanged.
@@ -122,34 +159,24 @@ class IdempotentOperation:
         await self._store(StoredResponse(status_code=204, body=None))
 
     async def _store(self, response: StoredResponse) -> None:
-        if self._idempotency is None or self._key is None:
+        # Only a key this request reserved: one it never claimed may be
+        # another request's reservation, and is not this request's to fill.
+        if not self._claimed:
             return
+        assert self._idempotency is not None and self._key is not None
         await self._idempotency.complete(self._context, key=self._key, response=response)
         self._recorded = True
 
     async def abandon_unless_recorded(self) -> None:
-        if self._idempotency is None or self._key is None or self._recorded:
+        # Never release a key this request did not reserve: that would free
+        # another in-flight request's reservation.
+        if not self._claimed or self._recorded:
             return
+        assert self._idempotency is not None and self._key is not None
         await self._idempotency.release(self._context, key=self._key)
 
 
-async def get_idempotent_operation(
-    request: Request,
-    context: RequireAccessContext,
-    container: RequireContainer,
-    # Declared rather than read off ``request.headers`` so that the header
-    # appears in the OpenAPI schema, and therefore in the generated client, on
-    # exactly the routes that honour it. A contract clients are told to rely on
-    # should be discoverable from the contract.
-    idempotency_key: str | None = Header(
-        default=None,
-        alias=IDEMPOTENCY_HEADER,
-        description=(
-            "Optional. Retrying with the same key returns the first response "
-            "instead of acting twice; reusing it for a different request is a 409."
-        ),
-    ),
-) -> AsyncIterator[IdempotentOperation]:
+def _key(idempotency_key: str | None) -> str | None:
     key = (idempotency_key or "").strip()
     if len(key) > MAX_KEY_LENGTH:
         # Refused rather than truncated: the key becomes part of a primary key,
@@ -158,7 +185,10 @@ async def get_idempotent_operation(
             f"{IDEMPOTENCY_HEADER} must be at most {MAX_KEY_LENGTH} characters",
             details={"header": IDEMPOTENCY_HEADER, "length": len(key)},
         )
-    operation = IdempotentOperation(container.idempotency, context, key or None)
+    return key or None
+
+
+def _target(request: Request) -> str:
     # The query string is part of what identifies the request, not decoration:
     # `DELETE /admin/members/{id}?workspace_id=A` and the same path with
     # `workspace_id=B` are two different mutations. Compared as sent — a retry
@@ -167,9 +197,43 @@ async def get_idempotent_operation(
     target = request.url.path
     if request.url.query:
         target = f"{target}?{request.url.query}"
-    # ``await request.body()`` returns the bytes FastAPI has already read and
-    # cached for the body parameters, so reading it here costs nothing and
-    # cannot consume the stream out from under the handler.
+    return target
+
+
+# Declared rather than read off ``request.headers`` so that the header appears
+# in the OpenAPI schema, and therefore in the generated client, on exactly the
+# routes that honour it. A contract clients are told to rely on should be
+# discoverable from the contract.
+_KEY_HEADER = Header(
+    default=None,
+    alias=IDEMPOTENCY_HEADER,
+    description=(
+        "Optional. Retrying with the same key returns the first response "
+        "instead of acting twice; reusing it for a different request is a 409."
+    ),
+)
+
+
+async def get_idempotent_operation(
+    request: Request,
+    context: RequireAccessContext,
+    container: RequireContainer,
+    idempotency_key: str | None = _KEY_HEADER,
+) -> AsyncIterator[IdempotentOperation]:
+    target = _target(request)
+    operation = IdempotentOperation(
+        container.idempotency,
+        context,
+        _key(idempotency_key),
+        method=request.method,
+        target=target,
+    )
+    # For a JSON (or empty) body FastAPI has already read it through
+    # ``request.body()``, which caches the bytes, so reading it here costs
+    # nothing and leaves the handler its parameters. Not for a form: FastAPI
+    # parses that through ``request.form()``, which consumes the stream without
+    # caching it, and this call would raise "Stream consumed". A form route
+    # depends on ``get_form_idempotent_operation`` below instead.
     await operation.claim(
         RequestFingerprint.of(
             method=request.method,
@@ -177,6 +241,27 @@ async def get_idempotent_operation(
             workspace_id=context.workspace_id,
             body=await request.body(),
         )
+    )
+    try:
+        yield operation
+    finally:
+        await operation.abandon_unless_recorded()
+
+
+async def get_form_idempotent_operation(
+    request: Request,
+    context: RequireAccessContext,
+    container: RequireContainer,
+    idempotency_key: str | None = _KEY_HEADER,
+) -> AsyncIterator[IdempotentOperation]:
+    """The same key, claimed by the route through ``claim_fields`` once it has
+    parsed the form, rather than here from bytes that cannot be read again."""
+    operation = IdempotentOperation(
+        container.idempotency,
+        context,
+        _key(idempotency_key),
+        method=request.method,
+        target=_target(request),
     )
     try:
         yield operation

@@ -414,10 +414,11 @@ _SCOPE = "current_setting('app.workspace_scope', true) = 'tenant'"
 
 
 async def test_the_scope_rules_catch_the_wrong_shapes(session: AsyncSession) -> None:
-    """The two rules above pass on today's schema because no table is narrowed
-    by workspace yet, which proves nothing about them. These are real
-    Postgres-printed policies of each shape, made and rolled back in one
-    transaction."""
+    """The two rules above passed vacuously while no table was narrowed by
+    workspace (`supply_chain.case_documents` is the first, migration
+    f6a8142a6cd2), and a pass on the right shape still proves nothing about
+    catching a wrong one. These are real Postgres-printed policies of each
+    shape, made and rolled back in one transaction."""
     shapes = {
         "spec": f"{_TENANT} AND ({_WORKSPACE} OR {_SCOPE})",
         "tenant_or_scope": f"{_TENANT} OR {_SCOPE}",

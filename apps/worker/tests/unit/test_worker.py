@@ -161,6 +161,23 @@ def test_the_offboarding_lane_needs_object_storage_too_not_just_a_database() -> 
     assert "offboarding" in build_registry(db_and_s3).all()
 
 
+def test_the_case_document_orphan_sweep_needs_object_storage_too() -> None:
+    """`supply_chain_document_orphans` lists the case-documents bucket and asks
+    the database about each old key, so like offboarding it is wired only when
+    both are there, and runs on the retention cadence."""
+    db_only = bare_settings(database_url="postgresql+asyncpg://dw:dw@localhost/dw")
+    assert "supply_chain_document_orphans" not in build_registry(db_only).all()
+
+    db_and_s3 = build_registry(
+        bare_settings(
+            database_url="postgresql+asyncpg://dw:dw@localhost/dw",
+            s3_endpoint_url="http://localhost:9000",
+        )
+    )
+    assert "supply_chain_document_orphans" in db_and_s3.all()
+    assert db_and_s3.interval_for("supply_chain_document_orphans", 1.0) == 3600.0
+
+
 def test_the_follow_up_sweep_runs_on_its_own_configurable_cadence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

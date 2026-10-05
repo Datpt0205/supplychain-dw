@@ -237,4 +237,5 @@ việc của lead (kèm duyệt QO-2 cho các quyết định tạm). Ghi chú t
 cục bộ (`dw_elmichs`) chưa chạy `make db-migrate` (đang ở `cf66605631d7`); API chạy từ code
 này cần migrate trước. Trên Windows `make generate-contracts` ghi `openapi.json` bằng CRLF
 (git chuẩn hóa về LF; đã đổi lại LF trong working copy).
+
 - 2026-10-05, lead: verifier độc lập chạy lại toàn bộ (lint, typecheck, unit 1467, architecture, contract, release manifest, integration dw_platform 199 / dw_agent_runtime 57 / dw_supply_chain 93, vitest 93, một head `5d3965984679`) và 24 mutation, tất cả đỏ rồi khôi phục. `make ci` đỏ trước đó chỉ vì prettier trên area file của lead, đã sửa. Còn lại cho lát W: chữ lý do khóa dùng `text-muted-foreground` như phần còn lại của trang shadcn.

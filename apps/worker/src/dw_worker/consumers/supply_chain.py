@@ -1,4 +1,4 @@
-"""Supply Chain's lane: the follow-up sweep, on a cadence.
+"""Supply Chain's lanes: the follow-up sweep, and the case-document orphan sweep.
 
 The sweep (`dw_supply_chain.application.follow_up_sweep`) opens follow-ups for
 due reminders, escalations and SLA breaches, resolves the ones whose signal is
@@ -22,6 +22,9 @@ from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.adapters.persistence.notifications import SqlNotificationRepository
 from dw_platform.adapters.persistence.policy_overrides import SqlPolicyOverrideRepository
 from dw_platform.adapters.persistence.scope_holders import SqlScopeHolders
+from dw_supply_chain.adapters.persistence.case_document_repository import (
+    SqlCaseDocumentRepository,
+)
 from dw_supply_chain.adapters.persistence.follow_up_repository import (
     SqlFollowUpRepository,
     SqlTenantsWithCases,
@@ -30,7 +33,9 @@ from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRep
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
+from dw_supply_chain.application.document_orphan_sweep import SweepOrphanDocuments
 from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
+from dw_supply_chain.application.ports import CaseDocumentObjectListingPort
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
 from dw_supply_chain.policy_files import FOLLOW_UP_POLICY_FILE, SLA_POLICY_FILE
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
@@ -59,6 +64,19 @@ def build_follow_up_sweep(
         notifier=SqlNotificationRepository(sessions),
         ids=ids,
         clock=clock,
+    )
+
+
+def build_document_orphan_sweep(
+    sessions: async_sessionmaker[AsyncSession],
+    objects: CaseDocumentObjectListingPort,
+    *,
+    clock: UtcClock,
+) -> SweepOrphanDocuments:
+    """Satisfies `RetentionPrunePort`; registered as
+    `supply_chain_document_orphans` on the retention cadence."""
+    return SweepOrphanDocuments(
+        objects=objects, keys=SqlCaseDocumentRepository(sessions), clock=clock
     )
 
 

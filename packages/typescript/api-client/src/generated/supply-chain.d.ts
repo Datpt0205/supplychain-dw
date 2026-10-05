@@ -187,6 +187,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/documents/{document_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Case Document */
+        get: operations["download_case_document_api_v1_supply_chain_documents__document_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/follow-up-policy": {
         parameters: {
             query?: never;
@@ -295,6 +312,24 @@ export interface paths {
         get: operations["get_delay_impact_analyses_api_v1_supply_chain_po_cases__case_id__delay_impact_analyses_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/po-cases/{case_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Case Documents */
+        get: operations["list_case_documents_api_v1_supply_chain_po_cases__case_id__documents_get"];
+        put?: never;
+        /** Upload Case Document */
+        post: operations["upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -458,6 +493,12 @@ export interface components {
             missing_update: components["schemas"]["MissingUpdateStatusView"] | null;
             sla: components["schemas"]["SLAEvaluationView"] | null;
         };
+        /** Body_upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post */
+        Body_upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post: {
+            doc_type: components["schemas"]["DocumentType"];
+            /** File */
+            file: string;
+        };
         /** BriefEntryView */
         BriefEntryView: {
             /** Approval Action */
@@ -533,6 +574,43 @@ export interface components {
              * @enum {string}
              */
             status: "applied" | "pending_approval";
+        };
+        /**
+         * CaseDocumentView
+         * @description A document as the API shows it. The object key stays on the server.
+         */
+        CaseDocumentView: {
+            /** Content Type */
+            content_type: string;
+            doc_type: components["schemas"]["DocumentType"];
+            /** Filename */
+            filename: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Po Case Id
+             * Format: uuid
+             */
+            po_case_id: string;
+            /** Sha256 */
+            sha256: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
+            /**
+             * Uploaded By
+             * Format: uuid
+             */
+            uploaded_by: string;
+            /** Version */
+            version: number;
         };
         /**
          * CaseDuty
@@ -672,6 +750,12 @@ export interface components {
              */
             supplier_update_id: string;
         };
+        /**
+         * DocumentType
+         * @description ADR 0021's fourteen document types, from process.md section 2.
+         * @enum {string}
+         */
+        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette";
         /**
          * FollowUpItemView
          * @description An open follow-up. `mine`: the caller holds a scope it was handed to,
@@ -1309,6 +1393,35 @@ export interface operations {
             };
         };
     };
+    download_case_document_api_v1_supply_chain_documents__document_id__content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file, as an attachment of its stored type. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_follow_up_policy_route_api_v1_supply_chain_follow_up_policy_get: {
         parameters: {
             query?: never;
@@ -1539,6 +1652,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DelayImpactAnalysisView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_case_documents_api_v1_supply_chain_po_cases__case_id__documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDocumentView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDocumentView"];
                 };
             };
             /** @description Validation Error */

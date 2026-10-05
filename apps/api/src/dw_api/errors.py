@@ -16,6 +16,8 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.TENANT_CONTEXT_MISSING: 401,
     ErrorCode.IDEMPOTENCY_CONFLICT: 409,
     ErrorCode.RATE_LIMITED: 429,
+    ErrorCode.PAYLOAD_TOO_LARGE: 413,
+    ErrorCode.UNSUPPORTED_MEDIA_TYPE: 415,
     ErrorCode.TIMEOUT: 504,
     ErrorCode.UPSTREAM_UNAVAILABLE: 503,
     ErrorCode.INTERNAL: 500,

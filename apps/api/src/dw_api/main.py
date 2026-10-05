@@ -237,6 +237,27 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # Case documents (ADR 0021): their own router on their own guard, rather
+    # than three more arguments to the chain above.
+    if (
+        container.supply_chain_upload_case_document is not None
+        and container.supply_chain_list_case_documents is not None
+        and container.supply_chain_download_case_document is not None
+    ):
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_form_idempotent_operation
+        from dw_supply_chain.presentation.document_routes import build_documents_router
+
+        app.include_router(
+            build_documents_router(
+                container.supply_chain_upload_case_document,
+                container.supply_chain_list_case_documents,
+                container.supply_chain_download_case_document,
+                resolve_access_context=get_access_context,
+                resolve_form_idempotency=get_form_idempotent_operation,
+            )
+        )
+
     # Guard each on the dependency it needs, as the platform routers above do:
     # a router that 500s on every call is worse than an absent one.
 

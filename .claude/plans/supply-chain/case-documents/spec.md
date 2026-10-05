@@ -34,6 +34,6 @@ Ticket 01 `resolved`.
 
 ## Danh sách ticket
 
-| #   | Ticket                                                            | Status          | Blocked by                                                        |
-| --- | ----------------------------------------------------------------- | --------------- | ----------------------------------------------------------------- |
-| 01  | [Bảng, port lưu trữ, route chứng từ](issues/01-case-documents.md) | ready-for-agent | .claude/plans/supply-chain/port/issues/01-port-dw-supply-chain.md |
+| #   | Ticket                                                            | Status   | Blocked by                                                        |
+| --- | ----------------------------------------------------------------- | -------- | ----------------------------------------------------------------- |
+| 01  | [Bảng, port lưu trữ, route chứng từ](issues/01-case-documents.md) | resolved | .claude/plans/supply-chain/port/issues/01-port-dw-supply-chain.md |

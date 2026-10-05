@@ -338,3 +338,39 @@ export const followUpSchema = z.object({
   mine: z.boolean(),
 });
 export type FollowUp = z.infer<typeof followUpSchema>;
+
+// ---- case documents (ADR 0021) --------------------------------------------
+
+/** ADR 0021's fourteen document types; the API's `DocumentType`. */
+export const documentTypeSchema = z.enum([
+  "proposal_list",
+  "product_image",
+  "sample_photo",
+  "sample_evaluation",
+  "sample_revision_request",
+  "product_profile_bm04",
+  "official_item_code",
+  "supplier_confirmation_email",
+  "purchase_order",
+  "deposit_docs",
+  "payment_docs",
+  "packaging_content",
+  "user_manual",
+  "maquette",
+]);
+export type DocumentType = z.infer<typeof documentTypeSchema>;
+
+/** Mirrors `CaseDocumentView`. The object key never leaves the server. */
+export const caseDocumentSchema = z.object({
+  id: z.string(),
+  po_case_id: z.string(),
+  doc_type: documentTypeSchema,
+  filename: z.string(),
+  content_type: z.string(),
+  size_bytes: z.number().int(),
+  sha256: z.string(),
+  version: z.number().int(),
+  uploaded_by: z.string(),
+  uploaded_at: z.string(),
+});
+export type CaseDocument = z.infer<typeof caseDocumentSchema>;

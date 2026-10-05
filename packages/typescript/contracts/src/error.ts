@@ -24,6 +24,8 @@ export const ErrorCode = {
   TenantContextMissing: "tenant_context_missing",
   IdempotencyConflict: "idempotency_conflict",
   RateLimited: "rate_limited",
+  PayloadTooLarge: "payload_too_large",
+  UnsupportedMediaType: "unsupported_media_type",
   Timeout: "timeout",
   UpstreamUnavailable: "upstream_unavailable",
   Internal: "internal",

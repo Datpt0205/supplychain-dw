@@ -126,6 +126,12 @@ def duty_scope(duty: CaseDuty) -> str:
     return f"supply_chain.duty.{duty.value}"
 
 
+# Case documents (`application.case_documents`). Declared here because this
+# module is where the role catalogue test collects every scope the context
+# checks.
+DOCUMENT_READ = "supply_chain.document.read"
+DOCUMENT_WRITE = "supply_chain.document.write"
+
 FOLLOW_UP_POLICY_READ = "supply_chain.follow_up_policy.read"
 FOLLOW_UP_POLICY_WRITE = "supply_chain.follow_up_policy.write"
 _FOLLOW_UP_POLICY_RESOURCE = "follow_up_policy"

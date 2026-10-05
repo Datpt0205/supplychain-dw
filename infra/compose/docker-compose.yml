@@ -156,6 +156,7 @@ services:
         rclone mkdir s3:$${S3_BUCKET_ARTIFACTS} &&
         rclone mkdir s3:$${S3_BUCKET_EXPORTS} &&
         rclone mkdir s3:$${S3_BUCKET_PG_BACKUPS} &&
+        rclone mkdir s3:$${CASE_DOCUMENTS_BUCKET} &&
         rclone mkdir s3:langfuse
     environment:
       RCLONE_CONFIG_S3_TYPE: s3
@@ -166,6 +167,9 @@ services:
       S3_BUCKET_ARTIFACTS: ${S3_BUCKET_ARTIFACTS:-dw-artifacts}
       S3_BUCKET_EXPORTS: ${S3_BUCKET_EXPORTS:-dw-exports}
       S3_BUCKET_PG_BACKUPS: ${S3_BUCKET_PG_BACKUPS:-dw-pg-backups}
+      # Made here, not only on the first upload: offboarding lists this bucket
+      # for every tenant, and listing a bucket that does not exist fails.
+      CASE_DOCUMENTS_BUCKET: ${CASE_DOCUMENTS_BUCKET:-case-documents}
     networks: [dw-internal]
     restart: "no"
 
@@ -376,6 +380,8 @@ services:
       S3_ENDPOINT_URL: http://s3:8333
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+      # The one name s3-setup creates, the API writes and the worker offboards.
+      CASE_DOCUMENTS_BUCKET: ${CASE_DOCUMENTS_BUCKET:-case-documents}
       # OIDC: the token issuer is the browser-facing Keycloak URL, but the API
       # (inside the network) fetches JWKS via the internal service name.
       DW_API_AUTH_MODE: ${DW_API_AUTH_MODE:-oidc}
@@ -526,6 +532,8 @@ services:
       S3_ENDPOINT_URL: http://s3:8333
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+      # The one name s3-setup creates, the API writes and the worker offboards.
+      CASE_DOCUMENTS_BUCKET: ${CASE_DOCUMENTS_BUCKET:-case-documents}
       # Knowledge ingest consumer: embed with the same self-hosted BGE-M3 as the
       # API so uploaded docs land in the same 1024-dim Qdrant collection.
       DW_WORKER_EMBEDDING_PROVIDER: ${DW_API_EMBEDDING_PROVIDER:-hash}

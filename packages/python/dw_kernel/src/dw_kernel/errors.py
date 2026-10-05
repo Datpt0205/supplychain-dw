@@ -22,6 +22,8 @@ class ErrorCode(StrEnum):
     TENANT_CONTEXT_MISSING = "tenant_context_missing"
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
     RATE_LIMITED = "rate_limited"
+    PAYLOAD_TOO_LARGE = "payload_too_large"
+    UNSUPPORTED_MEDIA_TYPE = "unsupported_media_type"
     TIMEOUT = "timeout"
     UPSTREAM_UNAVAILABLE = "upstream_unavailable"
     INTERNAL = "internal"
@@ -73,6 +75,22 @@ class QuotaExceededError(DWError):
     """
 
     code = ErrorCode.RATE_LIMITED
+
+
+class PayloadTooLargeError(DWError):
+    """The request carries more bytes than this operation accepts.
+
+    Its own code rather than ``validation_failed``: the client's answer is to
+    send something smaller, not to correct a field, and HTTP has a status for it.
+    """
+
+    code = ErrorCode.PAYLOAD_TOO_LARGE
+
+
+class UnsupportedMediaTypeError(DWError):
+    """The content is of a type this operation does not accept."""
+
+    code = ErrorCode.UNSUPPORTED_MEDIA_TYPE
 
 
 class ApprovalRequiredError(DWError):

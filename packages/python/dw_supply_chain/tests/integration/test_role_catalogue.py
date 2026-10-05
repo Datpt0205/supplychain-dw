@@ -32,6 +32,7 @@ _OPERATIONS = {
     "supply_chain.po_case.write",
     "supply_chain.supplier_update.write",
     "supply_chain.delay_impact.write",
+    handlers.DOCUMENT_WRITE,
 } | {handlers.duty_scope(duty) for duty in CaseDuty}
 _POLICY_WRITES = {
     "supply_chain.sla_policy.write",
@@ -108,6 +109,27 @@ async def test_everyone_running_cases_can_raise_and_clear_an_exception(
     exceptions = handlers.duty_scope(CaseDuty.EXCEPTIONS)
     for key in _OPERATING_ROLES:
         assert exceptions in catalogue[key], key
+
+
+async def test_every_role_reads_documents_and_only_the_operating_roles_add_them(
+    engine: AsyncEngine,
+) -> None:
+    """Whoever does a step uploads its paperwork; the process admin, who sets
+    the rules, does not (sod_sc_rules_vs_operations)."""
+    catalogue = await _catalogue(engine)
+    for key in _SC_ROLES:
+        assert handlers.DOCUMENT_READ in catalogue[key], key
+    writers = {key for key, scopes in catalogue.items() if handlers.DOCUMENT_WRITE in scopes}
+    assert writers == set(_OPERATING_ROLES)
+
+
+async def test_the_process_admin_cannot_also_hold_the_document_write(engine: AsyncEngine) -> None:
+    async with engine.connect() as conn:
+        right = await conn.scalar(
+            text("SELECT right_scopes FROM platform.sod_rules WHERE key = :k"),
+            {"k": "sod_sc_rules_vs_operations"},
+        )
+    assert handlers.DOCUMENT_WRITE in right
 
 
 async def test_supply_chain_roles_grant_nothing_outside_the_context(engine: AsyncEngine) -> None:

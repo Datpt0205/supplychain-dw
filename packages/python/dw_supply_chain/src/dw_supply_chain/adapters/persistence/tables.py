@@ -113,3 +113,23 @@ follow_ups = sa.Table(
     sa.Column("closed_by", UUID(as_uuid=True), nullable=True),
     sa.Column("close_note", sa.Text, nullable=True),
 )
+
+case_documents = sa.Table(
+    "case_documents",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("po_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("doc_type", sa.Text, nullable=False),
+    sa.Column("object_key", sa.Text, nullable=False),
+    sa.Column("filename", sa.Text, nullable=False),
+    sa.Column("content_type", sa.Text, nullable=False),
+    sa.Column("size_bytes", sa.BigInteger, nullable=False),
+    sa.Column("sha256", sa.Text, nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("uploaded_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "uploaded_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)

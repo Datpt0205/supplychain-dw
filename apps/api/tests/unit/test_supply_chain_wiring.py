@@ -94,3 +94,30 @@ def test_supply_chain_model_calls_run_on_the_configured_profile() -> None:
 def test_a_profile_nobody_registered_refuses_to_start() -> None:
     with pytest.raises(NotFoundError, match="model profile not registered"):
         build_container(_settings(model_profile="no_such_profile"))
+
+
+def test_case_documents_are_wired_from_their_settings() -> None:
+    """The cap and the bucket are read where they decide something: the
+    upload handler refuses past the cap, and every handler talks to the bucket
+    the worker also reads (offboarding, the orphan sweep)."""
+    settings = ApiSettings(
+        profile="test",
+        database_url="postgresql+asyncpg://wiring:wiring@localhost:5432/wiring",
+        auth_mode="dev",
+        dev_secret="wiring-test-secret-0123456789abcdef",
+        s3_endpoint_url="http://localhost:9000",
+        s3_access_key="wiring",
+        s3_secret_key="wiring",
+        model_provider="mock",
+        case_documents_bucket="docs-under-test",
+        case_document_max_bytes=4321,
+    )
+    container = build_container(settings)
+
+    upload = container.supply_chain_upload_case_document
+    download = container.supply_chain_download_case_document
+    assert upload is not None and download is not None
+    assert container.supply_chain_list_case_documents is not None
+    assert upload.max_bytes == 4321
+    assert getattr(upload.storage, "bucket", None) == "docs-under-test"
+    assert getattr(download.storage, "bucket", None) == "docs-under-test"

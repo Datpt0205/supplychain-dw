@@ -243,7 +243,9 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     container.object_storage = object_storage
     container.feedback_storage = build_attachment_storage(minio, settings)
 
-    if object_storage is None:
+    # `object_storage` is None exactly when `minio` is; both are named so the
+    # case-document storage below is built from a client known to exist.
+    if minio is None or object_storage is None:
         _LOG.warning("no object storage configured: the agent runtime is not wired")
         return container
 
@@ -519,6 +521,38 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         authz=authorization,
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
+    )
+    # Case documents (ADR 0021), in their own bucket on the same client. Like
+    # everything above they exist only where object storage does: the rest of
+    # the Supply Chain API is built from the runtime, which needs it too.
+    from dw_supply_chain.adapters.persistence.case_document_repository import (
+        SqlCaseDocumentRepository,
+    )
+    from dw_supply_chain.adapters.storage.minio_case_documents import (
+        MinioCaseDocumentStorage,
+    )
+    from dw_supply_chain.application.case_documents import (
+        DownloadCaseDocument,
+        ListCaseDocuments,
+        UploadCaseDocument,
+    )
+
+    document_repo = SqlCaseDocumentRepository(wiring.seam.session_factory)
+    document_storage = MinioCaseDocumentStorage(client=minio, bucket=settings.case_documents_bucket)
+    container.supply_chain_upload_case_document = UploadCaseDocument(
+        cases=po_case_repo,
+        documents=document_repo,
+        storage=document_storage,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+        max_bytes=settings.case_document_max_bytes,
+    )
+    container.supply_chain_list_case_documents = ListCaseDocuments(
+        cases=po_case_repo, documents=document_repo, authz=authorization
+    )
+    container.supply_chain_download_case_document = DownloadCaseDocument(
+        documents=document_repo, storage=document_storage, authz=authorization
     )
 
     # Build your context from `container.runtime` (the RuntimeSeam) and attach

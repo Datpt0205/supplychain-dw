@@ -37,6 +37,8 @@ from dw_worker.settings import WorkerSettings
 if TYPE_CHECKING:
     from minio import Minio
 
+    from dw_supply_chain.adapters.storage.minio_case_documents import MinioCaseDocumentStorage
+
 # The image sets DW_REPO_ROOT=/app; outside a container the checkout root is
 # four levels up from this file.
 REPO_ROOT = Path(os.environ.get("DW_REPO_ROOT", str(Path(__file__).resolve().parents[4])))
@@ -93,6 +95,26 @@ def build_feedback_bucket(settings: WorkerSettings) -> ObjectStoragePort:
 
     return MinioObjectStorageAdapter(
         client=_build_minio_client(settings), bucket=settings.feedback_bucket
+    )
+
+
+def build_case_documents_bucket(settings: WorkerSettings) -> ObjectStoragePort:
+    """Supply Chain's case-documents bucket, in the shape offboarding reads
+    every bucket through (the same reuse as `build_feedback_bucket`)."""
+    from dw_knowledge.adapters.minio_storage import MinioObjectStorageAdapter
+
+    return MinioObjectStorageAdapter(
+        client=_build_minio_client(settings), bucket=settings.case_documents_bucket
+    )
+
+
+def build_case_document_storage(settings: WorkerSettings) -> MinioCaseDocumentStorage:
+    """The same bucket through Supply Chain's own adapter, which lists with
+    each object's last-modified time: what the orphan sweep needs."""
+    from dw_supply_chain.adapters.storage.minio_case_documents import MinioCaseDocumentStorage
+
+    return MinioCaseDocumentStorage(
+        client=_build_minio_client(settings), bucket=settings.case_documents_bucket
     )
 
 

@@ -22,6 +22,7 @@ import {
   caseTransitionSchema,
   attentionItemSchema,
   followUpSchema,
+  caseDocumentSchema,
   portfolioSummarySchema,
   aiWorkResponseSchema,
   dailyBriefSchema,
@@ -63,6 +64,8 @@ import {
   type CaseTransition,
   type AttentionItem,
   type FollowUp,
+  type CaseDocument,
+  type DocumentType,
   type PortfolioSummary,
   type AIWorkResponse,
   type DataView,
@@ -303,6 +306,12 @@ const _followUpMirrorsTheRoute: [
   SameType<keyof FollowUp, keyof SupplyChainGenerated["FollowUpItemView"]>,
 ] = [true, true];
 void _followUpMirrorsTheRoute;
+
+const _caseDocumentMirrorsTheRoute: [
+  SameType<CaseDocument, SupplyChainGenerated["CaseDocumentView"]>,
+  SameType<keyof CaseDocument, keyof SupplyChainGenerated["CaseDocumentView"]>,
+] = [true, true];
+void _caseDocumentMirrorsTheRoute;
 
 export class ApiClient {
   constructor(private readonly options: ApiClientOptions) {}
@@ -1051,6 +1060,65 @@ export class ApiClient {
     );
   }
 
+  /** A PO case's documents, by type and newest version first. */
+  listCaseDocuments(caseId: string): Promise<CaseDocument[]> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/documents`,
+      z.array(caseDocumentSchema),
+    );
+  }
+
+  /**
+   * Attach a file to a PO case as the next version of `docType`. Multipart,
+   * so no Content-Type header: the browser sets the boundary. The
+   * `idempotencyKey` is minted once per press and reused on a retry of the
+   * same file, so a retry never adds a second version.
+   */
+  async uploadCaseDocument(
+    caseId: string,
+    input: { docType: DocumentType; file: File; idempotencyKey: string },
+  ): Promise<CaseDocument> {
+    const fetchImpl = this.options.fetchImpl ?? fetch;
+    const form = new FormData();
+    form.append("doc_type", input.docType);
+    form.append("file", input.file, input.file.name);
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "Idempotency-Key": input.idempotencyKey,
+    };
+    const token = await this.options.getAccessToken?.();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const response = await fetchImpl(
+      `${this.options.baseUrl}/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/documents`,
+      { method: "POST", headers, body: form },
+    );
+    const json: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const parsed = errorResponseSchema.safeParse(json);
+      throw new ApiError(
+        response.status,
+        parsed.success
+          ? parsed.data
+          : {
+              code: "internal",
+              message: `HTTP ${response.status}`,
+              details: {},
+            },
+      );
+    }
+    return caseDocumentSchema.parse(json);
+  }
+
+  /** One document's bytes, read with the session's token (read scope). */
+  async downloadCaseDocument(documentId: string): Promise<Blob> {
+    const response = await this.rawRequest(
+      "GET",
+      `/api/v1/supply-chain/documents/${encodeURIComponent(documentId)}/content`,
+    );
+    return response.blob();
+  }
+
   /** The tenant's open follow-ups, newest first; the caller's own marked. */
   listFollowUps(): Promise<FollowUp[]> {
     return this.request(
@@ -1141,4 +1209,6 @@ export type {
   PortfolioSummary,
   POCaseListFilter,
   AIWorkResponse,
+  CaseDocument,
+  DocumentType,
 };

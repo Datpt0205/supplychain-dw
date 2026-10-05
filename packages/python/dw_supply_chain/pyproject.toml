@@ -18,6 +18,9 @@ dependencies = [
     # Pinned to match dw_platform, which already owns policy-file loading
     # (retention_policy.py) — same reasoning as fastapi/langgraph above.
     "pyyaml>=6,<7",
+    # Case documents' bucket adapter (adapters/storage). Pinned to match
+    # dw_knowledge and the apps, which already own the S3 client.
+    "minio>=7.2,<8",
 ]
 
 [build-system]

@@ -98,6 +98,13 @@ class WorkerSettings(BaseSettings):
     feedback_bucket: str = Field(
         default="feedback", validation_alias=AliasChoices("DW_WORKER_FEEDBACK_BUCKET")
     )
+    # Same bucket dw_api writes case documents to (dw_api/settings.py's
+    # `case_documents_bucket`, ADR 0021): offboarding exports and deletes a
+    # tenant's documents there, and the orphan sweep clears keys no row holds.
+    case_documents_bucket: str = Field(
+        default="case-documents",
+        validation_alias=AliasChoices("DW_WORKER_CASE_DOCUMENTS_BUCKET", "CASE_DOCUMENTS_BUCKET"),
+    )
 
     # Which Qdrant collection this process reads and writes. Named explicitly
     # because the collection's vector width is fixed at creation: moving to a

@@ -14,10 +14,11 @@ import pytest
 from asgi_lifespan import LifespanManager
 
 from dw_api.bootstrap import ApiContainer
+from dw_api.dependencies.idempotency import IdempotentOperation, ReplayedResponse
 from dw_api.health import CheckState, HealthService
 from dw_api.main import create_app
 from dw_api.settings import ApiSettings
-from dw_kernel.errors import InfrastructureError
+from dw_kernel.errors import IdempotencyConflictError, InfrastructureError
 from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.identity.dev_token import DevTokenVerifier
 from dw_platform.application.access_context import AccessContext
@@ -295,3 +296,49 @@ async def test_an_over_long_key_is_refused_rather_than_truncated() -> None:
 
     assert response.status_code == 422
     assert repo.grants == 0
+
+
+async def test_an_operation_that_never_claimed_the_key_never_releases_it() -> None:
+    """A form route claims its key itself, after parsing. One that failed
+    before claiming must not free the reservation another in-flight request
+    holds under the same key, nor store an answer into it."""
+    store = MemoryStore()
+    idempotency = HttpIdempotency(store=store, clock=SystemClock())
+    context = AccessContext(
+        tenant_id=TENANT,
+        workspace_id=WORKSPACE,
+        principal_id=PRINCIPAL,
+        roles=frozenset(),
+        plan_id="professional",
+    )
+    holder = IdempotentOperation(idempotency, context, "shared", method="POST", target="/x")
+    await holder.claim_fields({"a": "1"})
+    bystander = IdempotentOperation(idempotency, context, "shared", method="POST", target="/x")
+
+    await bystander.abandon_unless_recorded()
+    assert (TENANT, "shared") in store.rows, "the holder's reservation must survive"
+
+    await bystander.record_no_content()
+    assert store.rows[(TENANT, "shared")].response is None, "nothing stored by a non-holder"
+
+
+async def test_claim_fields_fingerprints_the_fields_not_their_order() -> None:
+    store = MemoryStore()
+    idempotency = HttpIdempotency(store=store, clock=SystemClock())
+    context = AccessContext(
+        tenant_id=TENANT,
+        workspace_id=WORKSPACE,
+        principal_id=PRINCIPAL,
+        roles=frozenset(),
+        plan_id="professional",
+    )
+    first = IdempotentOperation(idempotency, context, "k", method="POST", target="/x")
+    await first.claim_fields({"a": "1", "b": "2"})
+    await first.record_no_content()
+
+    again = IdempotentOperation(idempotency, context, "k", method="POST", target="/x")
+    with pytest.raises(ReplayedResponse):
+        await again.claim_fields({"b": "2", "a": "1"})
+    other = IdempotentOperation(idempotency, context, "k", method="POST", target="/x")
+    with pytest.raises(IdempotencyConflictError):
+        await other.claim_fields({"a": "1", "b": "3"})

@@ -110,13 +110,18 @@ class _FrozenClock:
 
 
 def _lane(
-    store: _FakeStore, artifacts: _FakeBucket, exports: _FakeBucket, attachments: _FakeBucket
+    store: _FakeStore,
+    artifacts: _FakeBucket,
+    exports: _FakeBucket,
+    attachments: _FakeBucket,
+    case_documents: _FakeBucket | None = None,
 ) -> TenantOffboardingLane:
     return TenantOffboardingLane(
         store=store,
         artifacts=artifacts,
         exports=exports,
         attachments=attachments,
+        case_documents=case_documents or _FakeBucket("case-documents"),
         vector_index=_FakeVectorIndex(),
         clock=_FrozenClock(),
     )
@@ -148,6 +153,46 @@ async def test_run_exports_uploads_then_purges_in_order() -> None:
 
     statuses = [c[2] for c in store.calls if c[0] == "mark_status"]
     assert statuses == ["exporting", "purging", "completed"]
+
+
+async def test_both_tenant_prefixed_buckets_are_exported_and_emptied_for_that_tenant_only() -> None:
+    """Feedback attachments key as `feedback/{tenant}/...`, case documents as
+    `supply_chain/{tenant}/...` in their own bucket. Each is listed by its own
+    prefix, exported into the bundle and deleted; the other tenant's objects
+    stay, and so does a key that carries this tenant's id only as the start of
+    a longer segment, which a prefix without its trailing slash would take."""
+    mine_feedback = f"feedback/{TENANT}/ws/fb-1/att-1"
+    mine_doc = f"supply_chain/{TENANT}/ws/po/case-1/doc-1"
+    theirs = {
+        f"feedback/{OTHER_TENANT}/ws/fb-9/att-9": b"b-png",
+        f"feedback/{TENANT}x/ws/fb-8/att-8": b"b2-png",
+        f"supply_chain/{OTHER_TENANT}/ws/po/case-9/doc-9": b"b-pdf",
+        f"supply_chain/{TENANT}x/ws/po/case-8/doc-8": b"b2-pdf",
+    }
+    attachments = _FakeBucket(
+        "attachments",
+        objects={mine_feedback: b"a-png", **{k: v for k, v in theirs.items() if "feedback" in k}},
+    )
+    documents = _FakeBucket(
+        "case-documents",
+        objects={mine_doc: b"a-pdf", **{k: v for k, v in theirs.items() if "supply" in k}},
+    )
+    exports = _FakeBucket("exports")
+    lane = _lane(_FakeStore(claimed=[TENANT]), _FakeBucket("a"), exports, attachments, documents)
+
+    await lane.run(TENANT)
+
+    assert ("attachments", "list_objects", f"feedback/{TENANT}/") in attachments.calls
+    assert ("case-documents", "list_objects", f"supply_chain/{TENANT}/") in documents.calls
+    assert set(attachments.objects) | set(documents.objects) == set(theirs)
+    deleted = {c[2] for c in attachments.calls + documents.calls if c[1] == "delete_object"}
+    assert deleted == {mine_feedback, mine_doc}
+    (bundle,) = exports.objects.values()
+    with zipfile.ZipFile(BytesIO(bundle)) as zf:
+        names = set(zf.namelist())
+    assert f"blobs/attachments/{mine_feedback}" in names
+    assert f"blobs/case_documents/{mine_doc}" in names
+    assert not any(str(OTHER_TENANT) in n or f"{TENANT}x" in n for n in names)
 
 
 async def test_the_export_key_is_recorded_on_every_status_update_from_upload_onward() -> None:
@@ -187,13 +232,16 @@ def test_json_default_handles_every_type_a_row_can_hold() -> None:
 
 def test_build_bundle_contains_table_ndjson_and_both_blob_kinds() -> None:
     tables = [_ExportedTable("platform", "workspaces", [{"id": str(uuid.uuid4())}])]
-    bundle = _build_bundle(tables, {"art-1": b"artifact-bytes"}, {"att-1": b"attachment-bytes"})
+    bundle = _build_bundle(
+        tables, {"art-1": b"artifact-bytes"}, {"att-1": b"attachment-bytes"}, {"doc-1": b"pdf"}
+    )
 
     with zipfile.ZipFile(BytesIO(bundle)) as zf:
         names = set(zf.namelist())
         assert "tables/platform.workspaces.ndjson" in names
         assert "blobs/artifacts/art-1" in names
         assert "blobs/attachments/att-1" in names
+        assert "blobs/case_documents/doc-1" in names
         assert zf.read("blobs/artifacts/art-1") == b"artifact-bytes"
         row = json.loads(zf.read("tables/platform.workspaces.ndjson").decode().splitlines()[0])
         assert "id" in row

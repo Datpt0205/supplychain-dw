@@ -70,6 +70,11 @@ from dw_platform.application.ports import (
 )
 from dw_platform.application.provisioning import ProvisioningService
 from dw_platform.application.separation_of_duties import SeparationOfDutiesService
+from dw_supply_chain.application.case_documents import (
+    DownloadCaseDocument,
+    ListCaseDocuments,
+    UploadCaseDocument,
+)
 from dw_supply_chain.application.handlers import (
     AdvancePOCase,
     AnalyzeDelayImpact,
@@ -188,6 +193,12 @@ class ApiContainer:
     supply_chain_close_follow_up: CloseFollowUp | None = None
     supply_chain_get_follow_up_policy: GetFollowUpPolicy | None = None
     supply_chain_set_follow_up_policy_override: SetFollowUpPolicyOverride | None = None
+    # Case documents: their own router, mounted on its own guard rather than
+    # added to the chain above. Wired only where object storage exists, as is
+    # all of Supply Chain (it is built from the runtime, which needs it too).
+    supply_chain_upload_case_document: UploadCaseDocument | None = None
+    supply_chain_list_case_documents: ListCaseDocuments | None = None
+    supply_chain_download_case_document: DownloadCaseDocument | None = None
     # Holds one LISTEN connection for the process; started and stopped by the
     # app's lifespan, never by a request.
     run_events: RunStateListener | None = None

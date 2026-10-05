@@ -24,11 +24,13 @@ import {
   Skeleton,
 } from "@dw/ui";
 import { EmptyState } from "../../../../components/empty-state";
+import { CaseDocumentsCard } from "../../../../components/supply-chain/case-documents-card";
 import { PageHeading } from "../../../../components/page-heading";
 import { CaseStateBadge } from "../../../../components/supply-chain/case-state-badge";
 import { MissingUpdateBadge } from "../../../../components/supply-chain/missing-update-badge";
 import { SlaStatusBadge } from "../../../../components/supply-chain/sla-status-badge";
 import { SupplierEventBadge } from "../../../../components/supply-chain/supplier-event-badge";
+import { useAuth } from "../../../../lib/auth/auth-context";
 import { formatDateTime } from "../../../../lib/dates";
 import { apiClient } from "../../../../lib/session";
 import { useCachedResource } from "../../../../lib/use-cached-resource";
@@ -46,6 +48,7 @@ import { useCachedResource } from "../../../../lib/use-cached-resource";
  */
 export default function POCaseWorkspacePage() {
   const { id } = useParams<{ id: string }>();
+  const { hasScope } = useAuth();
 
   const caseResource = useCachedResource(
     `supply-chain:po-case:${id}`,
@@ -399,6 +402,12 @@ export default function POCaseWorkspacePage() {
               )}
             </CardContent>
           </Card>
+
+          <CaseDocumentsCard
+            caseKind="po"
+            caseId={id}
+            canUpload={hasScope("supply_chain.document.write")}
+          />
         </>
       )}
     </div>

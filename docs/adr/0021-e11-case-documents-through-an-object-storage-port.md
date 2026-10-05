@@ -55,3 +55,57 @@ nguyên văn.
 
 - Bước nào bắt buộc chứng từ nào là điểm mở (QE-02). Các lát giai đoạn 1 đòi chứng từ
   ở bước 3 (đạt), 4, 7 và 8 vì PDF ghi chúng là đầu ra; bước khác chưa đòi.
+
+## Sửa đổi 2026-10-05 (tạm, lát D; chờ Đạt duyệt ở QO-2)
+
+Các quyết định tạm của lead khi làm lát D. Chúng thay hoặc làm rõ phần Quyết định ở trên:
+
+1. **FK `ON DELETE CASCADE`, không `RESTRICT`.** FK là
+   `(tenant_id, workspace_id, po_case_id)` tới `po_cases (tenant_id, workspace_id, id)`,
+   có index riêng. `dw_app` chỉ có SELECT và INSERT trên `case_documents` (không UPDATE,
+   DELETE, TRUNCATE). Lý do: offboarding chỉ xóa bảng mà `dw_app` được DELETE, rồi xóa
+   `po_cases`; với `RESTRICT` cộng việc không có DELETE, lần xóa `po_cases` của một
+   tenant có chứng từ sẽ thất bại và offboarding kẹt. Cùng cách với `follow_ups`
+   (`dc2285c629d4`, `bc3f0c1279fd`). CASCADE từ `po_cases` là **đường duy nhất** một
+   dòng chứng từ rời bảng; không ai xóa tay được. Đối tượng trong bucket đi theo tiền tố
+   `supply_chain/{tenant_id}/` ở lane offboarding của worker. Còn mở: thời hạn lưu
+   chứng từ theo luật cho `payment_docs` và `deposit_docs` (thêm vào QE-02).
+2. **Workspace.** `case_documents` là bảng đầu tiên thu hẹp theo workspace, RLS ENABLE
+   và FORCE với đúng dạng của `CLAUDE.md`:
+   `tenant AND (workspace OR app.workspace_scope = 'tenant')`. Workspace của chứng từ
+   là workspace của hồ sơ:
+   thêm UNIQUE `(tenant_id, workspace_id, id)` trên `po_cases` cho FK ghép. Handler tải
+   lên và liệt kê đọc hồ sơ rồi trả 404 khi workspace của hồ sơ khác workspace của người
+   gọi, trước khi ghi bất kỳ đối tượng nào. RLS của `po_cases` không đổi (chỉ theo tenant).
+3. **`po_case_id` NOT NULL ở lát D.** S1 bỏ NOT NULL, thêm `product_dev_case_id` và CHECK
+   đúng một FK khác NULL. Có sẵn UNIQUE `(tenant_id, workspace_id, id)` trên
+   `case_documents` cho FK ghép của các bảng S1.
+4. **Bucket riêng** `case-documents` (setting `case_documents_bucket`, biến môi trường
+   chung `CASE_DOCUMENTS_BUCKET`; compose truyền cùng một biến cho `s3-setup`, `api` và
+   `worker`, và `s3-setup` tạo sẵn bucket). Khóa là
+   `supply_chain/{tenant_id}/{workspace_id}/po/{case_id}/{document_id}`; `{case_kind}`
+   của khóa là `po` ở lát này. CHECK `ck_case_documents_object_key` buộc khóa đúng bằng
+   khóa dựng từ chính các id của dòng.
+5. **Quét mồ côi là lane riêng** `supply_chain_document_orphans` của worker, chạy theo
+   nhịp retention (mỗi giờ), không nằm trong lane `retention`. Mỗi lượt đọc một trang có
+   giới hạn; với khóa cũ hơn một ngày, đọc tenant và workspace từ chính khóa, hỏi
+   database trong phiên tenant thường (không policy chéo tenant, không
+   `app.workspace_scope`), xóa khi không có dòng. Khóa không đọc được thì ghi log và bỏ
+   qua, không bao giờ xóa.
+6. **Lỗi:** quá trần là 413 (`payload_too_large`), loại file ngoài danh sách hoặc nội
+   dung không khớp loại đã khai là 415 (`unsupported_media_type`). Loại file quyết bằng
+   `content_type` khai báo cùng chữ ký đầu file (PDF, PNG, JPEG, ZIP cho XLSX/DOCX, OLE
+   cho MSG); EML không có chữ ký, nhận theo loại khai báo. Trần mặc định 25 MiB
+   (`case_document_max_bytes`). FastAPI parse form trước mọi dependency, kể cả xác
+   thực, và Starlette ghi cả phần file ra file tạm; vì vậy route tải lên từ chối bằng
+   413 ngay từ header, trước khi parse, khi `Content-Length` vượt trần cộng 64 KiB cho
+   khung multipart hoặc khi thân không khai độ dài (chunked). Handler giữ đúng trần trên
+   chính file.
+7. **Tải xuống** đọc cả file vào bộ nhớ (dưới trần), port không có đọc dạng stream. Phản
+   hồi luôn là `attachment` với `filename*` (RFC 5987) và tên ASCII dự phòng,
+   `X-Content-Type-Options: nosniff`, `Content-Type` là loại đã lưu. Tải xuống không
+   ghi audit (không bản ghi nào cùng loại có audit khi đọc); tải lên ghi audit trong
+   cùng giao dịch với dòng.
+8. **Scope:** `supply_chain.document.read` cho cả bảy vai `sc_*`;
+   `supply_chain.document.write` cho năm vai vận hành, và nằm ở phía vận hành của
+   `sod_sc_rules_vs_operations`, nên `sc_process_admin` không tải lên được.

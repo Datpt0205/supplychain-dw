@@ -56,7 +56,7 @@ means platform code, an upstream candidate (ADR 0011).
 | Z6    | `zalo-channel/issues/06-read-only-qa.md`                            | partly  | ready-for-agent | Z4                                  |
 | ZL    | `zalo-channel/issues/07-live-run.md`                                | —       | ready-for-human | Z1–Z6, H2                           |
 | A     | `approval-decider-scope/issues/01-required-scope.md`                | yes     | resolved        | P                                   |
-| D     | `case-documents/issues/01-case-documents.md`                        | no      | ready-for-agent | P                                   |
+| D     | `case-documents/issues/01-case-documents.md`                        | no      | resolved        | P                                   |
 | S1    | `stage-1/issues/01-product-case-steps-1-5.md`                       | no      | ready-for-agent | P, D                                |
 | S2    | `stage-1/issues/02-bod-review-step-6.md`                            | no      | ready-for-agent | S1, A                               |
 | S3    | `stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`     | no      | ready-for-agent | S2                                  |
@@ -86,10 +86,12 @@ email as a second channel.
 
 ## Slice log
 
-| Slice  | Commit    | What                                                                     |
-| ------ | --------- | ------------------------------------------------------------------------ |
-| P, ENV | `c2f04dc` | Port of `dw_supply_chain` onto the current platform; Elmich environment. |
-| U, Z1  | `51c0ef7` | Per-user login on 3200, `/settings`, Zalo link with a single-use token.  |
+| Slice  | Commit        | What                                                                                                       |
+| ------ | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| P, ENV | `c2f04dc`     | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                   |
+| U, Z1  | `51c0ef7`     | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                    |
+| A      | `dabf5c4`     | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                       |
+| D      | (this commit) | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep. |
 
 ## Open — named, not fixed, still true after the port
 
@@ -173,7 +175,9 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
   bước duyệt: BGĐ duyệt mẫu (bước 6), TP Cung ứng xác nhận (bước 8), trình ký
   (bước 9).
 - **QE-02** Bộ phận lập và bộ phận nhận của từng tài liệu ở mục 2; bước nào bắt
-  buộc có tài liệu nào trước khi đi tiếp.
+  buộc có tài liệu nào trước khi đi tiếp. Chứng từ thanh toán, đặt cọc phải lưu
+  tối thiểu bao lâu theo luật (hôm nay một chứng từ chỉ bị xóa khi cả hồ sơ bị xóa
+  lúc offboarding)?
 - **QE-03** Sơ đồ chi tiết và sơ đồ con bước 12 có đúng không; vì sao dòng sơ đồ
   bỏ qua bước 6; ai làm và SLA của từng bước con bước 12.
 - **QE-04** Các con số SLA đã áp dụng thực tế hay còn là đề xuất.

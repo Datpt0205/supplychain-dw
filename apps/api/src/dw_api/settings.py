@@ -126,6 +126,22 @@ class ApiSettings(BaseSettings):
     feedback_bucket: str = Field(
         default="feedback", validation_alias=AliasChoices("DW_API_FEEDBACK_BUCKET")
     )
+    # Supply Chain case documents (ADR 0021): a bucket of their own, the same
+    # name the worker reads (`dw_worker.settings.case_documents_bucket`) for
+    # offboarding and the orphan sweep.
+    case_documents_bucket: str = Field(
+        default="case-documents",
+        validation_alias=AliasChoices("DW_API_CASE_DOCUMENTS_BUCKET", "CASE_DOCUMENTS_BUCKET"),
+    )
+    # The largest case document one upload may carry. The upload route refuses
+    # a request body over it (plus the multipart framing) from its headers,
+    # before the form is parsed, and holds at most one byte past it in memory.
+    case_document_max_bytes: int = Field(
+        default=25 * 1024 * 1024,
+        ge=1,
+        le=200 * 1024 * 1024,
+        validation_alias=AliasChoices("DW_API_CASE_DOCUMENT_MAX_BYTES"),
+    )
 
     # --- vector store ---
     qdrant_url: str | None = Field(
