@@ -2,70 +2,60 @@
 
 `.claude/hooks/session-start.sh` reads this file whole at session start and
 warns past 80 lines, because an index that grows stops being read. It holds
-four things: where each area stands, what is next, what Đạt still owes, and
-how a feature is checked. Detail lives in the area file. History lives in
-git: every slice's commit message, and the pre-split narrative at
-`git show 84e3f6a:.claude/PLAN.md`.
+four things: where each area stands, what is next, what is still owed, and how
+a feature is checked. Detail lives in the area file; history lives in git.
 
 ## Areas
 
-| Area                               | File                                | State                   |
-| ---------------------------------- | ----------------------------------- | ----------------------- |
-| Ops hardening                      | `.claude/plans/ops-hardening.md`    | Done; numbers owed      |
-| Agent runtime and memory (Mốc 0–6) | `.claude/plans/platform-runtime.md` | Done but for named gaps |
-| Web UI shell (Ant Design v6)       | `.claude/plans/web-ui.md`           | Shell done; 03–09 next  |
+| Area                                      | File                                | State                    |
+| ----------------------------------------- | ----------------------------------- | ------------------------ |
+| Supply chain (Elmich), this product       | `.claude/plans/supply-chain.md`     | Port running; 22 tickets |
+| Ops hardening (inherited from `codebase`) | `.claude/plans/ops-hardening.md`    | Done; numbers owed       |
+| Agent runtime, memory (inherited)         | `.claude/plans/platform-runtime.md` | Done but for named gaps  |
+| Web UI shell, Ant Design v6 (inherited)   | `.claude/plans/web-ui.md`           | Shell done; 03–09 next   |
 
-After working in an area, update its file. Update this index only when an
-area's state, the next step or a decision owed changes. A new area gets its
-own file and a row here.
+Inherited areas came with the platform seed (`codebase` `main`, `bf553f4`) and
+change here only when work in this repo touches them; their upstream copy is
+the reference after each `git merge platform/main`.
 
-## Now (2026-09-29)
+## Now (2026-10-05)
 
-- **This repo is the platform seed, with no bounded context.** It is what a
-  product starts from. The Supply Chain context was built here, then removed
-  on 2026-09-29 when Đạt chose another direction. The platform work it
-  produced stayed: notifications, separation of duties and waivers, policy
-  overrides, the model-profile fixes, and the antd decision.
-  `platform-runtime.md` lists the pieces still waiting for a first caller.
-- **Products live in their own repos.** The first is E-HSDT bid preparation
-  for contractors, in `https://github.com/Datpt0205/platform-bidding`. Its
-  plans and research live there, not here.
-- **Next:** the rest of the antd shell tickets (`web-ui/antd-shell/`
-  03–09: dates, money, UI test projects, feedback, theme and shared pieces).
+- **This is the Elmich product repo** (`supplychain-dw`), built on the
+  platform seed. Everything is built here; generic pieces stay in platform
+  packages to upstream later (ADR 0011). Scope: Part A of Elmich's process,
+  17 steps (`docs/products/elmich/process.md`).
+- **Steps 10–17** come from the archived context (port, slice P, in its first
+  build session). **Steps 1–9** are designed (ADR 0016–0021) and ticketed.
+- **Next:** finish P; then ENV; then Z1, A, D in parallel; then stage 1 in
+  order S1 → S7. Full table in `supply-chain.md`, "Slices".
 
-## Decisions Đạt owes
+## Decisions owed
 
-- **Runtime:**
-    - a plan quota on direct model calls (`runs_per_day`/`spend_usd_per_day`
-      are enforced only in the runner);
-    - the model profile and key for uat/production (local runs on `luna`,
-      gpt-5.6-luna, `make check-model`; the key is only in local `.env`);
-    - whether CI runs the web vitest suite and the Playwright specs, the
-      antd layer-order spec among them (`web-ui/antd-shell` ticket 10).
-- **Ops:**
-    - spend guard dollar thresholds per plan;
-    - a retention term for offboarding export bundles;
-    - how many superseded document versions to keep.
-- **Platform:**
-    - backfill ADRs with a status (`docs/agents/domain.md`): 46 citations of
-      ADR-001..003 point at documents this repo never had.
+- **Elmich:** QE-01–QE-19 in `supply-chain.md` (SLA numbers and clocks,
+  documents per step, revision loop, sign-off order, item code and SKU format,
+  categories, PIC reassignment, Zalo events).
+- **Đạt, product:** QO-1–QO-6 in `supply-chain.md` (sales-dev database and the
+  re-pointed migrations; review ADR 0011–0023; realm SMTP; login branding;
+  upstream timing; deferring step 14's container loading).
+- **Đạt, inherited from the platform:**
+    - a plan quota on direct model calls; the model profile and key for
+      uat/production; whether CI runs the web vitest and Playwright suites;
+    - spend guard thresholds per plan; a retention term for offboarding
+      bundles; how many superseded document versions to keep;
+    - backfill ADRs: code cites ADR-001..003, which this repo never had.
 
 ## How a feature is checked here
 
-1. `scripts/verify_invariants.py`: mechanical checks, run in CI and in the
-   commit hook.
-2. `.claude/hooks/pre-commit-gate.sh`: runs layer 1, then asks only the
-   questions this diff earns.
-3. `.claude/skills/reviewing-feature-security/`:
-    - six trust boundaries, with a negative test at each;
-    - a mutation check;
-    - run before calling a feature done, without being asked.
+1. `scripts/verify_invariants.py`: mechanical checks, in CI and the commit hook.
+2. `.claude/hooks/pre-commit-gate.sh`: layer 1, then the questions this diff
+   earns.
+3. `.claude/skills/reviewing-feature-security/`: six trust boundaries, a
+   negative test at each, a mutation check; run before calling a feature done.
 4. `.claude/skills/reviewing-deployment-security/`: deployed-profile exposure,
    secrets, CORS, outbound URLs, and a scan of every new image.
-5. `mattpocock-skills` (`/ask-matt` routes): the flow from grilling to
-   `/implement` and `/code-review`; `CLAUDE.md` "Agent skills" places
-   layers 1–4 inside it.
+5. `mattpocock-skills` (`/ask-matt`): grilling to `/implement` and
+   `/code-review`; `CLAUDE.md` "Agent skills" places layers 1–4 inside it.
 
-`.claude/rules/failure-modes.md` holds the counts behind layers 1–3. Layer 2
-guarantees the questions get raised, not that they get answered truthfully.
-No layer replaces running the thing.
+`.claude/rules/failure-modes.md` holds the counts behind layers 1–3; UI work
+also answers to `.claude/rules/ui-quality.md`. No layer replaces running the
+thing.

@@ -1,5 +1,10 @@
 # Web UI shell
 
+> **Inherited from `codebase`** (platform seed, `main` `bf553f4`, merged into this
+> product repo as `platform/main`). It changes here only when work in this repo
+> touches the area; after each `git merge platform/main` the upstream copy is the
+> reference. Product work lives in `.claude/plans/supply-chain.md`.
+
 `apps/web` and the shared `@dw/ui` package. CLAUDE.md's "Required stack"
 names **Next.js, TypeScript strict, Tailwind, shadcn/ui** and "one shared UI
 shell". Changing either is an architecture decision that has to be recorded

@@ -1,5 +1,10 @@
 # Agent runtime and memory milestones (Mốc 0–6)
 
+> **Inherited from `codebase`** (platform seed, `main` `bf553f4`, merged into this
+> product repo as `platform/main`). It changes here only when work in this repo
+> touches the area; after each `git merge platform/main` the upstream copy is the
+> reference. Product work lives in `.claude/plans/supply-chain.md`.
+
 The platform's own agent runtime, built before any bounded context existed.
 The full narrative is at `git show 84e3f6a:.claude/PLAN.md`, sections "Mốc 3",
 "Next after that", "Decisions still open" and "Done".

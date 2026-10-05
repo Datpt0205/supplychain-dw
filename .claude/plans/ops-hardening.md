@@ -1,5 +1,10 @@
 # Ops hardening
 
+> **Inherited from `codebase`** (platform seed, `main` `bf553f4`, merged into this
+> product repo as `platform/main`). It changes here only when work in this repo
+> touches the area; after each `git merge platform/main` the upstream copy is the
+> reference. Product work lives in `.claude/plans/supply-chain.md`.
+
 A platform status review on 2026-09-22 found six gaps an enterprise buyer would
 ask about. Đạt chose to close five of them before picking the first bounded
 context. All five are done and on `main`. The full narrative is at
