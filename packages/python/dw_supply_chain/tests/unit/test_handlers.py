@@ -48,6 +48,7 @@ from dw_supply_chain.application.handlers import (
     GetMissingUpdateStatus,
     GetPOCase,
     GetPortfolioSummary,
+    GetProductActionDuties,
     GetSLAEvaluation,
     GetSLAPolicy,
     ListCaseTransitions,
@@ -57,6 +58,7 @@ from dw_supply_chain.application.handlers import (
     SetActionDutiesOverride,
     SetApprovalMatrixOverride,
     SetBriefPolicyOverride,
+    SetProductActionDutiesOverride,
     SetSLAPolicyOverride,
     SubmitSupplierUpdate,
     SummarizeDailyBrief,
@@ -88,6 +90,7 @@ from dw_supply_chain.domain.supplier_update import (
     SupplierUpdateExtraction,
     SupplierUpdateId,
 )
+from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.sla_policy import (
     SLAConfirmationStatus,
     SLAMilestone,
@@ -108,6 +111,12 @@ _SHIPPED_ACTION_DUTIES = (
     / "configs"
     / "policies"
     / "supply_chain_action_duties@1.0.0.yaml"
+)
+_SHIPPED_PRODUCT_ACTION_DUTIES = (
+    Path(__file__).resolve().parents[5]
+    / "configs"
+    / "policies"
+    / "supply_chain_product_action_duties@1.0.0.yaml"
 )
 _SUPPLIER_UPDATE_SCOPES = frozenset(
     {"supply_chain.supplier_update.read", "supply_chain.supplier_update.write"}
@@ -2789,6 +2798,27 @@ async def test_action_duties_handlers_refuse_without_their_scopes() -> None:
         ).handle(_context(scopes=frozenset()))
     with pytest.raises(PermissionDeniedError):
         await SetActionDutiesOverride(
+            policy_override_repo=overrides,
+            authz=ScopeAuthorizationService(),
+            ids=Uuid4Generator(),
+            clock=FixedClock(_NOW),
+        ).handle(_context(scopes=frozenset({"supply_chain.action_duties.read"})), shipped)
+    assert overrides.by_tenant_and_policy == {}
+
+
+async def test_product_action_duties_handlers_refuse_without_their_scopes() -> None:
+    # Setting this mapping decides who may take every product step, so the
+    # refusal is pinned where the write happens, not only at the route.
+    overrides = FakePolicyOverrideRepository()
+    shipped = load_supply_chain_product_action_duties(_SHIPPED_PRODUCT_ACTION_DUTIES)
+    with pytest.raises(PermissionDeniedError):
+        await GetProductActionDuties(
+            policy_override_repo=overrides,
+            platform_default_duties=shipped,
+            authz=ScopeAuthorizationService(),
+        ).handle(_context(scopes=frozenset()))
+    with pytest.raises(PermissionDeniedError):
+        await SetProductActionDutiesOverride(
             policy_override_repo=overrides,
             authz=ScopeAuthorizationService(),
             ids=Uuid4Generator(),

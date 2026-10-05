@@ -80,16 +80,17 @@ def _case(tenant: uuid.UUID = TENANT, workspace: uuid.UUID = WORKSPACE) -> POCas
 
 
 class FakeCases:
-    """`get` the way the real repository answers it: tenant-scoped only."""
+    """`case_workspace` the way the PO repository answers it: tenant-scoped
+    only, so the handler's own workspace check is what is under test."""
 
     def __init__(self, *cases: POCase) -> None:
         self.by_id = {case.id.value: case for case in cases}
 
-    async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
-        case = self.by_id.get(case_id.value)
+    async def case_workspace(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
+        case = self.by_id.get(case_id)
         if case is None or case.tenant_id.value != context.tenant_id:
             return None
-        return case
+        return case.workspace_id.value
 
 
 @dataclass
@@ -120,7 +121,7 @@ class FakeDocuments:
             id=document.id,
             tenant_id=context.tenant_id,
             workspace_id=context.workspace_id,
-            case_kind=CaseKind.PO,
+            case_kind=document.case_kind,
             case_id=document.case_id,
             doc_type=document.doc_type,
             object_key=document.object_key,
@@ -136,8 +137,14 @@ class FakeDocuments:
         self.audits.append(audit)
         return row
 
-    async def list_for_case(self, context: AccessContext, case_id: uuid.UUID) -> list[CaseDocument]:
-        rows = [r for r in self.rows if self._visible(context, r) and r.case_id == case_id]
+    async def list_for_case(
+        self, context: AccessContext, case_kind: CaseKind, case_id: uuid.UUID
+    ) -> list[CaseDocument]:
+        rows = [
+            r
+            for r in self.rows
+            if self._visible(context, r) and r.case_kind is case_kind and r.case_id == case_id
+        ]
         return sorted(rows, key=lambda r: (r.doc_type.value, -r.version))
 
     async def get(self, context: AccessContext, document_id: CaseDocumentId) -> CaseDocument | None:
@@ -185,7 +192,7 @@ def _stack(*cases: POCase) -> Stack:
         documents=documents,
         bucket=bucket,
         upload=UploadCaseDocument(
-            cases=lookup,
+            cases={CaseKind.PO: lookup},
             documents=documents,
             storage=bucket,
             authz=authz,
@@ -193,7 +200,7 @@ def _stack(*cases: POCase) -> Stack:
             clock=FixedClock(NOW),
             max_bytes=MAX_BYTES,
         ),
-        list=ListCaseDocuments(cases=lookup, documents=documents, authz=authz),
+        list=ListCaseDocuments(cases={CaseKind.PO: lookup}, documents=documents, authz=authz),
         download=DownloadCaseDocument(documents=documents, storage=bucket, authz=authz),
     )
 
@@ -210,7 +217,8 @@ async def _upload(
 ) -> CaseDocument:
     return await stack.upload.handle(
         context or _context(),
-        case.id,
+        CaseKind.PO,
+        case.id.value,
         doc_type=doc_type,
         filename=filename,
         declared_content_type=content_type,
@@ -266,7 +274,8 @@ async def test_the_audit_event_names_the_uploader_and_the_document() -> None:
     assert audit.actor_id.value == context.principal_id
     assert audit.tenant_id.value == TENANT and audit.workspace_id.value == WORKSPACE
     assert audit.resource_id == str(document.id)
-    assert audit.details["po_case_id"] == str(case.id)
+    assert audit.details["case_id"] == str(case.id)
+    assert audit.details["case_kind"] == "po"
     assert audit.details["doc_type"] == "purchase_order"
     assert audit.occurred_at == NOW
 
@@ -365,7 +374,9 @@ async def test_listing_returns_the_cases_documents() -> None:
     await _upload(stack, case)
     await _upload(stack, case)
 
-    listed = await stack.list.handle(_context(scopes=frozenset({DOCUMENT_READ})), case.id)
+    listed = await stack.list.handle(
+        _context(scopes=frozenset({DOCUMENT_READ})), CaseKind.PO, case.id.value
+    )
 
     assert [d.version for d in listed] == [2, 1]
 
@@ -375,7 +386,7 @@ async def test_listing_needs_the_read_scope() -> None:
     stack = _stack(case)
 
     with pytest.raises(PermissionDeniedError):
-        await stack.list.handle(_context(scopes=frozenset()), case.id)
+        await stack.list.handle(_context(scopes=frozenset()), CaseKind.PO, case.id.value)
 
 
 @pytest.mark.parametrize(
@@ -388,7 +399,7 @@ async def test_listing_another_tenants_or_workspaces_case_is_not_found(
     stack = _stack(case)
 
     with pytest.raises(NotFoundError):
-        await stack.list.handle(_context(), case.id)
+        await stack.list.handle(_context(), CaseKind.PO, case.id.value)
 
 
 async def test_a_download_returns_the_record_and_its_bytes() -> None:

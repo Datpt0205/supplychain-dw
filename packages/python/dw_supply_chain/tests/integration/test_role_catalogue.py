@@ -26,13 +26,22 @@ from dw_supply_chain.application import handlers
 
 pytestmark = pytest.mark.integration
 
-_OPERATING_ROLES = ("sc_operator", "sc_finance", "sc_qc", "sc_logistics", "sc_warehouse")
+# The roles that run PO cases; each also raises and clears exceptions.
+_PO_OPERATING_ROLES = (
+    "sc_operator",
+    "sc_finance",
+    "sc_qc",
+    "sc_logistics",
+    "sc_warehouse",
+)
+_OPERATING_ROLES = (*_PO_OPERATING_ROLES, "sc_rnd")
 _SC_ROLES = ("sc_viewer", *_OPERATING_ROLES, "sc_process_admin")
 _OPERATIONS = {
     "supply_chain.po_case.write",
     "supply_chain.supplier_update.write",
     "supply_chain.delay_impact.write",
     handlers.DOCUMENT_WRITE,
+    handlers.PRODUCT_CASE_WRITE,
 } | {handlers.duty_scope(duty) for duty in CaseDuty}
 _POLICY_WRITES = {
     "supply_chain.sla_policy.write",
@@ -104,10 +113,13 @@ async def test_every_supply_chain_role_can_at_least_read(engine: AsyncEngine) ->
 async def test_everyone_running_cases_can_raise_and_clear_an_exception(
     engine: AsyncEngine,
 ) -> None:
-    """A QC inspector who finds the line blocked must be able to say so."""
+    """A QC inspector who finds the line blocked must be able to say so.
+    `sc_rnd` is not among them: the exceptions duty is shared by both case
+    kinds, and R&D runs no PO step (lead decision 8,
+    `test_rnd_holds_exactly_the_viewer_its_duty_and_the_document_write`)."""
     catalogue = await _catalogue(engine)
     exceptions = handlers.duty_scope(CaseDuty.EXCEPTIONS)
-    for key in _OPERATING_ROLES:
+    for key in _PO_OPERATING_ROLES:
         assert exceptions in catalogue[key], key
 
 
@@ -123,13 +135,63 @@ async def test_every_role_reads_documents_and_only_the_operating_roles_add_them(
     assert writers == set(_OPERATING_ROLES)
 
 
-async def test_the_process_admin_cannot_also_hold_the_document_write(engine: AsyncEngine) -> None:
+async def test_the_process_admin_cannot_also_hold_any_operation(engine: AsyncEngine) -> None:
+    """The rule's operations side names every operation scope, every duty
+    included (the document write, and `duty.rnd` from 7c422b849fe9), so a
+    future role granting one duty alone still meets the rule. Asked of the
+    rule's own row: a role-pair test passes on whichever other operation
+    scope the role happens to hold as well."""
     async with engine.connect() as conn:
         right = await conn.scalar(
             text("SELECT right_scopes FROM platform.sod_rules WHERE key = :k"),
             {"k": "sod_sc_rules_vs_operations"},
         )
-    assert handlers.DOCUMENT_WRITE in right
+    assert _OPERATIONS - set(right) == set()
+
+
+async def test_every_role_reads_product_cases(engine: AsyncEngine) -> None:
+    """Stage 1: every holder of the read sees every product case of its
+    workspace; the PIC filter only narrows (QE-18)."""
+    catalogue = await _catalogue(engine)
+    for key in _SC_ROLES:
+        assert handlers.PRODUCT_CASE_READ in catalogue[key], key
+
+
+async def test_rnd_tests_samples_and_does_not_order(engine: AsyncEngine) -> None:
+    """`sc_rnd` holds the R&D duty and only it of the step duties: it may
+    not propose or request a sample (ordering), and nobody else tests one."""
+    catalogue = await _catalogue(engine)
+    rnd = handlers.duty_scope(CaseDuty.RND)
+    assert rnd in catalogue["sc_rnd"]
+    assert handlers.duty_scope(CaseDuty.ORDERING) not in catalogue["sc_rnd"]
+    assert {key for key, scopes in catalogue.items() if rnd in scopes} == {"sc_rnd"}
+    assert catalogue["sc_viewer"] <= catalogue["sc_rnd"]
+
+
+async def test_rnd_holds_exactly_the_viewer_its_duty_and_the_document_write(
+    engine: AsyncEngine,
+) -> None:
+    """Lead decision 8, whole: viewer (which carries the document and
+    product-case reads), `duty.rnd`, the document write, and nothing else. In
+    particular not `duty.exceptions`, which would let R&D pause, block and
+    resume PO cases: that duty is not split by case kind."""
+    catalogue = await _catalogue(engine)
+    assert {handlers.DOCUMENT_READ, handlers.PRODUCT_CASE_READ} <= catalogue["sc_viewer"]
+    assert catalogue["sc_rnd"] == catalogue["sc_viewer"] | {
+        handlers.duty_scope(CaseDuty.RND),
+        handlers.DOCUMENT_WRITE,
+    }
+
+
+async def test_whoever_opens_a_po_case_opens_a_product_case_and_nobody_else(
+    engine: AsyncEngine,
+) -> None:
+    """Lead decision 9: opening a product case has its own write, held by the
+    roles that hold the PO write (today `sc_operator`)."""
+    catalogue = await _catalogue(engine)
+    openers = {key for key, scopes in catalogue.items() if handlers.PRODUCT_CASE_WRITE in scopes}
+    assert openers == {key for key, scopes in catalogue.items() if handlers.PO_CASE_WRITE in scopes}
+    assert openers == {"sc_operator"}
 
 
 async def test_supply_chain_roles_grant_nothing_outside_the_context(engine: AsyncEngine) -> None:
@@ -169,6 +231,9 @@ async def test_conflicting_roles_cannot_meet_in_one_membership(
         ("sc_logistics", "sc_warehouse"),
         ("sc_qc", "sc_logistics"),
         ("sc_viewer", "sc_process_admin"),
+        # No ordering-vs-R&D rule until Elmich answers QE-16.
+        ("sc_rnd", "sc_operator"),
+        ("sc_rnd", "sc_qc"),
     ],
 )
 async def test_roles_without_a_conflict_can_be_held_together(

@@ -360,10 +360,15 @@ export const documentTypeSchema = z.enum([
 ]);
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 
+/** Which kind of case a document belongs to; the API's `CaseKind`. */
+export const caseKindSchema = z.enum(["po", "product"]);
+export type CaseKind = z.infer<typeof caseKindSchema>;
+
 /** Mirrors `CaseDocumentView`. The object key never leaves the server. */
 export const caseDocumentSchema = z.object({
   id: z.string(),
-  po_case_id: z.string(),
+  case_kind: caseKindSchema,
+  case_id: z.string(),
   doc_type: documentTypeSchema,
   filename: z.string(),
   content_type: z.string(),
@@ -374,3 +379,139 @@ export const caseDocumentSchema = z.object({
   uploaded_at: z.string(),
 });
 export type CaseDocument = z.infer<typeof caseDocumentSchema>;
+
+// ---- product-development cases (stage 1, ADR 0016) ---------------------------
+
+/** The API's `ProductDevState`: the states stage-1 ticket 01 reaches. */
+export const productDevStateSchema = z.enum([
+  "proposed",
+  "sample_requested",
+  "sample_testing",
+  "revision_requested",
+  "pending_bod_review",
+  "waiting_external",
+  "blocked",
+  "manual_review",
+  "cancelled",
+]);
+export type ProductDevState = z.infer<typeof productDevStateSchema>;
+
+/** The API's `ProductAction`. Its own set, never `CaseAction`'s. */
+export const productActionSchema = z.enum([
+  "propose",
+  "request_sample",
+  "receive_sample",
+  "pass_sample",
+  "request_revision",
+  "receive_revised_sample",
+  "reject_sample",
+  "wait_for_external",
+  "flag_blocked",
+  "flag_manual_review",
+  "resume",
+  "cancel",
+]);
+export type ProductAction = z.infer<typeof productActionSchema>;
+
+export const sampleResultSchema = z.enum([
+  "passed",
+  "needs_revision",
+  "rejected",
+]);
+export type SampleResult = z.infer<typeof sampleResultSchema>;
+
+/** Mirrors `ProductCaseView`. */
+export const productCaseSchema = z.object({
+  id: z.string(),
+  proposal_code: z.string(),
+  product_name: z.string(),
+  category: z.string(),
+  supplier_name: z.string().nullable(),
+  pic_user_id: z.string(),
+  state: productDevStateSchema,
+  interrupted_state: productDevStateSchema.nullable(),
+  sample_round: z.number().int(),
+  created_by: z.string(),
+  created_at: z.string().nullable(),
+  version: z.number().int(),
+});
+export type ProductCase = z.infer<typeof productCaseSchema>;
+
+export const sampleRoundSchema = z.object({
+  round_no: z.number().int(),
+  opened_at: z.string(),
+  opened_by: z.string(),
+  result: sampleResultSchema.nullable(),
+  evaluation_document_id: z.string().nullable(),
+  closed_at: z.string().nullable(),
+  closed_by: z.string().nullable(),
+  revision_document_id: z.string().nullable(),
+  requested_changes: z.string().nullable(),
+});
+export type SampleRound = z.infer<typeof sampleRoundSchema>;
+
+/** Mirrors `ProductActionOptionView`: a step the case accepts now, what it
+ * must carry, and the scope its duty needs. The server decides all of it; a
+ * page draws its button and form from it and checks nothing of its own. */
+export const productActionOptionSchema = z.object({
+  action: productActionSchema,
+  required_scope: z.string(),
+  reason_required: z.boolean(),
+  takes_supplier: z.boolean(),
+  document_type: documentTypeSchema.nullable(),
+  document_required: z.boolean(),
+});
+export type ProductActionOption = z.infer<typeof productActionOptionSchema>;
+
+/** Mirrors `ProductCaseDetailView`: the case, its sample rounds, its steps. */
+export const productCaseDetailSchema = productCaseSchema.extend({
+  rounds: z.array(sampleRoundSchema),
+  actions: z.array(productActionOptionSchema),
+});
+export type ProductCaseDetail = z.infer<typeof productCaseDetailSchema>;
+
+/** One row of a product case's history, oldest first. */
+export const productCaseTransitionSchema = z.object({
+  action: productActionSchema,
+  from_state: productDevStateSchema.nullable(),
+  to_state: productDevStateSchema,
+  reason: z.string().nullable(),
+  actor_id: z.string(),
+  occurred_at: z.string(),
+});
+export type ProductCaseTransition = z.infer<typeof productCaseTransitionSchema>;
+
+/** The duty names the role catalogue grants as `supply_chain.duty.<duty>`. */
+export const caseDutySchema = z.enum([
+  "ordering",
+  "finance",
+  "qc",
+  "logistics",
+  "warehouse",
+  "exceptions",
+  "rnd",
+]);
+export type CaseDuty = z.infer<typeof caseDutySchema>;
+
+/** Mirrors `SupplyChainProductActionDuties`. */
+export const productActionDutiesSchema = z.object({
+  schema_version: z.string(),
+  policy_id: z.string(),
+  policy_version: z.string(),
+  action_duties: z.record(productActionSchema, caseDutySchema),
+});
+export type ProductActionDuties = z.infer<typeof productActionDutiesSchema>;
+
+/** Narrowing for `GET /product-cases`, mirroring `ProductCaseListFilter`. */
+export interface ProductCaseListFilter {
+  state?: ProductDevState;
+  picUserId?: string;
+}
+
+/** The body of `POST /product-cases/{id}/transitions`. */
+export interface ProductCaseStepInput {
+  action: ProductAction;
+  reason?: string;
+  supplierName?: string;
+  documentId?: string;
+}

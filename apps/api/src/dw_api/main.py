@@ -258,6 +258,35 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # Product-development cases (stage 1): their own router on their own guard,
+    # as the documents router is.
+    if (
+        container.supply_chain_propose_product_case is not None
+        and container.supply_chain_get_product_case is not None
+        and container.supply_chain_list_product_cases is not None
+        and container.supply_chain_advance_product_case is not None
+        and container.supply_chain_list_product_case_transitions is not None
+        and container.supply_chain_get_product_action_duties is not None
+        and container.supply_chain_set_product_action_duties_override is not None
+    ):
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.product_case_routes import build_product_cases_router
+
+        app.include_router(
+            build_product_cases_router(
+                container.supply_chain_propose_product_case,
+                container.supply_chain_get_product_case,
+                container.supply_chain_list_product_cases,
+                container.supply_chain_advance_product_case,
+                container.supply_chain_list_product_case_transitions,
+                container.supply_chain_get_product_action_duties,
+                container.supply_chain_set_product_action_duties_override,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
     # Guard each on the dependency it needs, as the platform routers above do:
     # a router that 500s on every call is worse than an absent one.
 

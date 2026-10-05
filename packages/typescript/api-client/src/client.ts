@@ -23,6 +23,10 @@ import {
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
+  productCaseSchema,
+  productCaseDetailSchema,
+  productCaseTransitionSchema,
+  productActionDutiesSchema,
   portfolioSummarySchema,
   aiWorkResponseSchema,
   dailyBriefSchema,
@@ -66,6 +70,14 @@ import {
   type FollowUp,
   type CaseDocument,
   type DocumentType,
+  type ProductCase,
+  type ProductCaseDetail,
+  type ProductCaseTransition,
+  type ProductActionDuties,
+  type ProductCaseListFilter,
+  type ProductCaseStepInput,
+  type SampleRound,
+  type ProductActionOption,
   type PortfolioSummary,
   type AIWorkResponse,
   type DataView,
@@ -196,6 +208,19 @@ type ListPOCasesQuery = NonNullable<
   SupplyChainOperations["list_po_cases_api_v1_supply_chain_po_cases_get"]["parameters"]["query"]
 >;
 
+/** `GET /product-cases`' query parameters, from the route's generated types. */
+type ListProductCasesQuery = NonNullable<
+  SupplyChainOperations["list_product_cases_api_v1_supply_chain_product_cases_get"]["parameters"]["query"]
+>;
+
+/** `POST /product-cases/{id}/transitions`' body, from the route's generated types. */
+type ProductCaseStepBody =
+  SupplyChainOperations["create_product_case_transition_api_v1_supply_chain_product_cases__case_id__transitions_post"]["requestBody"]["content"]["application/json"];
+
+/** `POST /product-cases`' body, from the route's generated types. */
+type ProposeProductCaseBody =
+  SupplyChainOperations["propose_product_case_api_v1_supply_chain_product_cases_post"]["requestBody"]["content"]["application/json"];
+
 /** `POST /case-query`'s body, from the route's own generated types. */
 type CaseQueryBody =
   SupplyChainOperations["answer_case_query_route_api_v1_supply_chain_case_query_post"]["requestBody"]["content"]["application/json"];
@@ -312,6 +337,27 @@ const _caseDocumentMirrorsTheRoute: [
   SameType<keyof CaseDocument, keyof SupplyChainGenerated["CaseDocumentView"]>,
 ] = [true, true];
 void _caseDocumentMirrorsTheRoute;
+
+const _productCaseMirrorsTheRoute: [
+  SameType<ProductCase, SupplyChainGenerated["ProductCaseView"]>,
+  SameType<ProductCaseDetail, SupplyChainGenerated["ProductCaseDetailView"]>,
+  SameType<SampleRound, SupplyChainGenerated["SampleRoundView"]>,
+  SameType<
+    ProductActionOption,
+    SupplyChainGenerated["ProductActionOptionView"]
+  >,
+  SameType<
+    ProductCaseTransition,
+    SupplyChainGenerated["ProductCaseTransitionView"]
+  >,
+  // The duty map is keyed by action on both sides; zod types it as a partial
+  // record of the enum and OpenAPI as a string map, so only the keys compare.
+  SameType<
+    keyof ProductActionDuties,
+    keyof SupplyChainGenerated["SupplyChainProductActionDuties"]
+  >,
+] = [true, true, true, true, true, true];
+void _productCaseMirrorsTheRoute;
 
 export class ApiClient {
   constructor(private readonly options: ApiClientOptions) {}
@@ -1075,8 +1121,18 @@ export class ApiClient {
    * `idempotencyKey` is minted once per press and reused on a retry of the
    * same file, so a retry never adds a second version.
    */
-  async uploadCaseDocument(
+  uploadCaseDocument(
     caseId: string,
+    input: { docType: DocumentType; file: File; idempotencyKey: string },
+  ): Promise<CaseDocument> {
+    return this.uploadDocument(
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/documents`,
+      input,
+    );
+  }
+
+  private async uploadDocument(
+    path: string,
     input: { docType: DocumentType; file: File; idempotencyKey: string },
   ): Promise<CaseDocument> {
     const fetchImpl = this.options.fetchImpl ?? fetch;
@@ -1089,10 +1145,11 @@ export class ApiClient {
     };
     const token = await this.options.getAccessToken?.();
     if (token) headers.Authorization = `Bearer ${token}`;
-    const response = await fetchImpl(
-      `${this.options.baseUrl}/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/documents`,
-      { method: "POST", headers, body: form },
-    );
+    const response = await fetchImpl(`${this.options.baseUrl}${path}`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
     const json: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const parsed = errorResponseSchema.safeParse(json);
@@ -1110,6 +1167,26 @@ export class ApiClient {
     return caseDocumentSchema.parse(json);
   }
 
+  /** A product-development case's documents, by type and newest version first. */
+  listProductCaseDocuments(caseId: string): Promise<CaseDocument[]> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/documents`,
+      z.array(caseDocumentSchema),
+    );
+  }
+
+  /** Attach a file to a product-development case; as `uploadCaseDocument`. */
+  uploadProductCaseDocument(
+    caseId: string,
+    input: { docType: DocumentType; file: File; idempotencyKey: string },
+  ): Promise<CaseDocument> {
+    return this.uploadDocument(
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/documents`,
+      input,
+    );
+  }
+
   /** One document's bytes, read with the session's token (read scope). */
   async downloadCaseDocument(documentId: string): Promise<Blob> {
     const response = await this.rawRequest(
@@ -1117,6 +1194,95 @@ export class ApiClient {
       `/api/v1/supply-chain/documents/${encodeURIComponent(documentId)}/content`,
     );
     return response.blob();
+  }
+
+  // ---- product-development cases (stage 1) ---------------------------------
+
+  /** The workspace's product cases, newest first, narrowed by state or PIC. */
+  listProductCases(
+    params: PageParams & ProductCaseListFilter = {},
+  ): Promise<Page<ProductCase>> {
+    const query: ListProductCasesQuery = {
+      limit: params.limit,
+      cursor: params.cursor || undefined,
+      state: params.state,
+      pic_user_id: params.picUserId,
+    };
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== null) search.set(key, String(value));
+    }
+    const rendered = search.toString();
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases${rendered ? `?${rendered}` : ""}`,
+      pageSchema(productCaseSchema),
+    );
+  }
+
+  getProductCase(caseId: string): Promise<ProductCaseDetail> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}`,
+      productCaseDetailSchema,
+    );
+  }
+
+  /** Step 1. The caller becomes the PIC; there is no field to name another. */
+  proposeProductCase(
+    input: { proposalCode: string; productName: string; category: string },
+    idempotencyKey: string,
+  ): Promise<ProductCase> {
+    const body: ProposeProductCaseBody = {
+      proposal_code: input.proposalCode,
+      product_name: input.productName,
+      category: input.category,
+    };
+    return this.request(
+      "POST",
+      "/api/v1/supply-chain/product-cases",
+      productCaseSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** One step on a product case. The key is minted once per press. */
+  takeProductCaseStep(
+    caseId: string,
+    input: ProductCaseStepInput,
+    idempotencyKey: string,
+  ): Promise<ProductCase> {
+    const body: ProductCaseStepBody = {
+      action: input.action,
+      reason: input.reason?.trim() ? input.reason.trim() : null,
+      supplier_name: input.supplierName?.trim()
+        ? input.supplierName.trim()
+        : null,
+      document_id: input.documentId ?? null,
+    };
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/transitions`,
+      productCaseSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  listProductCaseTransitions(caseId: string): Promise<ProductCaseTransition[]> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/transitions`,
+      z.array(productCaseTransitionSchema),
+    );
+  }
+
+  /** Which duty each product step needs, for the caller's tenant. */
+  getProductActionDuties(): Promise<ProductActionDuties> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/product-action-duties",
+      productActionDutiesSchema,
+    );
   }
 
   /** The tenant's open follow-ups, newest first; the caller's own marked. */
@@ -1211,4 +1377,12 @@ export type {
   AIWorkResponse,
   CaseDocument,
   DocumentType,
+  ProductCase,
+  ProductCaseDetail,
+  ProductCaseTransition,
+  ProductActionDuties,
+  ProductCaseListFilter,
+  ProductCaseStepInput,
+  SampleRound,
+  ProductActionOption,
 };

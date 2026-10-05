@@ -140,6 +140,16 @@ class SqlPOCaseRepository:
             row = result.first()
             return _case_from_row(row) if row else None
 
+    async def case_workspace(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
+        """The workspace of the caller's tenant's case, or None: what
+        `case_documents`' `CaseLookupPort` asks of the PO kind."""
+        scope = TenantScope.from_access_context(context)
+        async with tenant_session(self.session_factory, scope) as session:
+            found: uuid.UUID | None = await session.scalar(
+                sa.select(tables.po_cases.c.workspace_id).where(tables.po_cases.c.id == case_id)
+            )
+        return found
+
     async def save(self, context: AccessContext, case: POCase) -> None:
         """Persists the aggregate's current state.
 

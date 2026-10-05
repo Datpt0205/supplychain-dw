@@ -6,12 +6,15 @@ rows read as absent here exactly as another tenant's do. The statements also
 name the tenant and workspace themselves, a second layer where RLS is the
 first.
 
+A document belongs to a PO case or a product-development case; `CaseKind`
+picks the column its case id is in (`_CASE_COLUMN`), the one place that
+mapping lives.
+
 The version is computed inside the INSERT (one past the highest for the case
 and type). Two concurrent uploads can compute the same one; the partial UNIQUE
-`uq_case_documents_tenant_id_po_case_id_doc_type_version` refuses the second,
-and this adapter turns that refusal, by the constraint's name, into a
-`ConflictError` the client retries. Nothing here decides whether a version is
-free; the database does.
+of the case's kind refuses the second, and this adapter turns that refusal, by
+the constraint's name, into a `ConflictError` the client retries. Nothing here
+decides whether a version is free; the database does.
 
 The audit event commits with the row, in the same transaction.
 """
@@ -42,17 +45,28 @@ from dw_supply_chain.domain.case_document import (
 )
 
 _d = tables.case_documents
-VERSION_CONSTRAINT = "uq_case_documents_tenant_id_po_case_id_doc_type_version"
+_CASE_COLUMN: dict[CaseKind, sa.Column[uuid.UUID]] = {
+    CaseKind.PO: _d.c.po_case_id,
+    CaseKind.PRODUCT: _d.c.product_dev_case_id,
+}
+VERSION_CONSTRAINTS = frozenset(
+    {
+        "uq_case_documents_tenant_id_po_case_id_doc_type_version",
+        "uq_case_documents_tenant_id_product_case_doc_type_version",
+    }
+)
 
 
 def _document(row: Row[tuple[object, ...]]) -> CaseDocument:
     m = row._mapping
+    # Exactly one is set (`ck_case_documents_one_case`).
+    kind = CaseKind.PO if m[_d.c.po_case_id] is not None else CaseKind.PRODUCT
     return CaseDocument(
         id=CaseDocumentId(m[_d.c.id]),
         tenant_id=m[_d.c.tenant_id],
         workspace_id=m[_d.c.workspace_id],
-        case_kind=CaseKind.PO,
-        case_id=m[_d.c.po_case_id],
+        case_kind=kind,
+        case_id=m[_CASE_COLUMN[kind]],
         doc_type=DocumentType(m[_d.c.doc_type]),
         object_key=m[_d.c.object_key],
         filename=m[_d.c.filename],
@@ -78,11 +92,12 @@ class SqlCaseDocumentRepository:
     async def add(
         self, context: AccessContext, document: NewCaseDocument, *, audit: AuditEvent
     ) -> CaseDocument:
+        case_column = _CASE_COLUMN[document.case_kind]
         next_version = (
             sa.select(sa.func.coalesce(sa.func.max(_d.c.version), 0) + 1)
             .where(
                 _d.c.tenant_id == context.tenant_id,
-                _d.c.po_case_id == document.case_id,
+                case_column == document.case_id,
                 _d.c.doc_type == document.doc_type.value,
             )
             .scalar_subquery()
@@ -98,7 +113,7 @@ class SqlCaseDocumentRepository:
                             id=document.id.value,
                             tenant_id=context.tenant_id,
                             workspace_id=context.workspace_id,
-                            po_case_id=document.case_id,
+                            **{case_column.name: document.case_id},
                             doc_type=document.doc_type.value,
                             object_key=document.object_key,
                             filename=document.filename,
@@ -113,7 +128,7 @@ class SqlCaseDocumentRepository:
                 ).one()
                 await SqlAuditRepository(session).append(audit)
         except IntegrityError as exc:
-            if VERSION_CONSTRAINT in str(exc.orig):
+            if any(name in str(exc.orig) for name in VERSION_CONSTRAINTS):
                 raise ConflictError(
                     "another upload of this document type took the same version; try again",
                     details={
@@ -124,14 +139,16 @@ class SqlCaseDocumentRepository:
             raise
         return _document(row)
 
-    async def list_for_case(self, context: AccessContext, case_id: uuid.UUID) -> list[CaseDocument]:
+    async def list_for_case(
+        self, context: AccessContext, case_kind: CaseKind, case_id: uuid.UUID
+    ) -> list[CaseDocument]:
         async with tenant_session(
             self.session_factory, TenantScope.from_access_context(context)
         ) as session:
             rows = (
                 await session.execute(
                     sa.select(_d)
-                    .where(*_in_scope(context), _d.c.po_case_id == case_id)
+                    .where(*_in_scope(context), _CASE_COLUMN[case_kind] == case_id)
                     .order_by(_d.c.doc_type, _d.c.version.desc())
                 )
             ).all()

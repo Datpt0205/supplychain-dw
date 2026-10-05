@@ -121,3 +121,39 @@ def test_case_documents_are_wired_from_their_settings() -> None:
     assert upload.max_bytes == 4321
     assert getattr(upload.storage, "bucket", None) == "docs-under-test"
     assert getattr(download.storage, "bucket", None) == "docs-under-test"
+
+
+def test_product_cases_are_wired_with_their_own_duty_policy_and_both_case_kinds() -> None:
+    """The product steps read the product duty policy, not the PO one (five
+    action names are shared), and a document of either kind finds its case."""
+    from dw_supply_chain.domain.case_document import CaseKind
+    from dw_supply_chain.product_action_duties import PRODUCT_ACTION_DUTIES_POLICY_ID
+
+    settings = ApiSettings(
+        profile="test",
+        database_url="postgresql+asyncpg://wiring:wiring@localhost:5432/wiring",
+        auth_mode="dev",
+        dev_secret="wiring-test-secret-0123456789abcdef",
+        s3_endpoint_url="http://localhost:9000",
+        s3_access_key="wiring",
+        s3_secret_key="wiring",
+        model_provider="mock",
+    )
+    container = build_container(settings)
+
+    advance = container.supply_chain_advance_product_case
+    propose = container.supply_chain_propose_product_case
+    assert advance is not None and propose is not None
+    for handler in (advance, propose):
+        assert handler.platform_default_duties.policy_id == PRODUCT_ACTION_DUTIES_POLICY_ID
+    upload = container.supply_chain_upload_case_document
+    assert upload is not None
+    assert set(upload.cases) == set(CaseKind)
+    for name in (
+        "supply_chain_get_product_case",
+        "supply_chain_list_product_cases",
+        "supply_chain_list_product_case_transitions",
+        "supply_chain_get_product_action_duties",
+        "supply_chain_set_product_action_duties_override",
+    ):
+        assert getattr(container, name) is not None, name

@@ -19,8 +19,9 @@ This repo is the Elmich product: bounded context
 ## Where it stands (2026-10-05)
 
 - **Steps 10–17 (PO case)** are on `main` (slice P, `c2f04dc`).
-- **Steps 1–9 have no code.** Stage 1 is designed (ADR 0016–0021) and
-  ticketed (`supply-chain/stage-1/`), S1–S7.
+- **Steps 1–5 are built** (S1, product development case); steps 6–9 are
+  ticketed (S2–S7). Approvals carry `required_scope` (A); cases carry
+  documents (D).
 - **Channels:** in-app inbox only. The Zalo pieces on `main` are built and
   tested but wired into nothing; the API client calls `/api/v1/zalo/*` routes
   that do not exist. Zalo is planned as a two-way work channel (Z4–Z6).
@@ -57,7 +58,7 @@ means platform code, an upstream candidate (ADR 0011).
 | ZL    | `zalo-channel/issues/07-live-run.md`                                | —       | ready-for-human | Z1–Z6, H2                           |
 | A     | `approval-decider-scope/issues/01-required-scope.md`                | yes     | resolved        | P                                   |
 | D     | `case-documents/issues/01-case-documents.md`                        | no      | resolved        | P                                   |
-| S1    | `stage-1/issues/01-product-case-steps-1-5.md`                       | no      | ready-for-agent | P, D                                |
+| S1    | `stage-1/issues/01-product-case-steps-1-5.md`                       | no      | resolved        | P, D                                |
 | S2    | `stage-1/issues/02-bod-review-step-6.md`                            | no      | ready-for-agent | S1, A                               |
 | S3    | `stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`     | no      | ready-for-agent | S2                                  |
 | S4    | `stage-1/issues/04-item-code-sku-signoff-step-9.md`                 | no      | ready-for-agent | S3                                  |
@@ -69,8 +70,10 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                    | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                  | —       | ready-for-human | H                                   |
 
-**Next:** A, then D, then S1 (Đạt, 2026-10-05: in that order, without
-stopping between them). Z4 starts once S1 is in; Z5 after Z4 and S2; Z6 after Z4.
+**Next:** S2 (needs S1, A: both in). S2 must start the step-6 run from
+`pass_sample` in the same command and start or backfill cases already in
+`pending_bod_review` (S2 Comments). Z4 can start now (S1, U in); Z5 after Z4
+and S2; Z6 after Z4.
 
 Live runs that need a person, a phone or a domain are their own
 `ready-for-human` tickets (ZL, H2), so agent tickets can close honestly. The
@@ -86,12 +89,13 @@ email as a second channel.
 
 ## Slice log
 
-| Slice  | Commit        | What                                                                                                       |
-| ------ | ------------- | ---------------------------------------------------------------------------------------------------------- |
-| P, ENV | `c2f04dc`     | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                   |
-| U, Z1  | `51c0ef7`     | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                    |
-| A      | `dabf5c4`     | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                       |
-| D      | (this commit) | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep. |
+| Slice  | Commit        | What                                                                                                                                                                     |
+| ------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P, ENV | `c2f04dc`     | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                                                                                 |
+| U, Z1  | `51c0ef7`     | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                                                                                  |
+| A      | `dabf5c4`     | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                                                                                     |
+| D      | `51e3400`     | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep.                                                               |
+| S1     | (this commit) | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages. |
 
 ## Open — named, not fixed, still true after the port
 
@@ -227,6 +231,15 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
   point 1).
 - **QO-6** Confirm deferring container loading as its own step (step 14) until
   Elmich answers QE-15; until then it stays inside `qc` → `in_transit`.
+- **QO-8** Provisional choices made while building A, D, S1 (2026-10-05/06),
+  recorded as amendments to ADR 0016, 0020, 0021 for review: `platform_admin`
+  passes `required_scope`; cross-workspace approval reads left to
+  platform-runtime approval-audit-and-workspace 02; case documents in their own
+  bucket, FK CASCADE, first workspace-narrowed tables (documents and product
+  cases, while `po_cases` stays tenant-only); `proposal_code` unique per tenant
+  (a 409 across workspaces confirms a code is taken); supplier optional until
+  step 2; Category free text until S6; `sc_rnd` also holds the exceptions duty;
+  product duties a separate policy reusing the action-duties scopes.
 - **QO-7** Strict approvals need a written comment, so a Zalo approval at steps
   6 and 9 is `DUYỆT 4821 <nhận xét>`, not bare `DUYỆT 4821` (Z5 Comments).
   Confirm, or pick one of the alternatives in ADR 0014 point 6: the page asks

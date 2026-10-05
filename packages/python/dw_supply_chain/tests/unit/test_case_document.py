@@ -71,6 +71,20 @@ def test_a_key_parses_back_into_its_ids() -> None:
     assert ObjectKey.parse(key.value) == key
 
 
+def test_a_product_case_key_parses_back_too() -> None:
+    """Stage 1: what the orphan sweep reads to find a product document's
+    tenant and workspace."""
+    key = ObjectKey.build(
+        tenant_id=TENANT,
+        workspace_id=WORKSPACE,
+        case_kind=CaseKind.PRODUCT,
+        case_id=CASE,
+        document_id=DOC,
+    )
+    assert key.value == f"supply_chain/{TENANT}/{WORKSPACE}/product/{CASE}/{DOC}"
+    assert ObjectKey.parse(key.value) == key
+
+
 @pytest.mark.parametrize(
     "raw",
     [
@@ -79,7 +93,7 @@ def test_a_key_parses_back_into_its_ids() -> None:
         f"supply_chain/{TENANT}/{WORKSPACE}/po/{CASE}",
         f"supply_chain/{TENANT}/{WORKSPACE}/po/{CASE}/{DOC}/extra",
         f"supply_chain/not-a-uuid/{WORKSPACE}/po/{CASE}/{DOC}",
-        f"supply_chain/{TENANT}/{WORKSPACE}/product/{CASE}/{DOC}",
+        f"supply_chain/{TENANT}/{WORKSPACE}/sample/{CASE}/{DOC}",
         f"feedback/{TENANT}/{WORKSPACE}/po/{CASE}/{DOC}",
         f"supply_chain/{str(TENANT).upper()}/{WORKSPACE}/po/{CASE}/{DOC}",
         f"supply_chain/{TENANT.hex}/{WORKSPACE}/po/{CASE}/{DOC}",

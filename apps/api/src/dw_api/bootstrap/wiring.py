@@ -47,6 +47,7 @@ from dw_api.bootstrap.paths import (
     SUPPLY_CHAIN_APPROVAL_MATRIX_POLICY,
     SUPPLY_CHAIN_BRIEF_POLICY,
     SUPPLY_CHAIN_FOLLOW_UP_POLICY,
+    SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES,
     SUPPLY_CHAIN_SLA_POLICY,
     WORKER_RUN_POLICY,
 )
@@ -528,19 +529,43 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     from dw_supply_chain.adapters.persistence.case_document_repository import (
         SqlCaseDocumentRepository,
     )
+    from dw_supply_chain.adapters.persistence.product_case_repository import (
+        SqlProductCaseRepository,
+    )
     from dw_supply_chain.adapters.storage.minio_case_documents import (
         MinioCaseDocumentStorage,
     )
     from dw_supply_chain.application.case_documents import (
+        CaseLookupPort,
         DownloadCaseDocument,
         ListCaseDocuments,
         UploadCaseDocument,
     )
+    from dw_supply_chain.application.handlers import (
+        GetProductActionDuties,
+        SetProductActionDutiesOverride,
+    )
+    from dw_supply_chain.application.product_cases import (
+        AdvanceProductCase,
+        GetProductCase,
+        ListProductCases,
+        ListProductCaseTransitions,
+        ProposeProductCase,
+    )
+    from dw_supply_chain.domain.case_document import CaseKind
+    from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 
     document_repo = SqlCaseDocumentRepository(wiring.seam.session_factory)
     document_storage = MinioCaseDocumentStorage(client=minio, bucket=settings.case_documents_bucket)
+    product_case_repo = SqlProductCaseRepository(wiring.seam.session_factory)
+    # Each kind of case answers "which workspace is this case in" for its own
+    # documents; the document handlers pick by kind.
+    case_lookups: dict[CaseKind, CaseLookupPort] = {
+        CaseKind.PO: po_case_repo,
+        CaseKind.PRODUCT: product_case_repo,
+    }
     container.supply_chain_upload_case_document = UploadCaseDocument(
-        cases=po_case_repo,
+        cases=case_lookups,
         documents=document_repo,
         storage=document_storage,
         authz=authorization,
@@ -549,10 +574,56 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         max_bytes=settings.case_document_max_bytes,
     )
     container.supply_chain_list_case_documents = ListCaseDocuments(
-        cases=po_case_repo, documents=document_repo, authz=authorization
+        cases=case_lookups, documents=document_repo, authz=authorization
     )
     container.supply_chain_download_case_document = DownloadCaseDocument(
         documents=document_repo, storage=document_storage, authz=authorization
+    )
+
+    # Product-development cases (stage 1, ADR 0016). Built here, beside the
+    # documents, because a step's paper is read through the document records.
+    platform_default_product_duties = load_supply_chain_product_action_duties(
+        SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES
+    )
+    container.supply_chain_propose_product_case = ProposeProductCase(
+        repo=product_case_repo,
+        authz=authorization,
+        policy_override_repo=policy_override_repo,
+        platform_default_duties=platform_default_product_duties,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_get_product_case = GetProductCase(
+        repo=product_case_repo,
+        authz=authorization,
+        policy_override_repo=policy_override_repo,
+        platform_default_duties=platform_default_product_duties,
+    )
+    container.supply_chain_list_product_cases = ListProductCases(
+        repo=product_case_repo, authz=authorization
+    )
+    container.supply_chain_advance_product_case = AdvanceProductCase(
+        repo=product_case_repo,
+        documents=document_repo,
+        authz=authorization,
+        policy_override_repo=policy_override_repo,
+        platform_default_duties=platform_default_product_duties,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_list_product_case_transitions = ListProductCaseTransitions(
+        repo=product_case_repo, authz=authorization
+    )
+    container.supply_chain_get_product_action_duties = GetProductActionDuties(
+        policy_override_repo=policy_override_repo,
+        platform_default_duties=platform_default_product_duties,
+        authz=authorization,
+    )
+    container.supply_chain_set_product_action_duties_override = SetProductActionDutiesOverride(
+        policy_override_repo=policy_override_repo,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
     )
 
     # Build your context from `container.runtime` (the RuntimeSeam) and attach

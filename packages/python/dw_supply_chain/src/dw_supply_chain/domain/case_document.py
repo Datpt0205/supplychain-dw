@@ -52,10 +52,12 @@ class DocumentType(StrEnum):
 
 
 class CaseKind(StrEnum):
-    """Which kind of case a document belongs to; the key's fourth segment.
-    The product-development case joins in stage-1 ticket 01."""
+    """Which kind of case a document belongs to; the key's fourth segment, and
+    which of `case_documents`' two case columns holds the case id."""
 
     PO = "po"
+    # The product-development case (stage-1 ticket 01, ADR 0016).
+    PRODUCT = "product"
 
 
 @dataclass(frozen=True, slots=True)

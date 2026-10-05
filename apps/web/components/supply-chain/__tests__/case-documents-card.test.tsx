@@ -29,7 +29,8 @@ const CASE_ID = "11111111-1111-4111-8111-111111111111";
 function doc(overrides: Partial<CaseDocument> = {}): CaseDocument {
   return {
     id: "22222222-2222-4222-8222-222222222222",
-    po_case_id: CASE_ID,
+    case_kind: "po",
+    case_id: CASE_ID,
     doc_type: "purchase_order",
     filename: "PO-0042.pdf",
     content_type: "application/pdf",

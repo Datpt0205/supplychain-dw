@@ -84,6 +84,10 @@ from dw_supply_chain.domain.supplier_update import (
     requires_confirmation,
 )
 from dw_supply_chain.follow_up_policy import SupplyChainFollowUpPolicy
+from dw_supply_chain.product_action_duties import (
+    PRODUCT_ACTION_DUTIES_POLICY_ID,
+    SupplyChainProductActionDuties,
+)
 from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
 from dw_supply_chain.workflows.advance_case_graph import APPROVAL_TYPE_PREFIX
 from dw_supply_chain.workflows.brief_summary import summarize_brief
@@ -131,6 +135,14 @@ def duty_scope(duty: CaseDuty) -> str:
 # checks.
 DOCUMENT_READ = "supply_chain.document.read"
 DOCUMENT_WRITE = "supply_chain.document.write"
+
+# Product-development cases (`application.product_cases`), declared here for
+# the same reason. Reading every case of the workspace. Opening a case, as
+# `PO_CASE_WRITE` for a PO case (lead decision 9); `propose` is also a step of
+# `SupplyChainProductActionDuties`, so it asks its duty as well. Every other
+# step is gated by its duty alone.
+PRODUCT_CASE_READ = "supply_chain.product_case.read"
+PRODUCT_CASE_WRITE = "supply_chain.product_case.write"
 
 FOLLOW_UP_POLICY_READ = "supply_chain.follow_up_policy.read"
 FOLLOW_UP_POLICY_WRITE = "supply_chain.follow_up_policy.write"
@@ -1404,6 +1416,67 @@ class SetActionDutiesOverride:
             policy_id=_ACTION_DUTIES_POLICY_ID,
             policy=duties,
             resource_type=_ACTION_DUTIES_RESOURCE,
+            ids=self.ids,
+            clock=self.clock,
+        )
+
+
+async def resolve_product_action_duties(
+    context: AccessContext,
+    policy_override_repo: PolicyOverridePort,
+    platform_default_duties: SupplyChainProductActionDuties,
+) -> SupplyChainProductActionDuties:
+    """The tenant's own product step-to-duty mapping if it has set one, the
+    platform's otherwise: what a product step is authorized against and what
+    `GetProductActionDuties` shows, from one place."""
+    return await _resolve_policy(
+        context,
+        policy_override_repo,
+        policy_id=PRODUCT_ACTION_DUTIES_POLICY_ID,
+        schema=SupplyChainProductActionDuties,
+        platform_default=platform_default_duties,
+    )
+
+
+@dataclass(frozen=True)
+class GetProductActionDuties:
+    """The effective product step-to-duty mapping for the caller's own tenant.
+    Reuses the action-duties scopes: who may read or set one duty mapping may
+    read or set the other."""
+
+    policy_override_repo: PolicyOverridePort
+    platform_default_duties: SupplyChainProductActionDuties
+    authz: AuthorizationPort
+
+    async def handle(self, context: AccessContext) -> SupplyChainProductActionDuties:
+        await self.authz.require(
+            context=context, action=ACTION_DUTIES_READ, resource_type=_ACTION_DUTIES_RESOURCE
+        )
+        return await resolve_product_action_duties(
+            context, self.policy_override_repo, self.platform_default_duties
+        )
+
+
+@dataclass(frozen=True)
+class SetProductActionDutiesOverride:
+    """Replaces the caller's tenant's own product step-to-duty mapping, whole;
+    every step must keep a duty (the schema refuses otherwise)."""
+
+    policy_override_repo: PolicyOverridePort
+    authz: AuthorizationPort
+    ids: IdGenerator
+    clock: UtcClock
+
+    async def handle(self, context: AccessContext, duties: SupplyChainProductActionDuties) -> None:
+        await self.authz.require(
+            context=context, action=ACTION_DUTIES_WRITE, resource_type=_ACTION_DUTIES_RESOURCE
+        )
+        await _put_policy_override(
+            context,
+            self.policy_override_repo,
+            policy_id=PRODUCT_ACTION_DUTIES_POLICY_ID,
+            policy=duties,
+            resource_type="product_action_duties",
             ids=self.ids,
             clock=self.clock,
         )

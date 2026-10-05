@@ -46,6 +46,10 @@ class CaseDuty(StrEnum):
     # Raising and clearing an exception: blocked, manual review, waiting on
     # an outside party.
     EXCEPTIONS = "exceptions"
+    # R&D: receiving and testing samples, asking for revisions (stage 1,
+    # `product_action_duties`). No PO step needs it; the PO policy requires
+    # every PO step a duty, not every duty a step, so PO overrides are untouched.
+    RND = "rnd"
 
 
 class SupplyChainActionDuties(BaseModel):

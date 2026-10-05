@@ -1,0 +1,35 @@
+schema_version: "1.0"
+policy_id: supply_chain_product_action_duties
+policy_version: "1.0.0"
+
+# Mỗi bước trên Hồ sơ phát triển sản phẩm (giai đoạn 1, ADR 0016) thuộc về một
+# nhiệm vụ (duty). Người làm bước đó phải có scope supply_chain.duty.<duty>:
+#   ordering   → sc_operator (Cung ứng: đề xuất, lấy mẫu; cũng là người làm bước 10–16).
+#                Đề xuất còn cần supply_chain.product_case.write, như mở Hồ sơ PO.
+#   rnd        → sc_rnd (R&D: nhận mẫu, test, yêu cầu chỉnh sửa, đạt, hủy)
+#   exceptions → các vai vận hành Hồ sơ PO (chờ bên ngoài, báo chặn, cần xem xét,
+#                tiếp tục). Không gồm sc_rnd: duty này dùng chung hai loại hồ sơ.
+#                Công ty muốn R&D làm các bước này thì ghi đè chúng sang rnd (PUT dưới đây).
+#
+# Policy riêng, không gộp với supply_chain_action_duties của Hồ sơ PO: năm tên
+# hành động trùng nhau (cancel, resume, wait_for_external, flag_blocked,
+# flag_manual_review), nên một tài liệu chung theo tên sẽ để override của PO quyết
+# ai được hủy hồ sơ phát triển. Năm hành động đó ở đây lấy đúng duty của PO.
+#
+# Đây là PLATFORM DEFAULT. Mỗi công ty ghi đè toàn bộ document qua
+# PUT /api/v1/supply-chain/product-action-duties (platform.policy_overrides, cùng
+# cơ chế với các policy khác). Mỗi hành động phải có đúng một duty; document
+# thiếu hành động bị từ chối.
+action_duties:
+  propose: ordering
+  request_sample: ordering
+  receive_sample: rnd
+  pass_sample: rnd
+  request_revision: rnd
+  receive_revised_sample: rnd
+  reject_sample: rnd
+  wait_for_external: exceptions
+  flag_blocked: exceptions
+  flag_manual_review: exceptions
+  resume: exceptions
+  cancel: ordering

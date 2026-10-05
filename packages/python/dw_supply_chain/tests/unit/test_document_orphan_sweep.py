@@ -30,11 +30,15 @@ OLD = NOW - timedelta(days=1, minutes=1)
 FRESH = NOW - timedelta(hours=23)
 
 
-def _key(tenant: uuid.UUID | None = None, workspace: uuid.UUID | None = None) -> str:
+def _key(
+    tenant: uuid.UUID | None = None,
+    workspace: uuid.UUID | None = None,
+    kind: CaseKind = CaseKind.PO,
+) -> str:
     return ObjectKey.build(
         tenant_id=tenant or uuid.uuid4(),
         workspace_id=workspace or uuid.uuid4(),
-        case_kind=CaseKind.PO,
+        case_kind=kind,
         case_id=uuid.uuid4(),
         document_id=uuid.uuid4(),
     ).value
@@ -104,6 +108,19 @@ async def test_an_object_with_its_row_is_kept() -> None:
     await _sweep(bucket, rows).prune()
 
     assert bucket.deleted == []
+
+
+@pytest.mark.parametrize("kind", list(CaseKind))
+async def test_every_case_kinds_keys_are_swept_and_kept_alike(kind: CaseKind) -> None:
+    """Stage 1 adds the product kind under the same root: an orphan of either
+    kind goes, a held key of either kind stays."""
+    orphan, held = _key(kind=kind), _key(kind=kind)
+    bucket, rows = FakeBucket({orphan: OLD, held: OLD}), FakeRows()
+    rows.hold(held)
+
+    await _sweep(bucket, rows).prune()
+
+    assert bucket.deleted == [orphan]
 
 
 async def test_a_fresh_object_without_a_row_is_kept() -> None:

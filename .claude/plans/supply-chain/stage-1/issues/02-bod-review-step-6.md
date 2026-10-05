@@ -66,3 +66,10 @@ không duyệt thì hủy có lý do.
 ## Comments
 
 - Giả định: BGĐ không duyệt là hủy (QE-08).
+
+- 2026-10-05 (lát S1, lead): S2 đổi `pass_sample` để khởi động run approval bước 6
+  (`supply_chain.product_action.bod_review`, `required_scope` của lát A) trong CÙNG lệnh
+  với chuyển trạng thái. Hồ sơ đã ở `pending_bod_review` từ trước S2 (S1 không khởi động
+  run nào) cần backfill hoặc một cách khởi động tường minh; nếu không chúng kẹt ở đó.
+  Hôm nay `pending_bod_review` chỉ có bước ngoại lệ và hủy (`available_actions` của
+  aggregate).

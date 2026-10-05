@@ -91,9 +91,11 @@ class FakeCases:
     def __init__(self, *cases: POCase) -> None:
         self.by_id = {case.id.value: case for case in cases}
 
-    async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
-        case = self.by_id.get(case_id.value)
-        return case if case is not None and case.tenant_id.value == context.tenant_id else None
+    async def case_workspace(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
+        case = self.by_id.get(case_id)
+        if case is None or case.tenant_id.value != context.tenant_id:
+            return None
+        return case.workspace_id.value
 
 
 @dataclass
@@ -118,7 +120,7 @@ class FakeDocuments:
             id=document.id,
             tenant_id=context.tenant_id,
             workspace_id=context.workspace_id,
-            case_kind=CaseKind.PO,
+            case_kind=document.case_kind,
             case_id=document.case_id,
             doc_type=document.doc_type,
             object_key=document.object_key,
@@ -133,8 +135,14 @@ class FakeDocuments:
         self.rows.append(row)
         return row
 
-    async def list_for_case(self, context: AccessContext, case_id: uuid.UUID) -> list[CaseDocument]:
-        return [r for r in self.rows if self._visible(context, r) and r.case_id == case_id]
+    async def list_for_case(
+        self, context: AccessContext, case_kind: CaseKind, case_id: uuid.UUID
+    ) -> list[CaseDocument]:
+        return [
+            r
+            for r in self.rows
+            if self._visible(context, r) and r.case_kind is case_kind and r.case_id == case_id
+        ]
 
     async def get(self, context: AccessContext, document_id: CaseDocumentId) -> CaseDocument | None:
         return next(
@@ -222,7 +230,7 @@ class World:
         )
         if mount:
             container.supply_chain_upload_case_document = UploadCaseDocument(
-                cases=self.cases,
+                cases={CaseKind.PO: self.cases},
                 documents=self.documents,
                 storage=self.bucket,
                 authz=authz,
@@ -231,7 +239,7 @@ class World:
                 max_bytes=MAX_BYTES,
             )
             container.supply_chain_list_case_documents = ListCaseDocuments(
-                cases=self.cases, documents=self.documents, authz=authz
+                cases={CaseKind.PO: self.cases}, documents=self.documents, authz=authz
             )
             container.supply_chain_download_case_document = DownloadCaseDocument(
                 documents=self.documents, storage=self.bucket, authz=authz

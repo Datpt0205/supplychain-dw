@@ -120,7 +120,9 @@ case_documents = sa.Table(
     sa.Column("id", UUID(as_uuid=True), primary_key=True),
     sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
     sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
-    sa.Column("po_case_id", UUID(as_uuid=True), nullable=False),
+    # Exactly one of the two is set (`ck_case_documents_one_case`).
+    sa.Column("po_case_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=True),
     sa.Column("doc_type", sa.Text, nullable=False),
     sa.Column("object_key", sa.Text, nullable=False),
     sa.Column("filename", sa.Text, nullable=False),
@@ -131,5 +133,80 @@ case_documents = sa.Table(
     sa.Column("uploaded_by", UUID(as_uuid=True), nullable=False),
     sa.Column(
         "uploaded_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+product_dev_cases = sa.Table(
+    "product_dev_cases",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("proposal_code", sa.Text, nullable=False),
+    sa.Column("product_name", sa.Text, nullable=False),
+    sa.Column("category", sa.Text, nullable=False),
+    sa.Column("supplier_name", sa.Text, nullable=True),
+    sa.Column("pic_user_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("state", sa.Text, nullable=False, server_default="proposed"),
+    sa.Column("interrupted_state", sa.Text, nullable=True),
+    sa.Column("sample_round", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("version", sa.Integer, nullable=False, server_default="1"),
+    sa.Column("created_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+    sa.Column(
+        "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+product_dev_case_state_transitions = sa.Table(
+    "product_dev_case_state_transitions",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("action", sa.Text, nullable=False),
+    sa.Column("from_state", sa.Text, nullable=True),
+    sa.Column("to_state", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text, nullable=True),
+    sa.Column("actor_id", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "occurred_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+product_sample_rounds = sa.Table(
+    "product_sample_rounds",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("round_no", sa.Integer, nullable=False),
+    sa.Column(
+        "opened_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+    sa.Column("opened_by", UUID(as_uuid=True), nullable=False),
+    sa.Column("result", sa.Text, nullable=True),
+    sa.Column("evaluation_document_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("closed_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("closed_by", UUID(as_uuid=True), nullable=True),
+)
+
+sample_revision_requests = sa.Table(
+    "sample_revision_requests",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("round_no", sa.Integer, nullable=False),
+    sa.Column("revision_document_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("requested_changes", sa.Text, nullable=False),
+    sa.Column("sent_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "sent_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )

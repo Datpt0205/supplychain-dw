@@ -109,3 +109,25 @@ Các quyết định tạm của lead khi làm lát D. Chúng thay hoặc làm r
 8. **Scope:** `supply_chain.document.read` cho cả bảy vai `sc_*`;
    `supply_chain.document.write` cho năm vai vận hành, và nằm ở phía vận hành của
    `sod_sc_rules_vs_operations`, nên `sc_process_admin` không tải lên được.
+
+## Sửa đổi 2026-10-05 (tạm, lát S1; chờ Đạt duyệt ở QO-2)
+
+Lát S1 thêm loại hồ sơ thứ hai, đúng như sửa đổi lát D (điểm 3) đã báo:
+
+1. `po_case_id` bỏ NOT NULL; thêm `product_dev_case_id` với FK ghép
+   `(tenant_id, workspace_id, product_dev_case_id)` tới `product_dev_cases` `ON DELETE
+CASCADE` (không `RESTRICT`, cùng lý do điểm 1 của lát D); CHECK
+   `ck_case_documents_one_case` (đúng một FK khác NULL); UNIQUE riêng phần phiên bản
+   `uq_case_documents_tenant_id_product_case_doc_type_version`; UNIQUE
+   `(tenant_id, workspace_id, product_dev_case_id, id)` là đích FK của vòng mẫu và phiếu
+   chỉnh sửa, nên một chứng từ chỉ đóng được vòng của chính hồ sơ nó thuộc.
+2. `{case_kind}` của khóa là `po` hoặc `product`
+   (`supply_chain/{tenant}/{workspace}/product/{case_id}/{document_id}`); CHECK
+   `ck_case_documents_object_key` phủ cả hai. Quét mồ côi và offboarding đi theo tiền tố,
+   không đổi.
+3. Cùng ba handler của lát D phục vụ cả hai loại: mỗi loại hỏi repository của nó
+   "hồ sơ này ở workspace nào" (`CaseLookupPort.case_workspace`), chọn theo `CaseKind`.
+   Route `POST`/`GET /product-cases/{id}/documents` cạnh route của PO. API trả `case_kind`
+   và `case_id` thay cho `po_case_id`.
+4. Chứng từ đã đóng một vòng mẫu không xóa riêng được (FK `NO ACTION` từ vòng); hồ sơ bị
+   xóa (chỉ offboarding) thì chứng từ và vòng đi cùng trong một câu lệnh.

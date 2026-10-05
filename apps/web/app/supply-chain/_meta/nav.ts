@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  FlaskConical,
   ListTodo,
   Newspaper,
   PackageSearch,
@@ -40,6 +41,13 @@ export const supplyChainNav: NavItem[] = [
     hint: "Toàn bộ case đang chạy theo trạng thái và nhà cung cấp",
     icon: TowerControl,
     scope: "supply_chain.po_case.read",
+  },
+  {
+    href: "/supply-chain/product-cases",
+    label: "Hồ sơ phát triển SP",
+    hint: "Sản phẩm đề xuất, lấy mẫu, test mẫu tới khi chờ BGĐ duyệt",
+    icon: FlaskConical,
+    scope: "supply_chain.product_case.read",
   },
   {
     href: "/supply-chain/po-cases",

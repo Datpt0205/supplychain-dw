@@ -24,6 +24,7 @@ import {
 import type { CaseDocument, DocumentType } from "@dw/api-client";
 import { formatDateTime } from "../../lib/dates";
 import { errorMessage } from "../../lib/error-message";
+import { newIdempotencyKey } from "../../lib/idempotency-key";
 import { useOnline } from "../../lib/hooks/use-online";
 import { apiClient } from "../../lib/session";
 
@@ -52,9 +53,9 @@ const DOC_TYPE_OPTIONS = (Object.keys(DOC_TYPE_LABEL) as DocumentType[]).map(
   (value) => ({ value, label: DOC_TYPE_LABEL[value] }),
 );
 
-/** The case kinds whose documents this card can show. Stage 1 adds the
- * product-development case here, with its own two calls. */
-export type CaseKind = "po";
+/** The case kinds whose documents this card can show: a PO case and a
+ * product-development case (stage 1), each with its own two calls. */
+export type CaseKind = "po" | "product";
 
 const DOCUMENTS_API: Record<
   CaseKind,
@@ -70,6 +71,11 @@ const DOCUMENTS_API: Record<
     list: (caseId) => apiClient().listCaseDocuments(caseId),
     upload: (caseId, input) => apiClient().uploadCaseDocument(caseId, input),
   },
+  product: {
+    list: (caseId) => apiClient().listProductCaseDocuments(caseId),
+    upload: (caseId, input) =>
+      apiClient().uploadProductCaseDocument(caseId, input),
+  },
 };
 
 // What the API accepts; it decides by content, this only narrows the picker.
@@ -77,12 +83,6 @@ const ACCEPT = ".pdf,.jpg,.jpeg,.png,.xlsx,.docx,.eml,.msg";
 const NO_WRITE_REASON =
   "Chỉ người có quyền tải chứng từ lên (vai vận hành Supply Chain) mới thêm được chứng từ.";
 const OFFLINE_REASON = "Không có kết nối mạng. Kết nối lại rồi thử lại.";
-
-function newIdempotencyKey(): string {
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -122,10 +122,13 @@ export function CaseDocumentsCard({
   caseKind,
   caseId,
   canUpload,
+  onUploaded,
 }: {
   caseKind: CaseKind;
   caseId: string;
   canUpload: boolean;
+  /** Told after a document is stored, so a page can refresh what reads them. */
+  onUploaded?: (document: CaseDocument) => void;
 }) {
   const { message } = App.useApp();
   const online = useOnline();
@@ -171,6 +174,7 @@ export function CaseDocumentsCard({
       void message.success(
         `Đã tải lên ${DOC_TYPE_LABEL[created.doc_type]}, phiên bản ${created.version}.`,
       );
+      onUploaded?.(created);
       await load();
     } catch (error) {
       setUploadError(errorMessage(error));

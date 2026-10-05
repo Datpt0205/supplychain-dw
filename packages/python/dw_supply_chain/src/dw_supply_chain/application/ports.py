@@ -18,6 +18,7 @@ from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.domain.case_document import (
     CaseDocument,
     CaseDocumentId,
+    CaseKind,
     DocumentType,
 )
 from dw_supply_chain.domain.delay_impact import DelayImpactAnalysis
@@ -28,6 +29,13 @@ from dw_supply_chain.domain.po_case import (
     CaseTransition,
     POCase,
     POCaseId,
+)
+from dw_supply_chain.domain.product_development_case import (
+    ProductCaseTransition,
+    ProductDevelopmentCase,
+    ProductDevelopmentCaseId,
+    ProductDevState,
+    SampleRound,
 )
 from dw_supply_chain.domain.supplier_update import SupplierUpdate, SupplierUpdateId
 
@@ -351,13 +359,13 @@ class FollowUpNotifierPort(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class NewCaseDocument:
-    """A document about to be recorded on a PO case: everything but its
-    version, which the insert computes, and its upload time, which the
-    database stamps. No case kind yet: a PO case is the only one, and the
-    product-development case (stage-1 ticket 01) adds the field together with
-    the column it selects, so nothing can declare a kind the insert ignores."""
+    """A document about to be recorded on a case: everything but its version,
+    which the insert computes, and its upload time, which the database stamps.
+    `case_kind` selects which of the table's two case columns `case_id` goes
+    in, and the key's kind segment says the same (`ck_case_documents_object_key`)."""
 
     id: CaseDocumentId
+    case_kind: CaseKind
     case_id: uuid.UUID
     doc_type: DocumentType
     object_key: str
@@ -378,8 +386,10 @@ class CaseDocumentRepositoryPort(Protocol):
         upload took that version first; the client retries."""
         ...
 
-    async def list_for_case(self, context: AccessContext, case_id: uuid.UUID) -> list[CaseDocument]:
-        """The PO case's documents, by type and then newest version first."""
+    async def list_for_case(
+        self, context: AccessContext, case_kind: CaseKind, case_id: uuid.UUID
+    ) -> list[CaseDocument]:
+        """The case's documents, by type and then newest version first."""
         ...
 
     async def get(self, context: AccessContext, document_id: CaseDocumentId) -> CaseDocument | None:
@@ -426,4 +436,72 @@ class CaseDocumentKeysPort(Protocol):
 
     async def existing_keys(self, context: AccessContext, keys: Sequence[str]) -> set[str]:
         """Which of `keys` a document row of `context`'s workspace holds."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class ProductCaseListFilter:
+    """What narrows the product-case list; every field an exact match and the
+    default narrows nothing. The PIC filter only ever narrows: every holder of
+    the read scope sees every case of the workspace (QE-18)."""
+
+    state: ProductDevState | None = None
+    pic_user_id: uuid.UUID | None = None
+
+    def page_query(self, tenant_id: uuid.UUID, workspace_id: uuid.UUID) -> PageQuery:
+        """The cursor identity for listing with THIS filter, in this workspace:
+        a cursor minted under one filter or workspace is refused under another.
+        A field left at its default is omitted, as `POCaseListFilter` does."""
+        narrowing = {
+            f.name: value for f in fields(self) if (value := getattr(self, f.name)) != f.default
+        }
+        return PageQuery(
+            key="supply_chain.product_dev_cases",
+            filters={"tenant": tenant_id, "workspace": workspace_id, **narrowing},
+        )
+
+
+class ProductCaseRepositoryPort(Protocol):
+    """Persists `ProductDevelopmentCase`, its history and its sample rounds.
+
+    `add` and `save` drain the case's pending steps into history rows, open or
+    close the rounds those steps name, and append `audit`, all in the
+    transaction that writes the state. `save` is optimistic on `version`."""
+
+    async def add(
+        self, context: AccessContext, case: ProductDevelopmentCase, *, audit: AuditEvent
+    ) -> None:
+        """`ConflictError` when the tenant already has the proposal code."""
+        ...
+
+    async def get(
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId
+    ) -> ProductDevelopmentCase | None:
+        """The caller's case, with its current round's opening time; another
+        tenant's or workspace's reads as absent."""
+        ...
+
+    async def save(
+        self, context: AccessContext, case: ProductDevelopmentCase, *, audit: AuditEvent
+    ) -> None:
+        """`ConflictError` when another write moved the case first, or when a
+        round the step closes is already closed."""
+        ...
+
+    async def list_page(
+        self, context: AccessContext, request: PageRequest, case_filter: ProductCaseListFilter
+    ) -> Page[ProductDevelopmentCase]:
+        """The workspace's cases matching the filter, newest first."""
+        ...
+
+    async def list_transitions(
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId
+    ) -> list[ProductCaseTransition]:
+        """The case's history, oldest first."""
+        ...
+
+    async def list_rounds(
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId
+    ) -> list[SampleRound]:
+        """The case's sample rounds, first round first."""
         ...

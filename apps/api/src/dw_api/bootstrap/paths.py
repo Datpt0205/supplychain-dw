@@ -38,6 +38,7 @@ SUPPLY_CHAIN_FOLLOW_UP_POLICY = POLICIES_DIR / FOLLOW_UP_POLICY_FILE
 SUPPLY_CHAIN_APPROVAL_MATRIX_POLICY = POLICIES_DIR / "supply_chain_approval_matrix@1.0.0.yaml"
 SUPPLY_CHAIN_BRIEF_POLICY = POLICIES_DIR / "supply_chain_brief@1.0.0.yaml"
 SUPPLY_CHAIN_ACTION_DUTIES = POLICIES_DIR / "supply_chain_action_duties@1.0.0.yaml"
+SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES = POLICIES_DIR / "supply_chain_product_action_duties@1.0.0.yaml"
 SUPPLY_CHAIN_ADVANCE_CASE_WORKER = WORKERS_DIR / "supply_chain_advance_case.yaml"
 
 MOCK_MODEL_FIXTURES = REPO_ROOT / "evals" / "fixtures" / "mock_model"

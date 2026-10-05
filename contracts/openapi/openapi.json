@@ -129,6 +129,59 @@
         "title": "AdvancePOCaseRequest",
         "type": "object"
       },
+      "AdvanceProductCaseRequest": {
+        "additionalProperties": false,
+        "description": "One step. Each step reads the fields it takes and refuses the others:\n`supplier_name` for `request_sample`, `document_id` for `pass_sample`,\n`request_revision` and (optionally) `reject_sample`, `reason` where the\nstep needs one.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ProductAction"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "pattern": "^[^\\x00]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "supplier_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\x00]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Name"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "AdvanceProductCaseRequest",
+        "type": "object"
+      },
       "ApprovalView": {
         "properties": {
           "approval_type": {
@@ -449,6 +502,24 @@
         "title": "Body_upload_document_api_v1_knowledge_documents_post",
         "type": "object"
       },
+      "Body_upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post": {
+        "properties": {
+          "doc_type": {
+            "$ref": "#/components/schemas/DocumentType"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_type",
+          "file"
+        ],
+        "title": "Body_upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post",
+        "type": "object"
+      },
       "BootstrapResponse": {
         "properties": {
           "display_name": {
@@ -765,6 +836,14 @@
       "CaseDocumentView": {
         "description": "A document as the API shows it. The object key stays on the server.",
         "properties": {
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "case_kind": {
+            "$ref": "#/components/schemas/CaseKind"
+          },
           "content_type": {
             "title": "Content Type",
             "type": "string"
@@ -779,11 +858,6 @@
           "id": {
             "format": "uuid",
             "title": "Id",
-            "type": "string"
-          },
-          "po_case_id": {
-            "format": "uuid",
-            "title": "Po Case Id",
             "type": "string"
           },
           "sha256": {
@@ -811,7 +885,8 @@
         },
         "required": [
           "id",
-          "po_case_id",
+          "case_kind",
+          "case_id",
           "doc_type",
           "filename",
           "content_type",
@@ -831,9 +906,19 @@
           "qc",
           "logistics",
           "warehouse",
-          "exceptions"
+          "exceptions",
+          "rnd"
         ],
         "title": "CaseDuty",
+        "type": "string"
+      },
+      "CaseKind": {
+        "description": "Which kind of case a document belongs to; the key's fourth segment, and\nwhich of `case_documents`' two case columns holds the case id.",
+        "enum": [
+          "po",
+          "product"
+        ],
+        "title": "CaseKind",
         "type": "string"
       },
       "CaseLinkDataView": {
@@ -2616,6 +2701,35 @@
         "title": "Page",
         "type": "object"
       },
+      "Page_ProductCaseView_": {
+        "description": "A page of results and the cursor that continues it.\n\n``next_cursor`` is ``None`` on the last page, and that — not an empty\n``items`` — is the client's stop condition: a filtered listing can return an\nempty page in the middle of a run and still have more rows behind it.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductCaseView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
       "PermissionSetView": {
         "properties": {
           "key": {
@@ -2679,6 +2793,368 @@
           "by_supplier"
         ],
         "title": "PortfolioSummaryView",
+        "type": "object"
+      },
+      "ProductAction": {
+        "description": "Every step a person takes on a product-development case.\n\nIts own enum, never `CaseAction`: five names are shared (`cancel`,\n`resume`, `wait_for_external`, `flag_blocked`, `flag_manual_review`) and a\nPO policy or approval keyed by one of them must not reach this case.",
+        "enum": [
+          "propose",
+          "request_sample",
+          "receive_sample",
+          "pass_sample",
+          "request_revision",
+          "receive_revised_sample",
+          "reject_sample",
+          "wait_for_external",
+          "flag_blocked",
+          "flag_manual_review",
+          "resume",
+          "cancel"
+        ],
+        "title": "ProductAction",
+        "type": "string"
+      },
+      "ProductActionOptionView": {
+        "description": "A step the case accepts from its state, what it must carry, and the\nscope its duty needs under the tenant's policy. The page draws its button\nand form from this; the server checks all of it again on the step.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ProductAction"
+          },
+          "document_required": {
+            "title": "Document Required",
+            "type": "boolean"
+          },
+          "document_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason_required": {
+            "title": "Reason Required",
+            "type": "boolean"
+          },
+          "required_scope": {
+            "title": "Required Scope",
+            "type": "string"
+          },
+          "takes_supplier": {
+            "title": "Takes Supplier",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "action",
+          "required_scope",
+          "reason_required",
+          "takes_supplier",
+          "document_type",
+          "document_required"
+        ],
+        "title": "ProductActionOptionView",
+        "type": "object"
+      },
+      "ProductCaseDetailView": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ProductActionOptionView"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "interrupted_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductDevState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pic_user_id": {
+            "format": "uuid",
+            "title": "Pic User Id",
+            "type": "string"
+          },
+          "product_name": {
+            "title": "Product Name",
+            "type": "string"
+          },
+          "proposal_code": {
+            "title": "Proposal Code",
+            "type": "string"
+          },
+          "rounds": {
+            "items": {
+              "$ref": "#/components/schemas/SampleRoundView"
+            },
+            "title": "Rounds",
+            "type": "array"
+          },
+          "sample_round": {
+            "title": "Sample Round",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProductDevState"
+          },
+          "supplier_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Name"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "proposal_code",
+          "product_name",
+          "category",
+          "supplier_name",
+          "pic_user_id",
+          "state",
+          "interrupted_state",
+          "sample_round",
+          "created_by",
+          "created_at",
+          "version",
+          "rounds",
+          "actions"
+        ],
+        "title": "ProductCaseDetailView",
+        "type": "object"
+      },
+      "ProductCaseTransitionView": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ProductAction"
+          },
+          "actor_id": {
+            "format": "uuid",
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "from_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductDevState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "to_state": {
+            "$ref": "#/components/schemas/ProductDevState"
+          }
+        },
+        "required": [
+          "action",
+          "from_state",
+          "to_state",
+          "reason",
+          "actor_id",
+          "occurred_at"
+        ],
+        "title": "ProductCaseTransitionView",
+        "type": "object"
+      },
+      "ProductCaseView": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "interrupted_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductDevState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pic_user_id": {
+            "format": "uuid",
+            "title": "Pic User Id",
+            "type": "string"
+          },
+          "product_name": {
+            "title": "Product Name",
+            "type": "string"
+          },
+          "proposal_code": {
+            "title": "Proposal Code",
+            "type": "string"
+          },
+          "sample_round": {
+            "title": "Sample Round",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProductDevState"
+          },
+          "supplier_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Name"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "proposal_code",
+          "product_name",
+          "category",
+          "supplier_name",
+          "pic_user_id",
+          "state",
+          "interrupted_state",
+          "sample_round",
+          "created_by",
+          "created_at",
+          "version"
+        ],
+        "title": "ProductCaseView",
+        "type": "object"
+      },
+      "ProductDevState": {
+        "description": "The states this slice reaches. Labels live in `CONTEXT.md` and, for the\nweb, in one table beside the product-case pages.",
+        "enum": [
+          "proposed",
+          "sample_requested",
+          "sample_testing",
+          "revision_requested",
+          "pending_bod_review",
+          "waiting_external",
+          "blocked",
+          "manual_review",
+          "cancelled"
+        ],
+        "title": "ProductDevState",
+        "type": "string"
+      },
+      "ProposeProductCaseRequest": {
+        "additionalProperties": false,
+        "description": "Step 1. JSON only: product images are uploaded after the case exists,\nthrough its documents (doc_type `product_image`).",
+        "properties": {
+          "category": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Category",
+            "type": "string"
+          },
+          "product_name": {
+            "maxLength": 300,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Product Name",
+            "type": "string"
+          },
+          "proposal_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Proposal Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_code",
+          "product_name",
+          "category"
+        ],
+        "title": "ProposeProductCaseRequest",
         "type": "object"
       },
       "ReadinessResponse": {
@@ -2929,6 +3405,116 @@
           "status"
         ],
         "title": "SLAMilestone",
+        "type": "object"
+      },
+      "SampleResult": {
+        "description": "How a sample round closed (Vòng mẫu: Đạt, Cần chỉnh sửa, Hủy).",
+        "enum": [
+          "passed",
+          "needs_revision",
+          "rejected"
+        ],
+        "title": "SampleResult",
+        "type": "string"
+      },
+      "SampleRoundView": {
+        "properties": {
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "closed_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed By"
+          },
+          "evaluation_document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Document Id"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "opened_by": {
+            "format": "uuid",
+            "title": "Opened By",
+            "type": "string"
+          },
+          "requested_changes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Changes"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SampleResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision_document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Document Id"
+          },
+          "round_no": {
+            "title": "Round No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "round_no",
+          "opened_at",
+          "opened_by",
+          "result",
+          "evaluation_document_id",
+          "closed_at",
+          "closed_by",
+          "revision_document_id",
+          "requested_changes"
+        ],
+        "title": "SampleRoundView",
         "type": "object"
       },
       "SetManagerBody": {
@@ -3396,6 +3982,43 @@
           "recipients"
         ],
         "title": "SupplyChainFollowUpPolicy",
+        "type": "object"
+      },
+      "SupplyChainProductActionDuties": {
+        "additionalProperties": false,
+        "properties": {
+          "action_duties": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CaseDuty"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ProductAction"
+            },
+            "title": "Action Duties",
+            "type": "object"
+          },
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version",
+          "action_duties"
+        ],
+        "title": "SupplyChainProductActionDuties",
         "type": "object"
       },
       "SupplyChainSLAPolicy": {
@@ -7479,6 +8102,503 @@
           }
         },
         "summary": "Create Po Case Transition",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/product-action-duties": {
+      "get": {
+        "description": "Which duty each product step belongs to for the caller's tenant.",
+        "operationId": "get_product_action_duties_api_v1_supply_chain_product_action_duties_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainProductActionDuties"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Product Action Duties",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "description": "Replaces the tenant's own product step-to-duty mapping, whole. No\n`Idempotency-Key`, as for the other policies' `PUT`.",
+        "operationId": "set_product_action_duties_override_api_v1_supply_chain_product_action_duties_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainProductActionDuties"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainProductActionDuties"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Product Action Duties Override",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/product-cases": {
+      "get": {
+        "operationId": "list_product_cases_api_v1_supply_chain_product_cases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Opaque cursor from a previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from a previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Only cases in this state.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProductDevState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only cases in this state.",
+              "title": "State"
+            }
+          },
+          {
+            "description": "Only cases this person is PIC of.",
+            "in": "query",
+            "name": "pic_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only cases this person is PIC of.",
+              "title": "Pic User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ProductCaseView_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Product Cases",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "post": {
+        "description": "Step 1. The caller becomes the PIC.",
+        "operationId": "propose_product_case_api_v1_supply_chain_product_cases_post",
+        "parameters": [
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeProductCaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductCaseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Product Case",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/product-cases/{case_id}": {
+      "get": {
+        "operationId": "get_product_case_api_v1_supply_chain_product_cases__case_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductCaseDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Product Case",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/product-cases/{case_id}/documents": {
+      "get": {
+        "operationId": "list_product_case_documents_api_v1_supply_chain_product_cases__case_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CaseDocumentView"
+                  },
+                  "title": "Response List Product Case Documents Api V1 Supply Chain Product Cases  Case Id  Documents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Product Case Documents",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "post": {
+        "operationId": "upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDocumentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Product Case Document",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
+      "get": {
+        "operationId": "get_product_case_transitions_api_v1_supply_chain_product_cases__case_id__transitions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProductCaseTransitionView"
+                  },
+                  "title": "Response Get Product Case Transitions Api V1 Supply Chain Product Cases  Case Id  Transitions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Product Case Transitions",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "post": {
+        "operationId": "create_product_case_transition_api_v1_supply_chain_product_cases__case_id__transitions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdvanceProductCaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductCaseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Product Case Transition",
         "tags": [
           "supply_chain"
         ]

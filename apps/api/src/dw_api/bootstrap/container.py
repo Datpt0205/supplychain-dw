@@ -90,6 +90,7 @@ from dw_supply_chain.application.handlers import (
     GetMissingUpdateStatus,
     GetPOCase,
     GetPortfolioSummary,
+    GetProductActionDuties,
     GetSLAEvaluation,
     GetSLAPolicy,
     ListCaseTransitions,
@@ -101,9 +102,17 @@ from dw_supply_chain.application.handlers import (
     SetApprovalMatrixOverride,
     SetBriefPolicyOverride,
     SetFollowUpPolicyOverride,
+    SetProductActionDutiesOverride,
     SetSLAPolicyOverride,
     SubmitSupplierUpdate,
     SummarizeDailyBrief,
+)
+from dw_supply_chain.application.product_cases import (
+    AdvanceProductCase,
+    GetProductCase,
+    ListProductCases,
+    ListProductCaseTransitions,
+    ProposeProductCase,
 )
 
 
@@ -199,6 +208,15 @@ class ApiContainer:
     supply_chain_upload_case_document: UploadCaseDocument | None = None
     supply_chain_list_case_documents: ListCaseDocuments | None = None
     supply_chain_download_case_document: DownloadCaseDocument | None = None
+    # Product-development cases (stage 1): their own router on their own guard,
+    # as the documents router is.
+    supply_chain_propose_product_case: ProposeProductCase | None = None
+    supply_chain_get_product_case: GetProductCase | None = None
+    supply_chain_list_product_cases: ListProductCases | None = None
+    supply_chain_advance_product_case: AdvanceProductCase | None = None
+    supply_chain_list_product_case_transitions: ListProductCaseTransitions | None = None
+    supply_chain_get_product_action_duties: GetProductActionDuties | None = None
+    supply_chain_set_product_action_duties_override: SetProductActionDutiesOverride | None = None
     # Holds one LISTEN connection for the process; started and stopped by the
     # app's lifespan, never by a request.
     run_events: RunStateListener | None = None

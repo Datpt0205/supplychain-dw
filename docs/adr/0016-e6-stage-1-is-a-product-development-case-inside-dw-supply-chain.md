@@ -79,3 +79,51 @@ TP Cung ứng). BGĐ và Kế toán không có duty: họ quyết approval, gi�
 - Bảng mới: `product_dev_cases`, `product_dev_case_state_transitions`,
   `product_sample_rounds`, `sample_revision_requests`; mỗi bảng có `tenant_id`,
   `workspace_id`, RLS FORCE, và test âm xuyên tenant, xuyên workspace.
+
+## Sửa đổi 2026-10-05 (tạm, lát S1; chờ Đạt duyệt ở QO-2)
+
+Các quyết định tạm của lead khi làm lát S1 (ticket 01 giai đoạn 1). Chúng làm rõ phần
+Quyết định ở trên; chi tiết và test ở Comments của
+`.claude/plans/supply-chain/stage-1/issues/01-product-case-steps-1-5.md`.
+
+1. **Duty là policy riêng.** `supply_chain_product_action_duties@1.0.0` (schema
+   `SupplyChainProductActionDuties`, khóa theo `ProductAction`, đòi đủ mọi hành động), ghi
+   đè qua cùng `PolicyOverridePort` như `supply_chain_action_duties`; không gộp vì năm tên
+   hành động trùng với `CaseAction`. `propose`, `request_sample` thuộc `ordering`; năm bước
+   R&D thuộc `rnd`; bốn bước ngoại lệ thuộc `exceptions`, `cancel` thuộc `ordering` như Hồ
+   sơ PO. Mọi bước, kể cả `propose`, gác bằng scope duty của nó. Mở hồ sơ (`propose`) còn
+   cần `supply_chain.product_case.write`, như `CreatePOCase` cần `po_case.write`; scope
+   này cấp cho đúng các vai có `po_case.write` (hôm nay `sc_operator`) và nằm ở phía vận
+   hành của `sod_sc_rules_vs_operations`. Đọc: `supply_chain.product_case.read` cho cả tám
+   vai `sc_*`; vai mới `sc_rnd` = `sc_viewer` + duty `rnd` + tải chứng từ, KHÔNG có duty
+   `exceptions` (duty đó dùng chung hai loại hồ sơ, có nó thì R&D tạm dừng và tiếp tục
+   được Hồ sơ PO). Theo policy nền, bước ngoại lệ của hồ sơ phát triển do các vai vận hành
+   PO làm; công ty muốn R&D làm thì ghi đè các bước đó sang `rnd` trong policy riêng này,
+   không chạm Hồ sơ PO. `duty.rnd` ở phía vận hành của `sod_sc_rules_vs_operations`. Chưa
+   có luật ordering-vs-R&D (QE-16). (Sửa 2026-10-06, review vòng 2: bản trước của đoạn
+   này lệch quyết định 8 và 9 của lead; nay làm đúng chữ hai quyết định đó.)
+2. **PIC** đóng dấu từ người gọi lúc `propose`; lệnh không có tham số PIC. Không có
+   `reassign_pic` ở S1. Mọi người có quyền đọc thấy mọi hồ sơ của workspace; lọc PIC chỉ
+   thu hẹp (QE-18).
+3. **NCC** NULL lúc `propose`, bắt buộc và đóng dấu ở `request_sample` (bước 2, khi NCC
+   được liên hệ). **Category** là text tự do không rỗng, đóng dấu lúc `propose`, chưa kiểm
+   danh sách tới S6 (ADR 0019). **Mã đề xuất** duy nhất trong tenant; 409 ở workspace khác
+   của cùng tenant xác nhận mã đã có, chấp nhận.
+4. **Bốn bảng thu hẹp theo workspace** (dạng policy của `CLAUDE.md`), con tham chiếu hồ sơ
+   bằng FK ghép có workspace, `ON DELETE CASCADE`. `product_dev_cases` giữ DELETE của
+   `dw_app` như `po_cases`, vì purge của offboarding chỉ xóa bảng `dw_app` được DELETE và
+   cascade từ hồ sơ là đường xóa các bảng con (đo: thiếu nó thì hồ sơ còn lại sau
+   offboarding). Lịch sử và phiếu chỉnh sửa chỉ thêm; vòng mẫu chỉ được đóng một lần
+   (UPDATE theo cột, trigger `closes_once`).
+5. **Vòng mẫu** mở ở `receive_sample` và `receive_revised_sample`; `pass_sample`,
+   `request_revision`, `reject_sample` đóng vòng hiện tại. Chứng từ của một vòng là chứng
+   từ của chính hồ sơ (FK ghép tới `case_documents`), đúng loại, và tải lên từ khi vòng
+   mở (`uploaded_at >= opened_at`); một biên bản chỉ đóng một vòng. Thiếu hay sai đều là
+   409 nêu loại chứng từ thiếu. `cancel` khi mẫu đang test, hoặc tạm dừng lúc đang test,
+   đóng vòng mở trong cùng bước với kết quả `rejected` (Hủy), nên hồ sơ đã hủy không còn
+   vòng nào mở. Một bước nhận trường nó không dùng (NCC, chứng từ, lý do) thì từ chối.
+6. **`pending_bod_review` là điểm dừng tạm ở S1:** không run approval nào. S2 đổi
+   `pass_sample` để khởi động run bước 6 trong cùng lệnh, và phải xử lý các hồ sơ đã ở
+   `pending_bod_review` từ trước S2 (backfill hoặc khởi động tường minh).
+7. **Lịch sử** mỗi dòng có `action`, `actor_id`, `from_state` (NULL chỉ ở `propose`),
+   `to_state`, `reason`, `occurred_at`; mọi lệnh ghi audit trong cùng giao dịch.

@@ -4,10 +4,13 @@ Every decision here is made before a byte is stored:
 
 - **Who:** `supply_chain.document.write` to upload, `.read` to list or
   download, checked here where the read or write happens.
-- **Which case:** the case is loaded under the caller's tenant (RLS) and must
-  be in the caller's workspace. `po_cases` is narrowed by tenant only, so this
-  check is what keeps a document out of another workspace's case; the
-  composite FK refuses it again in the database.
+- **Which case:** a PO case or a product-development case (`CaseKind`), each
+  looked up through its own repository, chosen from one table keyed by kind.
+  The case is read under the caller's tenant (RLS) and must be in the caller's
+  workspace. `po_cases` is narrowed by tenant only, so this check is what
+  keeps a document out of another workspace's PO case; the composite FK
+  refuses it again in the database. `product_dev_cases` is narrowed by
+  workspace in RLS as well.
 - **What:** at most `max_bytes` (the deployment's setting), not empty, and a
   content type `accepted_content_type` lets through.
 - **Where:** the object key is built from the context's tenant and workspace
@@ -23,6 +26,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -48,7 +53,6 @@ from dw_supply_chain.domain.case_document import (
     accepted_content_type,
     clean_filename,
 )
-from dw_supply_chain.domain.po_case import POCase, POCaseId
 
 logger = logging.getLogger(__name__)
 
@@ -57,26 +61,33 @@ UPLOAD_ACTION = "supply_chain.document.upload"
 
 
 class CaseLookupPort(Protocol):
-    """The one thing these handlers ask of the case repository.
-    `POCaseRepositoryPort` satisfies it."""
+    """The one thing these handlers ask of a case repository: the workspace
+    of the caller's case, read under the caller's RLS. `SqlPOCaseRepository`
+    and `SqlProductCaseRepository` each answer it for their kind."""
 
-    async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None: ...
+    async def case_workspace(
+        self, context: AccessContext, case_id: uuid.UUID
+    ) -> uuid.UUID | None: ...
 
 
-async def _case_in_workspace(
-    cases: CaseLookupPort, context: AccessContext, case_id: POCaseId
-) -> POCase:
-    """The case, if it is in the caller's tenant AND workspace. Either miss
-    reads as not found: a 403 would confirm the case exists."""
-    case = await cases.get(context, case_id)
-    if case is None or case.workspace_id.value != context.workspace_id:
-        raise NotFoundError("PO case not found", details={"case_id": str(case_id)})
-    return case
+CaseLookups = Mapping[CaseKind, CaseLookupPort]
+
+
+async def _require_case_in_workspace(
+    cases: CaseLookups, context: AccessContext, case_kind: CaseKind, case_id: uuid.UUID
+) -> None:
+    """Refuses unless the case is in the caller's tenant AND workspace. Either
+    miss reads as not found: a 403 would confirm the case exists."""
+    workspace = await cases[case_kind].case_workspace(context, case_id)
+    if workspace is None or workspace != context.workspace_id:
+        raise NotFoundError(
+            "case not found", details={"case_kind": case_kind.value, "case_id": str(case_id)}
+        )
 
 
 @dataclass(frozen=True)
 class UploadCaseDocument:
-    cases: CaseLookupPort
+    cases: CaseLookups
     documents: CaseDocumentRepositoryPort
     storage: CaseDocumentStoragePort
     authz: AuthorizationPort
@@ -90,7 +101,8 @@ class UploadCaseDocument:
     async def handle(
         self,
         context: AccessContext,
-        case_id: POCaseId,
+        case_kind: CaseKind,
+        case_id: uuid.UUID,
         *,
         doc_type: DocumentType,
         filename: str,
@@ -103,7 +115,7 @@ class UploadCaseDocument:
             resource_type=_RESOURCE,
             resource_id=str(case_id),
         )
-        case = await _case_in_workspace(self.cases, context, case_id)
+        await _require_case_in_workspace(self.cases, context, case_kind, case_id)
         if len(data) > self.max_bytes:
             raise PayloadTooLargeError(
                 f"file tối đa {self.max_bytes // (1024 * 1024)} MB",
@@ -118,8 +130,8 @@ class UploadCaseDocument:
         key = ObjectKey.build(
             tenant_id=context.tenant_id,
             workspace_id=context.workspace_id,
-            case_kind=CaseKind.PO,
-            case_id=case.id.value,
+            case_kind=case_kind,
+            case_id=case_id,
             document_id=document_id.value,
         ).value
         sha256 = hashlib.sha256(data).hexdigest()
@@ -129,7 +141,8 @@ class UploadCaseDocument:
                 context,
                 NewCaseDocument(
                     id=document_id,
-                    case_id=case.id.value,
+                    case_kind=case_kind,
+                    case_id=case_id,
                     doc_type=doc_type,
                     object_key=key,
                     filename=name,
@@ -147,7 +160,8 @@ class UploadCaseDocument:
                     resource_id=str(document_id),
                     occurred_at=self.clock.now(),
                     details={
-                        "po_case_id": str(case.id),
+                        "case_kind": case_kind.value,
+                        "case_id": str(case_id),
                         "doc_type": doc_type.value,
                         "sha256": sha256,
                         "size_bytes": len(data),
@@ -169,19 +183,21 @@ class UploadCaseDocument:
 
 @dataclass(frozen=True)
 class ListCaseDocuments:
-    cases: CaseLookupPort
+    cases: CaseLookups
     documents: CaseDocumentRepositoryPort
     authz: AuthorizationPort
 
-    async def handle(self, context: AccessContext, case_id: POCaseId) -> list[CaseDocument]:
+    async def handle(
+        self, context: AccessContext, case_kind: CaseKind, case_id: uuid.UUID
+    ) -> list[CaseDocument]:
         await self.authz.require(
             context=context,
             action=DOCUMENT_READ,
             resource_type=_RESOURCE,
             resource_id=str(case_id),
         )
-        case = await _case_in_workspace(self.cases, context, case_id)
-        return await self.documents.list_for_case(context, case.id.value)
+        await _require_case_in_workspace(self.cases, context, case_kind, case_id)
+        return await self.documents.list_for_case(context, case_kind, case_id)
 
 
 @dataclass(frozen=True)

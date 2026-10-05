@@ -423,6 +423,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/product-action-duties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Product Action Duties
+         * @description Which duty each product step belongs to for the caller's tenant.
+         */
+        get: operations["get_product_action_duties_api_v1_supply_chain_product_action_duties_get"];
+        /**
+         * Set Product Action Duties Override
+         * @description Replaces the tenant's own product step-to-duty mapping, whole. No
+         *     `Idempotency-Key`, as for the other policies' `PUT`.
+         */
+        put: operations["set_product_action_duties_override_api_v1_supply_chain_product_action_duties_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/product-cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Product Cases */
+        get: operations["list_product_cases_api_v1_supply_chain_product_cases_get"];
+        put?: never;
+        /**
+         * Propose Product Case
+         * @description Step 1. The caller becomes the PIC.
+         */
+        post: operations["propose_product_case_api_v1_supply_chain_product_cases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/product-cases/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Product Case */
+        get: operations["get_product_case_api_v1_supply_chain_product_cases__case_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/product-cases/{case_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Product Case Documents */
+        get: operations["list_product_case_documents_api_v1_supply_chain_product_cases__case_id__documents_get"];
+        put?: never;
+        /** Upload Product Case Document */
+        post: operations["upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Product Case Transitions */
+        get: operations["get_product_case_transitions_api_v1_supply_chain_product_cases__case_id__transitions_get"];
+        put?: never;
+        /** Create Product Case Transition */
+        post: operations["create_product_case_transition_api_v1_supply_chain_product_cases__case_id__transitions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/sla-policy": {
         parameters: {
             query?: never;
@@ -487,6 +586,22 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /**
+         * AdvanceProductCaseRequest
+         * @description One step. Each step reads the fields it takes and refuses the others:
+         *     `supplier_name` for `request_sample`, `document_id` for `pass_sample`,
+         *     `request_revision` and (optionally) `reject_sample`, `reason` where the
+         *     step needs one.
+         */
+        AdvanceProductCaseRequest: {
+            action: components["schemas"]["ProductAction"];
+            /** Document Id */
+            document_id?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Supplier Name */
+            supplier_name?: string | null;
+        };
         /** AttentionItemView */
         AttentionItemView: {
             case: components["schemas"]["POCaseView"];
@@ -495,6 +610,12 @@ export interface components {
         };
         /** Body_upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post */
         Body_upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post: {
+            doc_type: components["schemas"]["DocumentType"];
+            /** File */
+            file: string;
+        };
+        /** Body_upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post */
+        Body_upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post: {
             doc_type: components["schemas"]["DocumentType"];
             /** File */
             file: string;
@@ -580,6 +701,12 @@ export interface components {
          * @description A document as the API shows it. The object key stays on the server.
          */
         CaseDocumentView: {
+            /**
+             * Case Id
+             * Format: uuid
+             */
+            case_id: string;
+            case_kind: components["schemas"]["CaseKind"];
             /** Content Type */
             content_type: string;
             doc_type: components["schemas"]["DocumentType"];
@@ -590,11 +717,6 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /**
-             * Po Case Id
-             * Format: uuid
-             */
-            po_case_id: string;
             /** Sha256 */
             sha256: string;
             /** Size Bytes */
@@ -616,7 +738,14 @@ export interface components {
          * CaseDuty
          * @enum {string}
          */
-        CaseDuty: "ordering" | "finance" | "qc" | "logistics" | "warehouse" | "exceptions";
+        CaseDuty: "ordering" | "finance" | "qc" | "logistics" | "warehouse" | "exceptions" | "rnd";
+        /**
+         * CaseKind
+         * @description Which kind of case a document belongs to; the key's fourth segment, and
+         *     which of `case_documents`' two case columns holds the case id.
+         * @enum {string}
+         */
+        CaseKind: "po" | "product";
         /** CaseLinkDataView */
         CaseLinkDataView: {
             case: components["schemas"]["POCaseView"];
@@ -873,6 +1002,20 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /**
+         * Page
+         * @description A page of results and the cursor that continues it.
+         *
+         *     ``next_cursor`` is ``None`` on the last page, and that — not an empty
+         *     ``items`` — is the client's stop condition: a filtered listing can return an
+         *     empty page in the middle of a run and still have more rows behind it.
+         */
+        Page_ProductCaseView_: {
+            /** Items */
+            items: components["schemas"]["ProductCaseView"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
         /** PortfolioSummaryView */
         PortfolioSummaryView: {
             /** Active Case Count */
@@ -885,6 +1028,144 @@ export interface components {
             sla_breached_count: number;
             /** Update Overdue Count */
             update_overdue_count: number;
+        };
+        /**
+         * ProductAction
+         * @description Every step a person takes on a product-development case.
+         *
+         *     Its own enum, never `CaseAction`: five names are shared (`cancel`,
+         *     `resume`, `wait_for_external`, `flag_blocked`, `flag_manual_review`) and a
+         *     PO policy or approval keyed by one of them must not reach this case.
+         * @enum {string}
+         */
+        ProductAction: "propose" | "request_sample" | "receive_sample" | "pass_sample" | "request_revision" | "receive_revised_sample" | "reject_sample" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "resume" | "cancel";
+        /**
+         * ProductActionOptionView
+         * @description A step the case accepts from its state, what it must carry, and the
+         *     scope its duty needs under the tenant's policy. The page draws its button
+         *     and form from this; the server checks all of it again on the step.
+         */
+        ProductActionOptionView: {
+            action: components["schemas"]["ProductAction"];
+            /** Document Required */
+            document_required: boolean;
+            document_type: components["schemas"]["DocumentType"] | null;
+            /** Reason Required */
+            reason_required: boolean;
+            /** Required Scope */
+            required_scope: string;
+            /** Takes Supplier */
+            takes_supplier: boolean;
+        };
+        /** ProductCaseDetailView */
+        ProductCaseDetailView: {
+            /** Actions */
+            actions: components["schemas"]["ProductActionOptionView"][];
+            /** Category */
+            category: string;
+            /** Created At */
+            created_at: string | null;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            interrupted_state: components["schemas"]["ProductDevState"] | null;
+            /**
+             * Pic User Id
+             * Format: uuid
+             */
+            pic_user_id: string;
+            /** Product Name */
+            product_name: string;
+            /** Proposal Code */
+            proposal_code: string;
+            /** Rounds */
+            rounds: components["schemas"]["SampleRoundView"][];
+            /** Sample Round */
+            sample_round: number;
+            state: components["schemas"]["ProductDevState"];
+            /** Supplier Name */
+            supplier_name: string | null;
+            /** Version */
+            version: number;
+        };
+        /** ProductCaseTransitionView */
+        ProductCaseTransitionView: {
+            action: components["schemas"]["ProductAction"];
+            /**
+             * Actor Id
+             * Format: uuid
+             */
+            actor_id: string;
+            from_state: components["schemas"]["ProductDevState"] | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Reason */
+            reason: string | null;
+            to_state: components["schemas"]["ProductDevState"];
+        };
+        /** ProductCaseView */
+        ProductCaseView: {
+            /** Category */
+            category: string;
+            /** Created At */
+            created_at: string | null;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            interrupted_state: components["schemas"]["ProductDevState"] | null;
+            /**
+             * Pic User Id
+             * Format: uuid
+             */
+            pic_user_id: string;
+            /** Product Name */
+            product_name: string;
+            /** Proposal Code */
+            proposal_code: string;
+            /** Sample Round */
+            sample_round: number;
+            state: components["schemas"]["ProductDevState"];
+            /** Supplier Name */
+            supplier_name: string | null;
+            /** Version */
+            version: number;
+        };
+        /**
+         * ProductDevState
+         * @description The states this slice reaches. Labels live in `CONTEXT.md` and, for the
+         *     web, in one table beside the product-case pages.
+         * @enum {string}
+         */
+        ProductDevState: "proposed" | "sample_requested" | "sample_testing" | "revision_requested" | "pending_bod_review" | "waiting_external" | "blocked" | "manual_review" | "cancelled";
+        /**
+         * ProposeProductCaseRequest
+         * @description Step 1. JSON only: product images are uploaded after the case exists,
+         *     through its documents (doc_type `product_image`).
+         */
+        ProposeProductCaseRequest: {
+            /** Category */
+            category: string;
+            /** Product Name */
+            product_name: string;
+            /** Proposal Code */
+            proposal_code: string;
         };
         /**
          * SLAConfirmationStatus
@@ -928,6 +1209,38 @@ export interface components {
             /** Duration */
             duration: string;
             status: components["schemas"]["SLAConfirmationStatus"];
+        };
+        /**
+         * SampleResult
+         * @description How a sample round closed (Vòng mẫu: Đạt, Cần chỉnh sửa, Hủy).
+         * @enum {string}
+         */
+        SampleResult: "passed" | "needs_revision" | "rejected";
+        /** SampleRoundView */
+        SampleRoundView: {
+            /** Closed At */
+            closed_at: string | null;
+            /** Closed By */
+            closed_by: string | null;
+            /** Evaluation Document Id */
+            evaluation_document_id: string | null;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /**
+             * Opened By
+             * Format: uuid
+             */
+            opened_by: string;
+            /** Requested Changes */
+            requested_changes: string | null;
+            result: components["schemas"]["SampleResult"] | null;
+            /** Revision Document Id */
+            revision_document_id: string | null;
+            /** Round No */
+            round_no: number;
         };
         /** StateSummaryView */
         StateSummaryView: {
@@ -1058,6 +1371,19 @@ export interface components {
             recipients: {
                 [key: string]: string[];
             };
+            /** Schema Version */
+            schema_version: string;
+        };
+        /** SupplyChainProductActionDuties */
+        SupplyChainProductActionDuties: {
+            /** Action Duties */
+            action_duties: {
+                [key: string]: components["schemas"]["CaseDuty"];
+            };
+            /** Policy Id */
+            policy_id: string;
+            /** Policy Version */
+            policy_version: string;
             /** Schema Version */
             schema_version: string;
         };
@@ -1956,6 +2282,301 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CaseActionResultView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_product_action_duties_api_v1_supply_chain_product_action_duties_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainProductActionDuties"];
+                };
+            };
+        };
+    };
+    set_product_action_duties_override_api_v1_supply_chain_product_action_duties_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplyChainProductActionDuties"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainProductActionDuties"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_product_cases_api_v1_supply_chain_product_cases_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description Opaque cursor from a previous page. */
+                cursor?: string | null;
+                /** @description Only cases in this state. */
+                state?: components["schemas"]["ProductDevState"] | null;
+                /** @description Only cases this person is PIC of. */
+                pic_user_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ProductCaseView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_product_case_api_v1_supply_chain_product_cases_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposeProductCaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductCaseView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_product_case_api_v1_supply_chain_product_cases__case_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductCaseDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_product_case_documents_api_v1_supply_chain_product_cases__case_id__documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDocumentView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDocumentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_product_case_transitions_api_v1_supply_chain_product_cases__case_id__transitions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductCaseTransitionView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_product_case_transition_api_v1_supply_chain_product_cases__case_id__transitions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdvanceProductCaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductCaseView"];
                 };
             };
             /** @description Validation Error */

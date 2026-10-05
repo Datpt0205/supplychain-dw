@@ -157,6 +157,7 @@ async def test_the_sweep_deletes_only_old_keys_no_row_holds(
         context,
         NewCaseDocument(
             id=document_id,
+            case_kind=CaseKind.PO,
             case_id=case.id.value,
             doc_type=DocumentType.PURCHASE_ORDER,
             object_key=held,

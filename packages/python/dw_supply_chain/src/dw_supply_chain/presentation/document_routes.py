@@ -35,8 +35,12 @@ from dw_supply_chain.application.case_documents import (
     ListCaseDocuments,
     UploadCaseDocument,
 )
-from dw_supply_chain.domain.case_document import CaseDocument, CaseDocumentId, DocumentType
-from dw_supply_chain.domain.po_case import POCaseId
+from dw_supply_chain.domain.case_document import (
+    CaseDocument,
+    CaseDocumentId,
+    CaseKind,
+    DocumentType,
+)
 
 AccessContextResolver = Callable[..., Awaitable[AccessContext]]
 IdempotencyResolver = Callable[..., object]
@@ -57,7 +61,9 @@ class CaseDocumentView(BaseModel):
     """A document as the API shows it. The object key stays on the server."""
 
     id: uuid.UUID
-    po_case_id: uuid.UUID
+    # Which case the document belongs to: a PO case or a product-development case.
+    case_kind: CaseKind
+    case_id: uuid.UUID
     doc_type: DocumentType
     filename: str
     content_type: str
@@ -71,7 +77,8 @@ class CaseDocumentView(BaseModel):
 def _view(document: CaseDocument) -> CaseDocumentView:
     return CaseDocumentView(
         id=document.id.value,
-        po_case_id=document.case_id,
+        case_kind=document.case_kind,
+        case_id=document.case_id,
         doc_type=document.doc_type,
         filename=document.filename,
         content_type=document.content_type,
@@ -137,19 +144,29 @@ def body_capped_route(limit: int) -> type[APIRoute]:
     return BodyCappedRoute
 
 
-def build_documents_router(
+# Each kind of case and the path its documents hang under, with the name its
+# routes take (the PO routes keep the names slice D gave them, so their
+# operation ids do not move).
+_CASE_ROUTES: dict[CaseKind, tuple[str, str]] = {
+    CaseKind.PO: ("po-cases", "case_document"),
+    CaseKind.PRODUCT: ("product-cases", "product_case_document"),
+}
+
+
+def _add_case_routes(
+    router: APIRouter,
+    kind: CaseKind,
+    *,
+    segment: str,
+    name: str,
     upload: UploadCaseDocument,
     list_documents: ListCaseDocuments,
-    download: DownloadCaseDocument,
-    *,
-    resolve_access_context: AccessContextResolver,
-    resolve_form_idempotency: IdempotencyResolver,
-) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/supply-chain", tags=["supply_chain"])
-    require_access_context = Annotated[AccessContext, Depends(resolve_access_context)]
-    require_idempotency = Annotated[SupportsFormIdempotency, Depends(resolve_form_idempotency)]
+    require_access_context: Any,
+    require_idempotency: Any,
+) -> None:
+    """Upload and list for one kind of case: the same handlers, told which kind."""
 
-    async def upload_case_document(
+    async def upload_document(
         case_id: uuid.UUID,
         context: require_access_context,
         idempotency: require_idempotency,
@@ -171,28 +188,62 @@ def build_documents_router(
         )
         document = await upload.handle(
             context,
-            POCaseId(case_id),
+            kind,
+            case_id,
             doc_type=doc_type,
             filename=file.filename or "",
             declared_content_type=file.content_type or "",
             data=data,
         )
-        return await idempotency.record(_view(document), status_code=201)
+        recorded: CaseDocumentView = await idempotency.record(_view(document), status_code=201)
+        return recorded
+
+    async def list_documents_route(
+        case_id: uuid.UUID, context: require_access_context
+    ) -> list[CaseDocumentView]:
+        return [_view(d) for d in await list_documents.handle(context, kind, case_id)]
 
     router.add_api_route(
-        "/po-cases/{case_id}/documents",
-        upload_case_document,
+        f"/{segment}/{{case_id}}/documents",
+        upload_document,
         methods=["POST"],
+        name=f"upload_{name}",
         response_model=CaseDocumentView,
         status_code=201,
         route_class_override=body_capped_route(upload.max_bytes + MULTIPART_OVERHEAD_BYTES),
     )
+    router.add_api_route(
+        f"/{segment}/{{case_id}}/documents",
+        list_documents_route,
+        methods=["GET"],
+        name=f"list_{name}s",
+        response_model=list[CaseDocumentView],
+    )
 
-    @router.get("/po-cases/{case_id}/documents", response_model=list[CaseDocumentView])
-    async def list_case_documents(
-        case_id: uuid.UUID, context: require_access_context
-    ) -> list[CaseDocumentView]:
-        return [_view(d) for d in await list_documents.handle(context, POCaseId(case_id))]
+
+def build_documents_router(
+    upload: UploadCaseDocument,
+    list_documents: ListCaseDocuments,
+    download: DownloadCaseDocument,
+    *,
+    resolve_access_context: AccessContextResolver,
+    resolve_form_idempotency: IdempotencyResolver,
+) -> APIRouter:
+    router = APIRouter(prefix="/api/v1/supply-chain", tags=["supply_chain"])
+    require_access_context = Annotated[AccessContext, Depends(resolve_access_context)]
+    require_idempotency = Annotated[SupportsFormIdempotency, Depends(resolve_form_idempotency)]
+
+    for kind, (segment, name) in _CASE_ROUTES.items():
+        _add_case_routes(
+            router,
+            kind,
+            segment=segment,
+            name=name,
+            upload=upload,
+            list_documents=list_documents,
+            require_access_context=require_access_context,
+            require_idempotency=require_idempotency,
+        )
 
     @router.get(
         "/documents/{document_id}/content",

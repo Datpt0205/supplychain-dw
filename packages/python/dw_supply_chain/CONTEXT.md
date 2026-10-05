@@ -45,7 +45,8 @@ dõi); "đơn hàng" trong code.
 
 **Vòng mẫu** (`SampleRound`) (đề xuất):
 Một lần nhận mẫu từ NCC và R&D test nó. Vòng 1 bắt đầu ở bước 2; mỗi lần mẫu chỉnh
-sửa về (bước 5) mở vòng mới. Kết quả: Đạt, Cần chỉnh sửa, Hủy.
+sửa về (bước 5) mở vòng mới. Kết quả: Đạt, Cần chỉnh sửa, Hủy. Hủy hồ sơ khi mẫu đang
+test cũng đóng vòng đó với kết quả Hủy.
 
 **Phiếu yêu cầu chỉnh sửa mẫu** (`SampleRevisionRequest`) (từ S1):
 Chứng từ R&D lập ở bước 4 khi mẫu không đạt, gửi qua Cung ứng tới NCC. Bắt buộc để
@@ -218,6 +219,11 @@ Một lần gửi một thông báo tới một người qua một kênh, có tr
 | `cancelled`           | Đã hủy               | Kết thúc                                    |
 
 ### Trạng thái của Hồ sơ phát triển sản phẩm (`ProductDevState`) (đề xuất)
+
+Từ S1, nhãn trong code có một chủ: `PRODUCT_DEV_STATE_LABEL` trong
+`apps/web/components/supply-chain/product-case-labels.tsx`; S1 chỉ đi tới
+`pending_bod_review` (cùng ba trạng thái ngắt và `cancelled`). Hai bên lệch thì sửa
+cả hai trong cùng commit.
 
 | Giá trị                 | Nhãn                   | Bước, ghi chú                                   |
 | ----------------------- | ---------------------- | ----------------------------------------------- |

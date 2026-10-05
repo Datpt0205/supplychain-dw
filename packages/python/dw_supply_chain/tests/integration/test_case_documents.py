@@ -42,6 +42,9 @@ from dw_supply_chain.adapters.persistence.case_document_repository import (
     SqlCaseDocumentRepository,
 )
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
+from dw_supply_chain.adapters.persistence.product_case_repository import (
+    SqlProductCaseRepository,
+)
 from dw_supply_chain.application.case_documents import UploadCaseDocument
 from dw_supply_chain.application.handlers import DOCUMENT_READ, DOCUMENT_WRITE
 from dw_supply_chain.application.ports import NewCaseDocument
@@ -106,6 +109,7 @@ def _new(
     document_id = CaseDocumentId(uuid.uuid4())
     return NewCaseDocument(
         id=document_id,
+        case_kind=CaseKind.PO,
         case_id=case.id.value,
         doc_type=doc_type,
         object_key=ObjectKey.build(
@@ -171,7 +175,7 @@ async def test_another_tenant_reads_none_of_the_documents(db: _Db) -> None:
     repo = SqlCaseDocumentRepository(db.sessions)
 
     assert await repo.get(theirs, document.id) is None
-    assert await repo.list_for_case(theirs, case.id.value) == []
+    assert await repo.list_for_case(theirs, CaseKind.PO, case.id.value) == []
     async with tenant_session(db.sessions, TenantScope.from_access_context(theirs)) as session:
         seen = await session.scalar(
             sa.text(f"SELECT count(*) FROM {TABLE} WHERE id = :id"), {"id": document.id.value}
@@ -189,7 +193,7 @@ async def test_another_workspace_of_the_same_tenant_reads_none(db: _Db) -> None:
     repo = SqlCaseDocumentRepository(db.sessions)
 
     assert await repo.get(other_workspace, document.id) is None
-    assert await repo.list_for_case(other_workspace, case.id.value) == []
+    assert await repo.list_for_case(other_workspace, CaseKind.PO, case.id.value) == []
     assert await repo.existing_keys(other_workspace, [document.object_key]) == set()
     async with tenant_session(
         db.sessions, TenantScope.from_access_context(other_workspace)
@@ -212,7 +216,7 @@ async def test_the_repository_filters_by_workspace_even_where_rls_does_not_apply
     unprotected = SqlCaseDocumentRepository(async_sessionmaker(db.migrator, expire_on_commit=False))
 
     assert await unprotected.get(other_workspace, document.id) is None
-    assert await unprotected.list_for_case(other_workspace, case.id.value) == []
+    assert await unprotected.list_for_case(other_workspace, CaseKind.PO, case.id.value) == []
     assert await unprotected.existing_keys(other_workspace, [document.object_key]) == set()
     assert await unprotected.get(mine, document.id) == document
 
@@ -320,7 +324,9 @@ async def test_versions_count_per_case_and_type_and_the_audit_commits_with_the_r
     deposit = await _add(db, context, case, DocumentType.DEPOSIT_DOCS)
 
     assert (first.version, second.version, deposit.version) == (1, 2, 1)
-    listed = await SqlCaseDocumentRepository(db.sessions).list_for_case(context, case.id.value)
+    listed = await SqlCaseDocumentRepository(db.sessions).list_for_case(
+        context, CaseKind.PO, case.id.value
+    )
     assert [(d.doc_type, d.version) for d in listed] == [
         (DocumentType.DEPOSIT_DOCS, 1),
         (DocumentType.PURCHASE_ORDER, 2),
@@ -442,7 +448,10 @@ class _MemoryBucket:
 
 def _upload(db: _Db, bucket: _MemoryBucket) -> UploadCaseDocument:
     return UploadCaseDocument(
-        cases=SqlPOCaseRepository(db.sessions),
+        cases={
+            CaseKind.PO: SqlPOCaseRepository(db.sessions),
+            CaseKind.PRODUCT: SqlProductCaseRepository(db.sessions),
+        },
         documents=SqlCaseDocumentRepository(db.sessions),
         storage=bucket,
         authz=ScopeAuthorizationService(),
@@ -464,7 +473,8 @@ async def test_uploading_to_another_tenants_or_workspaces_case_writes_nothing(
     with pytest.raises(NotFoundError):
         await _upload(db, bucket).handle(
             caller,
-            case.id,
+            CaseKind.PO,
+            case.id.value,
             doc_type=DocumentType.PURCHASE_ORDER,
             filename="PO.pdf",
             declared_content_type="application/pdf",
@@ -481,7 +491,8 @@ async def test_an_upload_lands_under_the_callers_prefix(db: _Db) -> None:
 
     document = await _upload(db, bucket).handle(
         context,
-        case.id,
+        CaseKind.PO,
+        case.id.value,
         doc_type=DocumentType.PURCHASE_ORDER,
         filename="../../x/PO.pdf",
         declared_content_type="application/pdf",

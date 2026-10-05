@@ -273,3 +273,51 @@ async def test_the_application_may_only_record_a_decision_on_an_approval(
                 assert not await column(name, "UPDATE"), name
     finally:
         await migrator.dispose()
+
+
+async def test_the_application_may_only_close_a_sample_round(db_urls: DatabaseUrls) -> None:
+    """`supply_chain.product_sample_rounds` (migration 59e69efdfa37): a round
+    is opened by INSERT and closed by writing its result, its evaluation and
+    who closed it when; nothing else may move, and nothing is deleted by hand
+    (the case's cascade is the only way out). Asked of the catalog, so a later
+    blanket GRANT that restored table-wide UPDATE or DELETE goes red."""
+    table_name = "supply_chain.product_sample_rounds"
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+
+            async def table(verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text("SELECT has_table_privilege('dw_app', :t, :verb)"),
+                        {"t": table_name, "verb": verb},
+                    )
+                )
+
+            async def column(name: str, verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text("SELECT has_column_privilege('dw_app', :t, :col, :verb)"),
+                        {"t": table_name, "col": name, "verb": verb},
+                    )
+                )
+
+            assert await table("SELECT")
+            assert await table("INSERT")
+            assert not await table("UPDATE")
+            assert not await table("DELETE")
+            assert not await table("TRUNCATE")
+            for name in ("result", "evaluation_document_id", "closed_at", "closed_by"):
+                assert await column(name, "UPDATE"), name
+            for name in (
+                "id",
+                "tenant_id",
+                "workspace_id",
+                "product_dev_case_id",
+                "round_no",
+                "opened_at",
+                "opened_by",
+            ):
+                assert not await column(name, "UPDATE"), name
+    finally:
+        await migrator.dispose()
