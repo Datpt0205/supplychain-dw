@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from dw_knowledge.contracts import DEFAULT_COLLECTION
@@ -188,6 +188,41 @@ class WorkerSettings(BaseSettings):
     # for a human, with `last_error` saying what it kept failing on. Three is a
     # transient fault survived twice, not a broken handler retried for ever.
     outbox_max_attempts: int = Field(default=3, ge=1, le=10)
+
+    # --- Zalo self-link (zalo-channel ticket 01) ---
+    # The bot token is a credential (it rides in every Bot API URL) and the link
+    # secret must equal the API's: it verifies the ``/start`` token the API
+    # signed. ``SecretStr`` so neither prints in a repr, a log or an error.
+    zalo_bot_token: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DW_WORKER_ZALO_BOT_TOKEN", "ZALO_BOT_TOKEN"),
+    )
+    zalo_link_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DW_WORKER_ZALO_LINK_SECRET", "ZALO_LINK_SECRET"),
+    )
+    # poll = this process long-polls getUpdates (no public URL needed);
+    # webhook = Zalo POSTs to the API and nothing here polls. One bot answers
+    # one reader: two processes polling the same bot steal each other's updates.
+    zalo_updates_mode: Literal["poll", "webhook"] = Field(
+        default="poll",
+        validation_alias=AliasChoices("DW_WORKER_ZALO_UPDATES_MODE", "ZALO_UPDATES_MODE"),
+    )
+    # What the bot calls this deployment in its replies ("tài khoản <name>").
+    product_name: str = Field(
+        default="Digital Worker",
+        min_length=1,
+        validation_alias=AliasChoices("DW_WORKER_PRODUCT_NAME", "DW_PRODUCT_NAME"),
+    )
+
+    @property
+    def zalo_poll_enabled(self) -> bool:
+        """Poll only with a token to poll with and a secret to verify with."""
+        return (
+            self.zalo_updates_mode == "poll"
+            and bool(self.zalo_bot_token.get_secret_value())
+            and bool(self.zalo_link_secret.get_secret_value())
+        )
 
     @model_validator(mode="after")
     def _the_heartbeat_outruns_the_lease(self) -> WorkerSettings:

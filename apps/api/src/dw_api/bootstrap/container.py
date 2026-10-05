@@ -41,6 +41,7 @@ from dw_agent_runtime.tools import ToolRegistry
 from dw_agent_runtime.toolsets import ToolsetRegistry
 from dw_api.health import HealthService
 from dw_api.settings import ApiSettings
+from dw_connectors.adapters.zalo_link import ZaloLinking
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_knowledge.gateway import KnowledgeGateway
 from dw_knowledge.ingest_jobs import IngestJobStore
@@ -207,6 +208,9 @@ class ApiContainer:
     hierarchy: HierarchyService | None = None
     separation_of_duties: SeparationOfDutiesService | None = None
     notifications: NotificationService | None = None
+    # The signed-in user's own Zalo link. ``None`` unless the bot token and the
+    # link secret are both set, and then /api/v1/zalo/* is not mounted.
+    zalo_linking: ZaloLinking | None = None
     cache: CachePort | None = None
     # Dedicated to the readiness probe — the runtime's own retrieval/memory
     # clients are built (and disposed) deeper inside `build_runtime`, only

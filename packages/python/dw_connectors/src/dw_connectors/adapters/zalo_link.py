@@ -1,12 +1,22 @@
-"""Shared Zalo self-link flow: parse one bot update, act, reply.
+"""Shared Zalo self-link flow: issue a one-time token, parse a bot update, act, reply.
 
-The same ``/start <token>`` / ``/stop`` handling drives two callers — the API
-webhook (when Zalo can POST in) and the worker's long-poll loop (when it cannot,
-e.g. a CDN in front of the API blocks Zalo's requests). Both parse an identical
-update shape and write the identical row, so the parse, the signed-token codec
-and the branch on ``text`` live here once; each caller supplies only a
-``ZaloLinkStore`` (who owns the ``external_identities`` write) and a bot to
-reply through.
+A signed-in user asks the app for a ``/start <token>`` line (``ZaloLinking``),
+sends it to the bot, and the bot's update is handled here (``handle_update``)
+whichever way it arrives — the worker's long-poll today, the API webhook once a
+public host exists. Both callers parse the same update shape and write the same
+row, so the parse, the token codec and the branch on ``text`` live here once;
+each caller supplies only a store and a sender.
+
+The token is single-use. Its HMAC proves the app minted it for this user and
+when it expires; its ``jti`` names a nonce row the store consumes in the same
+transaction that writes the link, with one conditional UPDATE (see
+``SqlZaloLink.redeem``). A token seen by someone else — a screenshot, a shared
+screen — therefore links at most once, and the second ``/start`` is refused.
+
+The bot accepts exactly two commands, ``/start <token>`` and ``/stop``. Any other
+text gets one sentence of help and changes nothing: no free-text word ("hủy",
+"duyệt", "ok") unlinks anyone or decides anything (ADR 0014). Nothing here
+builds an access context from a Zalo chat id.
 """
 
 from __future__ import annotations
@@ -14,47 +24,152 @@ from __future__ import annotations
 import base64
 import contextlib
 import hmac
+import secrets
 import struct
-import time
 import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any, Protocol
 
 from dw_connectors.ports import ChatSenderPort
+from dw_kernel.ports import UtcClock
 
-_TOKEN_TTL_SECONDS = 900  # a connect token is good for 15 minutes
-_STOP_WORDS = frozenset({"/stop", "/huy", "/hủy", "stop", "huỷ", "hủy"})
+TOKEN_TTL = timedelta(minutes=15)
+
+_START = "/start"
+_STOP = "/stop"
+_JTI_BYTES = 8
+_SIG_BYTES = 8
+# 16-byte user id + 4-byte expiry (unix seconds) + jti; the HMAC tag follows.
+_BODY_BYTES = 16 + 4 + _JTI_BYTES
 
 
-# ---- signed connect token (compact: 16B uuid + 4B expiry + 8B sig) ----
-def make_connect_token(user_id: uuid.UUID, secret: str) -> str:
-    body = user_id.bytes + struct.pack(">I", int(time.time()) + _TOKEN_TTL_SECONDS)
-    sig = hmac.new(secret.encode(), body, sha256).digest()[:8]
-    return base64.urlsafe_b64encode(body + sig).decode().rstrip("=")
+# ---- signed one-time connect token -------------------------------------------
 
 
-def verify_connect_token(token: str, secret: str) -> uuid.UUID | None:
+@dataclass(frozen=True, slots=True)
+class ConnectToken:
+    """What a verified token claims. The nonce row decides whether it is still good."""
+
+    user_id: uuid.UUID
+    jti: str
+    expires_at: datetime
+
+
+def _sign(body: bytes, secret: str) -> bytes:
+    return hmac.new(secret.encode(), body, sha256).digest()[:_SIG_BYTES]
+
+
+def make_connect_token(
+    user_id: uuid.UUID, secret: str, *, now: datetime, ttl: timedelta = TOKEN_TTL
+) -> tuple[str, ConnectToken]:
+    """Mint a token for ``user_id``; returns the text to send and its claims.
+
+    The expiry is truncated to whole seconds once, here, and the same value goes
+    into the token and (through the caller) into the nonce row, so the two can
+    never disagree about when the token lapses.
+    """
+    expires = int((now + ttl).timestamp())
+    jti = secrets.token_bytes(_JTI_BYTES)
+    body = user_id.bytes + struct.pack(">I", expires) + jti
+    text = base64.urlsafe_b64encode(body + _sign(body, secret)).decode().rstrip("=")
+    return text, ConnectToken(user_id, jti.hex(), datetime.fromtimestamp(expires, tz=UTC))
+
+
+def verify_connect_token(token: str, secret: str, *, now: datetime) -> ConnectToken | None:
+    """The token's claims when its signature holds and it has not expired, else None.
+
+    A valid signature is not enough to link: the caller must still consume the
+    nonce, which is what refuses a token used once already.
+    """
     try:
         raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
-        body, sig = raw[:20], raw[20:]
-        expected = hmac.new(secret.encode(), body, sha256).digest()[:8]
-        if not hmac.compare_digest(sig, expected):
-            return None
-        if time.time() > struct.unpack(">I", body[16:20])[0]:
-            return None
-        return uuid.UUID(bytes=body[:16])
-    except (ValueError, struct.error):
+    except ValueError:
         return None
+    if len(raw) != _BODY_BYTES + _SIG_BYTES:
+        return None
+    body, sig = raw[:_BODY_BYTES], raw[_BODY_BYTES:]
+    if not hmac.compare_digest(sig, _sign(body, secret)):
+        return None
+    expires_at = datetime.fromtimestamp(struct.unpack(">I", body[16:20])[0], tz=UTC)
+    if now >= expires_at:
+        return None
+    return ConnectToken(uuid.UUID(bytes=body[:16]), body[20:].hex(), expires_at)
+
+
+# ---- the store each side is handed -------------------------------------------
 
 
 class ZaloLinkStore(Protocol):
-    """Owns the ``external_identities`` (provider ``zalo``) write — see
-    ``dw_platform.adapters.persistence.zalo_link_repo``. Injected so this module
-    stays free of any database dependency."""
+    """What the bot side writes — see ``dw_platform...zalo_link_repo.SqlZaloLink``.
 
-    async def link(self, user_id: uuid.UUID, zalo_id: str) -> None: ...
+    Injected so this module stays free of any database dependency.
+    """
 
-    async def unlink_by_zalo(self, zalo_id: str) -> None: ...
+    async def redeem(self, token: ConnectToken, zalo_id: str) -> bool:
+        """Consume the token's nonce and link, in one transaction.
+
+        False — and nothing written — when the nonce is unknown, belongs to
+        another user, was used already or has expired, or when the user holds
+        no membership to record the link in. A link that lands is audited and
+        announced to the user in the same transaction.
+        """
+        ...
+
+    async def unlink_by_zalo(self, zalo_id: str) -> bool:
+        """Remove this chat's link; False when it was not linked."""
+        ...
+
+
+class ZaloAccountStore(Protocol):
+    """What the signed-in user's side reads and writes — the settings page."""
+
+    async def zalo_id_for(self, user_id: uuid.UUID) -> str | None: ...
+
+    async def issue_nonce(self, token: ConnectToken) -> None: ...
+
+    async def unlink_by_user(self, user_id: uuid.UUID) -> None: ...
+
+
+# ---- the signed-in user's side ------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectOffer:
+    code: str
+    deep_link: str | None
+    expires_at: datetime
+
+
+@dataclass(frozen=True)
+class ZaloLinking:
+    """Status, connect and disconnect for one verified user.
+
+    Takes a user id and nothing else about the caller: the route hands it the
+    principal from the verified access context, never a value from the request.
+    """
+
+    store: ZaloAccountStore
+    link_secret: str
+    clock: UtcClock
+    bot_link: str = ""
+
+    async def is_linked(self, user_id: uuid.UUID) -> bool:
+        return await self.store.zalo_id_for(user_id) is not None
+
+    async def connect(self, user_id: uuid.UUID) -> ConnectOffer:
+        code, token = make_connect_token(user_id, self.link_secret, now=self.clock.now())
+        await self.store.issue_nonce(token)
+        base = self.bot_link.strip()
+        deep_link = f"{base}{'&' if '?' in base else '?'}start={code}" if base else None
+        return ConnectOffer(code=code, deep_link=deep_link, expires_at=token.expires_at)
+
+    async def disconnect(self, user_id: uuid.UUID) -> None:
+        await self.store.unlink_by_user(user_id)
+
+
+# ---- the bot's side -----------------------------------------------------------
 
 
 def parse_update(update: dict[str, Any]) -> tuple[str, str]:
@@ -70,30 +185,54 @@ def parse_update(update: dict[str, Any]) -> tuple[str, str]:
     return str(chat.get("id") or ""), text
 
 
+def _help(product_name: str) -> str:
+    return (
+        f"Bot chỉ nhận hai lệnh: /start <mã> để kết nối Zalo với tài khoản {product_name} "
+        f"(lấy mã ở trang Cài đặt cá nhân), và /stop để ngắt kết nối."
+    )
+
+
 async def handle_update(
     update: dict[str, Any],
     *,
     link_secret: str,
     store: ZaloLinkStore,
     sender: ChatSenderPort | None,
+    clock: UtcClock,
+    product_name: str,
 ) -> None:
-    """Act on one update: ``/start <token>`` links, ``/stop`` unlinks."""
+    """Act on one update: ``/start <token>`` links, ``/stop`` unlinks, anything else is help."""
     zalo_id, text = parse_update(update)
     if not zalo_id or not text:
         return
 
     async def reply(msg: str) -> None:
         if sender is not None:
+            # Best effort: the link is already written (or refused); a reply
+            # that fails to send must not undo or repeat it.
             with contextlib.suppress(RuntimeError):
                 await sender.send_message(zalo_id, msg)
 
-    if text.startswith("/start "):
-        user_id = verify_connect_token(text.split(maxsplit=1)[1].strip(), link_secret)
-        if user_id is None:
-            await reply("Mã kết nối không hợp lệ / đã hết hạn. Bấm 'Kết nối Zalo' lại nhé.")
+    words = text.split()
+    if words[0] == _START and len(words) == 2:
+        token = verify_connect_token(words[1], link_secret, now=clock.now())
+        if token is None or not await store.redeem(token, zalo_id):
+            await reply(
+                "Mã kết nối không hợp lệ, đã được dùng hoặc đã hết hạn. "
+                f"Vào Cài đặt cá nhân trong {product_name} và bấm “Kết nối Zalo” để lấy mã mới."
+            )
             return
-        await store.link(user_id, zalo_id)
-        await reply("✅ Đã kết nối! Sale Intelligence sẽ gửi thông báo qua đây. Gõ /stop để dừng.")
-    elif text.lower() in _STOP_WORDS:
-        await store.unlink_by_zalo(zalo_id)
-        await reply("Đã dừng nhận thông báo Zalo. Bấm 'Kết nối Zalo' trong app để nhận lại.")
+        await reply(
+            f"Đã kết nối Zalo với tài khoản {product_name} của bạn. "
+            "Thông báo sẽ được gửi tới đây. Gõ /stop để ngắt kết nối."
+        )
+    elif text == _STOP:
+        if await store.unlink_by_zalo(zalo_id):
+            await reply(
+                "Đã ngắt kết nối Zalo. Muốn nhận lại thông báo, vào Cài đặt cá nhân "
+                f"trong {product_name} và bấm “Kết nối Zalo”."
+            )
+        else:
+            await reply("Zalo này chưa kết nối với tài khoản nào.")
+    else:
+        await reply(_help(product_name))

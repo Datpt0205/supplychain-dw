@@ -21,7 +21,9 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.application.notifications import Inbox, Notification
 
 _n = tables.notifications
-_DELIVER = sa.text(
+# The one door into `platform.notifications`; the Zalo link store calls it inside
+# its own transaction, so a link and the message about it commit together.
+DELIVER_NOTIFICATION = sa.text(
     "SELECT platform.deliver_notification("
     "CAST(:workspace_id AS uuid), CAST(:recipients AS uuid[]), :source_key, :title, :body, :link)"
 )
@@ -118,7 +120,7 @@ class SqlNotificationRepository:
             self.session_factory, TenantScope.from_access_context(context)
         ) as session:
             await session.execute(
-                _DELIVER,
+                DELIVER_NOTIFICATION,
                 {
                     "workspace_id": context.workspace_id,
                     "recipients": list(dict.fromkeys(recipients)),

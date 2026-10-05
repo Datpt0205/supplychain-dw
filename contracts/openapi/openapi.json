@@ -3861,6 +3861,50 @@
         ],
         "title": "WorkspaceSummaryView",
         "type": "object"
+      },
+      "ZaloConnectView": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "deep_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deep Link"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "deep_link",
+          "expires_at"
+        ],
+        "title": "ZaloConnectView",
+        "type": "object"
+      },
+      "ZaloStatusView": {
+        "properties": {
+          "linked": {
+            "title": "Linked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "linked"
+        ],
+        "title": "ZaloStatusView",
+        "type": "object"
       }
     }
   },
@@ -7229,6 +7273,62 @@
         "summary": "Set Sla Policy Override Route",
         "tags": [
           "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/zalo/connect": {
+      "post": {
+        "operationId": "zalo_connect_api_v1_zalo_connect_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZaloConnectView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Zalo Connect",
+        "tags": [
+          "zalo"
+        ]
+      }
+    },
+    "/api/v1/zalo/disconnect": {
+      "post": {
+        "operationId": "zalo_disconnect_api_v1_zalo_disconnect_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Zalo Disconnect",
+        "tags": [
+          "zalo"
+        ]
+      }
+    },
+    "/api/v1/zalo/status": {
+      "get": {
+        "operationId": "zalo_status_api_v1_zalo_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZaloStatusView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Zalo Status",
+        "tags": [
+          "zalo"
         ]
       }
     }

@@ -93,6 +93,33 @@ external_identities = sa.Table(
     sa.UniqueConstraint("issuer", "subject", name="uq_external_identities_issuer_subject"),
 )
 
+# Providers whose `external_identities` rows are a delivery address (a chat to
+# send to), not a login. A row of one of these never resolves a verified token
+# to a user: whoever controls that chat proved nothing to an identity provider.
+CHANNEL_LINK_PROVIDERS: tuple[str, ...] = ("zalo",)
+
+# One-time nonces behind a channel link token (migration cf66605631d7). Identity
+# plane like `external_identities`: keyed by user, no tenant, no RLS — a link
+# belongs to the person, not to one of their workspaces (ADR 0012).
+channel_link_nonces = sa.Table(
+    "channel_link_nonces",
+    metadata,
+    sa.Column("jti", sa.Text, primary_key=True),
+    sa.Column("channel", sa.Text, nullable=False),
+    sa.Column(
+        "user_id",
+        UUID(as_uuid=True),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    ),
+    sa.Column("expires_at", sa.TIMESTAMP(timezone=True), nullable=False),
+    sa.Column("used_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
 plans = sa.Table(
     "plans",
     metadata,

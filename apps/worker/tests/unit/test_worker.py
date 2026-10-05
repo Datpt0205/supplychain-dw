@@ -88,6 +88,8 @@ def bare_settings(**overrides: object) -> WorkerSettings:
         "qdrant_url": None,
         "langfuse_enabled": False,
         "otel_endpoint": None,
+        "zalo_bot_token": "",
+        "zalo_link_secret": "",
     }
     absent.update(overrides)
     return WorkerSettings(**absent)  # type: ignore[arg-type]
@@ -99,7 +101,7 @@ def test_a_host_with_no_infrastructure_wires_no_lane() -> None:
 
 
 def test_only_the_platform_lanes_are_wired() -> None:
-    """Seven lanes a database alone is enough for, and no more.
+    """Eight lanes a database alone is enough for, and no more.
 
     The outbox, and retention twice. Retention joined the platform set the day
     memory got a lifecycle: `memory.items` is a platform table, so the platform
@@ -121,6 +123,8 @@ def test_only_the_platform_lanes_are_wired() -> None:
     `retention@1.4.0.yaml` (see `SqlSpendGuardRetention`'s docstring).
     `notifications_retention` is the sixth, on the same footing: the in-app
     inbox's 90 days live in `platform.prune_notifications()` itself.
+    `channel_link_nonces_retention` is the seventh: one-time link tokens a day
+    past their expiry, a technical bound like the spend guard's.
 
     `supply_chain_follow_ups` is the first context lane: Supply Chain's sweep
     that turns due reminders, escalations and SLA breaches into follow-ups
@@ -137,6 +141,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "partitions",
         "spend_guard_retention",
         "notifications_retention",
+        "channel_link_nonces_retention",
         "supply_chain_follow_ups",
     }
 
@@ -156,9 +161,13 @@ def test_the_offboarding_lane_needs_object_storage_too_not_just_a_database() -> 
     assert "offboarding" in build_registry(db_and_s3).all()
 
 
-def test_the_follow_up_sweep_runs_on_its_own_configurable_cadence() -> None:
+def test_the_follow_up_sweep_runs_on_its_own_configurable_cadence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Five minutes unless the deployment says otherwise; a tester sets 60
     to see a reminder land within the minute."""
+    # `make` exports .env, where a developer may have set the quick cadence.
+    monkeypatch.delenv("DW_WORKER_SUPPLY_CHAIN_FOLLOW_UP_INTERVAL_SECONDS", raising=False)
     default = build_registry(bare_settings(database_url="postgresql+asyncpg://dw:dw@localhost/dw"))
     quick = build_registry(
         bare_settings(

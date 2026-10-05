@@ -16,3 +16,6 @@ my_reference_docs/
 evals/datasets/
 evals/expected/
 evals/fixtures/
+
+# Design handoffs live only on the owner's machine (see .git/info/exclude).
+docs/design/

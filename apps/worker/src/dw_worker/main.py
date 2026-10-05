@@ -27,6 +27,7 @@ from collections.abc import Awaitable, Callable
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardRetention
+from dw_connectors.adapters.zalo_bot import ZaloBotClient
 from dw_kernel.ports import SystemClock, Uuid7Generator
 from dw_knowledge.adapters.evidence_store import SqlEvidenceStore
 from dw_knowledge.retention import SqlKnowledgeRetention
@@ -39,6 +40,10 @@ from dw_platform.adapters.persistence.notifications import SqlNotificationRetent
 from dw_platform.adapters.persistence.offboarding import SqlTenantOffboarding
 from dw_platform.adapters.persistence.outbox_drain import SqlOutboxDrain
 from dw_platform.adapters.persistence.partition_maintenance import SqlPartitionMaintenance
+from dw_platform.adapters.persistence.zalo_link_repo import (
+    SqlChannelLinkNonceRetention,
+    SqlZaloLink,
+)
 from dw_platform.retention_policy import load_retention_policy
 from dw_worker.composition import (
     REPO_ROOT,
@@ -60,6 +65,7 @@ from dw_worker.consumers.reaper import ReapTarget, build_reaper_consumer
 from dw_worker.consumers.retention import INTERVAL_SECONDS as RETENTION_INTERVAL_SECONDS
 from dw_worker.consumers.retention import RetentionPrunePort, build_retention_consumer
 from dw_worker.consumers.supply_chain import build_follow_up_consumer, build_follow_up_sweep
+from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
 from dw_worker.health import beat
 from dw_worker.settings import WorkerSettings
 
@@ -128,6 +134,11 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     spend_guard_retention: RetentionPrunePort | None = None
     # The in-app inbox's own bound: 90 days, the database's constant.
     notifications_retention: RetentionPrunePort | None = None
+    # One-time channel link nonces: a day past expiry, then gone.
+    channel_link_nonces_retention: RetentionPrunePort | None = None
+    # The Zalo self-link poll: only with a database, a bot token, a link secret
+    # and ZALO_UPDATES_MODE=poll.
+    zalo_poll_consumer: Callable[[], Awaitable[None]] | None = None
     # Ops hardening Phase 4. Needs object storage too, not just a database -
     # export/purge touch three buckets and the vector index alongside Postgres.
     offboarding_consumer: Callable[[], Awaitable[None]] | None = None
@@ -189,6 +200,15 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         )
         spend_guard_retention = SqlSpendGuardRetention(session_factory=sessions, clock=clock)
         notifications_retention = SqlNotificationRetention(session_factory=sessions)
+        channel_link_nonces_retention = SqlChannelLinkNonceRetention(session_factory=sessions)
+        if settings.zalo_poll_enabled:
+            zalo_poll_consumer = build_zalo_poll_consumer(
+                ZaloBotClient(bot_token=settings.zalo_bot_token.get_secret_value()),
+                SqlZaloLink(sessions),
+                link_secret=settings.zalo_link_secret.get_secret_value(),
+                clock=clock,
+                product_name=settings.product_name,
+            )
         follow_up_consumer = build_follow_up_consumer(
             build_follow_up_sweep(
                 sessions,
@@ -242,6 +262,13 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
             interval_seconds=settings.supply_chain_follow_up_interval_seconds,
         )
 
+    # ---- channels ----------------------------------------------------------
+    # The Zalo self-link poll. Its own long-poll paces it; the interval only
+    # spaces retries after a failed tick.
+    if zalo_poll_consumer is not None:
+        registry.register("zalo_link_poll", zalo_poll_consumer)
+        logger.info("zalo link poll registered")
+
     # ---- periodic repair --------------------------------------------------
     # Registered last because both sweeps act on what everything above created,
     # and both are skipped when there is nothing for them to act on.
@@ -279,6 +306,12 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         registry.register(
             "notifications_retention",
             build_retention_consumer(notifications_retention),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
+    if channel_link_nonces_retention is not None:
+        registry.register(
+            "channel_link_nonces_retention",
+            build_retention_consumer(channel_link_nonces_retention),
             interval_seconds=RETENTION_INTERVAL_SECONDS,
         )
     if offboarding_consumer is not None:

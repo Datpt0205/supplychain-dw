@@ -250,6 +250,8 @@ root_packages = [
     "dw_observability",
     "dw_evals",
     "dw_supply_chain",
+    "dw_api",
+    "dw_worker",
 ]
 
 [[tool.importlinter.contracts]]
@@ -370,6 +372,39 @@ forbidden_modules = ["qdrant_client", "minio", "boto3"]
 # it. Named this way, a new module under `dw_memory` is covered the day it is
 # written, and a second provider import has to be argued for on this line.
 ignore_imports = ["dw_memory.adapters.qdrant_ranker -> qdrant_client"]
+
+[[tool.importlinter.contracts]]
+# ADR 0014 / zalo-channel ticket 01: what the bot hears decides nothing. The
+# self-link flow links and unlinks a chat and replies; it cannot reach the
+# approval service or build an access context, so no text in a Zalo message can
+# approve, reject or act as anyone. Z5 opens one separate, code-gated path and
+# keeps this contract on the link flow. The worker's poll lane is in it too,
+# which is why `dw_worker` and `dw_api` are root packages: an app package left
+# out of `root_packages` is one import-linter cannot see into.
+name = "The Zalo link flow cannot reach approvals or access contexts"
+type = "forbidden"
+source_modules = [
+    "dw_connectors.adapters.zalo_link",
+    "dw_connectors.adapters.zalo_bot",
+    "dw_worker.consumers.zalo_poll",
+]
+forbidden_modules = ["dw_agent_runtime", "dw_platform", "dw_api"]
+
+[[tool.importlinter.contracts]]
+# The settings routes for the same link. Direct imports only: every route
+# reaches the approval service and the access-context factory indirectly,
+# through the composition root that `RequireAccessContext` resolves the caller
+# with. What this forbids is the route itself taking either, so the caller is
+# always the bearer token's user and never anything a chat sent.
+name = "The Zalo settings routes take neither approvals nor the access-context factory"
+type = "forbidden"
+source_modules = ["dw_api.routes.v1.zalo"]
+forbidden_modules = [
+    "dw_agent_runtime",
+    "dw_platform.application.identity",
+    "dw_api.bootstrap",
+]
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 name = "Platform packages do not import app composition roots"

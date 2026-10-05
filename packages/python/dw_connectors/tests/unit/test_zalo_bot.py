@@ -1,11 +1,15 @@
-"""ZaloBotClient dialect quirks: single-object result, 408 idle timeout."""
+"""ZaloBotClient: dialect quirks (single-object result, 408 idle timeout), the
+1900-character split, and the bot token kept out of errors and logs."""
 
 from __future__ import annotations
+
+import json
+import logging
 
 import httpx
 import pytest
 
-from dw_connectors.adapters.zalo_bot import ZaloBotClient
+from dw_connectors.adapters.zalo_bot import ZaloBotClient, _split_for_zalo
 
 pytestmark = pytest.mark.unit
 
@@ -52,3 +56,87 @@ async def test_get_updates_raises_on_non_408_failure(monkeypatch) -> None:
     _patch_client(monkeypatch, handler)
     with pytest.raises(RuntimeError):
         await ZaloBotClient(bot_token=TOKEN).get_updates(offset=0)
+
+
+# ---- message length -------------------------------------------------------------
+
+
+def test_a_4000_character_message_becomes_three_parts_under_the_cap() -> None:
+    lines = [f"Dòng {i:03d}: " + "x" * 30 for i in range(4000 // 40)]
+    text = "\n".join(lines)[:4000]
+    parts = _split_for_zalo(text)
+    assert len(parts) == 3
+    assert all(len(part) <= 1900 for part in parts)
+    assert "\n".join(parts) == text
+
+
+def test_a_single_line_longer_than_the_cap_is_cut_by_length() -> None:
+    parts = _split_for_zalo("y" * 4000)
+    assert [len(p) for p in parts] == [1900, 1900, 200]
+
+
+async def test_send_message_sends_every_part_and_returns_the_last_id(monkeypatch) -> None:
+    sent: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content)["text"])
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": f"m{len(sent)}"}})
+
+    _patch_client(monkeypatch, handler)
+    message_id = await ZaloBotClient(bot_token=TOKEN).send_message("chat-1", "z" * 4000)
+    assert len(sent) == 3
+    assert message_id == "m3"
+
+
+# ---- the token never leaves in an error or a log line (SEC-20) -------------------
+
+
+async def test_a_transport_error_does_not_carry_the_token(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(f"cannot reach {request.url}", request=request)
+
+    _patch_client(monkeypatch, handler)
+    with pytest.raises(RuntimeError) as caught:
+        await ZaloBotClient(bot_token=TOKEN).send_message("chat-1", "hi")
+    assert TOKEN not in str(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
+
+
+async def test_an_http_status_error_does_not_carry_the_token(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(502, text="bad gateway")
+
+    _patch_client(monkeypatch, handler)
+    with pytest.raises(RuntimeError) as caught:
+        await ZaloBotClient(bot_token=TOKEN).get_updates(offset=0)
+    assert TOKEN not in str(caught.value)
+    assert "bot***" in str(caught.value)
+
+
+async def test_a_failure_description_echoing_the_token_is_scrubbed(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"ok": False, "error_code": 401, "description": f"bad token {TOKEN}"}
+        )
+
+    _patch_client(monkeypatch, handler)
+    with pytest.raises(RuntimeError) as caught:
+        await ZaloBotClient(bot_token=TOKEN).send_message("chat-1", "hi")
+    assert TOKEN not in str(caught.value)
+
+
+async def test_the_httpx_request_log_line_does_not_carry_the_token(
+    monkeypatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": "m1"}})
+
+    _patch_client(monkeypatch, handler)
+    with caplog.at_level(logging.INFO, logger="httpx"):
+        await ZaloBotClient(bot_token=TOKEN).send_message("chat-1", "hi")
+    assert caplog.records, "httpx logs each request at INFO; the filter must see it"
+    assert all(TOKEN not in record.getMessage() for record in caplog.records)
+
+
+def test_repr_does_not_print_the_token() -> None:
+    assert TOKEN not in repr(ZaloBotClient(bot_token=TOKEN))

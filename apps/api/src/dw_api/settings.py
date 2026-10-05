@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from dw_knowledge.contracts import DEFAULT_COLLECTION
@@ -216,6 +216,31 @@ class ApiSettings(BaseSettings):
             "DW_API_APPROVAL_REMINDER_SECONDS", "DW_APPROVAL_REMINDER_SECONDS"
         ),
     )
+
+    # --- Zalo self-link (zalo-channel ticket 01) ---
+    # One bot per deployment. The token is a credential (it rides in every Bot
+    # API URL); the link secret signs the one-time ``/start`` token and must be
+    # the worker's value too. Both unset = the /zalo routes are not mounted.
+    # ``SecretStr`` so neither prints in a repr, a log line or a validation error.
+    zalo_bot_token: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DW_API_ZALO_BOT_TOKEN", "ZALO_BOT_TOKEN"),
+    )
+    zalo_link_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DW_API_ZALO_LINK_SECRET", "ZALO_LINK_SECRET"),
+    )
+    # Deep link to the bot's chat shown on the settings page; empty = none.
+    zalo_bot_link: str = Field(
+        default="", validation_alias=AliasChoices("DW_API_ZALO_BOT_LINK", "ZALO_BOT_LINK")
+    )
+
+    @property
+    def zalo_link_enabled(self) -> bool:
+        """Linking needs both: a token to reply with and a secret to sign with."""
+        return bool(
+            self.zalo_bot_token.get_secret_value() and self.zalo_link_secret.get_secret_value()
+        )
 
     # --- observability (Langfuse optional behind configuration) ---
     otel_endpoint: str | None = Field(

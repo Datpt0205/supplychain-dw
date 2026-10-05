@@ -111,18 +111,30 @@ const feedbackItemSchema = z.object({
 });
 export type FeedbackItem = z.infer<typeof feedbackItemSchema>;
 
-/** Whether the caller has linked their own Zalo for notifications. */
+/** GET /me: the caller's verified access context in the active workspace. */
+const meSchema = z.object({
+  tenant_id: z.string(),
+  workspace_id: z.string(),
+  principal_id: z.string(),
+  roles: z.array(z.string()),
+  scopes: z.array(z.string()),
+  clearance: z.string(),
+  plan_id: z.string(),
+  feature_flags: z.array(z.string()),
+});
+export type Me = z.infer<typeof meSchema>;
+
+/** Whether the caller has linked their own Zalo. No chat id: the browser has no use for it. */
 const zaloStatusSchema = z.object({
   linked: z.boolean(),
-  zalo_subject: z.string().nullable().optional(),
 });
 export type ZaloStatus = z.infer<typeof zaloStatusSchema>;
 
-/** A one-time connect token + how to redeem it in the bot. */
+/** A one-time `/start <code>` for the bot: redeemable once, until `expires_at`. */
 const zaloConnectSchema = z.object({
   code: z.string(),
   deep_link: z.string().nullable(),
-  instructions: z.string(),
+  expires_at: z.string(),
 });
 export type ZaloConnect = z.infer<typeof zaloConnectSchema>;
 
@@ -273,6 +285,18 @@ const _inboxMirrorsTheRoute: [
   SameType<keyof Inbox["items"][number], keyof Generated["NotificationView"]>,
 ] = [true, true, true];
 void _inboxMirrorsTheRoute;
+
+const _meMirrorsTheRoute: [
+  SameType<Me, Generated["MeResponse"]>,
+  SameType<keyof Me, keyof Generated["MeResponse"]>,
+] = [true, true];
+void _meMirrorsTheRoute;
+
+const _zaloMirrorsTheRoute: [
+  SameType<ZaloStatus, Generated["ZaloStatusView"]>,
+  SameType<keyof ZaloConnect, keyof Generated["ZaloConnectView"]>,
+] = [true, true];
+void _zaloMirrorsTheRoute;
 
 const _followUpMirrorsTheRoute: [
   SameType<FollowUp, SupplyChainGenerated["FollowUpItemView"]>,
@@ -931,13 +955,19 @@ export class ApiClient {
     );
   }
 
-  // ---- zalo notifications -------------------------------------------------
+  /** The caller's verified context in the active workspace (roles, scopes). */
+  getMe(): Promise<Me> {
+    return this.request("GET", "/api/v1/me", meSchema);
+  }
+
+  // ---- the caller's own Zalo link --------------------------------------
+  // 404 `not_found` from all three = the deployment has no bot configured.
 
   getZaloStatus(): Promise<ZaloStatus> {
     return this.request("GET", "/api/v1/zalo/status", zaloStatusSchema);
   }
 
-  /** Mint a fresh connect token for the signed-in user to send to the bot. */
+  /** Mint a one-time `/start <code>` for the signed-in user to send to the bot. */
   connectZalo(): Promise<ZaloConnect> {
     return this.request("POST", "/api/v1/zalo/connect", zaloConnectSchema);
   }

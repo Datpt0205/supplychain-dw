@@ -36,6 +36,10 @@ def build_openapi() -> dict[str, object]:
         # Same reasoning for platform provisioning: spell out the provisioner URL
         # so /api/v1/platform/* is always in the snapshot, not dependent on .env.
         provisioner_database_url="postgresql+asyncpg://contract-prov:contract@localhost:5432/contract",
+        # And for the Zalo self-link routes, mounted only with both values set.
+        zalo_bot_token="contract-zalo-bot-token",
+        zalo_link_secret="contract-zalo-link-secret",
+        zalo_bot_link="",
         auth_mode="dev",
         dev_secret="contract-snapshot-secret-0123456789",
         s3_endpoint_url="http://localhost:9000",

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, LogOut, ScrollText } from "lucide-react";
+import { SettingOutlined } from "@ant-design/icons";
 import { Badge, cn } from "@dw/ui";
 import { useAuth } from "../lib/auth/auth-context";
 import { roleLabel } from "../lib/nav/roles";
@@ -90,6 +91,14 @@ export function SessionChip() {
             </div>
           </div>
           <div className="my-1 border-t" />
+          <Link
+            href="/settings"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <SettingOutlined className="text-base" aria-hidden /> Cài đặt cá
+            nhân
+          </Link>
           {hasScope("approvals.read") && (
             <Link
               href="/audit"

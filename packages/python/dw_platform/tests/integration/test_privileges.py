@@ -176,3 +176,46 @@ async def test_a_table_added_later_is_readable_without_a_new_grant(
             await conn.execute(sa.text("DROP TABLE platform.grant_probe"))
     finally:
         await migrator.dispose()
+
+
+async def test_the_application_may_only_mark_a_link_nonce_used(db_urls: DatabaseUrls) -> None:
+    """`platform.channel_link_nonces` (migration cf66605631d7): `dw_app` issues,
+    consumes and prunes nonces, and the consume may set `used_at` and nothing
+    else — never move a nonce to another user or stretch its expiry. Asked of the
+    catalog, so a migration that dropped the column-level grant goes red here."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+
+            async def table(verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text(
+                            "SELECT has_table_privilege('dw_app',"
+                            " 'platform.channel_link_nonces', :verb)"
+                        ),
+                        {"verb": verb},
+                    )
+                )
+
+            async def column(name: str, verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text(
+                            "SELECT has_column_privilege('dw_app',"
+                            " 'platform.channel_link_nonces', :col, :verb)"
+                        ),
+                        {"col": name, "verb": verb},
+                    )
+                )
+
+            assert await table("SELECT")
+            assert await table("INSERT")
+            assert await table("DELETE")
+            assert not await table("UPDATE")  # no table-wide UPDATE
+            assert not await table("TRUNCATE")
+            assert await column("used_at", "UPDATE")
+            for name in ("jti", "channel", "user_id", "expires_at", "created_at"):
+                assert not await column(name, "UPDATE"), name
+    finally:
+        await migrator.dispose()

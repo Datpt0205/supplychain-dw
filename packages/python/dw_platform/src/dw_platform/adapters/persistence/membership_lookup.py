@@ -77,6 +77,8 @@ class SqlMembershipLookup:
                     sa.select(tables.external_identities.c.user_id).where(
                         tables.external_identities.c.issuer == issuer,
                         tables.external_identities.c.subject == subject,
+                        # A linked chat is where to send, not who is signing in.
+                        tables.external_identities.c.provider.not_in(tables.CHANNEL_LINK_PROVIDERS),
                     )
                 )
             )

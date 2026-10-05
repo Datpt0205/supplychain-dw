@@ -364,10 +364,8 @@ services:
       # set it to the web hostname. An empty string would not parse as a list.
       DW_API_CORS_ORIGINS: ${DW_API_CORS_ORIGINS:-[]}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      # Zalo (dw_connectors: zalo_bot.py/zalo_link.py) is a real, tested
-      # channel port — just not wired into any composition root yet, the
-      # same "built, no production caller" shape as build_agent. Left set
-      # here for whichever context wires it in first.
+      # Zalo self-link (zalo-channel ticket 01): /api/v1/zalo/* is mounted
+      # only when both the bot token and the link secret are set.
       ZALO_BOT_TOKEN: ${ZALO_BOT_TOKEN:-}
       ZALO_WEBHOOK_SECRET: ${ZALO_WEBHOOK_SECRET:-}
       ZALO_LINK_SECRET: ${ZALO_LINK_SECRET:-}
@@ -543,11 +541,14 @@ services:
       DW_WORKER_EMBED_URL: ${DW_API_EMBED_URL:-http://tei-embed:80}
       DW_WORKER_EMBED_DIMENSION: ${DW_API_EMBED_DIMENSION:-1024}
       DW_PUBLIC_WEB_URL: ${DW_PUBLIC_WEB_URL:-http://localhost:3000}
-      # See the api service's own comment: a real, tested, unwired channel port.
+      # Zalo self-link: the `zalo_link_poll` lane runs only with the token,
+      # the link secret (the api's value) and ZALO_UPDATES_MODE=poll.
       ZALO_BOT_TOKEN: ${ZALO_BOT_TOKEN:-}
       ZALO_WEBHOOK_SECRET: ${ZALO_WEBHOOK_SECRET:-}
       ZALO_LINK_SECRET: ${ZALO_LINK_SECRET:-}
       ZALO_BOT_LINK: ${ZALO_BOT_LINK:-}
+      ZALO_UPDATES_MODE: ${ZALO_UPDATES_MODE:-poll}
+      DW_PRODUCT_NAME: ${DW_PRODUCT_NAME:-Digital Worker}
     networks: [dw-internal, dw-edge]
     depends_on:
       migrate:
