@@ -18,9 +18,7 @@ This repo is the Elmich product: bounded context
 
 ## Where it stands (2026-10-05)
 
-- **Steps 10–17 (PO case)** exist in the archive and are being ported onto
-  `main` (slice P), in the first build session of this repo. Until P is
-  resolved, nothing below can start.
+- **Steps 10–17 (PO case)** are on `main` (slice P, `c2f04dc`).
 - **Steps 1–9 have no code.** Stage 1 is designed (ADR 0016–0021) and
   ticketed (`supply-chain/stage-1/`), S1–S7.
 - **Channels:** in-app inbox only. The Zalo pieces on `main` are built and
@@ -45,12 +43,12 @@ means platform code, an upstream candidate (ADR 0011).
 
 | Slice | Ticket                                                              | Generic | Status          | Blocked by                          |
 | ----- | ------------------------------------------------------------------- | ------- | --------------- | ----------------------------------- |
-| P     | `port/issues/01-port-dw-supply-chain.md`                            | no      | ready-for-agent | —                                   |
+| P     | `port/issues/01-port-dw-supply-chain.md`                            | no      | resolved        | —                                   |
 | P2    | `port/issues/02-audit-and-spend-on-supply-chain-writes.md`          | partly  | ready-for-agent | P                                   |
 | P3    | `port/issues/03-follow-ups-retention.md`                            | no      | ready-for-agent | P                                   |
-| ENV   | `env/issues/01-env-example-and-init-env.md`                         | yes     | ready-for-agent | P                                   |
-| Z1    | `zalo-channel/issues/01-zalo-link.md`                               | yes     | ready-for-agent | P, ENV                              |
-| U     | `personal-settings/issues/01-settings-page-and-login.md`            | yes     | ready-for-agent | Z1, ENV, web-ui antd-shell 03/05    |
+| ENV   | `env/issues/01-env-example-and-init-env.md`                         | yes     | resolved        | P                                   |
+| Z1    | `zalo-channel/issues/01-zalo-link.md`                               | yes     | resolved        | P, ENV                              |
+| U     | `personal-settings/issues/01-settings-page-and-login.md`            | yes     | resolved        | Z1, ENV, web-ui antd-shell 03/05    |
 | Z2    | `zalo-channel/issues/02-channel-delivery.md`                        | yes     | ready-for-agent | Z1                                  |
 | Z3    | `zalo-channel/issues/03-zalo-webhook.md`                            | yes     | ready-for-agent | Z1                                  |
 | Z4    | `zalo-channel/issues/04-chat-proposal.md`                           | partly  | ready-for-agent | Z1, U, S1, D                        |
@@ -71,8 +69,8 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                    | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                  | —       | ready-for-human | H                                   |
 
-**Next:** P, then ENV; A and D can run beside Z1 once P is in. Z4 starts once
-S1 and U are in; Z5 after Z4 and S2; Z6 after Z4.
+**Next:** A, then D, then S1 (Đạt, 2026-10-05: in that order, without
+stopping between them). Z4 starts once S1 is in; Z5 after Z4 and S2; Z6 after Z4.
 
 Live runs that need a person, a phone or a domain are their own
 `ready-for-human` tickets (ZL, H2), so agent tickets can close honestly. The
@@ -90,7 +88,8 @@ email as a second channel.
 
 | Slice | Commit | What                               |
 | ----- | ------ | ---------------------------------- |
-| —     | —      | Nothing resolved yet in this repo. |
+| P, ENV | `c2f04dc` | Port of `dw_supply_chain` onto the current platform; Elmich environment. |
+| U, Z1  | `51c0ef7` | Per-user login on 3200, `/settings`, Zalo link with a single-use token. |
 
 ## Open — named, not fixed, still true after the port
 

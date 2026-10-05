@@ -31,8 +31,9 @@ the reference after each `git merge platform/main`.
   0014 revised), read-only questions (Z6).
 - **Done in the first build session (2026-10-05):** port P, ENV, login and
   `/settings` (U), Zalo link (Z1). `make ci` green.
-- **Next:** stage 1 in order S1 → S7 (with A and D); Z4 once S1 is in, then Z5
-  (needs S2, Z2) and Z6. Full table in `supply-chain.md`, "Slices". The PoC
+- **Next:** A → D → S1, in progress on branch `feat/elmich-a-d-s1` (Đạt,
+  2026-10-05: without stopping between them); then S2 → S7; Z4 once S1 is in,
+  then Z5 (needs S2, Z2) and Z6. Full table in `supply-chain.md`, "Slices". The PoC
   slide brief the code must match: `docs/products/elmich/poc-slides-brief.md`.
 - **Run locally:** `make infra-up`, `make db-migrate`, seed
   (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
