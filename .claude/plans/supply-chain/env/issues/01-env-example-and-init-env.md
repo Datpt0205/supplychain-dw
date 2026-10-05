@@ -1,6 +1,6 @@
 # 01 — `.env.example` đầy đủ, `scripts/init_env.py`, mặc định Keycloak đúng cổng
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: .claude/plans/supply-chain/port/issues/01-port-dw-supply-chain.md
 Area: supply-chain
 
@@ -78,3 +78,4 @@ bằng một lệnh (spec, Mục tiêu).
   thêm vào `.env`. `init_env.py` và `test_init_env.py` đã xóa, `make bootstrap` quay lại
   cách của nền tảng (chép `.env.example` khi chưa có `.env`). Các bước 4 và tiêu chí về
   `init_env.py` ở trên không còn áp dụng; `.env.example` vẫn liệt kê đủ tên biến.
+- 2026-10-05, resolved: `.env.example` lists every variable the services read with this repo's ports; `init_env.py` dropped by the owner (see the comment above). The local CORS origin now follows `DW_PUBLIC_WEB_URL` (no `DW_API_CORS_ORIGINS` needed locally), with a test that goes red on a hard-coded port.

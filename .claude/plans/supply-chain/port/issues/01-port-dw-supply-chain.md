@@ -1,6 +1,6 @@
 # 01 — Chuyển package, migration, config, wiring của `dw_supply_chain`
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: —
 Area: supply-chain
 
@@ -82,3 +82,4 @@ của nền tảng hiện tại (spec, Mục tiêu).
   không gọi model, không dòng nào; database từ chối dòng con trỏ hồ sơ tenant khác).
   Integration của context từ đây là 9 file. Audit, trần chi tiêu: ticket 02; hạn giữ
   `follow_ups`: ticket 03.
+- 2026-10-05, resolved: ported in commit c2f04dc (first build session). Checks: unit 1379 passed (coverage 80.5%), integration dw_supply_chain 87 and dw_platform 164 passed, eval smoke 22/22, migrations upgrade from empty and downgrade cleanly. Audit/spend gaps and follow-up retention moved to tickets 02 and 03.

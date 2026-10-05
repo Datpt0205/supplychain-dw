@@ -42,6 +42,6 @@ Ticket 01 `resolved`; `make ci` xanh; integration của `dw_supply_chain`,
 
 | #   | Ticket                                                                                        | Status          | Blocked by |
 | --- | --------------------------------------------------------------------------------------------- | --------------- | ---------- |
-| 01  | [Chuyển package, migration, config, wiring](issues/01-port-dw-supply-chain.md)                | ready-for-agent | —          |
+| 01  | [Chuyển package, migration, config, wiring](issues/01-port-dw-supply-chain.md)                | resolved        | —          |
 | 02  | [Audit và trần chi tiêu cho ba lệnh ghi](issues/02-audit-and-spend-on-supply-chain-writes.md) | ready-for-agent | 01         |
 | 03  | [Hạn giữ cho `follow_ups`](issues/03-follow-ups-retention.md)                                 | ready-for-agent | 01         |

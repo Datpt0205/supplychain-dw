@@ -146,10 +146,14 @@ membership vi phạm. Năm luật của context được miễn trừ có lý do
 Một bước chuyển có tên, canh điều kiện trong aggregate. Một số bắt buộc lý do.
 
 **Approval** (duyệt):
-Một câu hỏi cho người, dừng run có checkpoint tới khi được quyết trên web. Tiền tố
-`supply_chain.case_action.` và `supply_chain.product_action.` là nghiêm: người yêu cầu
-không tự duyệt, phải có nhận xét.
-_Avoid_: "phê duyệt" trong code; "duyệt trong Zalo" (không có, ADR 0014).
+Một câu hỏi cho người, dừng run có checkpoint tới khi được quyết, trên web hoặc trong
+Zalo. Trong Zalo chỉ bằng mã dùng một lần hiện trên cổng khi người duyệt mở đúng phiên
+bản hồ sơ (`DUYỆT <mã>`, `TỪ CHỐI <mã> <lý do>`), không bao giờ bằng chữ tự do; tin Zalo
+không mang mã (ADR 0014, Z5). Tiền tố `supply_chain.case_action.` và
+`supply_chain.product_action.` là nghiêm: người yêu cầu không tự duyệt, phải có nhận xét
+(nhận xét trong lệnh Zalo còn chờ QO-7).
+_Avoid_: "phê duyệt" trong code; "duyệt trong Zalo" để chỉ trả lời "ok", "duyệt" không
+kèm mã (không được, ADR 0014).
 
 **Trình ký** (`signoff`) (từ S4):
 Chuỗi approval ở bước 9, mỗi bước một người quyết, thứ tự theo policy

@@ -25,11 +25,18 @@ This repo is the Elmich product: bounded context
   ticketed (`supply-chain/stage-1/`), S1–S7.
 - **Channels:** in-app inbox only. The Zalo pieces on `main` are built and
   tested but wired into nothing; the API client calls `/api/v1/zalo/*` routes
-  that do not exist.
+  that do not exist. Zalo is planned as a two-way work channel (Z4–Z6).
 - **Owner decisions applied (Đạt, 2026-10-05):** build everything here, keep
   generic pieces in platform packages to upstream later; one Zalo bot token per
   deployment; port web pages as they are, rebuild in antd later; separate
   hostnames for web, api and auth from env; Elmich scope = Part A only.
+- **Zalo is a two-way work channel (Đạt, 2026-10-05):** a PIC proposes a
+  product at step 1 by chat (Z4); approvers decide steps 6 and 9 in Zalo only
+  after opening the current version on the portal, by typing back a one-time
+  code shown there, never sent in Zalo (Z5, ADR 0014 revised); anyone asks
+  read-only questions about cases they may see (Z6). Inbound messages build an
+  AccessContext from the linked user's membership, minimum scopes, server-side
+  only (ADR 0012 revised).
 
 ## Slices
 
@@ -46,7 +53,10 @@ means platform code, an upstream candidate (ADR 0011).
 | U     | `personal-settings/issues/01-settings-page-and-login.md`            | yes     | ready-for-agent | Z1, ENV, web-ui antd-shell 03/05    |
 | Z2    | `zalo-channel/issues/02-channel-delivery.md`                        | yes     | ready-for-agent | Z1                                  |
 | Z3    | `zalo-channel/issues/03-zalo-webhook.md`                            | yes     | ready-for-agent | Z1                                  |
-| Z4    | `zalo-channel/issues/04-live-run.md`                                | —       | ready-for-human | Z1, Z2, Z3, H2                      |
+| Z4    | `zalo-channel/issues/04-chat-proposal.md`                           | partly  | ready-for-agent | Z1, U, S1, D                        |
+| Z5    | `zalo-channel/issues/05-approve-via-zalo.md`                        | partly  | ready-for-agent | Z4, Z2, A, S2                       |
+| Z6    | `zalo-channel/issues/06-read-only-qa.md`                            | partly  | ready-for-agent | Z4                                  |
+| ZL    | `zalo-channel/issues/07-live-run.md`                                | —       | ready-for-human | Z1–Z6, H2                           |
 | A     | `approval-decider-scope/issues/01-required-scope.md`                | yes     | ready-for-agent | P                                   |
 | D     | `case-documents/issues/01-case-documents.md`                        | no      | ready-for-agent | P                                   |
 | S1    | `stage-1/issues/01-product-case-steps-1-5.md`                       | no      | ready-for-agent | P, D                                |
@@ -61,10 +71,13 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                    | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                  | —       | ready-for-human | H                                   |
 
-**Next:** P, then ENV; A and D can run beside Z1 once P is in.
+**Next:** P, then ENV; A and D can run beside Z1 once P is in. Z4 starts once
+S1 and U are in; Z5 after Z4 and S2; Z6 after Z4.
 
 Live runs that need a person, a phone or a domain are their own
-`ready-for-human` tickets (Z4, H2), so agent tickets can close honestly.
+`ready-for-human` tickets (ZL, H2), so agent tickets can close honestly. The
+live-run ticket was renamed from Z4 (`04-live-run.md`) to ZL (`07-live-run.md`)
+on 2026-10-05 when Z4–Z6 were added.
 
 **Not ticketed yet:** the MKT half of step 12's sub-flow (waits for Part B);
 container loading as its own step (step 14), deferred until QE-15 (QO-6);
@@ -135,7 +148,12 @@ From the archive, still held:
 - **SLA default is short test values;** a real customer sets its own override
   before go-live.
 
-New on 2026-10-05: ADR 0011–0023, and the owner decisions listed above.
+New on 2026-10-05: ADR 0011–0023, and the owner decisions listed above. ADR
+0014 (E4) was revised the same day from "decisions only on the web" to
+"decisions on Zalo after a portal view, with a one-time code"
+(`docs/adr/0014-e4-decisions-on-zalo-after-a-portal-view.md`), and ADR 0012
+(E2) from "the link never builds an AccessContext" to "inbound commands build
+one from the linked user's membership, minimum scopes".
 
 ## Roles and duties
 
@@ -190,6 +208,9 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
 - **QE-18** PIC vắng hoặc nghỉ thì ai đổi PIC? TP Cung ứng có thấy hồ sơ của mọi PIC?
 - **QE-19** Báo cáo hằng ngày cho TP Cung ứng ở bước 3: mỗi lần đánh giá hay một bản
   mỗi ngày; trong ứng dụng, Zalo hay email?
+- **QE-20** Tóm tắt trong tin duyệt, câu trả lời hỏi đáp và ảnh đề xuất đi qua máy chủ
+  Zalo. Dữ liệu nào được đi qua (mã, tên SP, trạng thái, tên NCC, giá, chứng từ)? Có quy
+  định nội bộ nào cấm không?
 
 **Đạt:**
 
@@ -203,12 +224,20 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
   point 1).
 - **QO-6** Confirm deferring container loading as its own step (step 14) until
   Elmich answers QE-15; until then it stays inside `qc` → `in_transit`.
+- **QO-7** Strict approvals need a written comment, so a Zalo approval at steps
+  6 and 9 is `DUYỆT 4821 <nhận xét>`, not bare `DUYỆT 4821` (Z5 Comments).
+  Confirm, or pick one of the alternatives in ADR 0014 point 6: the page asks
+  for a default comment when it issues the code, or strict types are decided
+  on the web only; or drop the comment floor for these types (a platform floor
+  change, ADR needed). Also confirm 4 digits, 15 minutes, 5 wrong tries
+  per 15 minutes.
 
 ## Working notes
 
 - **Local stack:** compose project `dw_elmichs`; postgres 25432, qdrant
   26333/26334, valkey 26379, object store 29000/29001, keycloak 28686, docgen
-  28110; api 8000, web 3000. `make infra-up` is safe here; it does not touch
+  28110; api 8200, web 3200 (`DW_API_PORT`, `DW_WEB_PORT` in `.env`, which
+  `scripts/dev.sh` reads; the Keycloak realm's redirect URIs use 3200). `make infra-up` is safe here; it does not touch
   other stacks.
 - **Setup:** `uv sync --all-packages` and `pnpm install` before checks;
   integration tests with `set -a && source .env && set +a`; backend URLs on

@@ -9,7 +9,7 @@ a feature is checked. Detail lives in the area file; history lives in git.
 
 | Area                                      | File                                | State                    |
 | ----------------------------------------- | ----------------------------------- | ------------------------ |
-| Supply chain (Elmich), this product       | `.claude/plans/supply-chain.md`     | Port running; 22 tickets |
+| Supply chain (Elmich), this product       | `.claude/plans/supply-chain.md`     | Port running; 25 tickets |
 | Ops hardening (inherited from `codebase`) | `.claude/plans/ops-hardening.md`    | Done; numbers owed       |
 | Agent runtime, memory (inherited)         | `.claude/plans/platform-runtime.md` | Done but for named gaps  |
 | Web UI shell, Ant Design v6 (inherited)   | `.claude/plans/web-ui.md`           | Shell done; 03–09 next   |
@@ -26,17 +26,31 @@ the reference after each `git merge platform/main`.
   17 steps (`docs/products/elmich/process.md`).
 - **Steps 10–17** come from the archived context (port, slice P, in its first
   build session). **Steps 1–9** are designed (ADR 0016–0021) and ticketed.
-- **Next:** finish P; then ENV; then Z1, A, D in parallel; then stage 1 in
-  order S1 → S7. Full table in `supply-chain.md`, "Slices".
+- **Zalo is two-way** (Đạt, 2026-10-05): chat proposal at step 1 (Z4),
+  approvals at steps 6 and 9 by a one-time code seen on the portal (Z5, ADR
+  0014 revised), read-only questions (Z6).
+- **Done in the first build session (2026-10-05):** port P, ENV, login and
+  `/settings` (U), Zalo link (Z1). `make ci` green.
+- **Next:** stage 1 in order S1 → S7 (with A and D); Z4 once S1 is in, then Z5
+  (needs S2, Z2) and Z6. Full table in `supply-chain.md`, "Slices". The PoC
+  slide brief the code must match: `docs/products/elmich/poc-slides-brief.md`.
+- **Run locally:** `make infra-up`, `make db-migrate`, seed
+  (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
+  then `scripts/keycloak_dev_users.py`), `make dev`, open http://localhost:3200.
+  Ports: this repo 2xxxx/8200/3200; codebase 1xxxx/8000/3000; dw-proterial
+  3xxxx/8300/3300. One bot, one poller: never poll the same Zalo bot from
+  sales_dw and here at once. Platform updates: `git merge platform/main`.
 
 ## Decisions owed
 
-- **Elmich:** QE-01–QE-19 in `supply-chain.md` (SLA numbers and clocks,
+- **Elmich:** QE-01–QE-20 in `supply-chain.md` (SLA numbers and clocks,
   documents per step, revision loop, sign-off order, item code and SKU format,
-  categories, PIC reassignment, Zalo events).
-- **Đạt, product:** QO-1–QO-6 in `supply-chain.md` (sales-dev database and the
+  categories, PIC reassignment, Zalo events, what case data may pass through
+  Zalo).
+- **Đạt, product:** QO-1–QO-7 in `supply-chain.md` (sales-dev database and the
   re-pointed migrations; review ADR 0011–0023; realm SMTP; login branding;
-  upstream timing; deferring step 14's container loading).
+  upstream timing; deferring step 14's container loading; the comment a strict
+  approval needs in Zalo, code length and expiry).
 - **Đạt, inherited from the platform:**
     - a plan quota on direct model calls; the model profile and key for
       uat/production; whether CI runs the web vitest and Playwright suites;

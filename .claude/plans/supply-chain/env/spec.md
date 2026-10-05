@@ -33,6 +33,6 @@ Ticket 01 `resolved`; test đối chiếu settings với `.env.example` chạy t
 
 ## Danh sách ticket
 
-| #   | Ticket                                                         | Status          | Blocked by                                                        |
-| --- | -------------------------------------------------------------- | --------------- | ----------------------------------------------------------------- |
-| 01  | [`.env.example` đầy đủ](issues/01-env-example-and-init-env.md) | ready-for-agent | .claude/plans/supply-chain/port/issues/01-port-dw-supply-chain.md |
+| #   | Ticket                                                         | Status   | Blocked by                                                        |
+| --- | -------------------------------------------------------------- | -------- | ----------------------------------------------------------------- |
+| 01  | [`.env.example` đầy đủ](issues/01-env-example-and-init-env.md) | resolved | .claude/plans/supply-chain/port/issues/01-port-dw-supply-chain.md |

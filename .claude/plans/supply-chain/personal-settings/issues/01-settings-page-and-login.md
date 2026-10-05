@@ -1,6 +1,6 @@
 # 01 — Realm lấy URL cổng từ env; trang `/settings` bằng antd với thẻ Zalo
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: .claude/plans/supply-chain/zalo-channel/issues/01-zalo-link.md, .claude/plans/supply-chain/env/issues/01-env-example-and-init-env.md, .claude/plans/web-ui/antd-shell/issues/03-lib-dates.md, .claude/plans/web-ui/antd-shell/issues/05-ui-test-harness.md
 Area: supply-chain
 
@@ -52,3 +52,5 @@ Area: supply-chain
 - `docs/products/elmich/surveys/2026-10-05-synthesis.md` mục 3.
 
 ## Comments
+
+- 2026-10-05, resolved: Keycloak OIDC login verified by a scripted Authorization Code + PKCE flow on http://localhost:3200 and by an adversarial reviewer; `/settings` (antd) shows profile, memberships and the Zalo card; `make ci` green (unit 1455 passed).

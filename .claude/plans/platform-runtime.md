@@ -83,6 +83,10 @@ Mốc 6 (running many customers) is half done:
   menu item shown for any of several scopes), `support-access` (support access
   the customer grants, ADR 0008), `tenant-members-and-invitations` (tenant-wide
   users, per-workspace roles, invitations).
+- **A missing bearer token answers 403, not 401** (2026-10-05,
+  `platform-runtime/unauthenticated-401/`, ticket 01 `needs-triage`):
+  `bearer_token` raises `PermissionDeniedError` on every route. Found by Elmich
+  Z1, whose route criterion was amended to the real behaviour.
 - **`build_agent` has no production caller** (checked 2026-09-29): this
   checkout ships no bounded context.
 - **Platform pieces waiting for their first context** (failure-modes #1).
@@ -97,7 +101,9 @@ Mốc 6 (running many customers) is half done:
       approvals by type prefix;
     - `scope_holders.py`: who holds a scope, for routing work to people;
     - `platform.deliver_notification()`: the one way into a member's inbox.
-      The bell, the API and retention are wired, but nothing sends yet.
+      The bell, the API and retention are wired. First sender (2026-10-05):
+      the Zalo link store tells a person when a chat is linked to, moved off,
+      or unlinked from their account (`zalo_link_repo.py`, Elmich Z1).
       A context that adopts one wires it in `bootstrap/wiring.py` and names it
       here as taken.
 - **Nothing emits `memory.candidate_proposed`.** A bounded context has to
