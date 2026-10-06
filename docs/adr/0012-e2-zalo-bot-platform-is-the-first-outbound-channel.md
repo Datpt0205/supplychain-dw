@@ -102,7 +102,7 @@ một bảng liên kết có `tenant_id`; chưa làm.
 
 ## Bổ sung 7/10/2026 (Z4b): mô hình chạy trong worker, qua một bộ dựng chung
 
-Trạng thái: Proposed (chờ Đạt xác nhận cùng lúc review Z4b).
+Trạng thái: Accepted (2026-10-07, lead theo ủy quyền của Đạt: một bộ dựng model cho API và worker, cùng trần chi tiêu và hạn mức).
 
 Lane poll nằm trong worker, nên lệnh đề xuất đọc tin bằng mô hình ở worker, nơi
 trước Z4b không có `ModelGateway`. Quyết định:
