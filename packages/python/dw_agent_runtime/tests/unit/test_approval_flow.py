@@ -371,9 +371,9 @@ async def test_the_resumed_run_carries_the_requesters_authority() -> None:
 
 @pytest.mark.parametrize("approve", [True, False])
 async def test_the_resume_names_the_decider_from_their_verified_context(approve: bool) -> None:
-    """A graph that records who decided (the product case's BGĐ review)
-    reads it from here: the run resumes with the REQUESTER's authority, so
-    the decider's identity has no other way in."""
+    """A graph that records who decided reads it from here: the run resumes
+    with the REQUESTER's authority, so the decider's identity has no other
+    way in."""
     request = make_request("demo.dispatch", run_id=RUN_ID)
     runner = FakeRunner(hosted=True)
     service = make_service(request, frozenset(), runner=runner)
@@ -485,7 +485,7 @@ async def test_the_requester_still_cannot_approve_their_own_request() -> None:
         )
 
 
-BOD_SCOPE = "supply_chain.approve.bod"
+BOARD_SCOPE = "demo.approve.board"
 
 
 def make_stamped_request(required_scope: str | None) -> ApprovalRequest:
@@ -519,9 +519,9 @@ async def _decide_as(
 
 @pytest.mark.parametrize("approve", [True, False], ids=["approve", "reject"])
 async def test_the_decide_right_alone_cannot_decide_a_stamped_request(approve: bool) -> None:
-    """ADR 0020: `approvals.decide` is necessary, and for a stamped request not
+    """ADR 0004: `approvals.decide` is necessary, and for a stamped request not
     sufficient. Refused before anything is written and before the run resumes."""
-    request = make_stamped_request(BOD_SCOPE)
+    request = make_stamped_request(BOARD_SCOPE)
     repo = FakeApprovalRepo(request=request)
     runner = FakeRunner(hosted=True)
     service = make_service(request, frozenset(), runner=runner, repo=repo)
@@ -529,7 +529,7 @@ async def test_the_decide_right_alone_cannot_decide_a_stamped_request(approve: b
     with pytest.raises(PermissionDeniedError) as refused:
         await _decide_as(service, decider(APPROVER), approve=approve)
 
-    assert refused.value.details["action"] == BOD_SCOPE
+    assert refused.value.details["action"] == BOARD_SCOPE
     assert request.status is ApprovalStatus.PENDING
     assert request.version == 1
     assert repo.decisions == []
@@ -540,15 +540,15 @@ async def test_the_decide_right_alone_cannot_decide_a_stamped_request(approve: b
 
 async def test_the_stamped_scope_without_the_decide_right_is_not_enough() -> None:
     """Both, not either: the stamp narrows `approvals.decide`, never replaces it."""
-    request = make_stamped_request(BOD_SCOPE)
+    request = make_stamped_request(BOARD_SCOPE)
     runner = FakeRunner(hosted=True)
     service = make_service(request, frozenset(), runner=runner)
     context = AccessContext(
         tenant_id=uuid.UUID(int=100),
         workspace_id=uuid.UUID(int=101),
         principal_id=APPROVER,
-        roles=frozenset({"sc_bod"}),
-        scopes=frozenset({BOD_SCOPE}),
+        roles=frozenset({"board"}),
+        scopes=frozenset({BOARD_SCOPE}),
         plan_id="professional",
     )
 
@@ -560,12 +560,12 @@ async def test_the_stamped_scope_without_the_decide_right_is_not_enough() -> Non
 
 
 async def test_a_holder_of_the_stamped_scope_decides_and_resumes() -> None:
-    request = make_stamped_request(BOD_SCOPE)
+    request = make_stamped_request(BOARD_SCOPE)
     repo = FakeApprovalRepo(request=request)
     runner = FakeRunner(hosted=True)
     service = make_service(request, frozenset(), runner=runner, repo=repo)
 
-    decided = await _decide_as(service, decider(APPROVER, BOD_SCOPE), approve=True)
+    decided = await _decide_as(service, decider(APPROVER, BOARD_SCOPE), approve=True)
 
     assert decided.status is ApprovalStatus.APPROVED
     assert len(repo.decisions) == 1
@@ -588,10 +588,10 @@ def platform_admin(principal: uuid.UUID, *extra_scopes: str) -> AccessContext:
 
 @pytest.mark.parametrize("approve", [True, False], ids=["approve", "reject"])
 async def test_platform_admin_does_not_pass_the_stamped_scope(approve: bool) -> None:
-    """QO-8 (2026-10-06): a platform operator is not the business's board. The
+    """ADR 0004 (2026-10-06): a platform operator is not the business's board. The
     admin rule still grants `approvals.decide`; the stamp needs the scope itself.
     Refused before anything is written and before the run is looked at."""
-    request = make_stamped_request(BOD_SCOPE)
+    request = make_stamped_request(BOARD_SCOPE)
     repo = FakeApprovalRepo(request=request)
     runner = FakeRunner(hosted=True)
     service = make_service(request, frozenset(), runner=runner, repo=repo)
@@ -601,7 +601,7 @@ async def test_platform_admin_does_not_pass_the_stamped_scope(approve: bool) -> 
 
     assert refused.value.message == "action not permitted"
     assert refused.value.details == {
-        "action": BOD_SCOPE,
+        "action": BOARD_SCOPE,
         "resource_type": "approval_request",
         "resource_id": str(uuid.UUID(int=10)),
     }
@@ -613,11 +613,11 @@ async def test_platform_admin_does_not_pass_the_stamped_scope(approve: bool) -> 
 
 
 async def test_platform_admin_holding_the_stamped_scope_decides() -> None:
-    request = make_stamped_request(BOD_SCOPE)
+    request = make_stamped_request(BOARD_SCOPE)
     runner = FakeRunner(hosted=True)
     service = make_service(request, frozenset(), runner=runner)
 
-    decided = await _decide_as(service, platform_admin(APPROVER, BOD_SCOPE), approve=True)
+    decided = await _decide_as(service, platform_admin(APPROVER, BOARD_SCOPE), approve=True)
 
     assert decided.status is ApprovalStatus.APPROVED
     assert runner.resumed == [RUN_ID]
@@ -638,10 +638,10 @@ async def test_platform_admin_still_decides_an_unstamped_request() -> None:
 @pytest.mark.parametrize(
     ("required_scope", "context", "expected"),
     [
-        (BOD_SCOPE, decider(APPROVER, BOD_SCOPE), True),
-        (BOD_SCOPE, decider(APPROVER), False),
-        (BOD_SCOPE, platform_admin(APPROVER), False),
-        (BOD_SCOPE, platform_admin(APPROVER, BOD_SCOPE), True),
+        (BOARD_SCOPE, decider(APPROVER, BOARD_SCOPE), True),
+        (BOARD_SCOPE, decider(APPROVER), False),
+        (BOARD_SCOPE, platform_admin(APPROVER), False),
+        (BOARD_SCOPE, platform_admin(APPROVER, BOARD_SCOPE), True),
         (None, platform_admin(APPROVER), True),
         (None, decider(APPROVER), True),
         (None, context_without_the_right(APPROVER), False),
@@ -667,8 +667,8 @@ def test_may_decide_answers_as_decide_does(
 
 
 async def test_the_requester_withdraws_a_stamped_request_without_the_scope() -> None:
-    """Taking back your own request is not deciding it (ADR 0020), stamped or not."""
-    request = make_stamped_request(BOD_SCOPE)
+    """Taking back your own request is not deciding it (ADR 0004), stamped or not."""
+    request = make_stamped_request(BOARD_SCOPE)
     runner = FakeRunner(hosted=True)
     service = make_service(request, frozenset(), runner=runner)
 
@@ -679,7 +679,7 @@ async def test_the_requester_withdraws_a_stamped_request_without_the_scope() -> 
 
 
 async def test_the_requester_cannot_approve_their_own_stamped_request_without_the_scope() -> None:
-    request = make_stamped_request(BOD_SCOPE)
+    request = make_stamped_request(BOARD_SCOPE)
     runner = FakeRunner(hosted=True)
     service = make_service(request, frozenset(), runner=runner)
 

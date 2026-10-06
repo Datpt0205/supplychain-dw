@@ -1,4 +1,4 @@
-"""Integration: `approval_requests.required_scope` (ADR 0020, migration 5d3965984679).
+"""Integration: `approval_requests.required_scope` (ADR 0004, migration 36dabf47619c).
 
 What only the database can show: the stamp survives a round trip, its shape is
 refused by the CHECK (the one place the pattern is written), and a decision
@@ -27,7 +27,7 @@ from dw_platform.domain.approval import ApprovalRequest, ApprovalStatus, Decisio
 
 pytestmark = pytest.mark.integration
 
-BOD_SCOPE = "supply_chain.approve.bod"
+BOARD_SCOPE = "demo.approve.board"
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ def _request(context: AccessContext, required_scope: Any) -> ApprovalRequest:
         id=uuid.uuid4(),
         tenant_id=TenantId(context.tenant_id),
         workspace_id=WorkspaceId(context.workspace_id),
-        approval_type="supply_chain.product_action.approve",
+        approval_type="demo.action.approve",
         requested_by=UserId(context.principal_id),
         reason="test",
         required_scope=required_scope,
@@ -76,7 +76,7 @@ async def _get(
         )
 
 
-@pytest.mark.parametrize("required_scope", [BOD_SCOPE, None])
+@pytest.mark.parametrize("required_scope", [BOARD_SCOPE, None])
 async def test_the_stamp_round_trips(
     sessions: async_sessionmaker[AsyncSession], required_scope: str | None
 ) -> None:
@@ -93,14 +93,14 @@ async def test_the_stamp_round_trips(
 @pytest.mark.parametrize(
     "malformed",
     [
-        "Supply_chain.approve",  # upper case
-        "supply_chain",  # one segment is a name, not a scope
+        "Demo.approve",  # upper case
+        "demo",  # one segment is a name, not a scope
         "",  # empty is not "no scope"; it would be a stamp nobody holds
-        "supply_chain.",
+        "demo.",
         ".approve",
-        " supply_chain.approve",
-        "supply_chain.approve bod",
-        "supply-chain.approve",
+        " demo.approve",
+        "demo.approve board",
+        "demo-x.approve",
     ],
 )
 async def test_the_database_refuses_a_malformed_stamp(
@@ -127,14 +127,14 @@ async def test_a_decision_does_not_move_the_stamp(
     """`save` writes the decision columns only. Even an aggregate whose stamp was
     changed in memory leaves the stored stamp as it was raised."""
     context = _context()
-    request = _request(context, BOD_SCOPE)
+    request = _request(context, BOARD_SCOPE)
     await _add(sessions, context, request)
 
     async with tenant_session(sessions, TenantScope.from_access_context(context)) as session:
         repo = SqlApprovalRepository(session)
         loaded = await repo.get(request.id, workspace_id=context.workspace_id)
         assert loaded is not None
-        loaded.required_scope = "supply_chain.approve.anyone"
+        loaded.required_scope = "demo.approve.anyone"
         loaded.decide(
             decision_id=uuid.uuid4(),
             decided_by=UserId(uuid.uuid4()),
@@ -146,7 +146,7 @@ async def test_a_decision_does_not_move_the_stamp(
     stored = await _get(sessions, context, request.id)
     assert stored is not None
     assert stored.status is ApprovalStatus.APPROVED
-    assert stored.required_scope == BOD_SCOPE
+    assert stored.required_scope == BOARD_SCOPE
 
 
 async def test_the_application_role_cannot_rewrite_the_stamp(
@@ -154,7 +154,7 @@ async def test_the_application_role_cannot_rewrite_the_stamp(
 ) -> None:
     """Credentials reach further than reviewed code: the grant refuses it too."""
     context = _context()
-    request = _request(context, BOD_SCOPE)
+    request = _request(context, BOARD_SCOPE)
     await _add(sessions, context, request)
 
     with pytest.raises(DBAPIError, match="permission denied"):
@@ -168,4 +168,4 @@ async def test_the_application_role_cannot_rewrite_the_stamp(
 
     stored = await _get(sessions, context, request.id)
     assert stored is not None
-    assert stored.required_scope == BOD_SCOPE
+    assert stored.required_scope == BOARD_SCOPE

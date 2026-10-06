@@ -98,7 +98,7 @@ class SqlApprovalRepository:
                 payload=request.payload,
                 run_id=request.run_id,
                 # Written here and nowhere else: `save` records a decision and
-                # must never move who was allowed to make it (ADR 0020).
+                # must never move who was allowed to make it (ADR 0004).
                 required_scope=request.required_scope,
                 status=request.status.value,
                 version=request.version,

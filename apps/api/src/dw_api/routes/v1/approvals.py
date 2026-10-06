@@ -33,13 +33,13 @@ class ApprovalView(BaseModel):
     # form would have to keep its own copy of the prefix list.
     requires_comment: bool
     # The scope a decider must hold besides `approvals.decide`, stamped when the
-    # request was raised (ADR 0020). Shown as the reason when `can_decide` is
+    # request was raised (ADR 0004). Shown as the reason when `can_decide` is
     # false; the page never compares it with the session's scopes itself.
     required_scope: str | None
     # Whether the caller's scopes let them decide this request, by the same
     # checks `ApproveAndResumeService.decide` runs (`may_decide`). Computed here
     # because the session's `hasScope` lets `platform_admin` pass any scope and
-    # a stamped scope is not passed by that role (QO-8, 2026-10-06).
+    # a stamped scope is not passed by that role (2026-10-06).
     can_decide: bool
     # Whether the caller raised this request. Withdrawing your own needs no
     # scope at all, and the page cannot tell which requests are the viewer's

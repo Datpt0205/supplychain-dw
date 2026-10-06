@@ -97,6 +97,11 @@ Mốc 6 (running many customers) is half done:
 
 ## Open
 
+- **Decided 2026-10-06 (Đạt delegated the calls):** run checkpoints keep 7 days
+  of a thread's older checkpoints and 730 days for an idle thread; `memory.`
+  approvals are strict (a second person and a comment); a memory auto-writes
+  only on two distinct cited documents. All three are the shipped defaults.
+
 - **CI: the three run-state announcement timeouts were a plugin race**
   (fixed 2026-10-02). pytest-asyncio (auto mode) and anyio's pytest plugin both
   wrap async fixtures; the one registered last wins, and registration follows
@@ -134,6 +139,10 @@ Mốc 6 (running many customers) is half done:
   link now reads its scope from the nav registry, cross-tenant tests name the
   victim's workspace so only the tenant boundary refuses, both pages watched
   in a browser; whether the UoW should own the workspace is for QO-2.
+  Upstreamed to the platform (2026-10-07, platform `22ad681`) together with
+  `required_scope`: its migrations `36dabf47619c` and `6d4aed20ccf2` are twins
+  of this repo's `5d3965984679` and `cbf765d02a12`; all four are idempotent and
+  a downgrade is a no-op while the twin is applied (platform `6768b22`).
 - **Tickets written for the first product, platform side** (2026-10-03, all
   `ready-for-agent`, product-neutral), each under `platform-runtime/<folder>/`:
   `scope-holder-check` (ask whether a user holds a scope without an
@@ -173,6 +182,15 @@ Mốc 6 (running many customers) is half done:
   Dropped as already true here: the rerank outage fallback (`4cb45dc`), and
   offboarding purging run checkpoints (catalog discovery already does; the
   `compaction` ticket only pins it with a test).
+- **Upstreamed from the first product's repo** (2026-10-06, branch
+  `feat/upstream-elmich-platform`): who may decide an approval is stamped on
+  it as `required_scope` and enforced in `decide`; `platform_admin` does not
+  pass a stamp (`docs/adr/0004`, migration `36dabf47619c`); the inbox reads
+  `can_decide` from the same checks. The resume payload carries `decided_by`
+  from the decider's verified context. A multipart route claims its
+  idempotency key from parsed fields (`get_form_idempotent_operation`,
+  `claim_fields`); `PAYLOAD_TOO_LARGE`→413, `UNSUPPORTED_MEDIA_TYPE`→415.
+  Not taken: the product's contexts, migrations, channel code and web look.
 - **`build_agent` has no production caller** (checked 2026-09-29): this
   checkout ships no bounded context.
 - **Platform pieces waiting for their first context** (failure-modes #1).
@@ -186,6 +204,12 @@ Mốc 6 (running many customers) is half done:
     - `SqlPendingApprovalQuery`: a context counting its own pending
       approvals by type prefix;
     - `scope_holders.py`: who holds a scope, for routing work to people;
+    - `required_scope` on an approval: no platform node stamps one; a
+      context's graph puts it in its interrupt payload;
+    - `decided_by` in the resume payload: no platform graph reads it;
+    - `get_form_idempotent_operation` / `claim_fields`, and
+      `PayloadTooLargeError` / `UnsupportedMediaTypeError`: no platform
+      route takes a form or raises them (a unit test mounts a probe route);
     - `platform.deliver_notification()`: the one way into a member's inbox.
       The bell, the API and retention are wired. First sender (2026-10-05):
       the Zalo link store tells a person when a chat is linked to, moved off,

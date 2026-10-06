@@ -2,7 +2,7 @@
 
 What the page reads (`required_scope`, `can_decide`, `requested_by_me`) and that the server
 refuses a decision the page would have locked, called directly over HTTP with
-no page in front of it (ADR 0020). Tenant isolation of the read is the
+no page in front of it (ADR 0004). Tenant isolation of the read is the
 database's job, covered against a real one by `dw_agent_runtime`'s
 `test_approval_decider_scope.py`; workspace isolation is the repository's,
 covered against a real one by `test_approval_workspace.py` there. Here: the
@@ -49,7 +49,7 @@ WORKSPACE = uuid.uuid4()
 OTHER_WORKSPACE = uuid.uuid4()
 VIEWER = uuid.uuid4()
 SOMEONE_ELSE = uuid.uuid4()
-BOD_SCOPE = "supply_chain.approve.bod"
+BOARD_SCOPE = "demo.approve.board"
 
 
 @dataclass
@@ -160,9 +160,9 @@ def make_request(
         id=uuid.uuid4(),
         tenant_id=TenantId(TENANT),
         workspace_id=WorkspaceId(workspace),
-        approval_type="supply_chain.product_action.approve",
+        approval_type="demo.action.approve",
         requested_by=UserId(requested_by),
-        reason="BGĐ duyệt phát triển sản phẩm",
+        reason="cần duyệt",
         required_scope=required_scope,
     )
 
@@ -225,7 +225,7 @@ async def _call(
 
 @pytest.mark.parametrize(
     ("requested_by", "required_scope", "mine"),
-    [(SOMEONE_ELSE, BOD_SCOPE, False), (VIEWER, None, True)],
+    [(SOMEONE_ELSE, BOARD_SCOPE, False), (VIEWER, None, True)],
 )
 async def test_the_view_carries_the_stamp_and_whose_request_it_is(
     requested_by: uuid.UUID, required_scope: str | None, mine: bool
@@ -249,11 +249,11 @@ PLATFORM_ADMIN = frozenset({"platform_admin"})
 @pytest.mark.parametrize(
     ("roles", "scopes", "required_scope", "can_decide"),
     [
-        (frozenset({"approver"}), {"approvals.decide", BOD_SCOPE}, BOD_SCOPE, True),
-        (frozenset({"approver"}), {"approvals.decide"}, BOD_SCOPE, False),
+        (frozenset({"approver"}), {"approvals.decide", BOARD_SCOPE}, BOARD_SCOPE, True),
+        (frozenset({"approver"}), {"approvals.decide"}, BOARD_SCOPE, False),
         (frozenset({"approver"}), set(), None, False),
-        (PLATFORM_ADMIN, {"platform.admin"}, BOD_SCOPE, False),
-        (PLATFORM_ADMIN, {"platform.admin", BOD_SCOPE}, BOD_SCOPE, True),
+        (PLATFORM_ADMIN, {"platform.admin"}, BOARD_SCOPE, False),
+        (PLATFORM_ADMIN, {"platform.admin", BOARD_SCOPE}, BOARD_SCOPE, True),
         (PLATFORM_ADMIN, {"platform.admin"}, None, True),
     ],
     ids=[
@@ -268,7 +268,7 @@ PLATFORM_ADMIN = frozenset({"platform_admin"})
 async def test_can_decide_is_the_servers_answer_in_the_list_and_the_detail(
     roles: frozenset[str], scopes: set[str], required_scope: str | None, can_decide: bool
 ) -> None:
-    """QO-8: the session's `hasScope` passes `platform_admin` on every scope, so
+    """ADR 0004: the session's `hasScope` passes `platform_admin` on every scope, so
     the page locks on this instead, built from the checks `decide` runs."""
     request = make_request(requested_by=SOMEONE_ELSE, required_scope=required_scope)
     container = make_container(
@@ -286,7 +286,7 @@ async def test_can_decide_is_the_servers_answer_in_the_list_and_the_detail(
 async def test_platform_admin_without_the_stamp_is_refused_over_http() -> None:
     """The page's lock and the server's refusal are one answer: a 403 naming the
     stamp, nothing recorded."""
-    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOD_SCOPE)
+    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOARD_SCOPE)
     repo = FakeApprovalRepo(request)
     container = make_container(repo, frozenset({"platform.admin"}), roles=PLATFORM_ADMIN)
 
@@ -295,7 +295,7 @@ async def test_platform_admin_without_the_stamp_is_refused_over_http() -> None:
     )
 
     assert response.status_code == 403
-    assert response.json()["details"]["action"] == BOD_SCOPE
+    assert response.json()["details"]["action"] == BOARD_SCOPE
     assert repo.decisions == []
     assert request.status is ApprovalStatus.PENDING
 
@@ -303,7 +303,7 @@ async def test_platform_admin_without_the_stamp_is_refused_over_http() -> None:
 async def test_the_server_refuses_a_decision_the_page_would_have_locked() -> None:
     """No page in front: `approvals.decide` without the stamp is a 403, and
     nothing is recorded."""
-    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOD_SCOPE)
+    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOARD_SCOPE)
     repo = FakeApprovalRepo(request)
     container = make_container(repo, frozenset({"approvals.read", "approvals.decide"}))
 
@@ -317,11 +317,11 @@ async def test_the_server_refuses_a_decision_the_page_would_have_locked() -> Non
 
 
 async def test_a_holder_of_the_stamp_decides_over_http() -> None:
-    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOD_SCOPE)
+    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOARD_SCOPE)
     repo = FakeApprovalRepo(request)
     outbox = FakeOutbox()
     container = make_container(
-        repo, frozenset({"approvals.read", "approvals.decide", BOD_SCOPE}), outbox
+        repo, frozenset({"approvals.read", "approvals.decide", BOARD_SCOPE}), outbox
     )
 
     response = await _call(
@@ -330,12 +330,10 @@ async def test_a_holder_of_the_stamp_decides_over_http() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "approved"
-    assert response.json()["required_scope"] == BOD_SCOPE
+    assert response.json()["required_scope"] == BOARD_SCOPE
     assert len(repo.decisions) == 1
     # No run to resume, so the decision is announced once, in its own transaction.
-    assert [e.event_type for e in outbox.events] == [
-        decided_event_type("supply_chain.product_action.approve")
-    ]
+    assert [e.event_type for e in outbox.events] == [decided_event_type("demo.action.approve")]
 
 
 async def test_another_workspaces_approval_is_neither_listed_nor_found_nor_decided() -> None:

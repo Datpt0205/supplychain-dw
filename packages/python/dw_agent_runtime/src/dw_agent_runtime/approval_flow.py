@@ -174,12 +174,12 @@ class ApproveAndResumeService:
                     resource_id=str(approval_id),
                 )
                 # Who may decide THIS request, stamped when it was raised
-                # (ADR 0020) and read from the row, never from today's policy.
+                # (ADR 0004) and read from the row, never from today's policy.
                 # NOT through `require`: its admin rule would let a platform
-                # operator decide a business approval (QO-8, 2026-10-06). The
-                # inbox reads the same `holds_stamped_scope`; and this sits
-                # before any write or resume, so a refusal leaves the request
-                # pending and the run parked.
+                # operator decide a business approval (2026-10-06). The inbox
+                # reads the same `holds_stamped_scope`; and this sits before any
+                # write or resume, so a refusal leaves the request pending and
+                # the run parked.
                 if not holds_stamped_scope(context, request.required_scope):
                     raise permission_denied(
                         action=str(request.required_scope),

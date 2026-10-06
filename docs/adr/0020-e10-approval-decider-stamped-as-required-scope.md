@@ -16,7 +16,8 @@ Bước 6 chỉ BGĐ được duyệt; bước 9 BGĐ và Kế toán ký. Hôm n
 chung đều quyết được mọi approval của workspace. Tiền tố nghiêm chỉ chặn người yêu
 cầu tự duyệt và đòi nhận xét.
 
-**Quyết định (phần chung, ứng viên đưa ngược):**
+**Quyết định (phần chung, đã đưa về platform 2026-10-07 thành ADR 0004 của platform;
+code platform ở đây trích ADR 0004, ADR này giữ phần của Elmich):**
 
 - `platform.approval_requests` thêm cột `required_scope text NULL` (CHECK theo dạng
   tên scope). `ApprovalRequest` thêm trường cùng tên.

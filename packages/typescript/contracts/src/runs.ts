@@ -15,7 +15,7 @@ export const approvalSchema = z.object({
   requires_comment: z.boolean(),
   /**
    * The scope a decider must hold besides `approvals.decide`, stamped when the
-   * request was raised (ADR 0020). The server enforces it; a page reads it to
+   * request was raised (ADR 0004). The server enforces it; a page reads it to
    * say why a decision is locked, never to infer one from `approval_type`.
    */
   required_scope: z.string().nullable(),

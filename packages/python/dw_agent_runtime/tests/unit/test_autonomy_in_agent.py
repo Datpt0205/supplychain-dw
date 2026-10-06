@@ -125,7 +125,7 @@ class _ScopeNamedInput(BaseModel):
 
 
 async def test_a_model_cannot_stamp_who_may_decide() -> None:
-    """ADR 0020: `required_scope` comes from the node, never from the model.
+    """ADR 0004: `required_scope` comes from the node, never from the model.
 
     The runner stamps the approval from the interrupt's top-level keys. A tool
     call's arguments, which the model writes, travel nested under `payload`, so

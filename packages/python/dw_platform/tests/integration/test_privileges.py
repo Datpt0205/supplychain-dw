@@ -224,9 +224,10 @@ async def test_the_application_may_only_mark_a_link_nonce_used(db_urls: Database
 async def test_the_application_may_only_record_a_decision_on_an_approval(
     db_urls: DatabaseUrls,
 ) -> None:
-    """`platform.approval_requests` (migration 5d3965984679): a decision writes
-    `status`, `decided_at` and `version`, and nothing else may move. Above all
-    `required_scope`, the stamp of who may decide (ADR 0020). Asked of the
+    """`platform.approval_requests` (migration 36dabf47619c, or its twin
+    5d3965984679 here): a decision writes `status`, `decided_at` and `version`,
+    and nothing else may move. Above all `required_scope`, the stamp of who may
+    decide (ADR 0004). Asked of the
     catalog, so a later blanket GRANT that restored table-wide UPDATE goes red."""
     migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
     try:

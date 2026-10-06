@@ -324,3 +324,7 @@ Vòng này không đổi hợp đồng API (chỉ test, web, docstring migration
 này (`docker stop`, exit 137) và `dw_proterial` được bật. Đã `docker start` chỉ postgres,
 valkey, qdrant, s3 của `dw_elmichs` để chạy kiểm và dọn dữ liệu xem trang, rồi dừng lại như
 lúc thấy (keycloak, docgen không bật).
+
+**2026-10-07, đưa về platform:** platform nhận ticket này (`22ad681`), migration
+`6d4aed20ccf2` là bản sinh đôi của `cbf765d02a12`; cả hai chạy lặp được và downgrade bỏ qua
+khi bản kia còn áp dụng (platform `6768b22`). Merge `platform/main` về đây giữ một bản code.

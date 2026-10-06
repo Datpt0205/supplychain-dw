@@ -1,9 +1,9 @@
-"""Integration: an approval's `required_scope`, from the pause to the decision (ADR 0020).
+"""Integration: an approval's `required_scope`, from the pause to the decision (ADR 0004).
 
 Real Postgres end to end: the node's interrupt payload stamps the row, the CHECK
 refuses a malformed stamp and the run ends failed instead of parking, and
 `ApproveAndResumeService.decide` enforces the stamp before anything is written,
-and `platform_admin` does not pass it (QO-8, 2026-10-06).
+and `platform_admin` does not pass it (2026-10-06).
 Another tenant's approval is not found, even by a holder of the scope; another
 workspace of the same tenant is `test_approval_workspace.py`
 (platform-runtime/approval-audit-and-workspace/02).
@@ -46,7 +46,7 @@ from dw_platform.domain.approval import ApprovalRequest, ApprovalStatus
 
 pytestmark = pytest.mark.integration
 
-BOD_SCOPE = "supply_chain.approve.bod"
+BOARD_SCOPE = "demo.approve.board"
 STALE_AFTER_SECONDS_LOCAL = 3600
 _ABSENT = object()
 
@@ -57,7 +57,7 @@ def build_stamping_graph(required_scope: object) -> Callable[[], StateGraph]:  #
 
     def factory() -> StateGraph:  # type: ignore[type-arg]
         def _review(state: DemoState) -> DemoState:
-            body: dict[str, Any] = {"approval_type": "demo.dispatch", "reason": "BGĐ duyệt"}
+            body: dict[str, Any] = {"approval_type": "demo.dispatch", "reason": "cần duyệt"}
             if required_scope is not _ABSENT:
                 body["required_scope"] = required_scope
             decision: dict[str, Any] = interrupt(body)
@@ -195,7 +195,7 @@ def _assert_the_approval_was_not_found(error: NotFoundError, approval_id: uuid.U
 
 @pytest.mark.parametrize(
     "malformed",
-    ["Supply_chain.approve", "supply_chain", "", 5, ["supply_chain.approve.bod"]],
+    ["Demo.approve", "demo", "", 5, ["demo.approve.board"]],
     ids=["upper-case", "one-segment", "empty", "number", "list"],
 )
 async def test_a_malformed_stamp_fails_the_run_and_raises_no_approval(
@@ -243,7 +243,7 @@ async def test_no_stamp_keeps_todays_rule(urls: RuntimeUrls, worker_config: Path
 
 async def test_the_stamp_decides_who_may_decide(urls: RuntimeUrls, worker_config: Path) -> None:
     run = make_run_context()
-    stack = Stack(urls.app, worker_config, build_stamping_graph(BOD_SCOPE))
+    stack = Stack(urls.app, worker_config, build_stamping_graph(BOARD_SCOPE))
     await stack.runner.start(run_context=run, input_payload={"subject": "x"})
     record = await stack.run_store.get(run, run.run_id)
     assert record.status is RunStatus.WAITING_APPROVAL
@@ -252,7 +252,7 @@ async def test_the_stamp_decides_who_may_decide(urls: RuntimeUrls, worker_config
     async with stack.uow_factory(access_context_from_run(run)) as uow:
         stamped = await uow.approvals.get(approval_id, workspace_id=run.workspace_id)
     assert stamped is not None
-    assert stamped.required_scope == BOD_SCOPE
+    assert stamped.required_scope == BOARD_SCOPE
 
     async def still_pending() -> None:
         async with stack.uow_factory(access_context_from_run(run)) as uow:
@@ -270,7 +270,7 @@ async def test_the_stamp_decides_who_may_decide(urls: RuntimeUrls, worker_config
             approval_id=approval_id,
             approve=True,
             comment="",
-            context=_decider(BOD_SCOPE, tenant=TENANT_B, workspace=run.workspace_id),
+            context=_decider(BOARD_SCOPE, tenant=TENANT_B, workspace=run.workspace_id),
             authorization=ScopeAuthorizationService(),
         )
     _assert_the_approval_was_not_found(not_found.value, approval_id)
@@ -291,8 +291,8 @@ async def test_the_stamp_decides_who_may_decide(urls: RuntimeUrls, worker_config
     decided = await stack.approvals.decide(
         approval_id=approval_id,
         approve=True,
-        comment="BGĐ đồng ý",
-        context=_decider(BOD_SCOPE, tenant=run.tenant_id, workspace=run.workspace_id),
+        comment="đồng ý",
+        context=_decider(BOARD_SCOPE, tenant=run.tenant_id, workspace=run.workspace_id),
         authorization=ScopeAuthorizationService(),
     )
     assert decided.status is ApprovalStatus.APPROVED
@@ -320,11 +320,11 @@ def _platform_admin(*scopes: str, tenant: uuid.UUID, workspace: uuid.UUID) -> Ac
 async def test_platform_admin_does_not_pass_the_stamp(
     urls: RuntimeUrls, worker_config: Path
 ) -> None:
-    """QO-8 (2026-10-06): a platform operator is not the business's board. Same
+    """ADR 0004 (2026-10-06): a platform operator is not the business's board. Same
     tenant and workspace, approve and reject: refused, nothing written, the run
     still parked. A holder of the scope then decides it as before."""
     run = make_run_context()
-    stack = Stack(urls.app, worker_config, build_stamping_graph(BOD_SCOPE))
+    stack = Stack(urls.app, worker_config, build_stamping_graph(BOARD_SCOPE))
     await stack.runner.start(run_context=run, input_payload={"subject": "x"})
     record = await stack.run_store.get(run, run.run_id)
     approval_id = record.approval_request_id
@@ -339,7 +339,7 @@ async def test_platform_admin_does_not_pass_the_stamp(
                 context=_platform_admin(tenant=run.tenant_id, workspace=run.workspace_id),
                 authorization=ScopeAuthorizationService(),
             )
-        assert refused.value.details["action"] == BOD_SCOPE
+        assert refused.value.details["action"] == BOARD_SCOPE
 
     async with stack.uow_factory(access_context_from_run(run)) as uow:
         current = await uow.approvals.get(approval_id, workspace_id=run.workspace_id)
@@ -352,8 +352,8 @@ async def test_platform_admin_does_not_pass_the_stamp(
     decided = await stack.approvals.decide(
         approval_id=approval_id,
         approve=True,
-        comment="BGĐ đồng ý",
-        context=_decider(BOD_SCOPE, tenant=run.tenant_id, workspace=run.workspace_id),
+        comment="đồng ý",
+        context=_decider(BOARD_SCOPE, tenant=run.tenant_id, workspace=run.workspace_id),
         authorization=ScopeAuthorizationService(),
     )
     assert decided.status is ApprovalStatus.APPROVED
@@ -394,15 +394,15 @@ async def test_another_tenant_cannot_decide_a_stamped_approval_without_a_run(
     The other tenant names the approval's own workspace id, so the workspace
     filter cannot stand in for the tenant boundary either."""
     run = make_run_context()
-    stack = Stack(urls.app, worker_config, build_stamping_graph(BOD_SCOPE))
+    stack = Stack(urls.app, worker_config, build_stamping_graph(BOARD_SCOPE))
     request = ApprovalRequest(
         id=uuid.uuid4(),
         tenant_id=TenantId(run.tenant_id),
         workspace_id=WorkspaceId(run.workspace_id),
         approval_type="demo.dispatch",
         requested_by=UserId(run.actor_id),
-        reason="BGĐ duyệt",
-        required_scope=BOD_SCOPE,
+        reason="cần duyệt",
+        required_scope=BOARD_SCOPE,
     )
     async with stack.uow_factory(access_context_from_run(run)) as uow:
         await uow.approvals.add(request)
@@ -413,7 +413,7 @@ async def test_another_tenant_cannot_decide_a_stamped_approval_without_a_run(
             approval_id=request.id,
             approve=True,
             comment="",
-            context=_decider(BOD_SCOPE, tenant=TENANT_B, workspace=run.workspace_id),
+            context=_decider(BOARD_SCOPE, tenant=TENANT_B, workspace=run.workspace_id),
             authorization=ScopeAuthorizationService(),
         )
 
@@ -432,7 +432,7 @@ async def test_a_malformed_stamp_fails_a_streamed_run_too(
 ) -> None:
     """A chat turn reaches the same pause through `_settle_stream`."""
     run = make_run_context()
-    stack = Stack(urls.app, worker_config, build_stamping_graph("Supply_chain.approve"))
+    stack = Stack(urls.app, worker_config, build_stamping_graph("Demo.approve"))
 
     stream = await stack.runner.stream(run_context=run, input_payload={"subject": "x"})
     async for _chunk in stream:

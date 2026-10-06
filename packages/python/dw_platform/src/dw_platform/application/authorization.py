@@ -15,11 +15,11 @@ PLATFORM_ADMIN_ROLE = "platform_admin"
 
 
 def holds_stamped_scope(context: AccessContext, required_scope: str | None) -> bool:
-    """Whether `context` may decide a request stamped with `required_scope` (ADR 0020).
+    """Whether `context` may decide a request stamped with `required_scope` (ADR 0004).
 
     The one owner of this rule, read by the decision (`ApproveAndResumeService.decide`)
     and by the inbox that offers it, so the two cannot disagree. The caller must hold
-    the scope itself: no role stands in for it, `platform_admin` included (QO-8,
+    the scope itself: no role stands in for it, `platform_admin` included (ADR 0004,
     2026-10-06). A platform operator is not the business's board, and a stamped
     approval is a business decision. Unstamped (None) asks nothing beyond
     `approvals.decide`, which `ScopeAuthorizationService` still answers.

@@ -130,8 +130,9 @@ async def test_another_workspaces_approval_is_not_found_by_id(
 async def test_a_contexts_pending_count_is_the_callers_workspace_only(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    """The second reader of the inbox (`PendingApprovalsPort`, the supply-chain
-    brief): it must not count or show what the inbox itself would refuse."""
+    """The second reader of the inbox (`SqlPendingApprovalQuery`, a context
+    counting its own pending approvals): it must not count or show what the
+    inbox itself would refuse."""
     a, b = _two_workspaces()
     await _raise_approval(sessions, a)
     mine = await _raise_approval(sessions, b)
