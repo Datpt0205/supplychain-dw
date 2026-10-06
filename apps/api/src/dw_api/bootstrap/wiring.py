@@ -471,7 +471,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         # The platform's own approval inbox, read through the narrow
         # Protocol Supply Chain declares: the context never reads
         # platform.approval_requests itself.
-        pending_approvals=SqlPendingApprovalQuery(wiring.seam.session_factory),
+        pending_approvals=SqlPendingApprovalQuery(wiring.seam.session_factory, authorization),
         authz=authorization,
         clock=wiring.seam.clock,
     )
@@ -609,7 +609,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         | frozenset({product_review_graph.APPROVAL_TYPE_PREFIX})
     )
     # The approval inbox, read through the narrow Protocol the context declares.
-    pending_approvals = SqlPendingApprovalQuery(wiring.seam.session_factory)
+    pending_approvals = SqlPendingApprovalQuery(wiring.seam.session_factory, authorization)
     product_reviews = EnsureBodReview(
         runner=wiring.runner,
         approvals=pending_approvals,

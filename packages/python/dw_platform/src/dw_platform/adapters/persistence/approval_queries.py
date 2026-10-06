@@ -12,7 +12,10 @@ mechanism for the tenant here, same as every repository in this package. RLS
 on `approval_requests` narrows by tenant only, so the caller's workspace is
 narrowed here, as `SqlApprovalRepository.list_pending` narrows the inbox: a
 context's count must not show what the inbox itself would refuse
-(platform-runtime/approval-audit-and-workspace/02).
+(platform-runtime/approval-audit-and-workspace/02). For the same reason it
+filters by the caller's `ApprovalAudience` (ADR 0004, amendment 2026-10-07),
+through the repository's own `visible_to`: a stamped request the caller may
+neither decide nor asked for is neither counted nor shown.
 """
 
 from __future__ import annotations
@@ -23,15 +26,19 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from dw_platform.adapters.persistence import tables
-from dw_platform.adapters.persistence.repositories import _approval_from_row
+from dw_platform.adapters.persistence.repositories import _approval_from_row, visible_to
 from dw_platform.adapters.persistence.tenant_session import TenantScope, tenant_session
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest, ApprovalStatus
 
 
 @dataclass(frozen=True)
 class SqlPendingApprovalQuery:
     session_factory: async_sessionmaker[AsyncSession]
+    # The composition root's own instance: whether the caller holds
+    # `approvals.decide` is its answer, admin rule included, as for the inbox.
+    authorization: ScopeAuthorizationService
 
     async def list_pending_by_type_prefix(
         self, context: AccessContext, *, prefix: str, limit: int
@@ -45,6 +52,7 @@ class SqlPendingApprovalQuery:
             approvals.c.workspace_id == context.workspace_id,
             approvals.c.status == ApprovalStatus.PENDING.value,
             approvals.c.approval_type.startswith(prefix, autoescape=True),
+            visible_to(ApprovalAudience.of(context, self.authorization)),
         )
         scope = TenantScope.from_access_context(context)
         async with tenant_session(self.session_factory, scope) as session:
@@ -66,21 +74,56 @@ class SqlPendingApprovalQuery:
     ) -> ApprovalRequest | None:
         """The newest pending approval of exactly `approval_type` in the
         caller's workspace whose payload's top-level `key` is `value`: what a
-        context's record page shows it is waiting on. Pending approvals of one
-        type in one workspace are few, so the JSON test runs on what the
-        workspace and status already narrowed."""
+        context's record page shows it is waiting on. A person's read, so
+        narrowed by their `ApprovalAudience` as the inbox is: a record page
+        must not show a stamped request the inbox would not."""
+        return await self._newest_pending(
+            context,
+            approval_type=approval_type,
+            key=key,
+            value=value,
+            audience=ApprovalAudience.of(context, self.authorization),
+        )
+
+    async def raised_by_payload(
+        self, context: AccessContext, *, approval_type: str, key: str, value: str
+    ) -> ApprovalRequest | None:
+        """The same request, for the context that raises it: whether it is
+        already raised, so a retry does not raise it twice, and which one to
+        announce. Bookkeeping, never served to a person, so not narrowed by
+        the caller's audience: the caller is a worker sweep or the step that
+        raised it, not who a stamped request is shown to, and a filtered
+        answer here would raise the request again."""
+        return await self._newest_pending(
+            context, approval_type=approval_type, key=key, value=value, audience=None
+        )
+
+    async def _newest_pending(
+        self,
+        context: AccessContext,
+        *,
+        approval_type: str,
+        key: str,
+        value: str,
+        audience: ApprovalAudience | None,
+    ) -> ApprovalRequest | None:
+        # Pending approvals of one type in one workspace are few, so the JSON
+        # test runs on what the workspace and status already narrowed.
         approvals = tables.approval_requests
+        conditions = [
+            approvals.c.workspace_id == context.workspace_id,
+            approvals.c.status == ApprovalStatus.PENDING.value,
+            approvals.c.approval_type == approval_type,
+            approvals.c.payload[key].astext == value,
+        ]
+        if audience is not None:
+            conditions.append(visible_to(audience))
         scope = TenantScope.from_access_context(context)
         async with tenant_session(self.session_factory, scope) as session:
             row = (
                 await session.execute(
                     sa.select(approvals)
-                    .where(
-                        approvals.c.workspace_id == context.workspace_id,
-                        approvals.c.status == ApprovalStatus.PENDING.value,
-                        approvals.c.approval_type == approval_type,
-                        approvals.c.payload[key].astext == value,
-                    )
+                    .where(*conditions)
                     .order_by(approvals.c.created_at.desc(), approvals.c.id.desc())
                     .limit(1)
                 )

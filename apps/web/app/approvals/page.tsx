@@ -73,7 +73,10 @@ export default function ApprovalsPage() {
    * The scope stamped on this approval that keeps the viewer from deciding it
    * (ADR 0020), or null. The server says whether they may (`can_decide`, the
    * decision's own checks); the session's `hasScope` is not asked, because it
-   * lets `platform_admin` pass a scope a stamped approval does not.
+   * lets `platform_admin` pass a scope a stamped approval does not. The server
+   * lists a stamped approval only to who may decide it and to its requester
+   * (ADR 0004, amendment 2026-10-07), so in practice this locks the
+   * requester's own; the lock stays for any other answer the server gives.
    */
   function missingScope(approval: Approval): string | null {
     return approval.can_decide ? null : approval.required_scope;

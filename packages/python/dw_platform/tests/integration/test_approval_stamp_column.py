@@ -23,9 +23,16 @@ from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_platform.adapters.persistence.repositories import SqlApprovalRepository
 from dw_platform.adapters.persistence.tenant_session import TenantScope, tenant_session
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest, ApprovalStatus, DecisionOutcome
 
 pytestmark = pytest.mark.integration
+
+
+def _sees(context: AccessContext) -> ApprovalAudience:
+    """What `context` may see of the approvals (ADR 0004), as the API asks it."""
+    return ApprovalAudience.of(context, ScopeAuthorizationService())
+
 
 BOARD_SCOPE = "demo.approve.board"
 
@@ -72,7 +79,7 @@ async def _get(
 ) -> ApprovalRequest | None:
     async with tenant_session(sessions, TenantScope.from_access_context(context)) as session:
         return await SqlApprovalRepository(session).get(
-            request_id, workspace_id=context.workspace_id
+            request_id, workspace_id=context.workspace_id, audience=_sees(context)
         )
 
 
@@ -132,7 +139,9 @@ async def test_a_decision_does_not_move_the_stamp(
 
     async with tenant_session(sessions, TenantScope.from_access_context(context)) as session:
         repo = SqlApprovalRepository(session)
-        loaded = await repo.get(request.id, workspace_id=context.workspace_id)
+        loaded = await repo.get(
+            request.id, workspace_id=context.workspace_id, audience=_sees(context)
+        )
         assert loaded is not None
         loaded.required_scope = "demo.approve.anyone"
         loaded.decide(

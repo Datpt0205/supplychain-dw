@@ -31,8 +31,16 @@ from dw_kernel.errors import ConflictError
 from dw_kernel.pagination import PageQuery, PageRequest
 from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
+from dw_platform.application.access_context import AccessContext
+from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 
 pytestmark = pytest.mark.integration
+
+
+def _sees(context: AccessContext) -> ApprovalAudience:
+    """What `context` may see of the approvals (ADR 0004), as the API asks it."""
+    return ApprovalAudience.of(context, ScopeAuthorizationService())
+
 
 # The shipped threshold (`configs/policies/worker_runs@1.0.0.yaml`). Stated
 # rather than loaded: these tests never age a row, so the number only has
@@ -105,7 +113,9 @@ async def test_pause_restart_resume_approved(urls: RuntimeUrls, worker_config: P
     # Approval request row really exists (via platform UoW under RLS).
     async with stack1.uow_factory(access_context_from_run(context)) as uow:
         approval = await uow.approvals.get(
-            record.approval_request_id, workspace_id=context.workspace_id
+            record.approval_request_id,
+            workspace_id=context.workspace_id,
+            audience=_sees(access_context_from_run(context)),
         )
         assert approval is not None
         assert approval.approval_type == "demo.dispatch"

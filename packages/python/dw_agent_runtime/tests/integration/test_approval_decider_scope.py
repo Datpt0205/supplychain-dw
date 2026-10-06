@@ -3,7 +3,9 @@
 Real Postgres end to end: the node's interrupt payload stamps the row, the CHECK
 refuses a malformed stamp and the run ends failed instead of parking, and
 `ApproveAndResumeService.decide` enforces the stamp before anything is written,
-and `platform_admin` does not pass it (2026-10-06).
+and `platform_admin` does not pass it (2026-10-06). Whoever may not decide a
+stamped request and did not ask for it does not find it at all: the decision
+answers 404, as the inbox does (amendment 2026-10-07).
 Another tenant's approval is not found, even by a holder of the scope; another
 workspace of the same tenant is `test_approval_workspace.py`
 (platform-runtime/approval-audit-and-workspace/02).
@@ -41,10 +43,16 @@ from dw_kernel.pagination import PageQuery, PageRequest
 from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
 from dw_platform.application.access_context import AccessContext
-from dw_platform.application.authorization import ScopeAuthorizationService
+from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest, ApprovalStatus
 
 pytestmark = pytest.mark.integration
+
+
+def _sees(context: AccessContext) -> ApprovalAudience:
+    """What `context` may see of the approvals (ADR 0004), as the API asks it."""
+    return ApprovalAudience.of(context, ScopeAuthorizationService())
+
 
 BOARD_SCOPE = "demo.approve.board"
 STALE_AFTER_SECONDS_LOCAL = 3600
@@ -250,13 +258,19 @@ async def test_the_stamp_decides_who_may_decide(urls: RuntimeUrls, worker_config
     approval_id = record.approval_request_id
     assert approval_id is not None
     async with stack.uow_factory(access_context_from_run(run)) as uow:
-        stamped = await uow.approvals.get(approval_id, workspace_id=run.workspace_id)
+        stamped = await uow.approvals.get(
+            approval_id, workspace_id=run.workspace_id, audience=_sees(access_context_from_run(run))
+        )
     assert stamped is not None
     assert stamped.required_scope == BOARD_SCOPE
 
     async def still_pending() -> None:
         async with stack.uow_factory(access_context_from_run(run)) as uow:
-            current = await uow.approvals.get(approval_id, workspace_id=run.workspace_id)
+            current = await uow.approvals.get(
+                approval_id,
+                workspace_id=run.workspace_id,
+                audience=_sees(access_context_from_run(run)),
+            )
         assert current is not None
         assert current.status is ApprovalStatus.PENDING
         assert await stack.decision_rows_for(run, approval_id) == 0
@@ -276,8 +290,9 @@ async def test_the_stamp_decides_who_may_decide(urls: RuntimeUrls, worker_config
     _assert_the_approval_was_not_found(not_found.value, approval_id)
     await still_pending()
 
-    # The right tenant, `approvals.decide` without the stamp: refused.
-    with pytest.raises(PermissionDeniedError):
+    # The right tenant, `approvals.decide` without the stamp: not found, the
+    # answer the inbox gives them too (ADR 0004, amendment 2026-10-07).
+    with pytest.raises(NotFoundError) as hidden:
         await stack.approvals.decide(
             approval_id=approval_id,
             approve=True,
@@ -285,6 +300,22 @@ async def test_the_stamp_decides_who_may_decide(urls: RuntimeUrls, worker_config
             context=_decider(tenant=run.tenant_id, workspace=run.workspace_id),
             authorization=ScopeAuthorizationService(),
         )
+    _assert_the_approval_was_not_found(hidden.value, approval_id)
+    await still_pending()
+
+    # Its requester sees it, and seeing is not deciding: `approvals.decide`
+    # without the stamp is refused by name, as before the amendment.
+    with pytest.raises(PermissionDeniedError) as refused:
+        await stack.approvals.decide(
+            approval_id=approval_id,
+            approve=True,
+            comment="",
+            context=_decider(
+                tenant=run.tenant_id, workspace=run.workspace_id, principal=run.actor_id
+            ),
+            authorization=ScopeAuthorizationService(),
+        )
+    assert refused.value.details["action"] == BOARD_SCOPE
     await still_pending()
 
     # A holder of the stamp decides, and the run carries on.
@@ -321,8 +352,9 @@ async def test_platform_admin_does_not_pass_the_stamp(
     urls: RuntimeUrls, worker_config: Path
 ) -> None:
     """ADR 0004 (2026-10-06): a platform operator is not the business's board. Same
-    tenant and workspace, approve and reject: refused, nothing written, the run
-    still parked. A holder of the scope then decides it as before."""
+    tenant and workspace, approve and reject: not found (the amendment of
+    2026-10-07: they may not decide it, so they do not see it), nothing written,
+    the run still parked. A holder of the scope then decides it as before."""
     run = make_run_context()
     stack = Stack(urls.app, worker_config, build_stamping_graph(BOARD_SCOPE))
     await stack.runner.start(run_context=run, input_payload={"subject": "x"})
@@ -331,7 +363,7 @@ async def test_platform_admin_does_not_pass_the_stamp(
     assert approval_id is not None
 
     for approve in (True, False):
-        with pytest.raises(PermissionDeniedError) as refused:
+        with pytest.raises(NotFoundError) as refused:
             await stack.approvals.decide(
                 approval_id=approval_id,
                 approve=approve,
@@ -339,10 +371,12 @@ async def test_platform_admin_does_not_pass_the_stamp(
                 context=_platform_admin(tenant=run.tenant_id, workspace=run.workspace_id),
                 authorization=ScopeAuthorizationService(),
             )
-        assert refused.value.details["action"] == BOARD_SCOPE
+        _assert_the_approval_was_not_found(refused.value, approval_id)
 
     async with stack.uow_factory(access_context_from_run(run)) as uow:
-        current = await uow.approvals.get(approval_id, workspace_id=run.workspace_id)
+        current = await uow.approvals.get(
+            approval_id, workspace_id=run.workspace_id, audience=_sees(access_context_from_run(run))
+        )
     assert current is not None
     assert current.status is ApprovalStatus.PENDING
     assert current.version == 1
@@ -419,7 +453,9 @@ async def test_another_tenant_cannot_decide_a_stamped_approval_without_a_run(
 
     _assert_the_approval_was_not_found(not_found.value, request.id)
     async with stack.uow_factory(access_context_from_run(run)) as uow:
-        current = await uow.approvals.get(request.id, workspace_id=run.workspace_id)
+        current = await uow.approvals.get(
+            request.id, workspace_id=run.workspace_id, audience=_sees(access_context_from_run(run))
+        )
     assert current is not None
     assert current.status is ApprovalStatus.PENDING
     assert current.version == 1

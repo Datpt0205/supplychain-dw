@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from dw_kernel.errors import PermissionDeniedError
 from dw_platform.application.access_context import AccessContext
+from dw_platform.domain.approval import APPROVALS_DECIDE, ApprovalRequest
 
 PLATFORM_ADMIN_ROLE = "platform_admin"
 
@@ -68,3 +69,42 @@ class ScopeAuthorizationService:
         if self.admin_role in context.roles:
             return True
         return action in context.scopes
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalAudience:
+    """The caller, as deciding an approval and seeing it both read them (ADR 0004).
+
+    One rule for the write and the reads: `may_decide` is the two checks
+    `ApproveAndResumeService.decide` runs, and `may_see` is who a request is
+    listed and served to. A stamped request (`required_scope`) is seen only by
+    someone who may decide it and by its requester; to everyone else it is
+    absent, the same answer as a request that never existed. An unstamped one
+    is seen by every member who may read the inbox, as before. The repository's
+    SQL filter is `may_see` in another language; `test_approval_visibility.py`
+    holds the two together.
+    """
+
+    context: AccessContext
+    # `approvals.decide` as `ScopeAuthorizationService` answers it, so the
+    # admin rule applies here exactly as it does to the decision; the stamp
+    # does not take that rule (`holds_stamped_scope`).
+    holds_decide: bool
+
+    @classmethod
+    def of(
+        cls, context: AccessContext, authorization: ScopeAuthorizationService
+    ) -> ApprovalAudience:
+        return cls(
+            context=context, holds_decide=authorization.is_allowed(context, APPROVALS_DECIDE)
+        )
+
+    def may_decide(self, request: ApprovalRequest) -> bool:
+        return self.holds_decide and holds_stamped_scope(self.context, request.required_scope)
+
+    def may_see(self, request: ApprovalRequest) -> bool:
+        return (
+            request.required_scope is None
+            or request.requested_by.value == self.context.principal_id
+            or self.may_decide(request)
+        )

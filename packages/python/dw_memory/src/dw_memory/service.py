@@ -52,6 +52,7 @@ from dw_platform.adapters.persistence.repositories import (
     SqlAuditRepository,
 )
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.authorization import ApprovalAudience
 from dw_platform.domain.approval import ApprovalRequest, ApprovalStatus
 from dw_platform.domain.audit import AuditEvent
 
@@ -399,8 +400,13 @@ class MemoryService:
         item: MemoryItem | None = None
         async with self.session_factory() as session, session.begin():
             await session.execute(_SET_TENANT, {"tenant_id": str(context.tenant_id)})
+            # Read as the decider with no scopes (the worker's context), so the
+            # visibility rule of ADR 0004 applies to this read as to any other:
+            # a `memory.review` is never stamped (`_open_review`), so it is seen.
             request = await SqlApprovalRepository(session).get(
-                approval_id, workspace_id=context.workspace_id
+                approval_id,
+                workspace_id=context.workspace_id,
+                audience=ApprovalAudience(context=context, holds_decide=False),
             )
             if (
                 request is None

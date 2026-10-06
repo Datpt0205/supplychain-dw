@@ -267,7 +267,23 @@ class PendingApprovalsPort(Protocol):
     ) -> PendingApprovalRecord | None:
         """The newest pending approval of exactly `approval_type` whose
         payload's top-level `key` equals `value`: a product case's BGĐ
-        review, by `product_dev_case_id`. None when there is none."""
+        review, by `product_dev_case_id`. None when there is none, and None
+        when the caller may neither decide it nor asked for it (platform
+        ADR 0004 amendment): what a case page shows a person."""
+        ...
+
+
+class RaisedApprovalsPort(Protocol):
+    """Whether this context already raised an approval: bookkeeping for the
+    code that raises it (`EnsureBodReview`), never shown to a person, so not
+    narrowed by who is asking. A worker sweep has no scopes; filtered, it
+    would find nothing and raise the review again."""
+
+    async def raised_by_payload(
+        self, context: AccessContext, *, approval_type: str, key: str, value: str
+    ) -> PendingApprovalRecord | None:
+        """The newest pending approval of exactly `approval_type` in the
+        caller's workspace whose payload's top-level `key` equals `value`."""
         ...
 
 

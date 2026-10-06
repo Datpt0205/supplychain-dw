@@ -4,7 +4,8 @@ date: 2026-10-06
 source:
     - ../../packages/python/dw_agent_runtime/src/dw_agent_runtime/approval_flow.py # decide, may_decide
     - ../../packages/python/dw_agent_runtime/src/dw_agent_runtime/adapters/langgraph_runner.py # _create_approval
-    - ../../packages/python/dw_platform/src/dw_platform/application/authorization.py # holds_stamped_scope
+    - ../../packages/python/dw_platform/src/dw_platform/application/authorization.py # holds_stamped_scope, ApprovalAudience
+    - ../../packages/python/dw_platform/src/dw_platform/adapters/persistence/repositories.py # visible_to
     - ../../db/migrations/versions/36dabf47619c_platform_approval_requests_required_.py
 ---
 
@@ -65,6 +66,44 @@ place to live.
 - `can_decide` covers scopes only, not separation of duties, the required
   comment or per-type guards; the page handles the first two with
   `requires_comment` and `requested_by_me`.
-- `/approvals` still lists requests the viewer cannot decide.
+- `/approvals` still lists unstamped requests the viewer cannot decide, and
+  the viewer's own stamped ones; since the amendment below, no other stamped
+  request.
 - Approval RLS stays tenant-only; reads are narrowed to the caller's workspace
   in the repository (`platform-runtime/approval-audit-and-workspace` 02).
+
+## Amendment 2026-10-07: who may see a stamped request
+
+Decided by the lead under Đạt's delegation ("fail closed"): the platform's
+approval model takes the stricter rule from each side. Deciding stays as above.
+Seeing follows the rule a second product (Proterial, its ticket 10) shipped:
+a request's payload is its decider's working material, not every member's
+reading.
+
+- **A stamped request is seen only by who may decide it and by its
+  requester.** "May decide" is `approvals.decide` (as `ScopeAuthorizationService`
+  answers it, admin rule included) and the stamp (`holds_stamped_scope`, which
+  no role passes). Everyone else gets what a request that never existed gets:
+  absent from `GET /approvals`, 404 from `GET /approvals/{id}`, 404 from a
+  decision (a 403 would confirm it exists and name the scope it needs), and
+  not counted by `SqlPendingApprovalQuery`. `platform_admin` without the stamp
+  does not see it, consistent with not deciding it.
+- **Unstamped requests are unchanged:** every member who may read the inbox
+  sees them. The product's stricter default (only `approvals.decide` holders
+  see an unstamped request) was not taken; nothing in the decision asked for
+  it, and it would hide a member's view of the workspace's pending work.
+- **One rule, read and write.** `ApprovalAudience` (in `authorization.py`) owns
+  `may_decide` and `may_see`; `ApproveAndResumeService.may_decide` and the
+  inbox's `can_decide` ask it. The repository filters in SQL
+  (`repositories.visible_to`), required on `get` and `list_pending`, so a page
+  is a page of the caller's inbox and never one with holes; the pending query
+  reuses the same clause. The decision reads through the same filtered `get`.
+  `test_approval_visibility.py` holds the SQL to the Python rule on a real
+  database, for every reader, against a table written out by hand.
+- **Workers read as the person they act for.** `MemoryService.settle_review`
+  reads its approval with the decider's context and no scopes; a
+  `memory.review` is never stamped, so it is found.
+
+Considered and rejected: filtering in the route after the read (a page of
+the inbox would come back short, and the decision would still answer 403);
+hiding stamped requests in the page only (hiding is not authorization).

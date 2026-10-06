@@ -16,6 +16,7 @@ from dw_kernel.pagination import Page, PageRequest
 from dw_platform.application.access_context import AccessContext
 
 if TYPE_CHECKING:
+    from dw_platform.application.authorization import ApprovalAudience
     from dw_platform.application.directory import IdentityRef, WorkspaceMember
     from dw_platform.domain.approval import ApprovalDecision, ApprovalRequest
     from dw_platform.domain.audit import AuditEvent
@@ -140,11 +141,15 @@ class ApprovalRepositoryPort(Protocol):
 
     Reads are narrowed to the caller's workspace by the repository, since RLS
     on this table narrows by tenant only: another workspace's request is
-    absent, exactly like another tenant's."""
+    absent, exactly like another tenant's. And to what the caller's
+    `ApprovalAudience` may see (ADR 0004): a stamped request the caller may
+    neither decide nor asked for is absent the same way."""
 
     async def add(self, request: ApprovalRequest) -> None: ...
 
-    async def get(self, request_id: UUID, *, workspace_id: UUID) -> ApprovalRequest | None: ...
+    async def get(
+        self, request_id: UUID, *, workspace_id: UUID, audience: ApprovalAudience
+    ) -> ApprovalRequest | None: ...
 
     async def save(self, request: ApprovalRequest) -> None:
         """Persist state transition with optimistic concurrency on version."""
@@ -153,7 +158,7 @@ class ApprovalRepositoryPort(Protocol):
     async def add_decision(self, decision: ApprovalDecision) -> None: ...
 
     async def list_pending(
-        self, request: PageRequest, *, workspace_id: UUID
+        self, request: PageRequest, *, workspace_id: UUID, audience: ApprovalAudience
     ) -> Page[ApprovalRequest]:
         """The inbox, newest first and resumable. Pending work is bounded by how
         fast humans clear it, which on a stalled tenant is not bounded at all."""

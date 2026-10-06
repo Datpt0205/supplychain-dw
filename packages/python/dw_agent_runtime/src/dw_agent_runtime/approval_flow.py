@@ -28,6 +28,7 @@ from dw_kernel.ids import UserId
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import (
+    ApprovalAudience,
     ScopeAuthorizationService,
     holds_stamped_scope,
     permission_denied,
@@ -85,9 +86,7 @@ class ApproveAndResumeService:
         checks `decide` runs (`approvals.decide`, then the stamp), for the inbox
         to lock what the server would refuse. Withdrawing your own request,
         separation of duties and per-type guards are not in it."""
-        return authorization.is_allowed(context, APPROVALS_DECIDE) and holds_stamped_scope(
-            context, request.required_scope
-        )
+        return ApprovalAudience.of(context, authorization).may_decide(request)
 
     def _enforce_strict_rules(
         self, request: ApprovalRequest, comment: str, context: AccessContext
@@ -153,7 +152,14 @@ class ApproveAndResumeService:
             # Narrowed to the caller's workspace by the repository: RLS on
             # approval_requests narrows by tenant only. Another workspace's
             # request is not found, before any scope check, write or resume.
-            request = await uow.approvals.get(approval_id, workspace_id=context.workspace_id)
+            # So is a stamped request the caller may neither decide nor asked
+            # for (ADR 0004, amendment 2026-10-07): the inbox does not list it,
+            # and a refusal here would tell them it exists and what it needs.
+            request = await uow.approvals.get(
+                approval_id,
+                workspace_id=context.workspace_id,
+                audience=ApprovalAudience.of(context, authorization),
+            )
             if request is None:
                 raise NotFoundError(
                     "approval request not found", details={"approval_id": str(approval_id)}

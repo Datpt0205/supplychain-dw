@@ -43,7 +43,7 @@ from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.persistence.policy_overrides import SqlPolicyOverrideRepository
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
 from dw_platform.application.access_context import AccessContext
-from dw_platform.application.authorization import ScopeAuthorizationService
+from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalStatus
 from dw_supply_chain.action_duties import load_supply_chain_action_duties
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
@@ -217,7 +217,9 @@ async def test_pause_survives_restart_then_approval_applies_the_transition(
 
     async with stack1.uow_factory(requester_context) as uow:
         approval = await uow.approvals.get(
-            record.approval_request_id, workspace_id=requester_context.workspace_id
+            record.approval_request_id,
+            workspace_id=requester_context.workspace_id,
+            audience=ApprovalAudience.of(requester_context, ScopeAuthorizationService()),
         )
         assert approval is not None
         assert approval.approval_type == f"{APPROVAL_TYPE_PREFIX}request_deposit"

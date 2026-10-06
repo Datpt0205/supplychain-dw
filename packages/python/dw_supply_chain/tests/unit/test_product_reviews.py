@@ -87,12 +87,7 @@ class FakeInbox:
 
     pending: dict[tuple[uuid.UUID, str], Approval] = field(default_factory=dict)
 
-    async def list_pending_by_type_prefix(
-        self, context: AccessContext, *, prefix: str, limit: int
-    ) -> tuple[int, Sequence[PendingApprovalRecord]]:
-        raise NotImplementedError("not exercised by the review")
-
-    async def pending_by_payload(
+    async def raised_by_payload(
         self, context: AccessContext, *, approval_type: str, key: str, value: str
     ) -> PendingApprovalRecord | None:
         assert (approval_type, key) == (BOD_REVIEW_APPROVAL_TYPE, "product_dev_case_id")

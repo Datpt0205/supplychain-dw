@@ -1,4 +1,9 @@
-"""Approvals API: inbox + decisions (decision resumes the paused run)."""
+"""Approvals API: inbox + decisions (decision resumes the paused run).
+
+The inbox and a single request are filtered by the caller's `ApprovalAudience`
+in the repository (ADR 0004, amendment 2026-10-07): a stamped request is served
+only to who may decide it and to its requester, and is not found by anyone else.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +21,7 @@ from dw_api.dependencies.services import RequireContainer
 from dw_kernel.errors import InfrastructureError, NotFoundError
 from dw_kernel.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Page, PageQuery, page_request
 from dw_platform.application.access_context import AccessContext
-from dw_platform.application.authorization import ScopeAuthorizationService
+from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest
 
 
@@ -104,8 +109,11 @@ async def list_pending(
     )
     approval_flow = container.approval_flow
     authorization = container.authorization
+    audience = ApprovalAudience.of(context, authorization)
     async with container.uow_factory(context) as uow:
-        page = await uow.approvals.list_pending(request, workspace_id=context.workspace_id)
+        page = await uow.approvals.list_pending(
+            request, workspace_id=context.workspace_id, audience=audience
+        )
     return page.map_items(lambda p: _view(p, context, approval_flow, authorization))
 
 
@@ -121,9 +129,13 @@ async def get_approval(
         resource_type="approval_request",
         resource_id=str(approval_id),
     )
+    audience = ApprovalAudience.of(context, container.authorization)
     async with container.uow_factory(context) as uow:
-        request = await uow.approvals.get(approval_id, workspace_id=context.workspace_id)
-    # Another workspace's request is the same answer as one that never existed.
+        request = await uow.approvals.get(
+            approval_id, workspace_id=context.workspace_id, audience=audience
+        )
+    # Another workspace's request, or a stamped one the caller may neither
+    # decide nor asked for, is the same answer as one that never existed.
     if request is None:
         raise NotFoundError("approval request not found")
     return _view(request, context, container.approval_flow, container.authorization)

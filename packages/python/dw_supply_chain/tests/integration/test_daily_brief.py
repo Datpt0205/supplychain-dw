@@ -155,7 +155,7 @@ def _handler(sessions: async_sessionmaker[AsyncSession], *, now: datetime) -> Ge
             policy_version="1.0.0",
             signal_order=tuple(BriefSignal),
         ),
-        pending_approvals=SqlPendingApprovalQuery(sessions),
+        pending_approvals=SqlPendingApprovalQuery(sessions, ScopeAuthorizationService()),
         authz=ScopeAuthorizationService(),
         clock=FixedClock(now),
     )

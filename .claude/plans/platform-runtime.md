@@ -191,6 +191,14 @@ Mốc 6 (running many customers) is half done:
   idempotency key from parsed fields (`get_form_idempotent_operation`,
   `claim_fields`); `PAYLOAD_TOO_LARGE`→413, `UNSUPPORTED_MEDIA_TYPE`→415.
   Not taken: the product's contexts, migrations, channel code and web look.
+- **Who sees a stamped approval** (2026-10-07, branch
+  `feat/approval-visibility`, ADR 0004 amendment): a stamped request is listed
+  and served only to who may decide it and to its requester; everyone else,
+  `platform_admin` without the stamp included, gets 404 / absence, the
+  decision included. `ApprovalAudience` owns the rule, the repository filters
+  by it in SQL (`visible_to`, required on `get` and `list_pending`) and
+  `SqlPendingApprovalQuery` now takes the composition root's
+  `ScopeAuthorizationService`. Unstamped requests are unchanged.
 - **`build_agent` has no production caller** (checked 2026-09-29): this
   checkout ships no bounded context.
 - **Platform pieces waiting for their first context** (failure-modes #1).

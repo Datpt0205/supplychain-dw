@@ -89,19 +89,20 @@ email as a second channel.
 
 ## Slice log
 
-| Slice  | Commit    | What                                                                                                                                                                     |
-| ------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P, ENV | `c2f04dc` | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                                                                                 |
-| U, Z1  | `51c0ef7` | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                                                                                  |
-| A      | `dabf5c4` | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                                                                                     |
-| D      | `51e3400` | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep.                                                               |
-| S1     | `6dfb1ef` | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages. |
-| PR-02  | `7b411df` | Platform: approvals, runs and audit read only the caller's workspace.                                                                                                    |
-| S2     | `446083e` | BGĐ review at step 6: graph-only approve/reject, decider as actor, idempotent start plus a reconcile lane, `sc_bod`.                                                     |
-| A2     | `ae4202b` | A stamped `required_scope` is not satisfied by `platform_admin`; the server computes `can_decide` for `/approvals`.                                                      |
-| W      | `82b5c13` | Supply Chain pages on antd in the E-HSDT v3 look: theme, `StatusTag`, `PageHeader`, `RegionState`, context navbar; Playwright viewports owed.                            |
-| PM-1   | `6d6459a` | Merge `platform/main` (`c16857c`): hosted rerank (TEI gone), memory/compaction/retrieval hardening, run-less decided event, dev-harness gate.                            |
-| PM-2   | `c596a4b` | Merge `platform/main` (`9cc47cf`), upstreamed approval work back as one copy; `96c57d5`: twin migrations idempotent, head `57ca5f1df964`.                                |
+| Slice  | Commit    | What                                                                                                                                                                                    |
+| ------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P, ENV | `c2f04dc` | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                                                                                                |
+| U, Z1  | `51c0ef7` | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                                                                                                 |
+| A      | `dabf5c4` | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                                                                                                    |
+| D      | `51e3400` | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep.                                                                              |
+| S1     | `6dfb1ef` | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages.                |
+| PR-02  | `7b411df` | Platform: approvals, runs and audit read only the caller's workspace.                                                                                                                   |
+| S2     | `446083e` | BGĐ review at step 6: graph-only approve/reject, decider as actor, idempotent start plus a reconcile lane, `sc_bod`.                                                                    |
+| A2     | `ae4202b` | A stamped `required_scope` is not satisfied by `platform_admin`; the server computes `can_decide` for `/approvals`.                                                                     |
+| W      | `82b5c13` | Supply Chain pages on antd in the E-HSDT v3 look: theme, `StatusTag`, `PageHeader`, `RegionState`, context navbar; Playwright viewports owed.                                           |
+| PM-1   | `6d6459a` | Merge `platform/main` (`c16857c`): hosted rerank (TEI gone), memory/compaction/retrieval hardening, run-less decided event, dev-harness gate.                                           |
+| PM-2   | `c596a4b` | Merge `platform/main` (`9cc47cf`), upstreamed approval work back as one copy; `96c57d5`: twin migrations idempotent, head `57ca5f1df964`.                                               |
+| PM-3   | merge     | Merge `platform/main` (`96f95ad`): a stamped approval is seen only by its deciders and requester (ADR 0020 sửa đổi 2026-10-07); `raised_by_payload` for the BGĐ dedupe; head unchanged. |
 
 ## Open — named, not fixed, still true after the port
 

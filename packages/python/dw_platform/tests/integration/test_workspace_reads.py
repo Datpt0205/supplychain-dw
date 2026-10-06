@@ -25,10 +25,17 @@ from dw_platform.adapters.persistence import tables
 from dw_platform.adapters.persistence.approval_queries import SqlPendingApprovalQuery
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest
 from dw_platform.domain.audit import AuditEvent
 
 pytestmark = pytest.mark.integration
+
+
+def _sees(context: AccessContext) -> ApprovalAudience:
+    """What `context` may see of the approvals (ADR 0004), as the API asks it."""
+    return ApprovalAudience.of(context, ScopeAuthorizationService())
+
 
 _PREFIX = "leave_request.decide."
 _PAGE = PageRequest(limit=50, after=None, query=PageQuery(key="test.workspace_reads"))
@@ -105,11 +112,15 @@ async def test_the_inbox_lists_only_the_callers_workspace(
     mine = await _raise_approval(sessions, b)
 
     async with SqlPlatformUnitOfWorkFactory(sessions)(b) as uow:
-        page = await uow.approvals.list_pending(_PAGE, workspace_id=b.workspace_id)
+        page = await uow.approvals.list_pending(
+            _PAGE, workspace_id=b.workspace_id, audience=_sees(b)
+        )
     assert [request.id for request in page.items] == [mine.id]
 
     async with SqlPlatformUnitOfWorkFactory(sessions)(a) as uow:
-        page = await uow.approvals.list_pending(_PAGE, workspace_id=a.workspace_id)
+        page = await uow.approvals.list_pending(
+            _PAGE, workspace_id=a.workspace_id, audience=_sees(a)
+        )
     assert [request.id for request in page.items] == [theirs.id]
 
 
@@ -120,9 +131,12 @@ async def test_another_workspaces_approval_is_not_found_by_id(
     theirs = await _raise_approval(sessions, a)
 
     async with SqlPlatformUnitOfWorkFactory(sessions)(b) as uow:
-        assert await uow.approvals.get(theirs.id, workspace_id=b.workspace_id) is None
+        assert (
+            await uow.approvals.get(theirs.id, workspace_id=b.workspace_id, audience=_sees(b))
+            is None
+        )
     async with SqlPlatformUnitOfWorkFactory(sessions)(a) as uow:
-        found = await uow.approvals.get(theirs.id, workspace_id=a.workspace_id)
+        found = await uow.approvals.get(theirs.id, workspace_id=a.workspace_id, audience=_sees(a))
     assert found is not None
     assert found.id == theirs.id
 
@@ -137,9 +151,9 @@ async def test_a_contexts_pending_count_is_the_callers_workspace_only(
     await _raise_approval(sessions, a)
     mine = await _raise_approval(sessions, b)
 
-    total, rows = await SqlPendingApprovalQuery(sessions).list_pending_by_type_prefix(
-        b, prefix=_PREFIX, limit=10
-    )
+    total, rows = await SqlPendingApprovalQuery(
+        sessions, ScopeAuthorizationService()
+    ).list_pending_by_type_prefix(b, prefix=_PREFIX, limit=10)
 
     assert total == 1
     assert [row.id for row in rows] == [mine.id]

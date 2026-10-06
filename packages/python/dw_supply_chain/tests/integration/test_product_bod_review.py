@@ -43,7 +43,7 @@ from dw_agent_runtime.autonomy import AutonomyApprovalPolicy
 from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.model.budget import RunBudgetLedger
 from dw_agent_runtime.registry import GraphRegistry, WorkerRegistry
-from dw_kernel.errors import ConflictError, NotFoundError, PermissionDeniedError
+from dw_kernel.errors import ConflictError, NotFoundError
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.persistence.approval_queries import SqlPendingApprovalQuery
@@ -219,7 +219,7 @@ class ReviewStack:
             id_generator=ids,
             strict_approval_prefixes=frozenset({APPROVAL_TYPE_PREFIX}),
         )
-        self.approvals = SqlPendingApprovalQuery(self.sessions)
+        self.approvals = SqlPendingApprovalQuery(self.sessions, ScopeAuthorizationService())
         self.reviews = EnsureBodReview(
             runner=self.runner,
             approvals=self.approvals,
@@ -455,7 +455,9 @@ async def _pass(
 
 
 async def _pending(world: World, case_id: uuid.UUID) -> ApprovalRequest | None:
-    found = await world.stack.approvals.pending_by_payload(
+    """Whether the review is raised: the raiser's bookkeeping read, which no
+    audience narrows (a no-scope context still finds it)."""
+    found = await world.stack.approvals.raised_by_payload(
         _context(frozenset()),
         approval_type=BOD_REVIEW_APPROVAL_TYPE,
         key=BOD_REVIEW_CASE_KEY,
@@ -662,15 +664,18 @@ async def _assert_untouched(world: World, waiting: Waiting, approval: ApprovalRe
 
 
 @pytest.mark.parametrize("approve", [True, False])
-async def test_the_decide_right_without_bgds_scope_is_refused_and_nothing_moves(
+async def test_the_decide_right_without_bgds_scope_does_not_find_it_and_nothing_moves(
     world: World, approve: bool
 ) -> None:
+    """Platform ADR 0004 amendment (ADR 0020 sửa đổi 2026-10-07): a manager
+    without BGĐ's scope may not decide the review, so they do not find it;
+    a 404, not a 403 that would confirm it and name the scope."""
     operator, tester = _context(OPERATOR_SCOPES), _rnd()
     waiting = await _pass(world, operator, tester)
     approval = await _pending(world, waiting.case_id)
     assert approval is not None
 
-    with pytest.raises(PermissionDeniedError):
+    with pytest.raises(NotFoundError):
         await world.stack.decisions.decide(
             approval_id=approval.id,
             approve=approve,
@@ -743,7 +748,7 @@ async def test_bgd_of_another_workspace_or_tenant_finds_no_review(
     )
     assert (total, listed) == (0, [])
     _, home = await world.stack.approvals.list_pending_by_type_prefix(
-        _context(frozenset()), prefix=APPROVAL_TYPE_PREFIX, limit=50
+        _context(frozenset({"approvals.decide", BOD_SCOPE})), prefix=APPROVAL_TYPE_PREFIX, limit=50
     )
     assert approval.id in {row.id for row in home}
     assert (
@@ -791,8 +796,8 @@ async def test_a_tenant_override_reaches_reviews_raised_after_it_only(world: Wor
         assert raised_before.required_scope == BOD_SCOPE
         assert raised_after.required_scope == "supply_chain.approve.ceo"
         # The stamp is what decide reads: BGĐ still decides the older one,
-        # and no longer the newer one.
-        with pytest.raises(PermissionDeniedError):
+        # and no longer the newer one, which they no longer even find.
+        with pytest.raises(NotFoundError):
             await world.stack.decisions.decide(
                 approval_id=raised_after.id,
                 approve=True,
@@ -1139,3 +1144,39 @@ async def test_a_tenant_that_is_not_active_has_no_plan_and_the_lane_starts_nothi
     # The same lane, the tenant active again: the status was the only reason.
     await world.stack.lane.run()
     assert await _pending(world, waiting.case_id) is not None
+
+
+async def test_a_pending_review_is_shown_to_bgd_and_its_requester_only(world: World) -> None:
+    """Platform ADR 0004 amendment (2026-10-07): a stamped request is shown only
+    to who may decide it and to its requester. The case page's lookup and the
+    brief's count read it as the inbox does; a case reader without BGĐ's
+    scopes finds nothing. The raiser's bookkeeping read (`raised_by_payload`)
+    is not a person's and still finds it with no scope at all, or the reconcile
+    lane would raise the review a second time."""
+    operator, tester = _context(OPERATOR_SCOPES), _rnd()
+    waiting = await _pass(world, operator, tester)
+    approval = await _pending(world, waiting.case_id)
+    assert approval is not None and approval.required_scope == BOD_SCOPE
+
+    async def shown(reader: AccessContext) -> tuple[bool, bool]:
+        on_page = await world.stack.approvals.pending_by_payload(
+            reader,
+            approval_type=BOD_REVIEW_APPROVAL_TYPE,
+            key=BOD_REVIEW_CASE_KEY,
+            value=str(waiting.case_id),
+        )
+        _, counted = await world.stack.approvals.list_pending_by_type_prefix(
+            reader, prefix=APPROVAL_TYPE_PREFIX, limit=50
+        )
+        return on_page is not None, approval.id in {row.id for row in counted}
+
+    requester = _context(frozenset(), principal=approval.requested_by.value)
+    assert await shown(operator) == (False, False)
+    assert await shown(_context(frozenset({"approvals.decide"}))) == (False, False)
+    assert await shown(_context(frozenset({BOD_SCOPE}))) == (False, False)
+    assert await shown(_context(frozenset(), roles=frozenset({"platform_admin"}))) == (
+        False,
+        False,
+    )
+    assert await shown(_context(frozenset({"approvals.decide", BOD_SCOPE}))) == (True, True)
+    assert await shown(requester) == (True, True)

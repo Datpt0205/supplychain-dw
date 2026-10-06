@@ -155,3 +155,26 @@ approval nghiệp vụ đã đóng dấu cần chính scope đó (human-in-comma
    `test_platform_admin_passes_the_stamped_scope_through_the_same_rule` đã bỏ.
 5. Ứng viên đưa ngược lên nền tảng (`codebase`) cùng lát A: thay đổi nằm trong
    `dw_platform` và `dw_agent_runtime`, không phụ thuộc context nào.
+
+## Sửa đổi 2026-10-07 (lead quyết theo ủy quyền của Đạt, "fail closed"): ai được THẤY yêu cầu có dấu
+
+Mang về từ nền tảng (`96f95ad`, ADR 0004 của nền tảng, mục "Amendment 2026-10-07").
+
+1. Yêu cầu có `required_scope` chỉ hiện (danh sách `/approvals`, `GET /approvals/{id}`,
+   truy vấn chờ duyệt, trang chi tiết) cho người được quyết nó (`approvals.decide` VÀ
+   dấu, theo đúng `holds_stamped_scope`) và cho người yêu cầu. Người khác nhận 404 /
+   không thấy, kể cả khi gửi quyết định (trước đây là 403 nêu tên scope).
+   `platform_admin` không có dấu cũng không thấy. Yêu cầu không có dấu: như cũ.
+2. Một chủ của luật: `ApprovalAudience` (`authorization.py`), lọc bằng SQL
+   (`repositories.visible_to`) cho cả `get`, `list_pending` và `SqlPendingApprovalQuery`.
+3. Ở Elmich: duyệt BGĐ (`supply_chain.approve.bod`) chỉ hiện cho người giữ cả hai scope
+   và người yêu cầu. Trang hồ sơ (`pending_review`) và brief đọc qua luật này
+   (`pending_by_payload`, `list_pending_by_type_prefix`). Việc kiểm "đã nâng duyệt chưa"
+   của `EnsureBodReview` là sổ sách hệ thống, không phải người đọc, nên dùng
+   `raised_by_payload` (không lọc), khai trong `RaisedApprovalsPort`: nếu lọc, lane
+   reconcile (không scope) sẽ không thấy và nâng duyệt lần hai.
+4. Người nhận thông báo (giữ dấu ∩ giữ `approvals.decide` − người yêu cầu) là tập con
+   của người được thấy, nên không ai được báo về một yêu cầu họ mở ra thì 404.
+5. Test cũ `test_platform_admin_without_the_stamp_is_refused_over_http` (mục QO-8) đã
+   thay bằng `test_a_stamped_request_is_absent_to_whoever_may_not_decide_it` (404) và
+   `test_the_requester_sees_their_stamped_request_but_cannot_approve_it` (403).

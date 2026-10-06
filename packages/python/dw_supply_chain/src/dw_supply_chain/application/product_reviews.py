@@ -47,9 +47,9 @@ from dw_supply_chain.application.follow_up_sweep import sweep_context
 from dw_supply_chain.application.handlers import resolve_product_approvals
 from dw_supply_chain.application.ports import (
     PendingApprovalRecord,
-    PendingApprovalsPort,
     ProductCaseListFilter,
     ProductCaseRepositoryPort,
+    RaisedApprovalsPort,
     ReviewNotifierPort,
     ReviewRaise,
     ReviewRequester,
@@ -89,7 +89,7 @@ class EnsureBodReview:
     """Implements `BodReviewPort`."""
 
     runner: ReviewRunStarterPort
-    approvals: PendingApprovalsPort
+    approvals: RaisedApprovalsPort
     holders: ScopeHoldersPort
     notifier: ReviewNotifierPort
     policy_override_repo: PolicyOverridePort
@@ -100,7 +100,7 @@ class EnsureBodReview:
         self, context: AccessContext, case: ProductDevelopmentCase
     ) -> PendingApprovalRecord | None:
         """The case's undecided review in `context`'s workspace, if any."""
-        return await self.approvals.pending_by_payload(
+        return await self.approvals.raised_by_payload(
             context,
             approval_type=BOD_REVIEW_APPROVAL_TYPE,
             key=BOD_REVIEW_CASE_KEY,

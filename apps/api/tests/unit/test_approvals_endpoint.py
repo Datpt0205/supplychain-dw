@@ -7,7 +7,11 @@ database's job, covered against a real one by `dw_agent_runtime`'s
 `test_approval_decider_scope.py`; workspace isolation is the repository's,
 covered against a real one by `test_approval_workspace.py` there. Here: the
 routes hand the repository the caller's own workspace, and answer 404 for
-another workspace's request (approval-audit-and-workspace/02).
+another workspace's request (approval-audit-and-workspace/02); and they hand
+it the caller's `ApprovalAudience`, so a stamped request the caller may
+neither decide nor asked for is a 404 by id, absent from the list, and a 404
+to a decision (ADR 0004, amendment 2026-10-07). The SQL filter itself is held
+to `ApprovalAudience.may_see` by `dw_platform`'s `test_approval_visibility.py`.
 """
 
 import uuid
@@ -30,7 +34,7 @@ from dw_kernel.pagination import CursorPosition, Page, PageQuery, PageRequest, e
 from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.identity.dev_token import DevTokenVerifier
 from dw_platform.application.access_context import AccessContext
-from dw_platform.application.authorization import ScopeAuthorizationService
+from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_platform.application.identity import DbAccessContextFactory, MembershipAccess
 from dw_platform.domain.approval import (
@@ -78,21 +82,22 @@ class FakeMembershipLookup:
 @dataclass
 class FakeApprovalRepo:
     """Honours the port: `save` refuses a stale version like the SQL one, and
-    reads see the asked workspace only, like the SQL ones."""
+    reads see the asked workspace only and what the audience may see, like the
+    SQL ones."""
 
     request: ApprovalRequest
     decisions: list[ApprovalDecision] = field(default_factory=list)
     saved_version: int = 1
     asked_workspaces: list[uuid.UUID] = field(default_factory=list)
 
-    def _mine(self, workspace_id: uuid.UUID) -> bool:
+    def _mine(self, workspace_id: uuid.UUID, audience: ApprovalAudience) -> bool:
         self.asked_workspaces.append(workspace_id)
-        return workspace_id == self.request.workspace_id.value
+        return workspace_id == self.request.workspace_id.value and audience.may_see(self.request)
 
     async def get(
-        self, request_id: uuid.UUID, *, workspace_id: uuid.UUID
+        self, request_id: uuid.UUID, *, workspace_id: uuid.UUID, audience: ApprovalAudience
     ) -> ApprovalRequest | None:
-        found = self._mine(workspace_id) and request_id == self.request.id
+        found = self._mine(workspace_id, audience) and request_id == self.request.id
         return self.request if found else None
 
     async def save(self, request: ApprovalRequest) -> None:
@@ -106,8 +111,12 @@ class FakeApprovalRepo:
     async def add(self, request: ApprovalRequest) -> None:
         raise NotImplementedError("not exercised by the approvals routes")
 
-    async def list_pending(self, request: PageRequest, *, workspace_id: uuid.UUID) -> Page[Any]:
-        pending = self._mine(workspace_id) and self.request.status is ApprovalStatus.PENDING
+    async def list_pending(
+        self, request: PageRequest, *, workspace_id: uuid.UUID, audience: ApprovalAudience
+    ) -> Page[Any]:
+        pending = (
+            self._mine(workspace_id, audience) and self.request.status is ApprovalStatus.PENDING
+        )
         return Page(items=(self.request,) if pending else (), next_cursor=None)
 
 
@@ -225,13 +234,15 @@ async def _call(
 
 @pytest.mark.parametrize(
     ("requested_by", "required_scope", "mine"),
-    [(SOMEONE_ELSE, BOARD_SCOPE, False), (VIEWER, None, True)],
+    [(SOMEONE_ELSE, BOARD_SCOPE, False), (VIEWER, BOARD_SCOPE, True), (VIEWER, None, True)],
 )
 async def test_the_view_carries_the_stamp_and_whose_request_it_is(
     requested_by: uuid.UUID, required_scope: str | None, mine: bool
 ) -> None:
     request = make_request(requested_by=requested_by, required_scope=required_scope)
-    container = make_container(FakeApprovalRepo(request), frozenset({"approvals.read"}))
+    # Someone else's stamped request is served to a holder of the stamp only.
+    scopes = {"approvals.read"} | (set() if mine else {"approvals.decide", BOARD_SCOPE})
+    container = make_container(FakeApprovalRepo(request), frozenset(scopes))
 
     response = await _call(container, "GET", f"/{request.id}")
 
@@ -250,20 +261,11 @@ PLATFORM_ADMIN = frozenset({"platform_admin"})
     ("roles", "scopes", "required_scope", "can_decide"),
     [
         (frozenset({"approver"}), {"approvals.decide", BOARD_SCOPE}, BOARD_SCOPE, True),
-        (frozenset({"approver"}), {"approvals.decide"}, BOARD_SCOPE, False),
         (frozenset({"approver"}), set(), None, False),
-        (PLATFORM_ADMIN, {"platform.admin"}, BOARD_SCOPE, False),
         (PLATFORM_ADMIN, {"platform.admin", BOARD_SCOPE}, BOARD_SCOPE, True),
         (PLATFORM_ADMIN, {"platform.admin"}, None, True),
     ],
-    ids=[
-        "holder",
-        "decide-right-only",
-        "no-decide-right",
-        "admin-without-stamp",
-        "admin-with-stamp",
-        "admin-unstamped",
-    ],
+    ids=["holder", "no-decide-right", "admin-with-stamp", "admin-unstamped"],
 )
 async def test_can_decide_is_the_servers_answer_in_the_list_and_the_detail(
     roles: frozenset[str], scopes: set[str], required_scope: str | None, can_decide: bool
@@ -283,35 +285,63 @@ async def test_can_decide_is_the_servers_answer_in_the_list_and_the_detail(
     assert [item["can_decide"] for item in listed.json()["items"]] == [can_decide]
 
 
-async def test_platform_admin_without_the_stamp_is_refused_over_http() -> None:
-    """The page's lock and the server's refusal are one answer: a 403 naming the
-    stamp, nothing recorded."""
+@pytest.mark.parametrize(
+    ("roles", "scopes"),
+    [
+        (frozenset({"approver"}), {"approvals.read", "approvals.decide"}),
+        (frozenset({"approver"}), {"approvals.read", BOARD_SCOPE}),
+        (frozenset({"approver"}), {"approvals.read"}),
+        (PLATFORM_ADMIN, {"platform.admin"}),
+    ],
+    ids=["decide-right-only", "stamp-without-decide-right", "reader", "admin-without-stamp"],
+)
+async def test_a_stamped_request_is_absent_to_whoever_may_not_decide_it(
+    roles: frozenset[str], scopes: set[str]
+) -> None:
+    """ADR 0004, amendment 2026-10-07: someone else's stamped request is served
+    only to who may decide it. Everyone else gets "never existed" on every
+    route, the decision included: a 403 would confirm it exists and name the
+    scope it needs. Nothing is recorded."""
     request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOARD_SCOPE)
     repo = FakeApprovalRepo(request)
-    container = make_container(repo, frozenset({"platform.admin"}), roles=PLATFORM_ADMIN)
+    container = make_container(repo, frozenset(scopes), roles=roles)
 
-    response = await _call(
-        container, "POST", f"/{request.id}/decisions", {"approve": True, "comment": ""}
-    )
+    listed = await _call(container, "GET", "")
+    by_id = await _call(container, "GET", f"/{request.id}")
+    decisions = [
+        await _call(
+            container, "POST", f"/{request.id}/decisions", {"approve": approve, "comment": "x"}
+        )
+        for approve in (True, False)
+    ]
 
-    assert response.status_code == 403
-    assert response.json()["details"]["action"] == BOARD_SCOPE
+    assert listed.status_code == 200
+    assert listed.json()["items"] == []
+    assert by_id.status_code == 404
+    assert [d.status_code for d in decisions] == [404, 404]
+    assert BOARD_SCOPE not in by_id.text + "".join(d.text for d in decisions)
     assert repo.decisions == []
     assert request.status is ApprovalStatus.PENDING
 
 
-async def test_the_server_refuses_a_decision_the_page_would_have_locked() -> None:
-    """No page in front: `approvals.decide` without the stamp is a 403, and
-    nothing is recorded."""
-    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOARD_SCOPE)
+async def test_the_requester_sees_their_stamped_request_but_cannot_approve_it() -> None:
+    """Seeing is not deciding: the requester is served their own stamped request,
+    locked (`can_decide` false), and an approval over HTTP is a 403 naming the
+    stamp, with nothing recorded."""
+    request = make_request(requested_by=VIEWER, required_scope=BOARD_SCOPE)
     repo = FakeApprovalRepo(request)
     container = make_container(repo, frozenset({"approvals.read", "approvals.decide"}))
 
+    listed = await _call(container, "GET", "")
     response = await _call(
         container, "POST", f"/{request.id}/decisions", {"approve": True, "comment": ""}
     )
 
+    assert [(i["id"], i["can_decide"]) for i in listed.json()["items"]] == [
+        (str(request.id), False)
+    ]
     assert response.status_code == 403
+    assert response.json()["details"]["action"] == BOARD_SCOPE
     assert repo.decisions == []
     assert request.status is ApprovalStatus.PENDING
 

@@ -8,6 +8,10 @@ reads take the caller's `workspace_id` as a required keyword and narrow by it
 here, so a member never reads another workspace's approval payload or audit
 detail (platform-runtime/approval-audit-and-workspace/02). Required, not
 defaulted: a reader that forgets it does not type-check.
+
+Approval reads also take the caller's `ApprovalAudience` and filter by it in
+the query (`visible_to`): a stamped request is absent to whoever may neither
+decide it nor asked for it (ADR 0004, amendment 2026-10-07).
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.pagination import CursorPosition, Page, PageRequest, build_page
 from dw_platform.adapters.persistence import tables
 from dw_platform.adapters.persistence.keyset import after_position, newest_first
+from dw_platform.application.authorization import ApprovalAudience
 from dw_platform.domain.approval import (
     ApprovalDecision,
     ApprovalRequest,
@@ -50,6 +55,24 @@ def _approval_from_row(row: Row[tuple]) -> ApprovalRequest:  # type: ignore[type
         created_at=row.created_at,
         decided_at=row.decided_at,
         version=row.version,
+    )
+
+
+def visible_to(audience: ApprovalAudience) -> sa.ColumnElement[bool]:
+    """`ApprovalAudience.may_see`, as a WHERE clause: unstamped, or asked for by
+    the caller, or stamped with a scope the caller holds while also holding
+    `approvals.decide`. Public because the context-facing pending query reads
+    the same rule; a second copy of it would drift (failure-modes #2)."""
+    approvals = tables.approval_requests
+    decidable = (
+        approvals.c.required_scope.in_(sorted(audience.context.scopes))
+        if audience.holds_decide
+        else sa.false()
+    )
+    return sa.or_(
+        approvals.c.required_scope.is_(None),
+        approvals.c.requested_by == audience.context.principal_id,
+        decidable,
     )
 
 
@@ -106,7 +129,7 @@ class SqlApprovalRepository:
         )
 
     async def get(
-        self, request_id: uuid.UUID, *, workspace_id: uuid.UUID
+        self, request_id: uuid.UUID, *, workspace_id: uuid.UUID, audience: ApprovalAudience
     ) -> ApprovalRequest | None:
         result = await self.session.execute(
             sa.select(tables.approval_requests).where(
@@ -114,6 +137,7 @@ class SqlApprovalRepository:
                 # RLS narrows this table by tenant only; the workspace is
                 # narrowed here (approval-audit-and-workspace/02).
                 tables.approval_requests.c.workspace_id == workspace_id,
+                visible_to(audience),
             )
         )
         row = result.first()
@@ -140,13 +164,16 @@ class SqlApprovalRepository:
             )
 
     async def list_pending(
-        self, request: PageRequest, *, workspace_id: uuid.UUID
+        self, request: PageRequest, *, workspace_id: uuid.UUID, audience: ApprovalAudience
     ) -> Page[ApprovalRequest]:
         result = await self.session.execute(
             sa.select(tables.approval_requests)
             .where(
                 tables.approval_requests.c.workspace_id == workspace_id,
                 tables.approval_requests.c.status == "pending",
+                # In the query, so a page is a page of the caller's inbox and
+                # never a page of everyone's with holes in it.
+                visible_to(audience),
                 after_position(
                     tables.approval_requests.c.created_at,
                     tables.approval_requests.c.id,

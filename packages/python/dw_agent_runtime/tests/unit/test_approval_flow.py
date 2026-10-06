@@ -13,7 +13,7 @@ from dw_kernel.errors import ConflictError, NotFoundError, PermissionDeniedError
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.ports import FixedClock, SequentialIdGenerator
 from dw_platform.application.access_context import AccessContext
-from dw_platform.application.authorization import ScopeAuthorizationService
+from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.application.ports import PlatformUnitOfWork
 from dw_platform.domain.approval import ApprovalDecision, ApprovalRequest, ApprovalStatus
 from dw_platform.domain.outbox import OutboxEvent
@@ -28,15 +28,20 @@ WORKSPACE = uuid.UUID(int=101)
 
 @dataclass
 class FakeApprovalRepo:
-    """Honours the port: another workspace's request is not found."""
+    """Honours the port: another workspace's request is not found, nor one the
+    audience may not see (ADR 0004)."""
 
     request: ApprovalRequest
     decisions: list[ApprovalDecision] = field(default_factory=list)
 
     async def get(
-        self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID
+        self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID, audience: ApprovalAudience
     ) -> ApprovalRequest | None:
-        found = approval_id == self.request.id and workspace_id == self.request.workspace_id.value
+        found = (
+            approval_id == self.request.id
+            and workspace_id == self.request.workspace_id.value
+            and audience.may_see(self.request)
+        )
         return self.request if found else None
 
     async def save(self, request: ApprovalRequest) -> None: ...
@@ -518,16 +523,38 @@ async def _decide_as(
 
 
 @pytest.mark.parametrize("approve", [True, False], ids=["approve", "reject"])
-async def test_the_decide_right_alone_cannot_decide_a_stamped_request(approve: bool) -> None:
+async def test_the_decide_right_alone_does_not_find_a_stamped_request(approve: bool) -> None:
     """ADR 0004: `approvals.decide` is necessary, and for a stamped request not
-    sufficient. Refused before anything is written and before the run resumes."""
+    sufficient; since the amendment of 2026-10-07 who may not decide it and did
+    not ask for it does not find it either. Not found before anything is
+    written and before the run is looked at."""
+    request = make_stamped_request(BOARD_SCOPE)
+    repo = FakeApprovalRepo(request=request)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner, repo=repo)
+
+    with pytest.raises(NotFoundError):
+        await _decide_as(service, decider(APPROVER), approve=approve)
+
+    assert request.status is ApprovalStatus.PENDING
+    assert request.version == 1
+    assert repo.decisions == []
+    assert runner.resumed == []
+    assert runner.asked == []
+
+
+async def test_the_decide_right_alone_cannot_approve_even_your_own_stamped_request() -> None:
+    """The requester sees their stamped request, so the read lets them through;
+    the gate behind it still refuses an approval by naming the stamp. Tested
+    here directly, not through the read that hides the request from others
+    (failure-modes #5)."""
     request = make_stamped_request(BOARD_SCOPE)
     repo = FakeApprovalRepo(request=request)
     runner = FakeRunner(hosted=True)
     service = make_service(request, frozenset(), runner=runner, repo=repo)
 
     with pytest.raises(PermissionDeniedError) as refused:
-        await _decide_as(service, decider(APPROVER), approve=approve)
+        await _decide_as(service, decider(REQUESTER), approve=True)
 
     assert refused.value.details["action"] == BOARD_SCOPE
     assert request.status is ApprovalStatus.PENDING
@@ -538,24 +565,34 @@ async def test_the_decide_right_alone_cannot_decide_a_stamped_request(approve: b
     assert runner.asked == []
 
 
-async def test_the_stamped_scope_without_the_decide_right_is_not_enough() -> None:
-    """Both, not either: the stamp narrows `approvals.decide`, never replaces it."""
+@pytest.mark.parametrize(
+    ("principal", "error"),
+    [(APPROVER, NotFoundError), (REQUESTER, PermissionDeniedError)],
+    ids=["someone-else", "requester"],
+)
+async def test_the_stamped_scope_without_the_decide_right_is_not_enough(
+    principal: uuid.UUID, error: type[Exception]
+) -> None:
+    """Both, not either: the stamp narrows `approvals.decide`, never replaces it.
+    Someone else does not find the request; its requester finds it and is
+    refused by the gate, which names `approvals.decide`."""
     request = make_stamped_request(BOARD_SCOPE)
     runner = FakeRunner(hosted=True)
     service = make_service(request, frozenset(), runner=runner)
     context = AccessContext(
         tenant_id=uuid.UUID(int=100),
         workspace_id=uuid.UUID(int=101),
-        principal_id=APPROVER,
+        principal_id=principal,
         roles=frozenset({"board"}),
         scopes=frozenset({BOARD_SCOPE}),
         plan_id="professional",
     )
 
-    with pytest.raises(PermissionDeniedError) as refused:
+    with pytest.raises(error) as refused:
         await _decide_as(service, context, approve=True)
 
-    assert refused.value.details["action"] == "approvals.decide"
+    if isinstance(refused.value, PermissionDeniedError):
+        assert refused.value.details["action"] == "approvals.decide"
     assert runner.resumed == []
 
 
@@ -587,17 +624,36 @@ def platform_admin(principal: uuid.UUID, *extra_scopes: str) -> AccessContext:
 
 
 @pytest.mark.parametrize("approve", [True, False], ids=["approve", "reject"])
-async def test_platform_admin_does_not_pass_the_stamped_scope(approve: bool) -> None:
+async def test_platform_admin_does_not_find_a_stamped_request(approve: bool) -> None:
     """ADR 0004 (2026-10-06): a platform operator is not the business's board. The
-    admin rule still grants `approvals.decide`; the stamp needs the scope itself.
-    Refused before anything is written and before the run is looked at."""
+    admin rule still grants `approvals.decide`; the stamp needs the scope itself,
+    and since the amendment of 2026-10-07 who may not decide a stamped request
+    does not find it. Nothing written, the run not looked at."""
+    request = make_stamped_request(BOARD_SCOPE)
+    repo = FakeApprovalRepo(request=request)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner, repo=repo)
+
+    with pytest.raises(NotFoundError):
+        await _decide_as(service, platform_admin(APPROVER), approve=approve)
+
+    assert request.status is ApprovalStatus.PENDING
+    assert repo.decisions == []
+    assert runner.asked == []
+    assert runner.resumed == []
+
+
+async def test_platform_admin_does_not_pass_the_stamp_on_their_own_request() -> None:
+    """The admin who raised a stamped request sees it, and the gate behind the
+    read refuses their approval by naming the stamp: the admin rule never
+    stands in for it. Refused before anything is written or looked at."""
     request = make_stamped_request(BOARD_SCOPE)
     repo = FakeApprovalRepo(request=request)
     runner = FakeRunner(hosted=True)
     service = make_service(request, frozenset(), runner=runner, repo=repo)
 
     with pytest.raises(PermissionDeniedError) as refused:
-        await _decide_as(service, platform_admin(APPROVER), approve=approve)
+        await _decide_as(service, platform_admin(REQUESTER), approve=True)
 
     assert refused.value.message == "action not permitted"
     assert refused.value.details == {

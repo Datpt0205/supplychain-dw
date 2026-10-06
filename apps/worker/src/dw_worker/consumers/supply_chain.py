@@ -43,6 +43,7 @@ from dw_platform.adapters.persistence.policy_overrides import SqlPolicyOverrideR
 from dw_platform.adapters.persistence.scope_holders import SqlScopeHolders
 from dw_platform.adapters.persistence.tenant_plans import SqlTenantPlans
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
+from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_supply_chain.adapters.persistence.case_document_repository import (
     SqlCaseDocumentRepository,
@@ -154,7 +155,9 @@ def build_product_review_reconcile(
         telemetry=telemetry,
         spend_store=SqlSpendGuardStore(session_factory=sessions),
     )
-    approvals = SqlPendingApprovalQuery(sessions)
+    # Only `raised_by_payload` is asked here, which no audience narrows; the
+    # authorization is the query's constructor argument all the same.
+    approvals = SqlPendingApprovalQuery(sessions, ScopeAuthorizationService())
     return ReconcileBodReviews(
         workspaces=SqlWorkspacesAwaitingReview(sessions),
         cases=product_cases,

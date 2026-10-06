@@ -38,10 +38,16 @@ from dw_kernel.pagination import PageQuery, PageRequest
 from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
 from dw_platform.application.access_context import AccessContext
-from dw_platform.application.authorization import ScopeAuthorizationService
+from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest, ApprovalStatus
 
 pytestmark = pytest.mark.integration
+
+
+def _sees(context: AccessContext) -> ApprovalAudience:
+    """What `context` may see of the approvals (ADR 0004), as the API asks it."""
+    return ApprovalAudience.of(context, ScopeAuthorizationService())
+
 
 STALE_AFTER_SECONDS_LOCAL = 3600
 WORKSPACE_W2 = uuid.UUID(int=0xA02)
@@ -181,8 +187,10 @@ async def test_another_workspace_neither_sees_nor_decides_the_approval(stack: St
     b = _member(WORKSPACE_W2)
 
     async with stack.uow_factory(b) as uow:
-        inbox = await uow.approvals.list_pending(_PAGE, workspace_id=b.workspace_id)
-        by_id = await uow.approvals.get(approval_id, workspace_id=b.workspace_id)
+        inbox = await uow.approvals.list_pending(
+            _PAGE, workspace_id=b.workspace_id, audience=_sees(b)
+        )
+        by_id = await uow.approvals.get(approval_id, workspace_id=b.workspace_id, audience=_sees(b))
     assert approval_id not in {request.id for request in inbox.items}
     assert by_id is None
 
@@ -201,7 +209,9 @@ async def test_another_workspace_neither_sees_nor_decides_the_approval(stack: St
 
     a = _member(WORKSPACE_A)
     async with stack.uow_factory(a) as uow:
-        current = await uow.approvals.get(approval_id, workspace_id=a.workspace_id)
+        current = await uow.approvals.get(
+            approval_id, workspace_id=a.workspace_id, audience=_sees(a)
+        )
     assert current is not None
     assert current.status is ApprovalStatus.PENDING
     assert await stack.decision_rows(approval_id) == 0
@@ -235,7 +245,9 @@ async def test_another_workspace_cannot_decide_an_approval_without_a_run(stack: 
 
     assert not_found.value.message == "approval request not found"
     async with stack.uow_factory(a) as uow:
-        current = await uow.approvals.get(request.id, workspace_id=a.workspace_id)
+        current = await uow.approvals.get(
+            request.id, workspace_id=a.workspace_id, audience=_sees(a)
+        )
     assert current is not None
     assert current.status is ApprovalStatus.PENDING
     assert current.version == 1
