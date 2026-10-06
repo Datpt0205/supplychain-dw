@@ -99,3 +99,21 @@ Phần "khác workspace" mà Sửa đổi 1 ở trên chuyển đi nay đã làm
    `worker_runs`), không của người quyết, như roles, scopes và autonomy đã đọc từ run.
 3. `GET /approvals` và `GET /approvals/{id}` chỉ trả approval của workspace người gọi; cờ
    khóa nút theo `required_scope` không đổi.
+
+## Sửa đổi 2026-10-05 (tạm, lát S2 của giai đoạn 1; chờ Đạt duyệt ở QO-2)
+
+1. **Payload resume có `decided_by`.** `ApproveAndResumeService.decide` đặt
+   `decided_by = str(context.principal_id)` vào payload resume, từ context đã xác minh của
+   người quyết, dựng ngay trong `decide`; không bao giờ chép từ payload của approval (đó
+   là giá trị interrupt của graph). Run vẫn tiếp tục với quyền của người yêu cầu như
+   trước; `decided_by` chỉ cho graph biết AI quyết, để ghi người đó làm actor (graph duyệt
+   mẫu của Hồ sơ phát triển, ADR 0016 sửa đổi S2). Test:
+   `test_the_resume_names_the_decider_from_their_verified_context`,
+   `test_an_interrupt_payload_naming_a_decider_cannot_override_the_real_one`. Ứng viên đưa
+   ngược lên nền tảng (ADR 0011): thay đổi nằm trong `dw_agent_runtime`, không phụ thuộc
+   context nào.
+2. **Giá trị đầu tiên của Elmich** đã có: approval
+   `supply_chain.product_action.bod_review` đóng dấu `required_scope` đọc từ
+   `supply_chain_product_approvals@1.0.0` lúc tạo; test ghi đè của tenant: approval tạo
+   sau dùng giá trị mới, approval đang chờ giữ dấu cũ
+   (`test_a_tenant_override_reaches_reviews_raised_after_it_only`).

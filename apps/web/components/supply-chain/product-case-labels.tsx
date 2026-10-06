@@ -21,6 +21,7 @@ export const PRODUCT_DEV_STATE_LABEL: Record<ProductDevState, string> = {
   sample_testing: "Đang test mẫu",
   revision_requested: "Chờ mẫu chỉnh sửa",
   pending_bod_review: "Chờ BGĐ duyệt",
+  profile_in_progress: "Đang làm BM04",
   waiting_external: "Chờ bên ngoài",
   blocked: "Đang bị chặn",
   manual_review: "Cần xem xét thủ công",
@@ -40,6 +41,7 @@ const STATE_STATUS: Record<
   sample_testing: "processing",
   revision_requested: "warning",
   pending_bod_review: "success",
+  profile_in_progress: "processing",
   waiting_external: "warning",
   blocked: "error",
   manual_review: "warning",
@@ -56,7 +58,9 @@ export function ProductDevStateTag({ state }: { state: ProductDevState }) {
   );
 }
 
-/** What each step's button says: the outcome, in the glossary's words. */
+/** What each step's button says: the outcome, in the glossary's words.
+ * `bod_approve` and `bod_reject` are never buttons: BGĐ decides at
+ * `/approvals`; their labels name the step in a case's history. */
 export const PRODUCT_ACTION_LABEL: Record<ProductAction, string> = {
   propose: "Đề xuất sản phẩm",
   request_sample: "Yêu cầu mẫu",
@@ -70,6 +74,8 @@ export const PRODUCT_ACTION_LABEL: Record<ProductAction, string> = {
   flag_manual_review: "Cần xem xét thủ công",
   resume: "Tiếp tục",
   cancel: "Hủy hồ sơ",
+  bod_approve: "BGĐ duyệt mẫu",
+  bod_reject: "BGĐ không duyệt",
 };
 
 /** A sample round's result (Vòng mẫu: Đạt, Cần chỉnh sửa, Hủy). */

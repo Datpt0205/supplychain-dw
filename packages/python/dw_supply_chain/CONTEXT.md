@@ -221,9 +221,10 @@ Một lần gửi một thông báo tới một người qua một kênh, có tr
 ### Trạng thái của Hồ sơ phát triển sản phẩm (`ProductDevState`) (đề xuất)
 
 Từ S1, nhãn trong code có một chủ: `PRODUCT_DEV_STATE_LABEL` trong
-`apps/web/components/supply-chain/product-case-labels.tsx`; S1 chỉ đi tới
-`pending_bod_review` (cùng ba trạng thái ngắt và `cancelled`). Hai bên lệch thì sửa
-cả hai trong cùng commit.
+`apps/web/components/supply-chain/product-case-labels.tsx`; S2 đi tới
+`profile_in_progress` (cùng ba trạng thái ngắt và `cancelled`). Hai bên lệch thì sửa
+cả hai trong cùng commit. Ở `pending_bod_review` người dùng chỉ hủy được; `bod_approve`
+và `bod_reject` do graph duyệt áp sau quyết định ở `/approvals`.
 
 | Giá trị                 | Nhãn                   | Bước, ghi chú                                   |
 | ----------------------- | ---------------------- | ----------------------------------------------- |

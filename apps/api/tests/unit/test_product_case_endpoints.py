@@ -10,7 +10,7 @@ mounts on its own guard.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
@@ -54,7 +54,13 @@ from dw_supply_chain.application.handlers import (
     SetProductActionDutiesOverride,
     duty_scope,
 )
-from dw_supply_chain.application.ports import NewCaseDocument, ProductCaseListFilter
+from dw_supply_chain.application.ports import (
+    NewCaseDocument,
+    PendingApprovalRecord,
+    ProductCaseListFilter,
+    ReviewRaise,
+    ReviewRequester,
+)
 from dw_supply_chain.application.product_cases import (
     AdvanceProductCase,
     GetProductCase,
@@ -72,6 +78,7 @@ from dw_supply_chain.domain.product_development_case import (
     ProductCaseTransition,
     ProductDevelopmentCase,
     ProductDevelopmentCaseId,
+    ProductDevState,
     SampleRound,
 )
 from dw_supply_chain.presentation.product_case_routes import ProposeProductCaseRequest
@@ -390,8 +397,50 @@ class MemoryStore:
 
 
 @dataclass
+class FakeReviews:
+    """`BodReviewPort`: answers `outcome` and records what it was asked."""
+
+    outcome: ReviewRaise = ReviewRaise.RAISED
+    asked: list[uuid.UUID] = field(default_factory=list)
+
+    async def ensure(
+        self, context: AccessContext, case: ProductDevelopmentCase, requester: ReviewRequester
+    ) -> ReviewRaise:
+        self.asked.append(case.id.value)
+        return self.outcome
+
+
+@dataclass(frozen=True)
+class PendingReview:
+    id: uuid.UUID
+    approval_type: str
+    payload: Mapping[str, object]
+    created_at: datetime | None
+    required_scope: str | None
+
+
+@dataclass
+class FakeApprovals:
+    """The inbox narrowed to the caller's workspace, as the real query is."""
+
+    pending: dict[tuple[uuid.UUID, str], PendingReview] = field(default_factory=dict)
+
+    async def list_pending_by_type_prefix(
+        self, context: AccessContext, *, prefix: str, limit: int
+    ) -> tuple[int, Sequence[PendingApprovalRecord]]:
+        raise NotImplementedError("not exercised by the product-case routes")
+
+    async def pending_by_payload(
+        self, context: AccessContext, *, approval_type: str, key: str, value: str
+    ) -> PendingApprovalRecord | None:
+        return self.pending.get((context.workspace_id, value))
+
+
+@dataclass
 class World:
     cases: FakeCases = field(default_factory=FakeCases)
+    reviews: FakeReviews = field(default_factory=FakeReviews)
+    approvals: FakeApprovals = field(default_factory=FakeApprovals)
     documents: FakeDocuments = field(default_factory=FakeDocuments)
     bucket: FakeBucket = field(default_factory=FakeBucket)
     policies: FakePolicies = field(default_factory=FakePolicies)
@@ -445,13 +494,14 @@ class World:
                 repo=self.cases, **common
             )
             container.supply_chain_advance_product_case = AdvanceProductCase(
-                repo=self.cases, documents=self.documents, **common
+                repo=self.cases, documents=self.documents, reviews=self.reviews, **common
             )
             container.supply_chain_get_product_case = GetProductCase(
                 repo=self.cases,
                 authz=authz,
                 policy_override_repo=self.policies,
                 platform_default_duties=DUTIES,
+                approvals=self.approvals,
             )
             container.supply_chain_list_product_cases = ListProductCases(
                 repo=self.cases, authz=authz
@@ -710,6 +760,85 @@ async def test_rnd_passes_a_sample_on_this_rounds_evaluation() -> None:
     )
     assert response.status_code == 200, response.text
     assert response.json()["state"] == "pending_bod_review"
+    assert response.json()["review"] == "raised"
+    assert world.reviews.asked == [case.id.value]
+
+
+async def test_a_pass_whose_review_was_not_raised_says_so_and_is_still_200() -> None:
+    world = World(reviews=FakeReviews(outcome=ReviewRaise.NOT_RAISED))
+    case = world.case(testing=True)
+    evaluation = world.document(case, DocumentType.SAMPLE_EVALUATION)
+    (response,) = await _send(
+        world.container(SC_RND),
+        [
+            _post(
+                f"/product-cases/{case.id}/transitions",
+                {"action": "pass_sample", "document_id": str(evaluation.id)},
+            )
+        ],
+    )
+    assert response.status_code == 200, response.text
+    assert (response.json()["state"], response.json()["review"]) == (
+        "pending_bod_review",
+        "not_raised",
+    )
+
+
+@pytest.mark.parametrize("action", ["bod_approve", "bod_reject"])
+async def test_bgds_outcomes_from_the_api_are_refused(action: str) -> None:
+    """Only the review graph applies them, after the approval is decided at
+    `/approvals`: the route's model refuses them (422) even to a caller holding
+    every scope, and the case does not move."""
+    world = World()
+    case = world.case(testing=True)
+    world.cases.rows[case.id.value].state = ProductDevState.PENDING_BOD_REVIEW
+    everything = SC_OPERATOR | SC_RND | {"supply_chain.approve.bod", "approvals.decide"}
+    (response,) = await _send(
+        world.container(everything),
+        [_post(f"/product-cases/{case.id}/transitions", {"action": action, "reason": "BGĐ"})],
+    )
+    assert response.status_code == 422, response.text
+    # Refused by the route's own model, before the command (which refuses it
+    # again, `test_bgds_outcomes_are_refused_as_a_step_before_anything_is_read`).
+    assert response.json()["detail"][0]["loc"] == ["body", "action"]
+    assert world.cases.rows[case.id.value].state is ProductDevState.PENDING_BOD_REVIEW
+    assert world.reviews.asked == []
+
+
+async def test_the_detail_of_a_case_waiting_for_bgd_names_its_review_and_only_cancel() -> None:
+    world = World()
+    case = world.case(testing=True)
+    world.cases.rows[case.id.value].state = ProductDevState.PENDING_BOD_REVIEW
+    review = PendingReview(
+        id=uuid.uuid4(),
+        approval_type="supply_chain.product_action.bod_review",
+        payload={"product_dev_case_id": str(case.id)},
+        created_at=NOW,
+        required_scope="supply_chain.approve.bod",
+    )
+    world.approvals.pending[(WORKSPACE, str(case.id))] = review
+    (response,) = await _send(
+        world.container(frozenset({PRODUCT_CASE_READ})), [_get(f"/product-cases/{case.id}")]
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["pending_review"] == {
+        "approval_id": str(review.id),
+        "created_at": NOW.isoformat().replace("+00:00", "Z"),
+        "required_scope": "supply_chain.approve.bod",
+    }
+    # Nobody's name, nothing to decide with: the page links to /approvals.
+    assert [a["action"] for a in body["actions"]] == ["cancel"]
+
+
+async def test_the_detail_carries_no_review_outside_waiting_for_bgd() -> None:
+    world = World()
+    case = world.case(testing=True)
+    (response,) = await _send(
+        world.container(frozenset({PRODUCT_CASE_READ})), [_get(f"/product-cases/{case.id}")]
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["pending_review"] is None
 
 
 async def test_an_unknown_field_on_a_step_is_422() -> None:

@@ -15,6 +15,11 @@ Usage (reads `.env`; `make` exports it, a plain shell needs `set -a; source .env
     - Giang: `sc_qc`, who passes or fails QC;
     - Hà: `sc_logistics` and `sc_warehouse`, port arrival and receiving;
     - Chi keeps `platform_admin`, the administrator;
+- two personas the platform roster has no user for, created in Alpha's main
+  workspace, so stage 1 steps 1-6 can be clicked through:
+    - Linh: `sc_rnd`, who receives, tests and passes samples (steps 2-5);
+    - Khánh: BGĐ, `sc_bod` beside the platform `approver` role, which is
+      where `approvals.decide` comes from; decides step 6 at /approvals;
 - four PO cases, backdated so each signal is already due:
     - PO-DEMO-001: opened 25 hours ago, no supplier update (a reminder);
     - PO-DEMO-002: opened 73 hours ago, no supplier update (an escalation);
@@ -69,6 +74,14 @@ ROLES = {
     "dev|ha.vu": ["member", "sc_logistics", "sc_warehouse"],
 }
 COORDINATOR = "dev|an.nguyen"
+# Personas created here rather than by the platform roster: Supply Chain's own
+# stage-1 roles. (subject, email, display name, department, roles). The BGĐ
+# member decides with `approvals.decide` from the platform `approver` role and
+# `supply_chain.approve.bod` from `sc_bod`: `decide` asks for both.
+PERSONAS = (
+    ("dev|linh.phan", "linh.phan@alpha.local", "Phan Thùy Linh", "rnd", ["member", "sc_rnd"]),
+    ("dev|khanh.ngo", "khanh.ngo@alpha.local", "Ngô Minh Khánh", "bgd", ["approver", "sc_bod"]),
+)
 # po_reference, supplier, hours since opened, hours in WAITING_DEPOSIT, fresh update
 CASES = (
     ("PO-DEMO-001", "Kangaroo", 25, None, False),
@@ -144,6 +157,7 @@ async def seed(migrator: AsyncEngine, app: AsyncEngine, migrator_url: str) -> No
                 {"subject": subject, "roles": json.dumps(roles), "tenant": ALPHA},
             )
     print("roles: " + ", ".join(f"{s.split('|')[1]} {'+'.join(r[1:])}" for s, r in ROLES.items()))
+    await _personas(migrator)
 
     sessions = async_sessionmaker(app, expire_on_commit=False)
     context = _context(await _user_id(migrator, COORDINATOR))
@@ -183,6 +197,41 @@ async def seed(migrator: AsyncEngine, app: AsyncEngine, migrator_url: str) -> No
         if fresh_update:
             await updates.add(context, _update(case, "Đang sản xuất đúng tiến độ."))
         print(f"{reference}: created ({supplier})")
+
+
+async def _personas(migrator: AsyncEngine) -> None:
+    """Create (or refresh) the stage-1 personas and their Alpha membership.
+    The membership trigger still checks separation of duties."""
+    async with migrator.begin() as conn:
+        for subject, email, name, department, roles in PERSONAS:
+            user_id = await conn.scalar(
+                sa.text(
+                    "INSERT INTO platform.users (id, subject, email, display_name)"
+                    " VALUES (:id, :subject, :email, :name)"
+                    " ON CONFLICT (subject) DO UPDATE"
+                    " SET email = EXCLUDED.email, display_name = EXCLUDED.display_name"
+                    " RETURNING id"
+                ),
+                {"id": uuid.uuid4(), "subject": subject, "email": email, "name": name},
+            )
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO platform.memberships"
+                    " (id, tenant_id, workspace_id, user_id, role_keys, department)"
+                    " VALUES (:id, :tenant, :workspace, :user, CAST(:roles AS jsonb), :department)"
+                    " ON CONFLICT ON CONSTRAINT uq_memberships_scope_user DO UPDATE"
+                    " SET role_keys = EXCLUDED.role_keys, department = EXCLUDED.department"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "tenant": ALPHA,
+                    "workspace": ALPHA_WS,
+                    "user": user_id,
+                    "roles": json.dumps(roles),
+                    "department": department,
+                },
+            )
+    print("personas: " + ", ".join(f"{s.split('|')[1]} {'+'.join(r)}" for s, *_, r in PERSONAS))
 
 
 async def supplier_update(migrator: AsyncEngine, app: AsyncEngine, reference: str) -> None:

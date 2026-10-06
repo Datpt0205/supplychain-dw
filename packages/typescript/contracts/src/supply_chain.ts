@@ -389,6 +389,7 @@ export const productDevStateSchema = z.enum([
   "sample_testing",
   "revision_requested",
   "pending_bod_review",
+  "profile_in_progress",
   "waiting_external",
   "blocked",
   "manual_review",
@@ -410,6 +411,10 @@ export const productActionSchema = z.enum([
   "flag_manual_review",
   "resume",
   "cancel",
+  // Step 6: BGĐ's decision, applied by the review graph after `/approvals`.
+  // In a case's history, never among the steps a page offers.
+  "bod_approve",
+  "bod_reject",
 ]);
 export type ProductAction = z.infer<typeof productActionSchema>;
 
@@ -463,12 +468,40 @@ export const productActionOptionSchema = z.object({
 });
 export type ProductActionOption = z.infer<typeof productActionOptionSchema>;
 
-/** Mirrors `ProductCaseDetailView`: the case, its sample rounds, its steps. */
+/** Mirrors `PendingReviewView`: the BGĐ review a waiting case is held on,
+ * and the scope stamped on it, which is who may decide it at `/approvals`. */
+export const pendingReviewSchema = z.object({
+  approval_id: z.string(),
+  created_at: z.string().nullable(),
+  required_scope: z.string().nullable(),
+});
+export type PendingReview = z.infer<typeof pendingReviewSchema>;
+
+/** Mirrors `ProductCaseDetailView`: the case, its sample rounds, its steps,
+ * and while it waits for BGĐ the review it waits on (null when none is
+ * raised yet). */
 export const productCaseDetailSchema = productCaseSchema.extend({
   rounds: z.array(sampleRoundSchema),
   actions: z.array(productActionOptionSchema),
+  pending_review: pendingReviewSchema.nullable(),
 });
 export type ProductCaseDetail = z.infer<typeof productCaseDetailSchema>;
+
+/** Mirrors `ReviewRaise`: what asking for BGĐ's review did. */
+export const reviewRaiseSchema = z.enum([
+  "raised",
+  "already_pending",
+  "not_raised",
+  "not_waiting",
+]);
+export type ReviewRaise = z.infer<typeof reviewRaiseSchema>;
+
+/** Mirrors `ProductCaseStepView`: a step taken; `review` is set only for a
+ * step that left the case waiting for BGĐ. */
+export const productCaseStepSchema = productCaseSchema.extend({
+  review: reviewRaiseSchema.nullable(),
+});
+export type ProductCaseStep = z.infer<typeof productCaseStepSchema>;
 
 /** One row of a product case's history, oldest first. */
 export const productCaseTransitionSchema = z.object({

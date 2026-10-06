@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from dw_supply_chain.action_duties import CaseDuty, load_supply_chain_action_duties
 from dw_supply_chain.domain.po_case import CaseAction
-from dw_supply_chain.domain.product_development_case import ProductAction
+from dw_supply_chain.domain.product_development_case import GRAPH_ONLY_ACTIONS, ProductAction
 from dw_supply_chain.product_action_duties import (
     PRODUCT_ACTION_DUTIES_POLICY_ID,
     SupplyChainProductActionDuties,
@@ -39,10 +39,46 @@ def _shipped_mapping() -> dict[str, str]:
     return {action.value: duty.value for action, duty in policy.action_duties.items()}
 
 
-def test_the_shipped_default_gives_every_step_a_duty() -> None:
+# The document a tenant could have stored before step 6 existed (S1): every
+# step a person took then, and nothing else.
+_S1_OVERRIDE = {
+    "propose": "ordering",
+    "request_sample": "ordering",
+    "receive_sample": "rnd",
+    "pass_sample": "rnd",
+    "request_revision": "rnd",
+    "receive_revised_sample": "rnd",
+    "reject_sample": "rnd",
+    "wait_for_external": "exceptions",
+    "flag_blocked": "exceptions",
+    "flag_manual_review": "exceptions",
+    "resume": "exceptions",
+    "cancel": "ordering",
+}
+
+
+def test_the_shipped_default_gives_every_step_a_person_takes_a_duty() -> None:
     policy = load_supply_chain_product_action_duties(_SHIPPED)
-    assert set(policy.action_duties) == set(ProductAction)
+    assert set(policy.action_duties) == set(ProductAction) - GRAPH_ONLY_ACTIONS
     assert policy.policy_id == PRODUCT_ACTION_DUTIES_POLICY_ID
+
+
+def test_an_override_stored_before_step_6_existed_stays_valid() -> None:
+    """Step 6 added two actions and no duty for them: a tenant's override
+    written in S1 names neither, and must still load."""
+    policy = SupplyChainProductActionDuties.model_validate(_document(_S1_OVERRIDE))
+    assert policy.duty_for(ProductAction.PASS_SAMPLE) is CaseDuty.RND
+
+
+@pytest.mark.parametrize("graph_only", sorted(GRAPH_ONLY_ACTIONS))
+def test_a_duty_for_a_step_only_the_graph_takes_is_refused(graph_only: ProductAction) -> None:
+    """Nobody reads such a key (failure-modes #1): BGĐ is not a duty, it
+    decides an approval limited by `required_scope`. Accepting the key would
+    read like a control over who approves, and control nothing."""
+    with pytest.raises(ValidationError, match=graph_only.value):
+        SupplyChainProductActionDuties.model_validate(
+            _document(_shipped_mapping() | {graph_only.value: "ordering"})
+        )
 
 
 @pytest.mark.parametrize(

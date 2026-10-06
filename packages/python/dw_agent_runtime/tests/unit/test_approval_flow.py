@@ -121,6 +121,7 @@ class FakeRunner:
     asked: list[tuple[str, str, str]] = field(default_factory=list)
     resumed: list[uuid.UUID] = field(default_factory=list)
     contexts: list[RunContext] = field(default_factory=list)
+    payloads: list[dict[str, Any]] = field(default_factory=list)
 
     def hosts(self, *, worker_id: str, worker_version: str, graph_version: str) -> bool:
         self.asked.append((worker_id, worker_version, graph_version))
@@ -131,9 +132,14 @@ class FakeRunner:
     ) -> None:
         self.resumed.append(run_id)
         self.contexts.append(run_context)
+        self.payloads.append(resume_payload)
 
 
-def make_request(approval_type: str, run_id: uuid.UUID | None = None) -> ApprovalRequest:
+def make_request(
+    approval_type: str,
+    run_id: uuid.UUID | None = None,
+    payload: dict[str, Any] | None = None,
+) -> ApprovalRequest:
     return ApprovalRequest(
         id=uuid.UUID(int=10),
         tenant_id=TenantId(uuid.UUID(int=100)),
@@ -141,7 +147,7 @@ def make_request(approval_type: str, run_id: uuid.UUID | None = None) -> Approva
         approval_type=approval_type,
         requested_by=UserId(REQUESTER),
         reason="cần duyệt",
-        payload={},
+        payload=payload or {},
         run_id=run_id,
     )
 
@@ -196,6 +202,25 @@ async def test_strict_type_rejects_self_approval() -> None:
     service = make_service(make_request("sales_chat.email_send"), frozenset({"sales_chat."}))
     with pytest.raises(ConflictError, match="separation of duties"):
         await decide(service, REQUESTER, "ok")
+
+
+async def test_strict_type_refuses_the_requester_withdrawing_too() -> None:
+    """Withdrawing your own request skips `approvals.decide` and the stamped
+    scope (a seller taking back an email needs no manager). For a strict type
+    the separation-of-duties rule is then the only guard, and it must hold for
+    a rejection too: where rejecting is itself a step (BGĐ not approving a
+    sample cancels the case), the requester would otherwise take it."""
+    service = make_service(make_request("sales_chat.email_send"), frozenset({"sales_chat."}))
+    with pytest.raises(ConflictError, match="separation of duties"):
+        await service.decide(
+            approval_id=uuid.UUID(int=10),
+            approve=False,
+            comment="rút lại",
+            context=make_context(REQUESTER).model_copy(
+                update={"roles": frozenset({"member"}), "scopes": frozenset()}
+            ),
+            authorization=ScopeAuthorizationService(),
+        )
 
 
 async def test_strict_type_requires_a_comment() -> None:
@@ -316,6 +341,42 @@ async def test_the_resumed_run_carries_the_requesters_authority() -> None:
     # And the workspace, from the run's row: what the resumed graph reads and
     # writes is the run's workspace (approval-audit-and-workspace/02).
     assert resumed.workspace_id == WORKSPACE
+
+
+@pytest.mark.parametrize("approve", [True, False])
+async def test_the_resume_names_the_decider_from_their_verified_context(approve: bool) -> None:
+    """A graph that records who decided (the product case's BGĐ review)
+    reads it from here: the run resumes with the REQUESTER's authority, so
+    the decider's identity has no other way in."""
+    request = make_request("demo.dispatch", run_id=RUN_ID)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner)
+
+    await service.decide(
+        approval_id=uuid.UUID(int=10),
+        approve=approve,
+        comment="đã xem",
+        context=make_context(APPROVER),
+        authorization=ScopeAuthorizationService(),
+    )
+
+    (payload,) = runner.payloads
+    assert payload["decided_by"] == str(APPROVER)
+    assert (payload["approved"], payload["comment"]) == (approve, "đã xem")
+    # The run itself still resumes as the requester's.
+    assert runner.contexts[0].actor_id == REQUESTER
+
+
+async def test_an_interrupt_payload_naming_a_decider_cannot_override_the_real_one() -> None:
+    """The approval's payload is the graph's interrupt value. A key named
+    `decided_by` there is not where the decider comes from."""
+    request = make_request("demo.dispatch", run_id=RUN_ID, payload={"decided_by": str(REQUESTER)})
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner)
+
+    await decide(service, APPROVER, "")
+
+    assert runner.payloads[0]["decided_by"] == str(APPROVER)
 
 
 async def test_another_workspaces_approval_is_not_found_and_nothing_moves() -> None:

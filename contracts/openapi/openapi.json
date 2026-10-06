@@ -2730,6 +2730,46 @@
         "title": "Page",
         "type": "object"
       },
+      "PendingReviewView": {
+        "description": "The BGĐ review a waiting case is held on: which approval, since when,\nand the scope stamped on it, which is who may decide it. Decided at\n`/approvals`, never from the case.",
+        "properties": {
+          "approval_id": {
+            "format": "uuid",
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "required_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Scope"
+          }
+        },
+        "required": [
+          "approval_id",
+          "created_at",
+          "required_scope"
+        ],
+        "title": "PendingReviewView",
+        "type": "object"
+      },
       "PermissionSetView": {
         "properties": {
           "key": {
@@ -2809,7 +2849,9 @@
           "flag_blocked",
           "flag_manual_review",
           "resume",
-          "cancel"
+          "cancel",
+          "bod_approve",
+          "bod_reject"
         ],
         "title": "ProductAction",
         "type": "string"
@@ -2903,6 +2945,16 @@
               }
             ]
           },
+          "pending_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingReviewView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "pic_user_id": {
             "format": "uuid",
             "title": "Pic User Id",
@@ -2960,9 +3012,113 @@
           "created_at",
           "version",
           "rounds",
-          "actions"
+          "actions",
+          "pending_review"
         ],
         "title": "ProductCaseDetailView",
+        "type": "object"
+      },
+      "ProductCaseStepView": {
+        "description": "A step taken. `review` is set only for a step that left the case\nwaiting for BGĐ: `not_raised` means the step is recorded and the review\nis not raised yet (the worker retries it).",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "interrupted_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductDevState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pic_user_id": {
+            "format": "uuid",
+            "title": "Pic User Id",
+            "type": "string"
+          },
+          "product_name": {
+            "title": "Product Name",
+            "type": "string"
+          },
+          "proposal_code": {
+            "title": "Proposal Code",
+            "type": "string"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewRaise"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sample_round": {
+            "title": "Sample Round",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProductDevState"
+          },
+          "supplier_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Name"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "proposal_code",
+          "product_name",
+          "category",
+          "supplier_name",
+          "pic_user_id",
+          "state",
+          "interrupted_state",
+          "sample_round",
+          "created_by",
+          "created_at",
+          "version",
+          "review"
+        ],
+        "title": "ProductCaseStepView",
         "type": "object"
       },
       "ProductCaseTransitionView": {
@@ -3115,6 +3271,7 @@
           "sample_testing",
           "revision_requested",
           "pending_bod_review",
+          "profile_in_progress",
           "waiting_external",
           "blocked",
           "manual_review",
@@ -3205,6 +3362,17 @@
         ],
         "title": "RenameWorkspaceBody",
         "type": "object"
+      },
+      "ReviewRaise": {
+        "description": "What asking for BGĐ's review of a case did.",
+        "enum": [
+          "raised",
+          "already_pending",
+          "not_raised",
+          "not_waiting"
+        ],
+        "title": "ReviewRaise",
+        "type": "string"
       },
       "RoleView": {
         "properties": {
@@ -8581,7 +8749,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProductCaseView"
+                  "$ref": "#/components/schemas/ProductCaseStepView"
                 }
               }
             },

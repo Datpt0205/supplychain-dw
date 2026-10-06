@@ -36,7 +36,7 @@ hành động là policy tenant ghi đè được, approval qua graph HITL có t
 | `pending_signoff`       | `signoff_approve` (9, bước cuối)                                                      | `ready_to_order`                    | graph áp sau mọi bước approval `supply_chain.product_action.signoff`           |
 | `pending_signoff`       | `signoff_reject`\* (9, bất kỳ bước nào)                                               | `item_coding`                       | graph áp; nhận xét của người không duyệt là lý do; mã hàng, SKU giữ nguyên     |
 | `ready_to_order`        | `place_order` (ĐẶT HÀNG)                                                              | `ordered` (kết thúc)                | `ordering`; tạo Hồ sơ PO ([ADR 0017](0017-e7-hand-off-via-order-requested.md)) |
-| trạng thái đang chạy    | `wait_for_external`\*, `flag_blocked`\*, `flag_manual_review`\*, `resume`, `cancel`\* | như `POCase`                        | `exceptions`, `ordering`                                                       |
+| trạng thái đang chạy    | `wait_for_external`\*, `flag_blocked`\*, `flag_manual_review`\*, `resume`, `cancel`\* | như `POCase`                        | `exceptions`, `ordering`; ở `pending_bod_review` chỉ `cancel` (sửa đổi S2)     |
 
 \* bắt buộc lý do. Nhãn tiếng Việt của từng trạng thái ở glossary.
 
@@ -127,3 +127,61 @@ Quyết định ở trên; chi tiết và test ở Comments của
    `pending_bod_review` từ trước S2 (backfill hoặc khởi động tường minh).
 7. **Lịch sử** mỗi dòng có `action`, `actor_id`, `from_state` (NULL chỉ ở `propose`),
    `to_state`, `reason`, `occurred_at`; mọi lệnh ghi audit trong cùng giao dịch.
+
+## Sửa đổi 2026-10-05 (tạm, lát S2; chờ Đạt duyệt ở QO-2)
+
+Các quyết định tạm của lead khi làm lát S2 (ticket 02 giai đoạn 1, bước 6). Chi tiết và
+test ở Comments của `.claude/plans/supply-chain/stage-1/issues/02-bod-review-step-6.md`.
+
+1. **QE-08 (tạm):** `bod_reject` → `cancelled`, nhận xét của BGĐ là lý do (bắt buộc,
+   tiền tố nghiêm đã đòi nhận xét). `bod_approve` → `profile_in_progress`, không có lý
+   do; nhận xét nằm ở dòng quyết định của approval.
+2. **Hành động chỉ graph áp:** `GRAPH_ONLY_ACTIONS = {bod_approve, bod_reject}` ở domain,
+   một chủ. `available_actions` không bao giờ đưa ra; `AdvanceProductCase` từ chối
+   trước khi đọc policy duty hay hồ sơ; model của route trả 422. Policy
+   `supply_chain_product_action_duties` đòi duty cho mọi hành động TRỪ hai hành động
+   này và từ chối khóa của chúng (không ai đọc khóa đó); override lưu trước S2 vẫn hợp lệ.
+3. **Người quyết là actor:** dòng lịch sử, audit của `bod_approve`/`bod_reject` ghi
+   người quyết, lấy từ `decided_by` mà `ApproveAndResumeService.decide` đặt vào payload
+   resume (sửa đổi của ADR 0020). Đọc ghi DB vẫn trong tenant, workspace của run.
+4. **Khởi động review:** `pass_sample` lưu trước (giao dịch riêng), rồi
+   `EnsureBodReview.ensure` khởi động run. Idempotent nhờ seam
+   `uq_worker_runs_active_thread`: thread tất định theo (hồ sơ, `bod_review`, vòng mẫu),
+   run id mới mỗi lần; đụng thread là "đã có". Đã đo (LangGraph 1.2.11, saver bộ nhớ và
+   saver Postgres): thread có run hỏng được gọi lại với input mới thì chạy lại từ START,
+   interrupt cũ bị bỏ, quyết định tiếp tục đúng run mới. Đo cho cả hai dạng hỏng: dừng ở
+   interrupt mà chưa ghi được approval, và `apply` hỏng SAU khi BGĐ đã quyết (quyết định
+   cũ không được áp lại; review mới được trình, áp đúng một lần). "Đã trình" được đọc lại từ hộp
+   approval, không tin `start()` trả về. Start bị từ chối (hết lượt chạy, trần chi tiêu)
+   hoặc hỏng: bước vẫn lưu, phản hồi nói chưa trình được (`review: not_raised`), và lane
+   worker `supply_chain_product_review_reconcile` trình lại. Lane đó cũng là backfill cho
+   hồ sơ đã ở `pending_bod_review` trước S2; nó đi qua từng (tenant, workspace) có hồ sơ
+   chờ BGĐ (hàm SECURITY DEFINER `supply_chain.workspaces_awaiting_bod_review()`, chỉ
+   trả id), người yêu cầu là người làm bước đưa hồ sơ vào trạng thái chờ (đọc từ lịch sử),
+   gói tính lượt là gói của tenant, tối đa 20 lần khởi động mỗi nhịp. Lần khởi động hỏng
+   đầu tiên của một tenant (bị từ chối hoặc không trình được) kết thúc lượt của tenant đó
+   trong nhịp, nên một tenant hết lượt chạy không chiếm hết nhịp của tenant sau nó.
+5. **Trong lúc chờ BGĐ:** ở `pending_bod_review` người dùng chỉ hủy được; domain từ chối
+   ba bước ngắt ở đó. Không có gì bên ngoài được chờ khi BGĐ đang quyết; báo ngoại lệ sau
+   quyết định. Khi resume, graph đọc lại hồ sơ: không còn chờ đúng vòng này (đã hủy) thì
+   không áp gì, ghi audit `bod_review_superseded`, run hoàn tất với outcome `superseded`.
+   Approval của hồ sơ đã hủy vẫn nằm ở `/approvals` tới khi được quyết (mục mở).
+6. **Policy người quyết:** `supply_chain_product_approvals@1.0.0`
+   (`bod_review.required_scope: supply_chain.approve.bod`), schema
+   `SupplyChainProductApprovals`, tenant ghi đè qua `PolicyOverridePort`, đọc lúc approval
+   được tạo và đóng dấu lên dòng approval (cơ chế lát A). Chưa có route PUT. Dạng của
+   scope vẫn chỉ do CHECK của cột quyết.
+7. **Thông báo:** chỉ khi chính lần `ensure` đó tạo approval, trừ người yêu cầu; một
+   thông báo trong ứng dụng, liên kết `/approvals`. Gửi hỏng thì ghi log, approval vẫn đó.
+   Quyết định của lead nói "người giữ `supply_chain.approve.bod`"; code gửi cho người
+   trong workspace của hồ sơ giữ CẢ scope đã đóng dấu lẫn `approvals.decide` (người không
+   quyết được thì không được mời quyết). Phần thu hẹp này là **lệch của implementer, chờ
+   lead hoặc Đạt xác nhận**, không phải bản thân quyết định.
+8. **Vai `sc_bod`** = `sc_viewer` + `supply_chain.approve.bod` (migration
+   `5857ae25747a`); `supply_chain.approve.bod` ở phía vận hành của
+   `sod_sc_rules_vs_operations`. `approvals.decide` đến từ vai duyệt của nền tảng
+   (`approver`, `manager`, `director`) hoặc permission set `approver_boost`: người BGĐ của
+   Elmich giữ `sc_bod` cùng một trong số đó.
+9. **Trang hồ sơ** hiện approval đang chờ (id, lúc tạo, scope đã đóng dấu) và liên kết
+   `/approvals`; không tên người, không nút quyết. Đọc bằng `PendingApprovalsPort` (thêm
+   đúng một phương thức), lọc theo workspace của người gọi.

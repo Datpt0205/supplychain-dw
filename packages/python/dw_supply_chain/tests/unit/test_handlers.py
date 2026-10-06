@@ -2296,6 +2296,11 @@ class FakePendingApprovals:
         )
         return len(matching), matching[:limit]
 
+    async def pending_by_payload(
+        self, context: AccessContext, *, approval_type: str, key: str, value: str
+    ) -> ApprovalRequest | None:
+        raise NotImplementedError("not exercised by the daily brief")
+
 
 def _approval(
     context: AccessContext, *, po_case_id: object, requested_days_ago: int = 2

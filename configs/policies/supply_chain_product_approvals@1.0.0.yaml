@@ -1,0 +1,22 @@
+schema_version: "1.0"
+policy_id: supply_chain_product_approvals
+policy_version: "1.0.0"
+
+# Ai được QUYẾT từng approval của Hồ sơ phát triển sản phẩm (giai đoạn 1,
+# ADR 0016 và ADR 0020). Mỗi bước approval có một required_scope; lúc approval
+# được tạo, giá trị này được ĐÓNG DẤU lên dòng approval (cột required_scope) và
+# ApproveAndResumeService.decide đòi người quyết giữ cả approvals.decide lẫn
+# scope đó. Đổi file này (hoặc override của tenant) chỉ ảnh hưởng approval tạo
+# SAU; approval đang chờ giữ dấu cũ.
+#
+#   bod_review (bước 6): BGĐ duyệt mẫu đã đạt → vai sc_bod giữ
+#              supply_chain.approve.bod. Người BGĐ cần thêm một vai duyệt của nền
+#              tảng (approver, manager hoặc director) hoặc permission set
+#              approver_boost để có approvals.decide.
+#
+# Các bước trình ký của bước 9 (BGĐ, Kế toán; QE-10) thêm vào đây ở S4.
+#
+# Đây là PLATFORM DEFAULT. Tenant ghi đè toàn bộ document qua platform.policy_overrides
+# (PolicyOverridePort, cùng cơ chế các policy khác). Chưa có route PUT cho policy này.
+bod_review:
+  required_scope: supply_chain.approve.bod

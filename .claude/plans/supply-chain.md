@@ -59,7 +59,7 @@ means platform code, an upstream candidate (ADR 0011).
 | A     | `approval-decider-scope/issues/01-required-scope.md`                | yes     | resolved        | P                                   |
 | D     | `case-documents/issues/01-case-documents.md`                        | no      | resolved        | P                                   |
 | S1    | `stage-1/issues/01-product-case-steps-1-5.md`                       | no      | resolved        | P, D                                |
-| S2    | `stage-1/issues/02-bod-review-step-6.md`                            | no      | ready-for-agent | S1, A                               |
+| S2    | `stage-1/issues/02-bod-review-step-6.md`                            | no      | ready-for-human | S1, A                               |
 | S3    | `stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`     | no      | ready-for-agent | S2                                  |
 | S4    | `stage-1/issues/04-item-code-sku-signoff-step-9.md`                 | no      | ready-for-agent | S3                                  |
 | S5    | `stage-1/issues/05-place-order-hand-off.md`                         | no      | ready-for-agent | S4                                  |
@@ -70,10 +70,9 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                    | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                  | —       | ready-for-human | H                                   |
 
-**Next:** S2 (needs S1, A: both in). S2 must start the step-6 run from
-`pass_sample` in the same command and start or backfill cases already in
-`pending_bod_review` (S2 Comments). Z4 can start now (S1, U in); Z5 after Z4
-and S2; Z6 after Z4.
+**Next:** Z4 (S1, U in), then S3 (S2 in); Z5 after Z4 and Z2; Z6 after Z4.
+Platform hardening and the FCI rerank land from `platform/main` once the
+platform repo merges them (2026-10-06).
 
 Live runs that need a person, a phone or a domain are their own
 `ready-for-human` tickets (ZL, H2), so agent tickets can close honestly. The
@@ -89,13 +88,15 @@ email as a second channel.
 
 ## Slice log
 
-| Slice  | Commit    | What                                                                                                                                                                     |
-| ------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P, ENV | `c2f04dc` | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                                                                                 |
-| U, Z1  | `51c0ef7` | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                                                                                  |
-| A      | `dabf5c4` | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                                                                                     |
-| D      | `51e3400` | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep.                                                               |
-| S1     | `6dfb1ef` | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages. |
+| Slice  | Commit        | What                                                                                                                                                                     |
+| ------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P, ENV | `c2f04dc`     | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                                                                                 |
+| U, Z1  | `51c0ef7`     | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                                                                                  |
+| A      | `dabf5c4`     | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                                                                                     |
+| D      | `51e3400`     | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep.                                                               |
+| S1     | `6dfb1ef`     | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages. |
+| PR-02  | `7b411df`     | Platform: approvals, runs and audit read only the caller's workspace.                                                                                                    |
+| S2     | (this commit) | BGĐ review at step 6: graph-only approve/reject, decider as actor, idempotent start plus a reconcile lane, `sc_bod`.                                                     |
 
 ## Open — named, not fixed, still true after the port
 
@@ -231,6 +232,9 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
   point 1).
 - **QO-6** Confirm deferring container loading as its own step (step 14) until
   Elmich answers QE-15; until then it stays inside `qc` → `in_transit`.
+- **QO-9** Should a run that only waits for an approval (no model call, e.g. S2's
+  BGĐ review) count against the plan's run quota? Today it does; a tenant out of
+  runs has its review raised by the reconcile lane once runs are available.
 - **QO-8** Provisional choices made while building A, D, S1 (2026-10-05/06),
   recorded as amendments to ADR 0016, 0020, 0021 for review: `platform_admin`
   passes `required_scope`; cross-workspace approval reads left to

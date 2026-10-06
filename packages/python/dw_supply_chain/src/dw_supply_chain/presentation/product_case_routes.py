@@ -8,7 +8,9 @@ router. The product documents themselves are served by the documents router
 
 The propose body has no PIC field and refuses unknown fields
 (`extra="forbid"`), so a body naming a `pic_user_id` is a 422; the command
-behind it has no parameter for one either.
+behind it has no parameter for one either. A step body naming one of BGĐ's
+outcomes (`GRAPH_ONLY_ACTIONS`) is a 422 too, and the command refuses it again:
+BGĐ decides on the approval, at `/approvals`.
 
 No `from __future__ import annotations`, for the reason `routes.py` gives.
 """
@@ -19,7 +21,7 @@ from datetime import datetime
 from typing import Annotated, Protocol, TypeVar
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from dw_kernel.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Page
 from dw_platform.application.access_context import AccessContext
@@ -28,7 +30,11 @@ from dw_supply_chain.application.handlers import (
     SetProductActionDutiesOverride,
     duty_scope,
 )
-from dw_supply_chain.application.ports import ProductCaseListFilter
+from dw_supply_chain.application.ports import (
+    PendingApprovalRecord,
+    ProductCaseListFilter,
+    ReviewRaise,
+)
 from dw_supply_chain.application.product_cases import (
     AdvanceProductCase,
     GetProductCase,
@@ -38,6 +44,7 @@ from dw_supply_chain.application.product_cases import (
 )
 from dw_supply_chain.domain.case_document import DocumentType
 from dw_supply_chain.domain.product_development_case import (
+    GRAPH_ONLY_ACTIONS,
     ProductAction,
     ProductCaseTransition,
     ProductDevelopmentCase,
@@ -88,6 +95,13 @@ class AdvanceProductCaseRequest(BaseModel):
     supplier_name: str | None = Field(default=None, min_length=1, max_length=200, pattern=_NO_NUL)
     document_id: uuid.UUID | None = None
 
+    @field_validator("action")
+    @classmethod
+    def _a_step_a_person_takes(cls, action: ProductAction) -> ProductAction:
+        if action in GRAPH_ONLY_ACTIONS:
+            raise ValueError(f"{action.value} is BGĐ's decision, taken on its approval")
+        return action
+
 
 class ProductCaseView(BaseModel):
     id: uuid.UUID
@@ -129,9 +143,28 @@ class ProductActionOptionView(BaseModel):
     document_required: bool
 
 
+class PendingReviewView(BaseModel):
+    """The BGĐ review a waiting case is held on: which approval, since when,
+    and the scope stamped on it, which is who may decide it. Decided at
+    `/approvals`, never from the case."""
+
+    approval_id: uuid.UUID
+    created_at: datetime | None
+    required_scope: str | None
+
+
 class ProductCaseDetailView(ProductCaseView):
     rounds: list[SampleRoundView]
     actions: list[ProductActionOptionView]
+    pending_review: PendingReviewView | None
+
+
+class ProductCaseStepView(ProductCaseView):
+    """A step taken. `review` is set only for a step that left the case
+    waiting for BGĐ: `not_raised` means the step is recorded and the review
+    is not raised yet (the worker retries it)."""
+
+    review: ReviewRaise | None
 
 
 class ProductCaseTransitionView(BaseModel):
@@ -175,6 +208,16 @@ def _round_view(sample_round: SampleRound) -> SampleRoundView:
         closed_by=sample_round.closed_by,
         revision_document_id=sample_round.revision_document_id,
         requested_changes=sample_round.requested_changes,
+    )
+
+
+def _pending_review_view(approval: PendingApprovalRecord | None) -> PendingReviewView | None:
+    if approval is None:
+        return None
+    return PendingReviewView(
+        approval_id=approval.id,
+        created_at=approval.created_at,
+        required_scope=approval.required_scope,
     )
 
 
@@ -260,17 +303,18 @@ def build_product_cases_router(
                     )
                     for option in detail.case.action_options()
                 ],
+                "pending_review": _pending_review_view(detail.pending_review),
             }
         )
 
-    @router.post("/product-cases/{case_id}/transitions", response_model=ProductCaseView)
+    @router.post("/product-cases/{case_id}/transitions", response_model=ProductCaseStepView)
     async def create_product_case_transition(
         case_id: uuid.UUID,
         body: AdvanceProductCaseRequest,
         context: require_access_context,
         idempotency: require_idempotency,
-    ) -> ProductCaseView:
-        case = await advance.handle(
+    ) -> ProductCaseStepView:
+        result = await advance.handle(
             context,
             case_id=ProductDevelopmentCaseId(case_id),
             action=body.action,
@@ -278,7 +322,9 @@ def build_product_cases_router(
             supplier_name=body.supplier_name,
             document_id=body.document_id,
         )
-        return await idempotency.record(_view(case))
+        return await idempotency.record(
+            ProductCaseStepView.model_validate({**_fields(result.case), "review": result.review})
+        )
 
     @router.get(
         "/product-cases/{case_id}/transitions", response_model=list[ProductCaseTransitionView]

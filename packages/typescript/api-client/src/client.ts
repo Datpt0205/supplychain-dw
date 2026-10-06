@@ -25,6 +25,7 @@ import {
   caseDocumentSchema,
   productCaseSchema,
   productCaseDetailSchema,
+  productCaseStepSchema,
   productCaseTransitionSchema,
   productActionDutiesSchema,
   portfolioSummarySchema,
@@ -72,6 +73,8 @@ import {
   type DocumentType,
   type ProductCase,
   type ProductCaseDetail,
+  type ProductCaseStep,
+  type PendingReview,
   type ProductCaseTransition,
   type ProductActionDuties,
   type ProductCaseListFilter,
@@ -341,6 +344,7 @@ void _caseDocumentMirrorsTheRoute;
 const _productCaseMirrorsTheRoute: [
   SameType<ProductCase, SupplyChainGenerated["ProductCaseView"]>,
   SameType<ProductCaseDetail, SupplyChainGenerated["ProductCaseDetailView"]>,
+  SameType<ProductCaseStep, SupplyChainGenerated["ProductCaseStepView"]>,
   SameType<SampleRound, SupplyChainGenerated["SampleRoundView"]>,
   SameType<
     ProductActionOption,
@@ -356,7 +360,7 @@ const _productCaseMirrorsTheRoute: [
     keyof ProductActionDuties,
     keyof SupplyChainGenerated["SupplyChainProductActionDuties"]
   >,
-] = [true, true, true, true, true, true];
+] = [true, true, true, true, true, true, true];
 void _productCaseMirrorsTheRoute;
 
 export class ApiClient {
@@ -1251,7 +1255,7 @@ export class ApiClient {
     caseId: string,
     input: ProductCaseStepInput,
     idempotencyKey: string,
-  ): Promise<ProductCase> {
+  ): Promise<ProductCaseStep> {
     const body: ProductCaseStepBody = {
       action: input.action,
       reason: input.reason?.trim() ? input.reason.trim() : null,
@@ -1263,7 +1267,7 @@ export class ApiClient {
     return this.request(
       "POST",
       `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/transitions`,
-      productCaseSchema,
+      productCaseStepSchema,
       { body, idempotencyKey },
     );
   }
@@ -1379,6 +1383,8 @@ export type {
   DocumentType,
   ProductCase,
   ProductCaseDetail,
+  ProductCaseStep,
+  PendingReview,
   ProductCaseTransition,
   ProductActionDuties,
   ProductCaseListFilter,

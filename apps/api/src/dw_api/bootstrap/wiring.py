@@ -44,10 +44,12 @@ from dw_api.bootstrap.identity import build_token_verifier
 from dw_api.bootstrap.paths import (
     SUPPLY_CHAIN_ACTION_DUTIES,
     SUPPLY_CHAIN_ADVANCE_CASE_WORKER,
+    SUPPLY_CHAIN_ADVANCE_PRODUCT_CASE_WORKER,
     SUPPLY_CHAIN_APPROVAL_MATRIX_POLICY,
     SUPPLY_CHAIN_BRIEF_POLICY,
     SUPPLY_CHAIN_FOLLOW_UP_POLICY,
     SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES,
+    SUPPLY_CHAIN_PRODUCT_APPROVALS,
     SUPPLY_CHAIN_SLA_POLICY,
     WORKER_RUN_POLICY,
 )
@@ -75,6 +77,7 @@ from dw_platform.adapters.persistence.membership_lookup import SqlMembershipLook
 from dw_platform.adapters.persistence.notifications import SqlNotificationRepository
 from dw_platform.adapters.persistence.policy_overrides import SqlPolicyOverrideRepository
 from dw_platform.adapters.persistence.provisioning_repo import SqlProvisioningRepository
+from dw_platform.adapters.persistence.scope_holders import SqlScopeHolders
 from dw_platform.adapters.persistence.separation_of_duties_repo import (
     SqlSeparationOfDutiesRepository,
 )
@@ -552,8 +555,11 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         ListProductCaseTransitions,
         ProposeProductCase,
     )
+    from dw_supply_chain.application.product_reviews import EnsureBodReview
     from dw_supply_chain.domain.case_document import CaseKind
     from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
+    from dw_supply_chain.product_approvals import load_supply_chain_product_approvals
+    from dw_supply_chain.workflows import advance_product_case_graph as product_review_graph
 
     document_repo = SqlCaseDocumentRepository(wiring.seam.session_factory)
     document_storage = MinioCaseDocumentStorage(client=minio, bucket=settings.case_documents_bucket)
@@ -585,6 +591,36 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     platform_default_product_duties = load_supply_chain_product_action_duties(
         SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES
     )
+    # BGĐ's review (step 6): its graph registered once the case records it
+    # applies BGĐ's decision through exist, then its worker. Strict, like the
+    # PO prefix and with `|=` for the same reason: the requester cannot decide
+    # their own review and a decision needs a comment. Who else may decide is
+    # the `required_scope` each review is stamped with.
+    wiring.seam.graphs.register(
+        product_review_graph.WORKER_ID,
+        product_review_graph.GRAPH_VERSION,
+        lambda: product_review_graph.build_advance_product_case_graph(
+            product_case_repo, wiring.seam.ids, wiring.seam.clock
+        ),
+    )
+    wiring.seam.workers.load_file(SUPPLY_CHAIN_ADVANCE_PRODUCT_CASE_WORKER)
+    wiring.approval_flow.strict_approval_prefixes = (
+        wiring.approval_flow.strict_approval_prefixes
+        | frozenset({product_review_graph.APPROVAL_TYPE_PREFIX})
+    )
+    # The approval inbox, read through the narrow Protocol the context declares.
+    pending_approvals = SqlPendingApprovalQuery(wiring.seam.session_factory)
+    product_reviews = EnsureBodReview(
+        runner=wiring.runner,
+        approvals=pending_approvals,
+        holders=SqlScopeHolders(wiring.seam.session_factory),
+        notifier=SqlNotificationRepository(wiring.seam.session_factory),
+        policy_override_repo=policy_override_repo,
+        platform_default_approvals=load_supply_chain_product_approvals(
+            SUPPLY_CHAIN_PRODUCT_APPROVALS
+        ),
+        ids=wiring.seam.ids,
+    )
     container.supply_chain_propose_product_case = ProposeProductCase(
         repo=product_case_repo,
         authz=authorization,
@@ -598,6 +634,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         authz=authorization,
         policy_override_repo=policy_override_repo,
         platform_default_duties=platform_default_product_duties,
+        approvals=pending_approvals,
     )
     container.supply_chain_list_product_cases = ListProductCases(
         repo=product_case_repo, authz=authorization
@@ -608,6 +645,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         authz=authorization,
         policy_override_repo=policy_override_repo,
         platform_default_duties=platform_default_product_duties,
+        reviews=product_reviews,
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
     )

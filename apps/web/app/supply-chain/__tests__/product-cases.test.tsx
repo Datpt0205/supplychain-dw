@@ -143,6 +143,7 @@ function detail(overrides: Partial<ProductCaseDetail> = {}): ProductCaseDetail {
       },
     ],
     actions: TESTING_ACTIONS,
+    pending_review: null,
     ...overrides,
   };
 }
@@ -440,9 +441,10 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
         uploaded_at: "2026-10-05T01:00:00Z",
       }),
     ]);
-    takeProductCaseStep.mockResolvedValue(
-      productCase({ state: "pending_bod_review" }),
-    );
+    takeProductCaseStep.mockResolvedValue({
+      ...productCase({ state: "pending_bod_review" }),
+      review: "raised",
+    });
 
     fireEvent.click(await screen.findByRole("button", { name: "Mẫu đạt" }));
     const dialog = await screen.findByRole("dialog");
@@ -502,15 +504,19 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
     ).toBeTruthy();
   });
 
-  it("says a passed case waits for BGĐ and offers only exceptions and cancel", async () => {
-    scopes = new Set([RND, EXCEPTIONS, ORDERING]);
+  it("says who may decide a case waiting for BGĐ, links to the approvals, and offers only cancel", async () => {
+    scopes = new Set([RND, EXCEPTIONS, ORDERING, "approvals.decide"]);
     getProductCase.mockResolvedValue(
       detail({
         state: "pending_bod_review",
         actions: [
-          option("flag_blocked", { reason_required: true }),
           option("cancel", { required_scope: ORDERING, reason_required: true }),
         ],
+        pending_review: {
+          approval_id: "77777777-7777-4777-8777-777777777777",
+          created_at: "2026-10-06T02:00:00Z",
+          required_scope: "supply_chain.approve.bod",
+        },
       }),
     );
     renderDetail();
@@ -518,8 +524,94 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
     expect(
       await screen.findByText("Mẫu đã đạt; hồ sơ chờ BGĐ duyệt."),
     ).toBeTruthy();
-    expect(screen.getByText("Chờ BGĐ duyệt")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Mẫu đạt" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Báo bị chặn" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Chờ người có quyền BGĐ \(supply_chain\.approve\.bod\) duyệt/,
+      ),
+    ).toBeTruthy();
+    const link = screen.getByRole("link", { name: "Mở trang Phê duyệt" });
+    expect(link.getAttribute("href")).toBe("/approvals");
+    expect(screen.queryByText(/chưa có trên hệ thống/)).toBeNull();
+    // The page renders one button per action the server offers, so it cannot
+    // be where "no BGĐ decision here" is enforced: the server never offers
+    // bod_approve/bod_reject (`available_actions`, test_no_state_offers_a_
+    // graph_only_action) and refuses them with 422 if sent. What the page
+    // owns is rendering what it was given.
+    expect(screen.getByRole("button", { name: "Hủy hồ sơ" })).toBeTruthy();
+  });
+
+  it("says a case waiting for BGĐ has no review raised yet, and that it will be", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(
+      detail({
+        state: "pending_bod_review",
+        actions: [
+          option("cancel", { required_scope: ORDERING, reason_required: true }),
+        ],
+        pending_review: null,
+      }),
+    );
+    renderDetail();
+
+    expect(
+      await screen.findByText("Mẫu đã đạt; chưa trình được BGĐ."),
+    ).toBeTruthy();
+    expect(screen.getByText(/Hệ thống tự trình lại/)).toBeTruthy();
+    expect(
+      screen.queryByRole("link", { name: "Mở trang Phê duyệt" }),
+    ).toBeNull();
+  });
+
+  it("tells the tester when the review was not raised after a pass", async () => {
+    scopes = new Set([RND]);
+    getProductCase.mockResolvedValue(detail());
+    renderDetail();
+    listProductCaseDocuments.mockResolvedValue([evaluation()]);
+    takeProductCaseStep.mockResolvedValue({
+      ...productCase({ state: "pending_bod_review" }),
+      review: "not_raised",
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Mẫu đạt" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.mouseDown(within(dialog).getByRole("combobox"));
+    fireEvent.click(await screen.findByTitle(/bien-ban-vong-1\.pdf/));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mẫu đạt" }));
+
+    expect(
+      await screen.findByText(
+        "Đã ghi: Mẫu đạt. Chưa trình được BGĐ; hệ thống sẽ tự trình lại.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows BGĐ's decision in the history with its comment and the decider", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(
+      detail({ state: "cancelled", actions: [] }),
+    );
+    listProductCaseDocuments.mockResolvedValue([]);
+    listProductCaseTransitions.mockResolvedValue([
+      {
+        action: "bod_reject",
+        from_state: "pending_bod_review",
+        to_state: "cancelled",
+        reason: "Giá vốn vượt mục tiêu",
+        actor_id: "88888888-8888-4888-8888-888888888888",
+        occurred_at: "2026-10-06T03:00:00Z",
+      },
+    ]);
+    // Not `renderDetail()`, which empties the history first.
+    render(
+      <App>
+        <ProductCasePage />
+      </App>,
+    );
+
+    expect(
+      await screen.findByText(/BGĐ không duyệt · Chờ BGĐ duyệt → Đã hủy/),
+    ).toBeTruthy();
+    expect(screen.getByText("Giá vốn vượt mục tiêu")).toBeTruthy();
+    expect(screen.getByText(/người 8888/)).toBeTruthy();
   });
 });

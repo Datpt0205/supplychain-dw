@@ -48,6 +48,11 @@ class WorkerSettings(BaseSettings):
     # How often Supply Chain's follow-up sweep runs. Five minutes by default;
     # a tester sets 60 to see a reminder land within the minute.
     supply_chain_follow_up_interval_seconds: float = Field(default=300.0, ge=10, le=86400)
+    # How often the BGĐ review reconcile looks for product cases waiting with
+    # no review. Five minutes: a review a start missed waits at most that long.
+    supply_chain_product_review_reconcile_interval_seconds: float = Field(
+        default=300.0, ge=10, le=86400
+    )
 
     # Prometheus scrape target for this process (Ops hardening Phase 5). 9464
     # is the OTel/Prometheus exporter's own convention default; dw-api has no

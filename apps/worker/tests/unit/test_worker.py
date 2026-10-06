@@ -101,7 +101,7 @@ def test_a_host_with_no_infrastructure_wires_no_lane() -> None:
 
 
 def test_only_the_platform_lanes_are_wired() -> None:
-    """Eight lanes a database alone is enough for, and no more.
+    """Nine lanes a database alone is enough for, and no more.
 
     The outbox, and retention twice. Retention joined the platform set the day
     memory got a lifecycle: `memory.items` is a platform table, so the platform
@@ -129,6 +129,10 @@ def test_only_the_platform_lanes_are_wired() -> None:
     `supply_chain_follow_ups` is the first context lane: Supply Chain's sweep
     that turns due reminders, escalations and SLA breaches into follow-ups
     and notifications. It owns no job queue, so it brings no ReapTarget.
+    `supply_chain_product_review_reconcile` is the second: it raises BGĐ's
+    review for a product case waiting without one (a refused or failed start,
+    or a case that reached the state before the review existed). It starts
+    runs, so this process hosts the review graph; it claims no queue either.
 
     Naming the whole set is the point: a context's lane arriving in this process
     becomes a visible change rather than a silent one.
@@ -143,6 +147,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "notifications_retention",
         "channel_link_nonces_retention",
         "supply_chain_follow_ups",
+        "supply_chain_product_review_reconcile",
     }
 
 
@@ -194,3 +199,20 @@ def test_the_follow_up_sweep_runs_on_its_own_configurable_cadence(
     )
     assert default.interval_for("supply_chain_follow_ups", 1.0) == 300.0
     assert quick.interval_for("supply_chain_follow_ups", 1.0) == 60.0
+
+
+def test_the_bgd_review_reconcile_runs_on_its_own_configurable_cadence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(
+        "DW_WORKER_SUPPLY_CHAIN_PRODUCT_REVIEW_RECONCILE_INTERVAL_SECONDS", raising=False
+    )
+    default = build_registry(bare_settings(database_url="postgresql+asyncpg://dw:dw@localhost/dw"))
+    quick = build_registry(
+        bare_settings(
+            database_url="postgresql+asyncpg://dw:dw@localhost/dw",
+            supply_chain_product_review_reconcile_interval_seconds=30,
+        )
+    )
+    assert default.interval_for("supply_chain_product_review_reconcile", 1.0) == 300.0
+    assert quick.interval_for("supply_chain_product_review_reconcile", 1.0) == 30.0

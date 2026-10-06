@@ -22,6 +22,7 @@ from dw_supply_chain.domain.case_document import (
     DocumentType,
 )
 from dw_supply_chain.domain.product_development_case import (
+    GRAPH_ONLY_ACTIONS,
     PRODUCT_REASON_REQUIRED_ACTIONS,
     ProductAction,
     ProductActionInput,
@@ -208,6 +209,8 @@ _FORWARD_FROM: dict[ProductAction, ProductDevState] = {
     ProductAction.REQUEST_REVISION: ProductDevState.SAMPLE_TESTING,
     ProductAction.RECEIVE_REVISED_SAMPLE: ProductDevState.REVISION_REQUESTED,
     ProductAction.REJECT_SAMPLE: ProductDevState.SAMPLE_TESTING,
+    ProductAction.BOD_APPROVE: ProductDevState.PENDING_BOD_REVIEW,
+    ProductAction.BOD_REJECT: ProductDevState.PENDING_BOD_REVIEW,
 }
 
 
@@ -298,6 +301,8 @@ def test_the_reason_required_set_is_the_tickets() -> None:
         ProductAction.FLAG_BLOCKED,
         ProductAction.FLAG_MANUAL_REVIEW,
         ProductAction.CANCEL,
+        # BGĐ's comment is the reason a rejected case was cancelled (QE-08).
+        ProductAction.BOD_REJECT,
     } == PRODUCT_REASON_REQUIRED_ACTIONS
 
 
@@ -382,7 +387,7 @@ def test_an_action_without_a_document_type_refuses_a_document() -> None:
         ProductDevState.SAMPLE_REQUESTED,
         ProductDevState.SAMPLE_TESTING,
         ProductDevState.REVISION_REQUESTED,
-        ProductDevState.PENDING_BOD_REVIEW,
+        ProductDevState.PROFILE_IN_PROGRESS,
     ],
 )
 def test_an_interrupt_then_resume_returns_to_where_it_paused(
@@ -420,6 +425,21 @@ def test_an_interrupted_or_cancelled_case_cannot_be_interrupted_again(
         case.flag_blocked(actor_id=PIC, reason="x")
 
 
+@pytest.mark.parametrize(
+    "action",
+    [ProductAction.WAIT_FOR_EXTERNAL, ProductAction.FLAG_BLOCKED, ProductAction.FLAG_MANUAL_REVIEW],
+)
+def test_a_case_waiting_for_bgd_cannot_be_paused(action: ProductAction) -> None:
+    """While BGĐ decides nothing outside is awaited (lead decision 6): the
+    only step is cancel. Refused here, not only left off the page."""
+    case = _in_state(ProductDevState.PENDING_BOD_REVIEW)
+    with pytest.raises(ConflictError):
+        apply_product_action(case, action=action, given=ProductActionInput(PIC, reason="chờ"))
+    assert_state(case, ProductDevState.PENDING_BOD_REVIEW)
+    assert_interrupted(case, None)
+    assert case.pop_pending_steps() == []
+
+
 def test_resume_is_refused_when_nothing_is_paused() -> None:
     case = _in_state(ProductDevState.SAMPLE_TESTING)
     with pytest.raises(ConflictError):
@@ -448,6 +468,7 @@ def test_cancel_while_a_sample_is_in_test_closes_its_round(paused_first: bool) -
         ProductDevState.SAMPLE_REQUESTED,
         ProductDevState.REVISION_REQUESTED,
         ProductDevState.PENDING_BOD_REVIEW,
+        ProductDevState.PROFILE_IN_PROGRESS,
         ProductDevState.WAITING_EXTERNAL,
     ],
 )
@@ -467,6 +488,42 @@ def test_cancel_from_an_interrupt_clears_it_and_a_cancelled_case_cannot_cancel()
     assert case.interrupted_state is None
     with pytest.raises(ConflictError):
         case.cancel(actor_id=PIC, reason="lần hai")
+
+
+# --- step 6: BGĐ's decision, applied by the graph --------------------------------
+
+BOD = uuid.uuid4()
+
+
+def test_bgd_approving_moves_the_case_to_the_profile_as_the_decider() -> None:
+    case = _in_state(ProductDevState.PENDING_BOD_REVIEW)
+    apply_product_action(case, action=ProductAction.BOD_APPROVE, given=ProductActionInput(BOD))
+    assert_state(case, ProductDevState.PROFILE_IN_PROGRESS)
+    (step,) = case.pop_pending_steps()
+    assert (step.action, step.from_state, step.to_state) == (
+        ProductAction.BOD_APPROVE,
+        ProductDevState.PENDING_BOD_REVIEW,
+        ProductDevState.PROFILE_IN_PROGRESS,
+    )
+    assert (step.actor_id, step.reason, step.closes_round) == (BOD, None, None)
+
+
+def test_bgd_rejecting_cancels_the_case_with_bgds_comment_as_the_reason() -> None:
+    case = _in_state(ProductDevState.PENDING_BOD_REVIEW)
+    apply_product_action(
+        case,
+        action=ProductAction.BOD_REJECT,
+        given=ProductActionInput(BOD, reason="Giá vốn quá cao so với mục tiêu"),
+    )
+    assert_state(case, ProductDevState.CANCELLED)
+    (step,) = case.pop_pending_steps()
+    assert (step.action, step.actor_id, step.reason) == (
+        ProductAction.BOD_REJECT,
+        BOD,
+        "Giá vốn quá cao so với mục tiêu",
+    )
+    # The round closed when the sample passed; a rejection closes nothing.
+    assert step.closes_round is None
 
 
 # --- documents: this case, this type, this round --------------------------------
@@ -573,8 +630,8 @@ def test_reject_refuses_an_evaluation_from_another_case() -> None:
             },
         ),
         (ProductDevState.REVISION_REQUESTED, {ProductAction.RECEIVE_REVISED_SAMPLE}),
-        # Terminal for now (S1): BGĐ review starts in S2.
-        (ProductDevState.PENDING_BOD_REVIEW, set()),
+        # Step 7 (complete_profile) is S3's.
+        (ProductDevState.PROFILE_IN_PROGRESS, set()),
     ],
 )
 def test_available_actions_are_the_states_own_steps_plus_the_exceptions(
@@ -587,6 +644,23 @@ def test_available_actions_are_the_states_own_steps_plus_the_exceptions(
         ProductAction.CANCEL,
     }
     assert _in_state(state).available_actions() == frozenset(forward | exceptions)
+
+
+def test_a_case_waiting_for_bgd_offers_only_cancel() -> None:
+    """BGĐ's two outcomes are the graph's to apply, never a person's button,
+    and nothing outside is awaited while BGĐ decides (lead decision 6)."""
+    assert _in_state(ProductDevState.PENDING_BOD_REVIEW).available_actions() == {
+        ProductAction.CANCEL
+    }
+
+
+@pytest.mark.parametrize("state", list(ProductDevState))
+def test_no_state_offers_a_graph_only_action(state: ProductDevState) -> None:
+    assert not _in_state(state).available_actions() & GRAPH_ONLY_ACTIONS
+
+
+def test_the_graph_only_actions_are_bgds_two_outcomes() -> None:
+    assert {ProductAction.BOD_APPROVE, ProductAction.BOD_REJECT} == GRAPH_ONLY_ACTIONS
 
 
 def test_available_actions_of_a_paused_and_a_cancelled_case() -> None:

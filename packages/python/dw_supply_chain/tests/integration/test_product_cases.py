@@ -676,6 +676,8 @@ async def test_the_state_and_action_checks_are_exactly_the_domains(db: _Db) -> N
     states = {s.value for s in ProductDevState}
     assert await _check_values(db, "ck_product_dev_cases_state") == states
     assert await _check_values(db, "ck_product_dev_case_state_transitions_to_state") == states
+    assert await _check_values(db, "ck_product_dev_case_state_transitions_from_state") == states
+    assert await _check_values(db, "ck_product_dev_cases_interrupted_state") == states
     assert await _check_values(db, "ck_product_dev_case_state_transitions_action") == {
         a.value for a in ProductAction
     }

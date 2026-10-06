@@ -123,8 +123,9 @@ def _position(case: ProductDevelopmentCase) -> CursorPosition:
 
 @dataclass(frozen=True)
 class SqlProductCaseRepository:
-    """Implements `ProductCaseRepositoryPort`, and `case_documents`'
-    `CaseLookupPort` for the product kind."""
+    """Implements `ProductCaseRepositoryPort`, the review graph's
+    `ProductCaseReviewPort`, and `case_documents`' `CaseLookupPort` for the
+    product kind."""
 
     session_factory: async_sessionmaker[AsyncSession]
 
@@ -321,6 +322,14 @@ class SqlProductCaseRepository:
                 raise
             raise refusal from exc
 
+    async def append_audit(self, context: AccessContext, audit: AuditEvent) -> None:
+        """An audit event about a case that changes nothing on it: the review
+        graph recording that BGĐ's decision found the case moved on."""
+        async with tenant_session(
+            self.session_factory, TenantScope.from_access_context(context)
+        ) as session:
+            await SqlAuditRepository(session).append(audit)
+
     async def list_page(
         self, context: AccessContext, request: PageRequest, case_filter: ProductCaseListFilter
     ) -> Page[ProductDevelopmentCase]:
@@ -405,3 +414,25 @@ class SqlProductCaseRepository:
             )
             for row in rows
         ]
+
+
+@dataclass(frozen=True)
+class SqlWorkspacesAwaitingReview:
+    """Implements `WorkspacesAwaitingReviewPort` through
+    `supply_chain.workspaces_awaiting_bod_review()`, the one SECURITY DEFINER
+    read that crosses tenants for the reconcile lane. Ids only; every read
+    after it runs under that tenant's and workspace's RLS."""
+
+    session_factory: async_sessionmaker[AsyncSession]
+
+    async def awaiting_bod_review(self) -> list[tuple[uuid.UUID, uuid.UUID]]:
+        async with self.session_factory() as session, session.begin():
+            rows = (
+                await session.execute(
+                    sa.text(
+                        "SELECT tenant_id, workspace_id"
+                        " FROM supply_chain.workspaces_awaiting_bod_review()"
+                    )
+                )
+            ).all()
+        return [(row.tenant_id, row.workspace_id) for row in rows]

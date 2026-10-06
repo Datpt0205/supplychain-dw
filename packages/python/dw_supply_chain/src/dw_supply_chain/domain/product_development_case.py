@@ -1,5 +1,5 @@
 """The product-development case: one proposed product through stage 1 of the
-Elmich process, steps 1-5 in this slice (stage-1 ticket 01, ADR 0016).
+Elmich process, steps 1-6 so far (stage-1 tickets 01 and 02, ADR 0016).
 
 Same shape as `POCase`: a mutable dataclass whose named methods are the only
 way its state moves, a closed action enum, and one dispatch,
@@ -19,9 +19,14 @@ way its state moves, a closed action enum, and one dispatch,
   handler fetches the document the caller named under RLS and hands it in; the
   rule that it belongs to the round is decided here, once.
 
+- **Some steps are no person's button.** BGĐ's two outcomes of step 6
+  (`GRAPH_ONLY_ACTIONS`) are applied by the review graph after the approval is
+  decided, with the decider as the actor; `available_actions` never offers
+  them and the step command refuses them.
+
 The PIC is stamped from the actor at `propose` and nowhere else takes one.
-Steps 6 onwards (BGĐ review, BM04, item code, sign-off, ĐẶT HÀNG) are later
-tickets; `pending_bod_review` is where this slice stops.
+Steps 7 onwards (BM04, item code, sign-off, ĐẶT HÀNG) are later tickets;
+`profile_in_progress` is where this one stops.
 """
 
 from __future__ import annotations
@@ -51,8 +56,11 @@ class ProductDevState(StrEnum):
     SAMPLE_REQUESTED = "sample_requested"
     SAMPLE_TESTING = "sample_testing"
     REVISION_REQUESTED = "revision_requested"
-    # Terminal for now: S2 starts the BGĐ review from `pass_sample`.
+    # Waiting for BGĐ's decision on the passed sample (step 6). Only the review
+    # graph moves it on; a person may only cancel.
     PENDING_BOD_REVIEW = "pending_bod_review"
+    # BGĐ approved; R&D completes the BM04 profile (step 7, S3).
+    PROFILE_IN_PROGRESS = "profile_in_progress"
 
     WAITING_EXTERNAL = "waiting_external"
     BLOCKED = "blocked"
@@ -85,7 +93,15 @@ class ProductAction(StrEnum):
     FLAG_MANUAL_REVIEW = "flag_manual_review"
     RESUME = "resume"
     CANCEL = "cancel"
+    # Step 6: BGĐ's decision, applied by the review graph, never by a person.
+    BOD_APPROVE = "bod_approve"
+    BOD_REJECT = "bod_reject"
 
+
+# The steps only a workflow applies, after an approval is decided. One owner:
+# the step command refuses them, the duty policy may not name them, and no
+# state offers them.
+GRAPH_ONLY_ACTIONS = frozenset({ProductAction.BOD_APPROVE, ProductAction.BOD_REJECT})
 
 PRODUCT_REASON_REQUIRED_ACTIONS = frozenset(
     {
@@ -95,6 +111,8 @@ PRODUCT_REASON_REQUIRED_ACTIONS = frozenset(
         ProductAction.FLAG_BLOCKED,
         ProductAction.FLAG_MANUAL_REVIEW,
         ProductAction.CANCEL,
+        # BGĐ's comment is why the case was cancelled (QE-08, provisional).
+        ProductAction.BOD_REJECT,
     }
 )
 
@@ -115,6 +133,11 @@ _FORWARD: dict[ProductAction, tuple[ProductDevState, ProductDevState]] = {
         ProductDevState.SAMPLE_TESTING,
     ),
     ProductAction.REJECT_SAMPLE: (ProductDevState.SAMPLE_TESTING, ProductDevState.CANCELLED),
+    ProductAction.BOD_APPROVE: (
+        ProductDevState.PENDING_BOD_REVIEW,
+        ProductDevState.PROFILE_IN_PROGRESS,
+    ),
+    ProductAction.BOD_REJECT: (ProductDevState.PENDING_BOD_REVIEW, ProductDevState.CANCELLED),
 }
 _INTERRUPTS: dict[ProductAction, ProductDevState] = {
     ProductAction.WAIT_FOR_EXTERNAL: ProductDevState.WAITING_EXTERNAL,
@@ -292,7 +315,13 @@ class ProductDevelopmentCase:
             return frozenset()
         if self.state in PRODUCT_INTERRUPT_STATES:
             return frozenset({ProductAction.RESUME, ProductAction.CANCEL})
-        forward = {action for action, (source, _) in _FORWARD.items() if source is self.state}
+        if self.state is ProductDevState.PENDING_BOD_REVIEW:
+            return frozenset({ProductAction.CANCEL})
+        forward = {
+            action
+            for action, (source, _) in _FORWARD.items()
+            if source is self.state and action not in GRAPH_ONLY_ACTIONS
+        }
         return frozenset({*forward, *_INTERRUPTS, ProductAction.CANCEL})
 
     def action_options(self) -> list[ProductActionOption]:
@@ -446,11 +475,32 @@ class ProductDevelopmentCase:
             closes_round=RoundClosure(self.sample_round, SampleResult.REJECTED, document_id, None),
         )
 
+    # -- step 6, applied by the review graph ---------------------------------------
+
+    def bod_approve(self, *, actor_id: uuid.UUID) -> None:
+        """BGĐ approved the sample: R&D completes the profile next. `actor_id`
+        is the decider; their comment stays on the approval's decision row."""
+        target = self._expect(ProductAction.BOD_APPROVE)
+        self._move(ProductAction.BOD_APPROVE, target, actor_id=actor_id)
+
+    def bod_reject(self, *, actor_id: uuid.UUID, reason: str | None) -> None:
+        """BGĐ did not approve: the case is cancelled, BGĐ's comment its reason
+        (QE-08). The round closed when the sample passed."""
+        why = _reason(ProductAction.BOD_REJECT, reason)
+        target = self._expect(ProductAction.BOD_REJECT)
+        self._move(ProductAction.BOD_REJECT, target, actor_id=actor_id, reason=why)
+
     # -- interrupts, resume, cancel ----------------------------------------------
 
     def _interrupt(self, action: ProductAction, *, actor_id: uuid.UUID, reason: str | None) -> None:
         why = _reason(action, reason)
-        if self.state in PRODUCT_TERMINAL_STATES or self.state in PRODUCT_INTERRUPT_STATES:
+        # Nothing outside is awaited while BGĐ decides (lead decision 6): a
+        # pause there would leave the approval waiting on a case that is not.
+        if (
+            self.state in PRODUCT_TERMINAL_STATES
+            or self.state in PRODUCT_INTERRUPT_STATES
+            or self.state is ProductDevState.PENDING_BOD_REVIEW
+        ):
             raise ConflictError(
                 f"cannot {action.value} from {self.state.value}",
                 details={"case_id": str(self.id), "current_state": self.state.value},
@@ -546,6 +596,10 @@ _STEPS: dict[ProductAction, Callable[[ProductDevelopmentCase, ProductActionInput
     ProductAction.CANCEL: lambda case, given: case.cancel(
         actor_id=given.actor_id, reason=given.reason
     ),
+    ProductAction.BOD_APPROVE: lambda case, given: case.bod_approve(actor_id=given.actor_id),
+    ProductAction.BOD_REJECT: lambda case, given: case.bod_reject(
+        actor_id=given.actor_id, reason=given.reason
+    ),
 }
 
 
@@ -553,8 +607,10 @@ def apply_product_action(
     case: ProductDevelopmentCase, *, action: ProductAction, given: ProductActionInput
 ) -> None:
     """Dispatches one `ProductAction` to the method it names: the one owner of
-    that mapping, as `apply_action` is for `POCase`. `propose` is not here:
-    it opens a case rather than moving one."""
+    that mapping, as `apply_action` is for `POCase`, for the step command and
+    the review graph alike. `propose` is not here: it opens a case rather
+    than moving one. Who may ask for which action is the callers' to decide
+    (`AdvanceProductCase` refuses `GRAPH_ONLY_ACTIONS`)."""
     if action is ProductAction.PROPOSE:
         raise DomainError(
             "propose opens a new case; it is not a step on one", details={"action": action.value}

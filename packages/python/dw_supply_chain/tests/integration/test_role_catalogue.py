@@ -19,10 +19,11 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
-from supply_chain_harness import DatabaseUrls
+from supply_chain_harness import REPO_ROOT, DatabaseUrls
 
 from dw_supply_chain.action_duties import CaseDuty
 from dw_supply_chain.application import handlers
+from dw_supply_chain.product_approvals import load_supply_chain_product_approvals
 
 pytestmark = pytest.mark.integration
 
@@ -35,13 +36,18 @@ _PO_OPERATING_ROLES = (
     "sc_warehouse",
 )
 _OPERATING_ROLES = (*_PO_OPERATING_ROLES, "sc_rnd")
-_SC_ROLES = ("sc_viewer", *_OPERATING_ROLES, "sc_process_admin")
+_SC_ROLES = ("sc_viewer", *_OPERATING_ROLES, "sc_bod", "sc_process_admin")
+# The scope BGĐ's review is stamped with under the platform policy (step 6).
+_APPROVE_BOD = load_supply_chain_product_approvals(
+    REPO_ROOT / "configs" / "policies" / "supply_chain_product_approvals@1.0.0.yaml"
+).bod_review.required_scope
 _OPERATIONS = {
     "supply_chain.po_case.write",
     "supply_chain.supplier_update.write",
     "supply_chain.delay_impact.write",
     handlers.DOCUMENT_WRITE,
     handlers.PRODUCT_CASE_WRITE,
+    _APPROVE_BOD,
 } | {handlers.duty_scope(duty) for duty in CaseDuty}
 _POLICY_WRITES = {
     "supply_chain.sla_policy.write",
@@ -57,7 +63,7 @@ def _checked_scopes() -> set[str]:
         for value in vars(handlers).values()
         if isinstance(value, str) and re.fullmatch(r"supply_chain\.[a-z_]+\.(read|write)", value)
     }
-    return constants | {handlers.duty_scope(duty) for duty in CaseDuty}
+    return constants | {handlers.duty_scope(duty) for duty in CaseDuty} | {_APPROVE_BOD}
 
 
 @pytest.fixture
@@ -91,6 +97,7 @@ def test_the_scope_collector_sees_what_the_handlers_check() -> None:
     checked = _checked_scopes()
     assert {"supply_chain.po_case.read", "supply_chain.duty.finance"} <= checked
     assert checked >= _OPERATIONS | _POLICY_WRITES
+    assert _APPROVE_BOD == "supply_chain.approve.bod"
 
 
 async def test_every_scope_the_context_checks_is_granted_by_a_supply_chain_role(
@@ -183,6 +190,36 @@ async def test_rnd_holds_exactly_the_viewer_its_duty_and_the_document_write(
     }
 
 
+async def test_bgd_holds_exactly_the_viewer_and_the_bgd_review_scope(
+    engine: AsyncEngine,
+) -> None:
+    """Step 6 (ticket 02, lead decision 11): `sc_bod` reads what a viewer
+    reads, product cases included, and decides BGĐ's reviews; it takes no
+    step and adds no paper. Deciding also needs `approvals.decide`, which
+    stays on the platform ladder."""
+    catalogue = await _catalogue(engine)
+    assert handlers.PRODUCT_CASE_READ in catalogue["sc_viewer"]
+    assert catalogue["sc_bod"] == catalogue["sc_viewer"] | {_APPROVE_BOD}
+    assert {key for key, scopes in catalogue.items() if _APPROVE_BOD in scopes} == {"sc_bod"}
+    assert "approvals.decide" not in catalogue["sc_bod"]
+
+
+async def test_a_bgd_member_gets_the_decide_right_from_the_platform_ladder(
+    engine: AsyncEngine,
+) -> None:
+    """How an Elmich BGĐ member holds both scopes `decide` asks for:
+    `sc_bod` beside a platform approval role or the `approver_boost` set."""
+    catalogue = await _catalogue(engine)
+    for platform_role in ("approver", "manager", "director"):
+        assert "approvals.decide" in catalogue[platform_role], platform_role
+    async with engine.connect() as conn:
+        boost = await conn.scalar(
+            text("SELECT scopes FROM platform.permission_sets WHERE key = 'approver_boost'")
+        )
+    assert "approvals.decide" in boost
+    assert await _violation(engine, "sc_bod", "approver") is None
+
+
 async def test_whoever_opens_a_po_case_opens_a_product_case_and_nobody_else(
     engine: AsyncEngine,
 ) -> None:
@@ -215,6 +252,8 @@ async def test_no_single_role_both_sets_the_rules_and_runs_cases(engine: AsyncEn
         (("sc_operator", "sc_warehouse"), "sod_sc_ordering_vs_receiving"),
         (("sc_operator", "sc_qc"), "sod_sc_ordering_vs_qc"),
         *((("sc_process_admin", role), "sod_sc_rules_vs_operations") for role in _OPERATING_ROLES),
+        # Whoever sets the process rules does not also decide BGĐ's reviews.
+        (("sc_process_admin", "sc_bod"), "sod_sc_rules_vs_operations"),
     ],
 )
 async def test_conflicting_roles_cannot_meet_in_one_membership(
@@ -234,6 +273,7 @@ async def test_conflicting_roles_cannot_meet_in_one_membership(
         # No ordering-vs-R&D rule until Elmich answers QE-16.
         ("sc_rnd", "sc_operator"),
         ("sc_rnd", "sc_qc"),
+        ("sc_bod", "sc_viewer"),
     ],
 )
 async def test_roles_without_a_conflict_can_be_held_together(

@@ -157,3 +157,36 @@ def test_product_cases_are_wired_with_their_own_duty_policy_and_both_case_kinds(
         "supply_chain_set_product_action_duties_override",
     ):
         assert getattr(container, name) is not None, name
+
+
+def test_bgd_review_is_wired_strict_hosted_and_raised_by_the_step() -> None:
+    """Step 6 (ticket 02): the review's approval type is strict (requester
+    cannot decide, a comment is required), this process hosts its graph so
+    a decision resumes here, and the step command raises it on the same
+    runner the approval flow resumes with, under the shipped policy."""
+    from dw_supply_chain.application.product_reviews import EnsureBodReview
+    from dw_supply_chain.workflows import advance_product_case_graph as graph
+
+    container = build_container(_settings())
+
+    flow = container.approval_flow
+    assert flow is not None
+    assert flow.is_strict(graph.BOD_REVIEW_APPROVAL_TYPE)
+    # The PO prefix survived the second `|=`.
+    assert flow.is_strict("supply_chain.case_action.request_deposit")
+    assert container.runner is not None
+    assert container.runner.hosts(
+        worker_id=graph.WORKER_ID,
+        worker_version=graph.WORKER_VERSION,
+        graph_version=graph.GRAPH_VERSION,
+    )
+    advance = container.supply_chain_advance_product_case
+    assert advance is not None
+    assert isinstance(advance.reviews, EnsureBodReview)
+    assert advance.reviews.runner is container.runner
+    assert advance.reviews.platform_default_approvals.bod_review.required_scope == (
+        "supply_chain.approve.bod"
+    )
+    get = container.supply_chain_get_product_case
+    assert get is not None
+    assert get.approvals is advance.reviews.approvals

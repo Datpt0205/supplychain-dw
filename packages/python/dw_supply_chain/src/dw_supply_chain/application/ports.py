@@ -10,8 +10,10 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
 from datetime import datetime
-from typing import Protocol
+from enum import StrEnum
+from typing import Any, Protocol
 
+from dw_agent_runtime.contracts import RunContext
 from dw_kernel.pagination import Page, PageQuery, PageRequest
 from dw_platform.application.access_context import AccessContext
 from dw_platform.domain.audit import AuditEvent
@@ -240,6 +242,8 @@ class PendingApprovalRecord(Protocol):
     def payload(self) -> Mapping[str, object]: ...
     @property
     def created_at(self) -> datetime | None: ...
+    @property
+    def required_scope(self) -> str | None: ...
 
 
 class PendingApprovalsPort(Protocol):
@@ -257,6 +261,117 @@ class PendingApprovalsPort(Protocol):
         `prefix`, and the newest `limit` of them. `prefix` is matched
         literally: an `_` in it is not a wildcard."""
         ...
+
+    async def pending_by_payload(
+        self, context: AccessContext, *, approval_type: str, key: str, value: str
+    ) -> PendingApprovalRecord | None:
+        """The newest pending approval of exactly `approval_type` whose
+        payload's top-level `key` equals `value`: a product case's BGĐ
+        review, by `product_dev_case_id`. None when there is none."""
+        ...
+
+
+class ReviewRaise(StrEnum):
+    """What asking for BGĐ's review of a case did."""
+
+    # This call raised the approval (and told the people who may decide it).
+    RAISED = "raised"
+    # The case's review was already waiting for a decision.
+    ALREADY_PENDING = "already_pending"
+    # No approval exists after the attempt: the run was refused (plan quota,
+    # spend ceiling), failed, or is still being raised elsewhere. The case
+    # waits in `pending_bod_review` and the reconcile lane tries again.
+    NOT_RAISED = "not_raised"
+    # The case is not waiting for BGĐ; nothing to raise.
+    NOT_WAITING = "not_waiting"
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewRequester:
+    """Who asks for the review, with the authority the run is stamped with
+    (`worker_runs.requested_by` and `actor_*`): the requester of the approval,
+    whom the strict prefix keeps from deciding it."""
+
+    principal_id: uuid.UUID
+    roles: frozenset[str]
+    scopes: frozenset[str]
+    plan_id: str
+    channel: str
+
+    @classmethod
+    def from_context(cls, context: AccessContext) -> ReviewRequester:
+        return cls(
+            principal_id=context.principal_id,
+            roles=context.roles,
+            scopes=context.scopes,
+            plan_id=context.plan_id,
+            channel="web",
+        )
+
+
+class BodReviewPort(Protocol):
+    """Raises BGĐ's review of a case waiting for it, once per sample round
+    (`application.product_reviews.EnsureBodReview`)."""
+
+    async def ensure(
+        self, context: AccessContext, case: ProductDevelopmentCase, requester: ReviewRequester
+    ) -> ReviewRaise: ...
+
+
+class ReviewRunStarterPort(Protocol):
+    """Starts the review graph's run. `dw_agent_runtime`'s runner satisfies it;
+    `uq_worker_runs_active_thread` refuses a second unfinished run on one
+    thread with a `ConflictError` naming the thread."""
+
+    async def start(
+        self, *, run_context: RunContext, input_payload: dict[str, Any]
+    ) -> uuid.UUID: ...
+
+
+class ProductCaseReviewPort(Protocol):
+    """What the BGĐ review graph does to a case once the approval is decided:
+    read it, save BGĐ's step, or record that it applied nothing because the
+    case had moved on. `SqlProductCaseRepository` satisfies it."""
+
+    async def get(
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId
+    ) -> ProductDevelopmentCase | None: ...
+
+    async def save(
+        self, context: AccessContext, case: ProductDevelopmentCase, *, audit: AuditEvent
+    ) -> None: ...
+
+    async def append_audit(self, context: AccessContext, audit: AuditEvent) -> None: ...
+
+
+class ReviewNotifierPort(Protocol):
+    """Delivers one in-app message to people in `context`'s workspace, once
+    per `source_key`. Declared here, satisfied by `dw_platform`'s inbox."""
+
+    async def deliver(
+        self,
+        context: AccessContext,
+        *,
+        recipients: Sequence[uuid.UUID],
+        source_key: str,
+        title: str,
+        body: str,
+        link: str | None,
+    ) -> None: ...
+
+
+class WorkspacesAwaitingReviewPort(Protocol):
+    """The one cross-tenant read the review reconcile lane needs: which
+    (tenant, workspace) pairs hold a product case waiting for BGĐ. Ids only."""
+
+    async def awaiting_bod_review(self) -> list[tuple[uuid.UUID, uuid.UUID]]: ...
+
+
+class TenantPlanPort(Protocol):
+    """The plan a tenant is on, read by the platform: what a run the lane
+    starts is counted against, as a run a person starts is."""
+
+    async def plan_of(self, tenant_id: uuid.UUID) -> str | None: ...
 
 
 @dataclass(frozen=True, slots=True)

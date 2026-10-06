@@ -26,6 +26,7 @@ import type { TableColumnsType } from "antd";
 import { ArrowLeftOutlined, ReloadOutlined } from "@ant-design/icons";
 import type {
   CaseDocument,
+  PendingReview,
   ProductActionOption,
   ProductCaseDetail,
   ProductCaseTransition,
@@ -264,12 +265,7 @@ function NextSteps({
     <Card title="Bước tiếp theo">
       <Flex vertical gap="middle">
         {detail.state === "pending_bod_review" && (
-          <Alert
-            type="info"
-            showIcon
-            message="Mẫu đã đạt; hồ sơ chờ BGĐ duyệt."
-            description="Bước BGĐ duyệt mẫu (bước 6) chưa có trên hệ thống. Trong lúc chờ, chỉ báo ngoại lệ hoặc hủy hồ sơ được."
-          />
+          <BodReviewNotice review={detail.pending_review} />
         )}
         {detail.actions.length === 0 ? (
           <Typography.Text>
@@ -324,6 +320,42 @@ function NextSteps({
         />
       )}
     </Card>
+  );
+}
+
+/**
+ * Step 6 while it waits: who may decide (the scope stamped on the review, as
+ * the server returns it; never a list of names) and where, `/approvals`. The
+ * case page offers no decision. A case with no review yet says so: the worker
+ * raises it, nobody has to pass the sample again.
+ */
+function BodReviewNotice({ review }: { review: PendingReview | null }) {
+  if (!review) {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        message="Mẫu đã đạt; chưa trình được BGĐ."
+        description="Yêu cầu duyệt chưa tạo được (ví dụ gói đã hết lượt chạy trong ngày). Hệ thống tự trình lại sau ít phút; không cần làm lại bước Mẫu đạt. Trong lúc chờ, chỉ hủy hồ sơ được."
+      />
+    );
+  }
+  return (
+    <Alert
+      type="info"
+      showIcon
+      message="Mẫu đã đạt; hồ sơ chờ BGĐ duyệt."
+      description={
+        <Flex vertical gap="small">
+          <Typography.Text>
+            Chờ người có quyền BGĐ ({review.required_scope ?? "—"}) duyệt, từ{" "}
+            {formatDateTime(review.created_at)}. Không duyệt thì hồ sơ bị hủy,
+            nhận xét của BGĐ là lý do. Trong lúc chờ, chỉ hủy hồ sơ được.
+          </Typography.Text>
+          <Link href="/approvals">Mở trang Phê duyệt</Link>
+        </Flex>
+      }
+    />
   );
 }
 
@@ -410,7 +442,7 @@ function StepModal({
     setSubmitting(true);
     setError(null);
     try {
-      await apiClient().takeProductCaseStep(
+      const step = await apiClient().takeProductCaseStep(
         detail.id,
         {
           action: option.action,
@@ -420,7 +452,15 @@ function StepModal({
         },
         key,
       );
-      void message.success(`Đã ghi: ${label}.`);
+      if (step.review === "not_raised") {
+        // Recorded; the review is not. The case page says so too, and the
+        // worker raises it: nothing for this person to redo.
+        void message.warning(
+          `Đã ghi: ${label}. Chưa trình được BGĐ; hệ thống sẽ tự trình lại.`,
+        );
+      } else {
+        void message.success(`Đã ghi: ${label}.`);
+      }
       onDone();
     } catch (caught) {
       setError(errorMessage(caught));

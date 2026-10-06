@@ -88,6 +88,10 @@ from dw_supply_chain.product_action_duties import (
     PRODUCT_ACTION_DUTIES_POLICY_ID,
     SupplyChainProductActionDuties,
 )
+from dw_supply_chain.product_approvals import (
+    PRODUCT_APPROVALS_POLICY_ID,
+    SupplyChainProductApprovals,
+)
 from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
 from dw_supply_chain.workflows.advance_case_graph import APPROVAL_TYPE_PREFIX
 from dw_supply_chain.workflows.brief_summary import summarize_brief
@@ -1435,6 +1439,23 @@ async def resolve_product_action_duties(
         policy_id=PRODUCT_ACTION_DUTIES_POLICY_ID,
         schema=SupplyChainProductActionDuties,
         platform_default=platform_default_duties,
+    )
+
+
+async def resolve_product_approvals(
+    context: AccessContext,
+    policy_override_repo: PolicyOverridePort,
+    platform_default: SupplyChainProductApprovals,
+) -> SupplyChainProductApprovals:
+    """Who may decide each product-case approval for the caller's tenant: its
+    own override if it has one, the platform's otherwise. Read only where an
+    approval is raised; deciding reads the stamp the approval carries."""
+    return await _resolve_policy(
+        context,
+        policy_override_repo,
+        policy_id=PRODUCT_APPROVALS_POLICY_ID,
+        schema=SupplyChainProductApprovals,
+        platform_default=platform_default,
     )
 
 

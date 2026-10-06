@@ -33,10 +33,10 @@ the reference after each `git merge platform/main`.
   `/settings` (U), Zalo link (Z1). `make ci` green.
 - **Done on branch `feat/elmich-a-d-s1` (2026-10-06, not pushed, not merged):**
   A (`dabf5c4`), D (`51e3400`), S1. Steps 1–5 run end to end in the app.
-- **In progress (2026-10-06, Đạt: push, then S2 and Z4):** platform-runtime
-  approval-audit-and-workspace 02 done (`7b411df`); S2 running, then Z4 in two
-  commits (Z4a inbound foundation, Z4b chat proposal); Z4's photos split to 04b,
-  which waits for a real photo update from Đạt. Then S3 → S7, Z5, Z6.
+- **2026-10-06:** platform-runtime 02 (`7b411df`) and S2 done. In progress:
+  platform hardening and the FCI rerank in the platform repo, then merged here;
+  then Z4 (Z4a, Z4b; photos split to 04b, waiting for a real photo update),
+  S3 → S7, Z5, Z6.
 - **Run locally:** `make infra-up`, `make db-migrate`, seed
   (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
   then `scripts/keycloak_dev_users.py`), `make dev`, open http://localhost:3200.

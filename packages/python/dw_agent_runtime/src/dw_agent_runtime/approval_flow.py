@@ -22,7 +22,7 @@ from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.ports import PlatformUnitOfWorkFactory
-from dw_platform.domain.approval import ApprovalRequest, DecisionOutcome
+from dw_platform.domain.approval import APPROVALS_DECIDE, ApprovalRequest, DecisionOutcome
 
 
 @dataclass
@@ -123,7 +123,7 @@ class ApproveAndResumeService:
             if approve or request.requested_by.value != context.principal_id:
                 await authorization.require(
                     context=context,
-                    action="approvals.decide",
+                    action=APPROVALS_DECIDE,
                     resource_type="approval_request",
                     resource_id=str(approval_id),
                 )
@@ -155,7 +155,16 @@ class ApproveAndResumeService:
             await uow.commit()
 
         if record is not None and request.run_id is not None:
-            resume_payload: dict[str, Any] = {"approved": approve, "comment": comment}
+            resume_payload: dict[str, Any] = {
+                "approved": approve,
+                "comment": comment,
+                # Who decided, from the decider's verified context. The run
+                # resumes with the requester's authority (below), so a graph
+                # that records the decider has no other way to learn it; built
+                # here, never copied from the approval's payload, which is the
+                # graph's own interrupt value.
+                "decided_by": str(context.principal_id),
+            }
             if approved_action_ids is not None:
                 resume_payload["approved_action_ids"] = approved_action_ids
             await self.runner.resume(

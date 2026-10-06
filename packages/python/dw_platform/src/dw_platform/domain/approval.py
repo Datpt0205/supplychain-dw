@@ -13,6 +13,11 @@ from enum import StrEnum
 from dw_kernel.errors import ConflictError
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 
+# The scope every decision needs (`ApproveAndResumeService.decide`), besides a
+# request's own `required_scope`. Named once: whoever asks "who could decide
+# this?" (a notification's recipients) must ask the question decide enforces.
+APPROVALS_DECIDE = "approvals.decide"
+
 
 class ApprovalStatus(StrEnum):
     PENDING = "pending"

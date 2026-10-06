@@ -1,5 +1,5 @@
 """Unit: ProposeProductCase / GetProductCase / ListProductCases /
-ListProductCaseTransitions / AdvanceProductCase (stage-1 ticket 01).
+ListProductCaseTransitions / AdvanceProductCase (stage-1 tickets 01 and 02).
 
 Fakes stand in for the case records, the document records and the policy
 store; each honours its port the way the database does (tenant AND workspace
@@ -12,14 +12,20 @@ from __future__ import annotations
 
 import inspect
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
 
-from dw_kernel.errors import ConflictError, DomainError, NotFoundError, PermissionDeniedError
+from dw_kernel.errors import (
+    ConflictError,
+    DomainError,
+    NotFoundError,
+    PermissionDeniedError,
+    QuotaExceededError,
+)
 from dw_kernel.pagination import Page, PageRequest
 from dw_kernel.ports import FixedClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
@@ -34,7 +40,12 @@ from dw_supply_chain.application.handlers import (
     SetProductActionDutiesOverride,
     duty_scope,
 )
-from dw_supply_chain.application.ports import ProductCaseListFilter
+from dw_supply_chain.application.ports import (
+    PendingApprovalRecord,
+    ProductCaseListFilter,
+    ReviewRaise,
+    ReviewRequester,
+)
 from dw_supply_chain.application.product_cases import (
     AdvanceProductCase,
     GetProductCase,
@@ -49,6 +60,7 @@ from dw_supply_chain.domain.case_document import (
     DocumentType,
 )
 from dw_supply_chain.domain.product_development_case import (
+    GRAPH_ONLY_ACTIONS,
     ProductAction,
     ProductCaseStep,
     ProductCaseTransition,
@@ -265,10 +277,60 @@ class FakePolicies:
 
 
 @dataclass
+class FakeReviews:
+    """`BodReviewPort`: records each request for BGĐ's review and answers
+    with `outcome`, or raises `error` as a refused start would."""
+
+    outcome: ReviewRaise = ReviewRaise.RAISED
+    error: Exception | None = None
+    asked: list[tuple[AccessContext, ProductDevelopmentCase, ReviewRequester]] = field(
+        default_factory=list
+    )
+
+    async def ensure(
+        self, context: AccessContext, case: ProductDevelopmentCase, requester: ReviewRequester
+    ) -> ReviewRaise:
+        self.asked.append((context, case, requester))
+        if self.error is not None:
+            raise self.error
+        return self.outcome
+
+
+@dataclass(frozen=True)
+class PendingReview:
+    id: uuid.UUID
+    approval_type: str
+    payload: Mapping[str, object]
+    created_at: datetime | None
+    required_scope: str | None
+
+
+@dataclass
+class FakeApprovals:
+    """`PendingApprovalsPort`, narrowed to the caller's workspace as the
+    inbox is: holds pending reviews keyed by (workspace, type, case id)."""
+
+    pending: dict[tuple[uuid.UUID, str, str], PendingReview] = field(default_factory=dict)
+
+    async def list_pending_by_type_prefix(
+        self, context: AccessContext, *, prefix: str, limit: int
+    ) -> tuple[int, Sequence[PendingApprovalRecord]]:
+        raise NotImplementedError("not exercised by the product-case handlers")
+
+    async def pending_by_payload(
+        self, context: AccessContext, *, approval_type: str, key: str, value: str
+    ) -> PendingApprovalRecord | None:
+        assert key == "product_dev_case_id"
+        return self.pending.get((context.workspace_id, approval_type, value))
+
+
+@dataclass
 class Stack:
     cases: FakeCases = field(default_factory=FakeCases)
     documents: FakeDocuments = field(default_factory=FakeDocuments)
     policies: FakePolicies = field(default_factory=FakePolicies)
+    reviews: FakeReviews = field(default_factory=FakeReviews)
+    approvals: FakeApprovals = field(default_factory=FakeApprovals)
 
     def propose(self) -> ProposeProductCase:
         return ProposeProductCase(
@@ -281,7 +343,9 @@ class Stack:
         )
 
     def get(self) -> GetProductCase:
-        return GetProductCase(self.cases, ScopeAuthorizationService(), self.policies, DUTIES)
+        return GetProductCase(
+            self.cases, ScopeAuthorizationService(), self.policies, DUTIES, self.approvals
+        )
 
     def advance(self) -> AdvanceProductCase:
         return AdvanceProductCase(
@@ -290,6 +354,7 @@ class Stack:
             authz=ScopeAuthorizationService(),
             policy_override_repo=self.policies,
             platform_default_duties=DUTIES,
+            reviews=self.reviews,
             ids=Uuid4Generator(),
             clock=FixedClock(NOW),
         )
@@ -307,9 +372,21 @@ class Stack:
             action=ProductAction.REQUEST_SAMPLE,
             supplier_name="NCC Minh Long",
         )
-        return await self.advance().handle(
+        result = await self.advance().handle(
             _context(SC_RND), case_id=case.id, action=ProductAction.RECEIVE_SAMPLE
         )
+        return result.case
+
+    async def passed(self, *, rnd: AccessContext | None = None) -> ProductDevelopmentCase:
+        case = await self.testing()
+        evaluation = self.documents.add(case, DocumentType.SAMPLE_EVALUATION)
+        result = await self.advance().handle(
+            rnd or _context(SC_RND),
+            case_id=case.id,
+            action=ProductAction.PASS_SAMPLE,
+            document_id=evaluation.id.value,
+        )
+        return result.case
 
 
 # --- propose and the PIC ---------------------------------------------------------
@@ -429,7 +506,7 @@ async def test_a_tenant_override_moves_a_step_and_a_po_override_does_not() -> No
     cancelled = await stack.advance().handle(
         _context(finance), case_id=case.id, action=ProductAction.CANCEL, reason="x"
     )
-    assert cancelled.state is ProductDevState.CANCELLED
+    assert cancelled.case.state is ProductDevState.CANCELLED
 
 
 # --- the paper -------------------------------------------------------------------
@@ -560,7 +637,7 @@ async def test_steps_one_to_five_through_the_handlers() -> None:
         document_id=evaluation.id.value,
     )
 
-    assert (passed.state, passed.sample_round) == (ProductDevState.PENDING_BOD_REVIEW, 2)
+    assert (passed.case.state, passed.case.sample_round) == (ProductDevState.PENDING_BOD_REVIEW, 2)
     assert [a.action for a in stack.cases.audits][-1] == "supply_chain.product_case.pass_sample"
     assert stack.cases.audits[-1].details["document_id"] == str(evaluation.id)
 
@@ -580,7 +657,7 @@ async def test_another_tenants_or_workspaces_case_is_not_found(
 
     with pytest.raises(NotFoundError):
         await GetProductCase(
-            stack.cases, ScopeAuthorizationService(), stack.policies, DUTIES
+            stack.cases, ScopeAuthorizationService(), stack.policies, DUTIES, stack.approvals
         ).handle(caller, case.id)
     with pytest.raises(NotFoundError):
         await ListProductCaseTransitions(stack.cases, ScopeAuthorizationService()).handle(
@@ -637,7 +714,9 @@ async def test_reading_needs_the_read_scope(read: str) -> None:
     authz = ScopeAuthorizationService()
     with pytest.raises(PermissionDeniedError):
         if read == "get":
-            await GetProductCase(stack.cases, authz, stack.policies, DUTIES).handle(caller, case.id)
+            await GetProductCase(
+                stack.cases, authz, stack.policies, DUTIES, stack.approvals
+            ).handle(caller, case.id)
         elif read == "list":
             await ListProductCases(stack.cases, authz).handle(
                 caller, ProductCaseListFilter(), limit=10, cursor=None
@@ -711,3 +790,172 @@ async def test_a_broken_tenant_override_refuses_rather_than_falling_back() -> No
             supplier_name="NCC",
         )
     assert stack.cases.rows[case.id.value].state is ProductDevState.PROPOSED
+
+
+# --- step 6: BGĐ's review ----------------------------------------------------------
+
+BOD_REVIEW = "supply_chain.product_action.bod_review"
+
+
+@pytest.mark.parametrize("action", sorted(GRAPH_ONLY_ACTIONS))
+async def test_bgds_outcomes_are_refused_as_a_step_before_anything_is_read(
+    action: ProductAction,
+) -> None:
+    """Only the review graph applies them. Refused before the duty policy is
+    resolved (it has no duty for them) and before the case is read: even a
+    caller holding every scope, approve.bod included, cannot take them."""
+    stack = Stack()
+    case = await stack.passed()
+    everything = SC_OPERATOR | SC_RND | {"supply_chain.approve.bod", "approvals.decide"}
+
+    with pytest.raises(DomainError, match="approval"):
+        await stack.advance().handle(
+            _context(everything),
+            case_id=case.id,
+            action=action,
+            reason="BGĐ đồng ý" if action is ProductAction.BOD_REJECT else None,
+        )
+    assert stack.cases.rows[case.id.value].state is ProductDevState.PENDING_BOD_REVIEW
+    # Not even the case was looked up: a caller with no scope at all gets the
+    # same refusal, not a 403 or a 404.
+    with pytest.raises(DomainError):
+        await stack.advance().handle(
+            _context(frozenset(), tenant=OTHER_TENANT),
+            case_id=ProductDevelopmentCaseId(uuid.uuid4()),
+            action=action,
+        )
+
+
+async def test_passing_a_sample_asks_for_bgds_review_once_as_the_rnd_tester() -> None:
+    stack = Stack()
+    tester = uuid.uuid4()
+    rnd = _context(SC_RND, principal=tester)
+    case = await stack.testing()
+    evaluation = stack.documents.add(case, DocumentType.SAMPLE_EVALUATION)
+
+    result = await stack.advance().handle(
+        rnd, case_id=case.id, action=ProductAction.PASS_SAMPLE, document_id=evaluation.id.value
+    )
+
+    assert result.review is ReviewRaise.RAISED
+    ((context, asked_case, requester),) = stack.reviews.asked
+    assert context is rnd
+    assert (asked_case.id, asked_case.state) == (case.id, ProductDevState.PENDING_BOD_REVIEW)
+    assert requester == ReviewRequester(
+        principal_id=tester,
+        roles=rnd.roles,
+        scopes=rnd.scopes,
+        plan_id="professional",
+        channel="web",
+    )
+
+
+async def test_a_refused_review_leaves_the_step_recorded_and_says_so() -> None:
+    """The plan's run quota (or any failed start) does not undo the pass: the
+    case waits for BGĐ, the answer says the review is not raised yet, and the
+    reconcile lane raises it later."""
+    stack = Stack(reviews=FakeReviews(error=QuotaExceededError("hết lượt chạy")))
+    case = await stack.testing()
+    evaluation = stack.documents.add(case, DocumentType.SAMPLE_EVALUATION)
+
+    result = await stack.advance().handle(
+        _context(SC_RND),
+        case_id=case.id,
+        action=ProductAction.PASS_SAMPLE,
+        document_id=evaluation.id.value,
+    )
+
+    assert result.review is ReviewRaise.NOT_RAISED
+    assert stack.cases.rows[case.id.value].state is ProductDevState.PENDING_BOD_REVIEW
+    assert stack.cases.audits[-1].action == "supply_chain.product_case.pass_sample"
+
+
+async def test_only_a_step_that_leaves_the_case_waiting_asks_for_the_review() -> None:
+    stack = Stack()
+    case = await stack.testing()
+    revision = stack.documents.add(case, DocumentType.SAMPLE_REVISION_REQUEST)
+
+    result = await stack.advance().handle(
+        _context(SC_RND),
+        case_id=case.id,
+        action=ProductAction.REQUEST_REVISION,
+        reason="Tay cầm lỏng",
+        document_id=revision.id.value,
+    )
+
+    assert result.review is None
+    assert stack.reviews.asked == []
+
+
+async def test_resuming_back_into_waiting_for_bgd_asks_for_the_review() -> None:
+    """A case paused while waiting for BGĐ before S2 (S1 allowed it) comes
+    back to `pending_bod_review` with no review: resuming it raises one."""
+    stack = Stack()
+    case = await stack.passed()
+    stored = stack.cases.rows[case.id.value]
+    stack.cases.rows[case.id.value] = replace(
+        stored,
+        state=ProductDevState.BLOCKED,
+        interrupted_state=ProductDevState.PENDING_BOD_REVIEW,
+    )
+    stack.reviews.asked.clear()
+
+    result = await stack.advance().handle(
+        _context(SC_OPERATOR), case_id=case.id, action=ProductAction.RESUME
+    )
+
+    assert result.case.state is ProductDevState.PENDING_BOD_REVIEW
+    assert result.review is ReviewRaise.RAISED
+    assert len(stack.reviews.asked) == 1
+
+
+async def test_the_only_step_on_a_case_waiting_for_bgd_is_cancel() -> None:
+    stack = Stack()
+    case = await stack.passed()
+
+    with pytest.raises(ConflictError):
+        await stack.advance().handle(
+            _context(SC_OPERATOR), case_id=case.id, action=ProductAction.FLAG_BLOCKED, reason="x"
+        )
+    cancelled = await stack.advance().handle(
+        _context(SC_OPERATOR), case_id=case.id, action=ProductAction.CANCEL, reason="Dừng dự án"
+    )
+    assert cancelled.case.state is ProductDevState.CANCELLED
+    assert cancelled.review is None
+
+
+async def test_the_case_page_shows_the_review_it_waits_on_and_its_stamped_scope() -> None:
+    stack = Stack()
+    case = await stack.passed()
+    review = PendingReview(
+        id=uuid.uuid4(),
+        approval_type=BOD_REVIEW,
+        payload={"product_dev_case_id": str(case.id)},
+        created_at=NOW,
+        required_scope="supply_chain.approve.bod",
+    )
+    stack.approvals.pending[(WORKSPACE, BOD_REVIEW, str(case.id))] = review
+
+    detail = await stack.get().handle(_context(frozenset({PRODUCT_CASE_READ})), case.id)
+
+    assert detail.pending_review is review
+    assert [o.action for o in detail.case.action_options()] == [ProductAction.CANCEL]
+
+
+async def test_the_case_page_shows_no_review_outside_waiting_for_bgd() -> None:
+    stack = Stack()
+    case = await stack.passed()
+    stack.approvals.pending[(WORKSPACE, BOD_REVIEW, str(case.id))] = PendingReview(
+        id=uuid.uuid4(),
+        approval_type=BOD_REVIEW,
+        payload={},
+        created_at=NOW,
+        required_scope="supply_chain.approve.bod",
+    )
+    await stack.advance().handle(
+        _context(SC_OPERATOR), case_id=case.id, action=ProductAction.CANCEL, reason="Dừng"
+    )
+
+    detail = await stack.get().handle(_context(frozenset({PRODUCT_CASE_READ})), case.id)
+
+    assert detail.pending_review is None

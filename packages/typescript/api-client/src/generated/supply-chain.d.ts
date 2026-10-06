@@ -1016,6 +1016,23 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /**
+         * PendingReviewView
+         * @description The BGĐ review a waiting case is held on: which approval, since when,
+         *     and the scope stamped on it, which is who may decide it. Decided at
+         *     `/approvals`, never from the case.
+         */
+        PendingReviewView: {
+            /**
+             * Approval Id
+             * Format: uuid
+             */
+            approval_id: string;
+            /** Created At */
+            created_at: string | null;
+            /** Required Scope */
+            required_scope: string | null;
+        };
         /** PortfolioSummaryView */
         PortfolioSummaryView: {
             /** Active Case Count */
@@ -1038,7 +1055,7 @@ export interface components {
          *     PO policy or approval keyed by one of them must not reach this case.
          * @enum {string}
          */
-        ProductAction: "propose" | "request_sample" | "receive_sample" | "pass_sample" | "request_revision" | "receive_revised_sample" | "reject_sample" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "resume" | "cancel";
+        ProductAction: "propose" | "request_sample" | "receive_sample" | "pass_sample" | "request_revision" | "receive_revised_sample" | "reject_sample" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "resume" | "cancel" | "bod_approve" | "bod_reject";
         /**
          * ProductActionOptionView
          * @description A step the case accepts from its state, what it must carry, and the
@@ -1076,6 +1093,7 @@ export interface components {
              */
             id: string;
             interrupted_state: components["schemas"]["ProductDevState"] | null;
+            pending_review: components["schemas"]["PendingReviewView"] | null;
             /**
              * Pic User Id
              * Format: uuid
@@ -1087,6 +1105,46 @@ export interface components {
             proposal_code: string;
             /** Rounds */
             rounds: components["schemas"]["SampleRoundView"][];
+            /** Sample Round */
+            sample_round: number;
+            state: components["schemas"]["ProductDevState"];
+            /** Supplier Name */
+            supplier_name: string | null;
+            /** Version */
+            version: number;
+        };
+        /**
+         * ProductCaseStepView
+         * @description A step taken. `review` is set only for a step that left the case
+         *     waiting for BGĐ: `not_raised` means the step is recorded and the review
+         *     is not raised yet (the worker retries it).
+         */
+        ProductCaseStepView: {
+            /** Category */
+            category: string;
+            /** Created At */
+            created_at: string | null;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            interrupted_state: components["schemas"]["ProductDevState"] | null;
+            /**
+             * Pic User Id
+             * Format: uuid
+             */
+            pic_user_id: string;
+            /** Product Name */
+            product_name: string;
+            /** Proposal Code */
+            proposal_code: string;
+            review: components["schemas"]["ReviewRaise"] | null;
             /** Sample Round */
             sample_round: number;
             state: components["schemas"]["ProductDevState"];
@@ -1153,7 +1211,7 @@ export interface components {
          *     web, in one table beside the product-case pages.
          * @enum {string}
          */
-        ProductDevState: "proposed" | "sample_requested" | "sample_testing" | "revision_requested" | "pending_bod_review" | "waiting_external" | "blocked" | "manual_review" | "cancelled";
+        ProductDevState: "proposed" | "sample_requested" | "sample_testing" | "revision_requested" | "pending_bod_review" | "profile_in_progress" | "waiting_external" | "blocked" | "manual_review" | "cancelled";
         /**
          * ProposeProductCaseRequest
          * @description Step 1. JSON only: product images are uploaded after the case exists,
@@ -1167,6 +1225,12 @@ export interface components {
             /** Proposal Code */
             proposal_code: string;
         };
+        /**
+         * ReviewRaise
+         * @description What asking for BGĐ's review of a case did.
+         * @enum {string}
+         */
+        ReviewRaise: "raised" | "already_pending" | "not_raised" | "not_waiting";
         /**
          * SLAConfirmationStatus
          * @description Whether a milestone's duration is real policy yet.
@@ -2576,7 +2640,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProductCaseView"];
+                    "application/json": components["schemas"]["ProductCaseStepView"];
                 };
             };
             /** @description Validation Error */

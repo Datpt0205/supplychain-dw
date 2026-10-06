@@ -69,6 +69,9 @@ COPY --from=builder --chown=dw:dw /app/.venv /app/.venv
 # register, which is by design but would be a surprising way to find out.
 COPY --chown=dw:dw configs /app/configs
 COPY --chown=dw:dw evals/fixtures /app/evals/fixtures
+# The release every run this process starts records (the BGĐ review
+# reconcile starts runs); a deployed worker refuses to start without it.
+COPY --chown=dw:dw contracts/release /app/contracts/release
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

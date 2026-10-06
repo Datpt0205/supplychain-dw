@@ -23,10 +23,12 @@ import contextlib
 import logging
 import signal
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardRetention
+from dw_agent_runtime.release import UNRELEASED, release_manifest_ref
 from dw_connectors.adapters.zalo_bot import ZaloBotClient
 from dw_kernel.ports import SystemClock, Uuid7Generator
 from dw_knowledge.adapters.evidence_store import SqlEvidenceStore
@@ -70,6 +72,8 @@ from dw_worker.consumers.supply_chain import (
     build_document_orphan_sweep,
     build_follow_up_consumer,
     build_follow_up_sweep,
+    build_product_review_reconcile,
+    build_product_review_reconcile_consumer,
 )
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
 from dw_worker.health import beat
@@ -102,6 +106,22 @@ def _build_memory_index(settings: WorkerSettings) -> MemoryIndexPort | None:
         client=AsyncQdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key),
         embedder=build_embeddings(settings),
     )
+
+
+def release_manifest_ref_for(settings: WorkerSettings, repo_root: Path) -> str:
+    """The release this process serves, stamped on the runs it starts, read
+    by the reader the API uses (`dw_agent_runtime.release`).
+
+    A deployed worker refuses to start without it: the fallback would stamp
+    `unreleased` on every run the BGĐ review reconcile starts, and nothing
+    would say so. The image ships `contracts/release` for this."""
+    ref = release_manifest_ref(repo_root)
+    if settings.is_deployed and ref == UNRELEASED:
+        raise RuntimeError(
+            f"no release manifest under {repo_root} in the {settings.profile} profile:"
+            " a run this worker starts would record no release"
+        )
+    return ref
 
 
 def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
@@ -150,6 +170,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     offboarding_consumer: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's follow-up sweep: a database is all it needs.
     follow_up_consumer: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's BGĐ review reconcile: a database is all it needs too.
+    product_review_reconcile: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's case-document orphan sweep: a database and the bucket.
     document_orphans: RetentionPrunePort | None = None
 
@@ -225,6 +247,16 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                 clock=clock,
             )
         )
+        product_review_reconcile = build_product_review_reconcile_consumer(
+            build_product_review_reconcile(
+                sessions,
+                configs_dir=REPO_ROOT / "configs",
+                ids=ids,
+                clock=clock,
+                telemetry=telemetry,
+                release_manifest_ref=release_manifest_ref_for(settings, REPO_ROOT),
+            )
+        )
         if settings.s3_endpoint_url:
             offboarding_consumer = build_offboarding_consumer(
                 TenantOffboardingLane(
@@ -272,6 +304,15 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
             "supply_chain_follow_ups",
             follow_up_consumer,
             interval_seconds=settings.supply_chain_follow_up_interval_seconds,
+        )
+    # BGĐ's review for a product case waiting without one (stage-1 ticket
+    # 02). Starts runs, claims no queue: no ReapTarget (a stranded run is
+    # settled on its thread's next claim, `SqlWorkerRunStore.create`).
+    if product_review_reconcile is not None:
+        registry.register(
+            "supply_chain_product_review_reconcile",
+            product_review_reconcile,
+            interval_seconds=settings.supply_chain_product_review_reconcile_interval_seconds,
         )
     # Case-document objects no row holds (ADR 0021): housekeeping on the
     # retention cadence, through the retention consumer's error handling.

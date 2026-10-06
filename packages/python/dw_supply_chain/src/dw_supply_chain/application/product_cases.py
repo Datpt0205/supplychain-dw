@@ -22,43 +22,69 @@ What each command decides, and where:
   caller cannot read is the same refusal as one never named.
 - **The record:** the state, the history row, the round and the audit event
   are one transaction in the repository.
+- **BGĐ's review (step 6):** a step that leaves the case in
+  `pending_bod_review` (`pass_sample`, or `resume` back into it) asks
+  `BodReviewPort.ensure` for the review AFTER the step is saved, in its own
+  transaction. A refused or failed start does not undo the step: the answer
+  says the review is not raised yet, and the worker's reconcile lane raises
+  it. BGĐ's two outcomes (`GRAPH_ONLY_ACTIONS`) are refused here, before
+  anything is read: only the review graph applies them.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Protocol
 
-from dw_kernel.errors import NotFoundError
-from dw_kernel.ids import TenantId, UserId, WorkspaceId
+from dw_kernel.errors import DomainError, NotFoundError
+from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.pagination import Page, page_request
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import AuthorizationPort, PolicyOverridePort
-from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.application.handlers import (
     PRODUCT_CASE_READ,
     PRODUCT_CASE_WRITE,
     duty_scope,
     resolve_product_action_duties,
 )
-from dw_supply_chain.application.ports import ProductCaseListFilter, ProductCaseRepositoryPort
+from dw_supply_chain.application.ports import (
+    BodReviewPort,
+    PendingApprovalRecord,
+    PendingApprovalsPort,
+    ProductCaseListFilter,
+    ProductCaseRepositoryPort,
+    ReviewRaise,
+    ReviewRequester,
+)
+from dw_supply_chain.application.product_case_audit import (
+    PRODUCT_CASE_RESOURCE,
+    product_case_audit,
+)
 from dw_supply_chain.domain.case_document import CaseDocument, CaseDocumentId
 from dw_supply_chain.domain.product_development_case import (
+    GRAPH_ONLY_ACTIONS,
     ProductAction,
     ProductActionInput,
     ProductCaseTransition,
     ProductDevelopmentCase,
     ProductDevelopmentCaseId,
+    ProductDevState,
     SampleRound,
     apply_product_action,
     document_refusal,
 )
 from dw_supply_chain.product_action_duties import SupplyChainProductActionDuties
+from dw_supply_chain.workflows.advance_product_case_graph import (
+    BOD_REVIEW_APPROVAL_TYPE,
+    BOD_REVIEW_CASE_KEY,
+)
 
-_RESOURCE = "product_dev_case"
-_AUDIT_PREFIX = "supply_chain.product_case."
+logger = logging.getLogger(__name__)
+
+_RESOURCE = PRODUCT_CASE_RESOURCE
 
 
 class ProductDocumentLookupPort(Protocol):
@@ -72,34 +98,24 @@ class ProductDocumentLookupPort(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class ProductCaseDetail:
-    """A case, its sample rounds, and the tenant's step-to-duty mapping the
-    case page shows who may take each step from: the same mapping
-    `AdvanceProductCase` authorizes against, resolved by the same function."""
+    """A case, its sample rounds, the tenant's step-to-duty mapping the case
+    page shows who may take each step from (the same mapping
+    `AdvanceProductCase` authorizes against, resolved by the same function),
+    and, while it waits for BGĐ, the review approval it waits on."""
 
     case: ProductDevelopmentCase
     rounds: list[SampleRound]
     duties: SupplyChainProductActionDuties
+    pending_review: PendingApprovalRecord | None = None
 
 
-def _audit(
-    context: AccessContext,
-    ids: IdGenerator,
-    clock: UtcClock,
-    case: ProductDevelopmentCase,
-    action: ProductAction,
-    details: dict[str, object],
-) -> AuditEvent:
-    return AuditEvent(
-        id=ids.new_uuid(),
-        tenant_id=TenantId(context.tenant_id),
-        workspace_id=WorkspaceId(context.workspace_id),
-        actor_id=UserId(context.principal_id),
-        action=f"{_AUDIT_PREFIX}{action.value}",
-        resource_type=_RESOURCE,
-        resource_id=str(case.id),
-        occurred_at=clock.now(),
-        details=details,
-    )
+@dataclass(frozen=True, slots=True)
+class ProductStepResult:
+    """A step taken, and for a step that left the case waiting for BGĐ, what
+    asking for the review did (None for every other step)."""
+
+    case: ProductDevelopmentCase
+    review: ReviewRaise | None = None
 
 
 async def _case_in_workspace(
@@ -154,12 +170,12 @@ class ProposeProductCase:
         await self.repo.add(
             context,
             case,
-            audit=_audit(
+            audit=product_case_audit(
                 context,
                 self.ids,
                 self.clock,
                 case,
-                ProductAction.PROPOSE,
+                ProductAction.PROPOSE.value,
                 {"proposal_code": case.proposal_code, "category": case.category},
             ),
         )
@@ -168,10 +184,16 @@ class ProposeProductCase:
 
 @dataclass(frozen=True)
 class GetProductCase:
+    """The case page. While the case waits for BGĐ it carries the review
+    approval it waits on, read from the approval inbox in the caller's
+    workspace: its id, when it was raised, and the scope stamped on it, which
+    is who may decide. Nobody's name, and no way to decide from here."""
+
     repo: ProductCaseRepositoryPort
     authz: AuthorizationPort
     policy_override_repo: PolicyOverridePort
     platform_default_duties: SupplyChainProductActionDuties
+    approvals: PendingApprovalsPort
 
     async def handle(
         self, context: AccessContext, case_id: ProductDevelopmentCaseId
@@ -188,6 +210,16 @@ class GetProductCase:
             rounds=await self.repo.list_rounds(context, case.id),
             duties=await resolve_product_action_duties(
                 context, self.policy_override_repo, self.platform_default_duties
+            ),
+            pending_review=(
+                await self.approvals.pending_by_payload(
+                    context,
+                    approval_type=BOD_REVIEW_APPROVAL_TYPE,
+                    key=BOD_REVIEW_CASE_KEY,
+                    value=str(case.id),
+                )
+                if case.state is ProductDevState.PENDING_BOD_REVIEW
+                else None
             ),
         )
 
@@ -238,17 +270,20 @@ class ListProductCaseTransitions:
 
 @dataclass(frozen=True)
 class AdvanceProductCase:
-    """One step on a case, chosen from the closed `ProductAction` set.
+    """One step a person takes on a case, chosen from the closed
+    `ProductAction` set less `GRAPH_ONLY_ACTIONS`.
 
-    The duty is checked first, before the case or any document is read, so a
-    caller without it learns nothing about either. No step here needs an
-    approval in this slice; `pass_sample` starting the BGĐ review is S2's."""
+    A graph-only action is refused first, then the duty is checked, both
+    before the case or any document is read, so a caller without the duty
+    learns nothing about either. A step that leaves the case waiting for BGĐ
+    then asks for the review (module docstring)."""
 
     repo: ProductCaseRepositoryPort
     documents: ProductDocumentLookupPort
     authz: AuthorizationPort
     policy_override_repo: PolicyOverridePort
     platform_default_duties: SupplyChainProductActionDuties
+    reviews: BodReviewPort
     ids: IdGenerator
     clock: UtcClock
 
@@ -261,7 +296,12 @@ class AdvanceProductCase:
         reason: str | None = None,
         supplier_name: str | None = None,
         document_id: uuid.UUID | None = None,
-    ) -> ProductDevelopmentCase:
+    ) -> ProductStepResult:
+        if action in GRAPH_ONLY_ACTIONS:
+            raise DomainError(
+                "BGĐ's decision is taken on its approval, not as a step on the case",
+                details={"action": action.value},
+            )
         duties = await resolve_product_action_duties(
             context, self.policy_override_repo, self.platform_default_duties
         )
@@ -291,12 +331,12 @@ class AdvanceProductCase:
         await self.repo.save(
             context,
             case,
-            audit=_audit(
+            audit=product_case_audit(
                 context,
                 self.ids,
                 self.clock,
                 case,
-                action,
+                action.value,
                 {
                     "from_state": before.value,
                     "to_state": case.state.value,
@@ -305,4 +345,21 @@ class AdvanceProductCase:
                 },
             ),
         )
-        return case
+        if case.state is not ProductDevState.PENDING_BOD_REVIEW:
+            return ProductStepResult(case=case)
+        return ProductStepResult(case=case, review=await self._ensure_review(context, case))
+
+    async def _ensure_review(
+        self, context: AccessContext, case: ProductDevelopmentCase
+    ) -> ReviewRaise:
+        """The step is saved whatever happens here. Broad on purpose: a quota
+        refusal, a spend ceiling or a failed start must not turn a recorded
+        step into an error; the reconcile lane raises the review later."""
+        try:
+            return await self.reviews.ensure(context, case, ReviewRequester.from_context(context))
+        except Exception:
+            logger.exception(
+                "BGĐ review not raised after the step; the reconcile lane retries",
+                extra={"case_id": str(case.id)},
+            )
+            return ReviewRaise.NOT_RAISED

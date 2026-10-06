@@ -60,3 +60,29 @@ class SqlPendingApprovalQuery:
                 .limit(limit)
             )
             return total, [_approval_from_row(row) for row in rows]
+
+    async def pending_by_payload(
+        self, context: AccessContext, *, approval_type: str, key: str, value: str
+    ) -> ApprovalRequest | None:
+        """The newest pending approval of exactly `approval_type` in the
+        caller's workspace whose payload's top-level `key` is `value`: what a
+        context's record page shows it is waiting on. Pending approvals of one
+        type in one workspace are few, so the JSON test runs on what the
+        workspace and status already narrowed."""
+        approvals = tables.approval_requests
+        scope = TenantScope.from_access_context(context)
+        async with tenant_session(self.session_factory, scope) as session:
+            row = (
+                await session.execute(
+                    sa.select(approvals)
+                    .where(
+                        approvals.c.workspace_id == context.workspace_id,
+                        approvals.c.status == ApprovalStatus.PENDING.value,
+                        approvals.c.approval_type == approval_type,
+                        approvals.c.payload[key].astext == value,
+                    )
+                    .order_by(approvals.c.created_at.desc(), approvals.c.id.desc())
+                    .limit(1)
+                )
+            ).first()
+        return None if row is None else _approval_from_row(row)
