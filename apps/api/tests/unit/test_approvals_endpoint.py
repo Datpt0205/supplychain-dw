@@ -1,6 +1,6 @@
 """The approvals routes over the real `ApproveAndResumeService` with a fake store.
 
-What the page reads (`required_scope`, `requested_by_me`) and that the server
+What the page reads (`required_scope`, `can_decide`, `requested_by_me`) and that the server
 refuses a decision the page would have locked, called directly over HTTP with
 no page in front of it (ADR 0020). Tenant isolation of the read is the
 database's job, covered against a real one by `dw_agent_runtime`'s
@@ -55,6 +55,7 @@ BOD_SCOPE = "supply_chain.approve.bod"
 @dataclass
 class FakeMembershipLookup:
     scopes: frozenset[str]
+    roles: frozenset[str] = frozenset({"approver"})
 
     async def find_access(
         self, subject: str, issuer: str, tenant_id: uuid.UUID, workspace_id: uuid.UUID
@@ -65,7 +66,7 @@ class FakeMembershipLookup:
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             principal_id=VIEWER,
-            roles=frozenset({"approver"}),
+            roles=self.roles,
             scopes=self.scopes,
             groups=frozenset(),
             clearance="internal",
@@ -167,7 +168,10 @@ def make_request(
 
 
 def make_container(
-    repo: FakeApprovalRepo, scopes: frozenset[str], outbox: FakeOutbox | None = None
+    repo: FakeApprovalRepo,
+    scopes: frozenset[str],
+    outbox: FakeOutbox | None = None,
+    roles: frozenset[str] = frozenset({"approver"}),
 ) -> ApiContainer:
     resolved_outbox = outbox or FakeOutbox()
 
@@ -182,7 +186,7 @@ def make_container(
         engine=None,
         health_service=HealthService(probes={"database": ok_probe}),
         token_verifier=DevTokenVerifier(SECRET),
-        access_context_factory=DbAccessContextFactory(FakeMembershipLookup(scopes)),
+        access_context_factory=DbAccessContextFactory(FakeMembershipLookup(scopes, roles)),
         identity_bootstrap=None,
         uow_factory=uow_factory,
         authorization=ScopeAuthorizationService(),
@@ -237,6 +241,63 @@ async def test_the_view_carries_the_stamp_and_whose_request_it_is(
     assert body["requested_by_me"] is mine
     # A boolean, not an id: no other member's identity reaches the browser.
     assert str(requested_by) not in response.text
+
+
+PLATFORM_ADMIN = frozenset({"platform_admin"})
+
+
+@pytest.mark.parametrize(
+    ("roles", "scopes", "required_scope", "can_decide"),
+    [
+        (frozenset({"approver"}), {"approvals.decide", BOD_SCOPE}, BOD_SCOPE, True),
+        (frozenset({"approver"}), {"approvals.decide"}, BOD_SCOPE, False),
+        (frozenset({"approver"}), set(), None, False),
+        (PLATFORM_ADMIN, {"platform.admin"}, BOD_SCOPE, False),
+        (PLATFORM_ADMIN, {"platform.admin", BOD_SCOPE}, BOD_SCOPE, True),
+        (PLATFORM_ADMIN, {"platform.admin"}, None, True),
+    ],
+    ids=[
+        "holder",
+        "decide-right-only",
+        "no-decide-right",
+        "admin-without-stamp",
+        "admin-with-stamp",
+        "admin-unstamped",
+    ],
+)
+async def test_can_decide_is_the_servers_answer_in_the_list_and_the_detail(
+    roles: frozenset[str], scopes: set[str], required_scope: str | None, can_decide: bool
+) -> None:
+    """QO-8: the session's `hasScope` passes `platform_admin` on every scope, so
+    the page locks on this instead, built from the checks `decide` runs."""
+    request = make_request(requested_by=SOMEONE_ELSE, required_scope=required_scope)
+    container = make_container(
+        FakeApprovalRepo(request), frozenset({"approvals.read", *scopes}), roles=roles
+    )
+
+    detail = await _call(container, "GET", f"/{request.id}")
+    listed = await _call(container, "GET", "")
+
+    assert detail.status_code == 200
+    assert detail.json()["can_decide"] is can_decide
+    assert [item["can_decide"] for item in listed.json()["items"]] == [can_decide]
+
+
+async def test_platform_admin_without_the_stamp_is_refused_over_http() -> None:
+    """The page's lock and the server's refusal are one answer: a 403 naming the
+    stamp, nothing recorded."""
+    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOD_SCOPE)
+    repo = FakeApprovalRepo(request)
+    container = make_container(repo, frozenset({"platform.admin"}), roles=PLATFORM_ADMIN)
+
+    response = await _call(
+        container, "POST", f"/{request.id}/decisions", {"approve": True, "comment": ""}
+    )
+
+    assert response.status_code == 403
+    assert response.json()["details"]["action"] == BOD_SCOPE
+    assert repo.decisions == []
+    assert request.status is ApprovalStatus.PENDING
 
 
 async def test_the_server_refuses_a_decision_the_page_would_have_locked() -> None:

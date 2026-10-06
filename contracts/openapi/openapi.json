@@ -188,6 +188,10 @@
             "title": "Approval Type",
             "type": "string"
           },
+          "can_decide": {
+            "title": "Can Decide",
+            "type": "boolean"
+          },
           "created_at": {
             "anyOf": [
               {
@@ -273,6 +277,7 @@
           "decided_at",
           "requires_comment",
           "required_scope",
+          "can_decide",
           "requested_by_me"
         ],
         "title": "ApprovalView",

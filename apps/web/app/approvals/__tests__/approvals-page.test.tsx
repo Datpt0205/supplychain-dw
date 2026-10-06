@@ -12,14 +12,16 @@ const BOD_SCOPE = "supply_chain.approve.bod";
 const REASON = `Chỉ người có quyền ${BOD_SCOPE} được quyết yêu cầu này`;
 
 // The cache behind the list is keyed by workspace, so each test gets its own.
-let session: { workspaceId: string; scopes: string[] } = {
+let session: { workspaceId: string; scopes: string[]; admin?: boolean } = {
   workspaceId: "",
   scopes: [],
 };
+// As the real `hasScope` does, `platform_admin` passes every scope.
 vi.mock("../../../lib/auth/auth-context", () => ({
   useAuth: () => ({
     active: { workspaceId: session.workspaceId },
-    hasScope: (scope: string) => session.scopes.includes(scope),
+    hasScope: (scope: string) =>
+      session.admin === true || session.scopes.includes(scope),
   }),
 }));
 
@@ -72,13 +74,14 @@ function approval(overrides: Partial<Approval>): Approval {
     decided_at: null,
     requires_comment: false,
     required_scope: BOD_SCOPE,
+    can_decide: false,
     requested_by_me: false,
     ...overrides,
   };
 }
 
-async function renderWith(scopes: string[], item: Approval) {
-  session = { workspaceId: crypto.randomUUID(), scopes };
+async function renderWith(scopes: string[], item: Approval, admin = false) {
+  session = { workspaceId: crypto.randomUUID(), scopes, admin };
   listApprovals.mockResolvedValue({ items: [item], next_cursor: null });
   render(<ApprovalsPage />);
   return {
@@ -115,7 +118,7 @@ describe("/approvals and the stamped scope (ADR 0020)", () => {
   it("enables both for a viewer holding the stamped scope", async () => {
     const { approve, reject } = await renderWith(
       ["approvals.read", "approvals.decide", BOD_SCOPE],
-      approval({}),
+      approval({ can_decide: true }),
     );
 
     expect(approve.disabled).toBe(false);
@@ -137,7 +140,7 @@ describe("/approvals and the stamped scope (ADR 0020)", () => {
   it("changes nothing for an approval with no stamp", async () => {
     const { approve, reject } = await renderWith(
       ["approvals.read", "approvals.decide"],
-      approval({ required_scope: null }),
+      approval({ required_scope: null, can_decide: true }),
     );
 
     expect(approve.disabled).toBe(false);
@@ -145,14 +148,29 @@ describe("/approvals and the stamped scope (ADR 0020)", () => {
     expect(screen.queryByText(/Chỉ người có quyền/)).toBeNull();
   });
 
-  it("reads the stamp, not the approval type", async () => {
-    // Same type as the locked case above; only the stamp differs.
+  it("reads the server's answer, not the approval type", async () => {
+    // Same type as the locked case above; only the server's answer differs.
     const { approve } = await renderWith(
       ["approvals.read", "approvals.decide", "supply_chain.approve.accounting"],
-      approval({ required_scope: "supply_chain.approve.accounting" }),
+      approval({
+        required_scope: "supply_chain.approve.accounting",
+        can_decide: true,
+      }),
     );
 
     expect(approve.disabled).toBe(false);
+  });
+
+  it("locks both for platform_admin without the stamped scope (QO-8)", async () => {
+    // The session's `hasScope` passes an admin on every scope, the stamp
+    // included; the server does not, and the page follows the server.
+    const { approve, reject } = await renderWith([], approval({}), true);
+
+    expect(approve.disabled).toBe(true);
+    expect(reject.disabled).toBe(true);
+    expect(screen.getByText(REASON)).toBeTruthy();
+    fireEvent.click(approve);
+    expect(decideApproval).not.toHaveBeenCalled();
   });
 });
 

@@ -965,6 +965,8 @@ export interface components {
         ApprovalView: {
             /** Approval Type */
             approval_type: string;
+            /** Can Decide */
+            can_decide: boolean;
             /** Created At */
             created_at: string | null;
             /** Decided At */

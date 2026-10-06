@@ -19,6 +19,13 @@ export const approvalSchema = z.object({
    * say why a decision is locked, never to infer one from `approval_type`.
    */
   required_scope: z.string().nullable(),
+  /**
+   * The server's answer to "may the viewer decide this": `approvals.decide`
+   * and the stamped scope, by the checks the decision itself runs. A page locks
+   * on this, never on the session's `hasScope`, which lets `platform_admin`
+   * pass a scope a stamped approval does not let it pass.
+   */
+  can_decide: z.boolean(),
   /** The viewer raised this request, so may withdraw it without any scope. */
   requested_by_me: z.boolean(),
 });

@@ -2,7 +2,8 @@
 
 Real Postgres end to end: the node's interrupt payload stamps the row, the CHECK
 refuses a malformed stamp and the run ends failed instead of parking, and
-`ApproveAndResumeService.decide` enforces the stamp before anything is written.
+`ApproveAndResumeService.decide` enforces the stamp before anything is written,
+and `platform_admin` does not pass it (QO-8, 2026-10-06).
 Another tenant's approval is not found, even by a holder of the scope; another
 workspace of the same tenant is `test_approval_workspace.py`
 (platform-runtime/approval-audit-and-workspace/02).
@@ -300,6 +301,88 @@ async def test_the_stamp_decides_who_may_decide(urls: RuntimeUrls, worker_config
     assert final.status is RunStatus.COMPLETED
     assert final.result is not None
     assert final.result["dispatched"] is True
+    await stack.dispose()
+
+
+def _platform_admin(*scopes: str, tenant: uuid.UUID, workspace: uuid.UUID) -> AccessContext:
+    """As the seed grants the role: `platform.admin` only, and `approvals.decide`
+    through `ScopeAuthorizationService`'s admin rule, not as a scope."""
+    return AccessContext(
+        tenant_id=tenant,
+        workspace_id=workspace,
+        principal_id=uuid.uuid4(),
+        roles=frozenset({"platform_admin"}),
+        scopes=frozenset({"platform.admin", *scopes}),
+        plan_id="professional",
+    )
+
+
+async def test_platform_admin_does_not_pass_the_stamp(
+    urls: RuntimeUrls, worker_config: Path
+) -> None:
+    """QO-8 (2026-10-06): a platform operator is not the business's board. Same
+    tenant and workspace, approve and reject: refused, nothing written, the run
+    still parked. A holder of the scope then decides it as before."""
+    run = make_run_context()
+    stack = Stack(urls.app, worker_config, build_stamping_graph(BOD_SCOPE))
+    await stack.runner.start(run_context=run, input_payload={"subject": "x"})
+    record = await stack.run_store.get(run, run.run_id)
+    approval_id = record.approval_request_id
+    assert approval_id is not None
+
+    for approve in (True, False):
+        with pytest.raises(PermissionDeniedError) as refused:
+            await stack.approvals.decide(
+                approval_id=approval_id,
+                approve=approve,
+                comment="vận hành",
+                context=_platform_admin(tenant=run.tenant_id, workspace=run.workspace_id),
+                authorization=ScopeAuthorizationService(),
+            )
+        assert refused.value.details["action"] == BOD_SCOPE
+
+    async with stack.uow_factory(access_context_from_run(run)) as uow:
+        current = await uow.approvals.get(approval_id, workspace_id=run.workspace_id)
+    assert current is not None
+    assert current.status is ApprovalStatus.PENDING
+    assert current.version == 1
+    assert await stack.decision_rows_for(run, approval_id) == 0
+    assert (await stack.run_store.get(run, run.run_id)).status is RunStatus.WAITING_APPROVAL
+
+    decided = await stack.approvals.decide(
+        approval_id=approval_id,
+        approve=True,
+        comment="BGĐ đồng ý",
+        context=_decider(BOD_SCOPE, tenant=run.tenant_id, workspace=run.workspace_id),
+        authorization=ScopeAuthorizationService(),
+    )
+    assert decided.status is ApprovalStatus.APPROVED
+    assert await stack.decision_rows_for(run, approval_id) == 1
+    assert (await stack.run_store.get(run, run.run_id)).status is RunStatus.COMPLETED
+    await stack.dispose()
+
+
+async def test_platform_admin_still_decides_an_unstamped_approval(
+    urls: RuntimeUrls, worker_config: Path
+) -> None:
+    run = make_run_context()
+    stack = Stack(urls.app, worker_config, build_stamping_graph(_ABSENT))
+    await stack.runner.start(run_context=run, input_payload={"subject": "x"})
+    record = await stack.run_store.get(run, run.run_id)
+    assert record.approval_request_id is not None
+
+    decided = await stack.approvals.decide(
+        approval_id=record.approval_request_id,
+        approve=True,
+        comment="",
+        context=_platform_admin(tenant=run.tenant_id, workspace=run.workspace_id),
+        authorization=ScopeAuthorizationService(),
+    )
+
+    assert decided.required_scope is None
+    assert decided.status is ApprovalStatus.APPROVED
+    assert await stack.decision_rows_for(run, record.approval_request_id) == 1
+    assert (await stack.run_store.get(run, run.run_id)).status is RunStatus.COMPLETED
     await stack.dispose()
 
 

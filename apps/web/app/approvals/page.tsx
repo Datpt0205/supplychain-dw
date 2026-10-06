@@ -70,13 +70,13 @@ export default function ApprovalsPage() {
   );
 
   /**
-   * The scope stamped on this approval that the viewer lacks (ADR 0020), or
-   * null. Read from the approval itself and the session, never inferred from
-   * `approval_type`; the server refuses the decision either way.
+   * The scope stamped on this approval that keeps the viewer from deciding it
+   * (ADR 0020), or null. The server says whether they may (`can_decide`, the
+   * decision's own checks); the session's `hasScope` is not asked, because it
+   * lets `platform_admin` pass a scope a stamped approval does not.
    */
   function missingScope(approval: Approval): string | null {
-    const scope = approval.required_scope;
-    return scope !== null && !hasScope(scope) ? scope : null;
+    return approval.can_decide ? null : approval.required_scope;
   }
 
   /** A strict approval type refuses a blank comment server-side; say so here. */

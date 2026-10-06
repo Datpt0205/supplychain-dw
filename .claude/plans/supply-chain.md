@@ -57,7 +57,7 @@ means platform code, an upstream candidate (ADR 0011).
 | Z6    | `zalo-channel/issues/06-read-only-qa.md`                                | partly  | ready-for-agent | Z4                               |
 | ZL    | `zalo-channel/issues/07-live-run.md`                                    | —       | ready-for-human | Z1–Z6, H2                        |
 | A     | `approval-decider-scope/issues/01-required-scope.md`                    | yes     | resolved        | P                                |
-| A2    | `approval-decider-scope/issues/02-admin-does-not-pass-stamped-scope.md` | yes     | ready-for-agent | A                                |
+| A2    | `approval-decider-scope/issues/02-admin-does-not-pass-stamped-scope.md` | yes     | resolved        | A                                |
 | D     | `case-documents/issues/01-case-documents.md`                            | no      | resolved        | P                                |
 | S1    | `stage-1/issues/01-product-case-steps-1-5.md`                           | no      | resolved        | P, D                             |
 | S2    | `stage-1/issues/02-bod-review-step-6.md`                                | no      | ready-for-human | S1, A                            |

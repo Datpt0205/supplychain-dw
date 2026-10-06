@@ -572,26 +572,98 @@ async def test_a_holder_of_the_stamped_scope_decides_and_resumes() -> None:
     assert runner.resumed == [RUN_ID]
 
 
-async def test_platform_admin_passes_the_stamped_scope_through_the_same_rule() -> None:
-    """The stamp is checked by `authorization.require`, so the one admin rule in
-    `ScopeAuthorizationService.is_allowed` applies to it as to every scope.
-    Pinned so that a second, stricter check written beside it shows up here."""
-    request = make_stamped_request(BOD_SCOPE)
-    runner = FakeRunner(hosted=True)
-    service = make_service(request, frozenset(), runner=runner)
-    context = AccessContext(
+def platform_admin(principal: uuid.UUID, *extra_scopes: str) -> AccessContext:
+    """`platform_admin` as the seed grants it: the role and `platform.admin`, so
+    `approvals.decide` reaches it only through `ScopeAuthorizationService`'s
+    admin rule."""
+    return AccessContext(
         tenant_id=uuid.UUID(int=100),
         workspace_id=uuid.UUID(int=101),
-        principal_id=APPROVER,
+        principal_id=principal,
         roles=frozenset({"platform_admin"}),
-        scopes=frozenset(),
+        scopes=frozenset({"platform.admin", *extra_scopes}),
         plan_id="professional",
     )
 
-    decided = await _decide_as(service, context, approve=True)
+
+@pytest.mark.parametrize("approve", [True, False], ids=["approve", "reject"])
+async def test_platform_admin_does_not_pass_the_stamped_scope(approve: bool) -> None:
+    """QO-8 (2026-10-06): a platform operator is not the business's board. The
+    admin rule still grants `approvals.decide`; the stamp needs the scope itself.
+    Refused before anything is written and before the run is looked at."""
+    request = make_stamped_request(BOD_SCOPE)
+    repo = FakeApprovalRepo(request=request)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner, repo=repo)
+
+    with pytest.raises(PermissionDeniedError) as refused:
+        await _decide_as(service, platform_admin(APPROVER), approve=approve)
+
+    assert refused.value.message == "action not permitted"
+    assert refused.value.details == {
+        "action": BOD_SCOPE,
+        "resource_type": "approval_request",
+        "resource_id": str(uuid.UUID(int=10)),
+    }
+    assert request.status is ApprovalStatus.PENDING
+    assert request.version == 1
+    assert repo.decisions == []
+    assert runner.asked == []
+    assert runner.resumed == []
+
+
+async def test_platform_admin_holding_the_stamped_scope_decides() -> None:
+    request = make_stamped_request(BOD_SCOPE)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner)
+
+    decided = await _decide_as(service, platform_admin(APPROVER, BOD_SCOPE), approve=True)
 
     assert decided.status is ApprovalStatus.APPROVED
     assert runner.resumed == [RUN_ID]
+
+
+async def test_platform_admin_still_decides_an_unstamped_request() -> None:
+    """No stamp, today's rule: the admin rule answers `approvals.decide`."""
+    request = make_stamped_request(None)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner)
+
+    decided = await _decide_as(service, platform_admin(APPROVER), approve=True)
+
+    assert decided.status is ApprovalStatus.APPROVED
+    assert runner.resumed == [RUN_ID]
+
+
+@pytest.mark.parametrize(
+    ("required_scope", "context", "expected"),
+    [
+        (BOD_SCOPE, decider(APPROVER, BOD_SCOPE), True),
+        (BOD_SCOPE, decider(APPROVER), False),
+        (BOD_SCOPE, platform_admin(APPROVER), False),
+        (BOD_SCOPE, platform_admin(APPROVER, BOD_SCOPE), True),
+        (None, platform_admin(APPROVER), True),
+        (None, decider(APPROVER), True),
+        (None, context_without_the_right(APPROVER), False),
+    ],
+    ids=[
+        "holder",
+        "decide-right-only",
+        "admin-without-stamp",
+        "admin-with-stamp",
+        "admin-unstamped",
+        "decider-unstamped",
+        "no-decide-right",
+    ],
+)
+def test_may_decide_answers_as_decide_does(
+    required_scope: str | None, context: AccessContext, expected: bool
+) -> None:
+    """The inbox's answer, from the same two checks the decision runs."""
+    request = make_stamped_request(required_scope)
+    service = make_service(request, frozenset())
+
+    assert service.may_decide(request, context, ScopeAuthorizationService()) is expected
 
 
 async def test_the_requester_withdraws_a_stamped_request_without_the_scope() -> None:
