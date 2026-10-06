@@ -99,6 +99,7 @@ email as a second channel.
 | PR-02  | `7b411df` | Platform: approvals, runs and audit read only the caller's workspace.                                                                                                    |
 | S2     | `446083e` | BGĐ review at step 6: graph-only approve/reject, decider as actor, idempotent start plus a reconcile lane, `sc_bod`.                                                     |
 | W      | `82b5c13` | Supply Chain pages on antd in the E-HSDT v3 look: theme, `StatusTag`, `PageHeader`, `RegionState`, context navbar; Playwright viewports owed.                            |
+| PM-1   | `6d6459a` | Merge `platform/main` (`c16857c`): hosted rerank (TEI gone), memory/compaction/retrieval hardening, run-less decided event, dev-harness gate.                            |
 
 ## Open — named, not fixed, still true after the port
 
