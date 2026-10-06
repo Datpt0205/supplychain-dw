@@ -89,13 +89,13 @@ email as a second channel.
 
 ## Slice log
 
-| Slice  | Commit        | What                                                                                                                                                                     |
-| ------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P, ENV | `c2f04dc`     | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                                                                                 |
-| U, Z1  | `51c0ef7`     | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                                                                                  |
-| A      | `dabf5c4`     | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                                                                                     |
-| D      | `51e3400`     | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep.                                                               |
-| S1     | (this commit) | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages. |
+| Slice  | Commit    | What                                                                                                                                                                     |
+| ------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P, ENV | `c2f04dc` | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                                                                                 |
+| U, Z1  | `51c0ef7` | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                                                                                  |
+| A      | `dabf5c4` | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                                                                                     |
+| D      | `51e3400` | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep.                                                               |
+| S1     | `6dfb1ef` | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages. |
 
 ## Open — named, not fixed, still true after the port
 
@@ -238,7 +238,9 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
   bucket, FK CASCADE, first workspace-narrowed tables (documents and product
   cases, while `po_cases` stays tenant-only); `proposal_code` unique per tenant
   (a 409 across workspaces confirms a code is taken); supplier optional until
-  step 2; Category free text until S6; `sc_rnd` also holds the exceptions duty;
+  step 2; Category free text until S6; `sc_rnd` holds no exceptions duty, so
+  with the platform policy R&D cannot flag or resume a product case (a tenant
+  override can move those steps to `rnd`);
   product duties a separate policy reusing the action-duties scopes.
 - **QO-7** Strict approvals need a written comment, so a Zalo approval at steps
   6 and 9 is `DUYỆT 4821 <nhận xét>`, not bare `DUYỆT 4821` (Z5 Comments).
