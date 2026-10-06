@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../../packages/python/dw_agent_runtime/src/dw_agent_runtime/approval_flow.py # decide 96-155, _enforce_strict_rules 46-61, channel="web" dòng 155
@@ -124,3 +124,12 @@ Vé: `zalo-channel/issues/05` (Z5).
   trên điện thoại để lấy mã.
 - Tóm tắt trong tin và câu trả lời của bot đi qua máy chủ Zalo. Elmich xác nhận dữ liệu
   nào được đi qua (QE-20).
+
+## Sửa đổi 2026-10-06 (Đạt giao quyết, QO-7)
+
+- **Nhận xét viết trên cổng khi cấp mã.** Người duyệt phải mở cổng để thấy mã, nên trang
+  cấp mã có ô nhận xét (bắt buộc với loại nghiêm); mã gắn với nhận xét đó. Tin Zalo chỉ
+  mang `DUYỆT <mã>` hoặc `KHÔNG <mã> <lý do>`; quyết định ghi đúng nhận xét đã nhập trên
+  cổng (với `KHÔNG`, lý do trong tin được nối sau nhận xét).
+- **Mã 6 chữ số, hiệu lực 10 phút, dùng một lần; sai 5 lần thì khóa mã đó.** Thay 4 chữ
+  số và 15 phút ở trên; băm HMAC giữ nguyên.

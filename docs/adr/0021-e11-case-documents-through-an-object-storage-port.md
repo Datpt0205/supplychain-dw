@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../products/elmich/process.md#2-danh-mục-tài-liệuchứng-từ-nghiệp-vụ-chính
@@ -131,3 +131,10 @@ CASCADE` (không `RESTRICT`, cùng lý do điểm 1 của lát D); CHECK
    và `case_id` thay cho `po_case_id`.
 4. Chứng từ đã đóng một vòng mẫu không xóa riêng được (FK `NO ACTION` từ vòng); hồ sơ bị
    xóa (chỉ offboarding) thì chứng từ và vòng đi cùng trong một câu lệnh.
+
+## Sửa đổi 2026-10-06 (hạn lưu chứng từ kế toán)
+
+`deposit_docs`, `payment_docs` và `purchase_order` là chứng từ kế toán; Luật Kế toán 2015
+và Nghị định 174/2016/NĐ-CP đòi lưu tối thiểu 10 năm. Nền tảng không tự xóa chứng từ của
+hồ sơ: chứng từ chỉ rời đi khi tenant bị offboard, và bundle offboarding trao lại cho chủ
+dữ liệu trước khi xóa. Nghĩa vụ lưu thuộc Elmich, chủ sở hữu hồ sơ.

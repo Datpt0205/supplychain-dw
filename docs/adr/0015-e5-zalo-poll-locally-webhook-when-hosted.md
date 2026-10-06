@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../../packages/python/dw_connectors/src/dw_connectors/adapters/zalo_bot.py # get_updates, set_webhook

@@ -42,33 +42,34 @@ This repo is the Elmich product: bounded context
 Specs and tickets under `.claude/plans/supply-chain/<feature>/`. "Generic"
 means platform code, an upstream candidate (ADR 0011).
 
-| Slice | Ticket                                                              | Generic | Status          | Blocked by                          |
-| ----- | ------------------------------------------------------------------- | ------- | --------------- | ----------------------------------- |
-| P     | `port/issues/01-port-dw-supply-chain.md`                            | no      | resolved        | —                                   |
-| P2    | `port/issues/02-audit-and-spend-on-supply-chain-writes.md`          | partly  | ready-for-agent | P                                   |
-| P3    | `port/issues/03-follow-ups-retention.md`                            | no      | ready-for-agent | P                                   |
-| ENV   | `env/issues/01-env-example-and-init-env.md`                         | yes     | resolved        | P                                   |
-| Z1    | `zalo-channel/issues/01-zalo-link.md`                               | yes     | resolved        | P, ENV                              |
-| U     | `personal-settings/issues/01-settings-page-and-login.md`            | yes     | resolved        | Z1, ENV, web-ui antd-shell 03/05    |
-| Z2    | `zalo-channel/issues/02-channel-delivery.md`                        | yes     | ready-for-agent | Z1                                  |
-| Z3    | `zalo-channel/issues/03-zalo-webhook.md`                            | yes     | ready-for-agent | Z1                                  |
-| Z4    | `zalo-channel/issues/04-chat-proposal.md`                           | partly  | ready-for-agent | Z1, U, S1, D                        |
-| Z5    | `zalo-channel/issues/05-approve-via-zalo.md`                        | partly  | ready-for-agent | Z4, Z2, A, S2                       |
-| Z6    | `zalo-channel/issues/06-read-only-qa.md`                            | partly  | ready-for-agent | Z4                                  |
-| ZL    | `zalo-channel/issues/07-live-run.md`                                | —       | ready-for-human | Z1–Z6, H2                           |
-| A     | `approval-decider-scope/issues/01-required-scope.md`                | yes     | resolved        | P                                   |
-| D     | `case-documents/issues/01-case-documents.md`                        | no      | resolved        | P                                   |
-| S1    | `stage-1/issues/01-product-case-steps-1-5.md`                       | no      | resolved        | P, D                                |
-| S2    | `stage-1/issues/02-bod-review-step-6.md`                            | no      | ready-for-human | S1, A                               |
-| S3    | `stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`     | no      | ready-for-agent | S2                                  |
-| S4    | `stage-1/issues/04-item-code-sku-signoff-step-9.md`                 | no      | ready-for-agent | S3                                  |
-| S5    | `stage-1/issues/05-place-order-hand-off.md`                         | no      | ready-for-agent | S4                                  |
-| S6    | `stage-1/issues/06-sla-by-category-and-pic-routing.md`              | no      | ready-for-agent | S5                                  |
-| S7    | `stage-1/issues/07-stage-1-evals.md`                                | no      | ready-for-agent | S6                                  |
-| PK    | `packaging-design/issues/01-colour-packaging-and-pre-production.md` | no      | ready-for-agent | P, D                                |
-| W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md`                | no      | ready-for-agent | P, web-ui antd-shell 03/05/07/08/09 |
-| H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                    | yes     | ready-for-agent | ENV, U                              |
-| H2    | `hosting/issues/02-live-domain.md`                                  | —       | ready-for-human | H                                   |
+| Slice | Ticket                                                                  | Generic | Status          | Blocked by                       |
+| ----- | ----------------------------------------------------------------------- | ------- | --------------- | -------------------------------- |
+| P     | `port/issues/01-port-dw-supply-chain.md`                                | no      | resolved        | —                                |
+| P2    | `port/issues/02-audit-and-spend-on-supply-chain-writes.md`              | partly  | ready-for-agent | P                                |
+| P3    | `port/issues/03-follow-ups-retention.md`                                | no      | ready-for-agent | P                                |
+| ENV   | `env/issues/01-env-example-and-init-env.md`                             | yes     | resolved        | P                                |
+| Z1    | `zalo-channel/issues/01-zalo-link.md`                                   | yes     | resolved        | P, ENV                           |
+| U     | `personal-settings/issues/01-settings-page-and-login.md`                | yes     | resolved        | Z1, ENV, web-ui antd-shell 03/05 |
+| Z2    | `zalo-channel/issues/02-channel-delivery.md`                            | yes     | ready-for-agent | Z1                               |
+| Z3    | `zalo-channel/issues/03-zalo-webhook.md`                                | yes     | ready-for-agent | Z1                               |
+| Z4    | `zalo-channel/issues/04-chat-proposal.md`                               | partly  | ready-for-agent | Z1, U, S1, D                     |
+| Z5    | `zalo-channel/issues/05-approve-via-zalo.md`                            | partly  | ready-for-agent | Z4, Z2, A, S2                    |
+| Z6    | `zalo-channel/issues/06-read-only-qa.md`                                | partly  | ready-for-agent | Z4                               |
+| ZL    | `zalo-channel/issues/07-live-run.md`                                    | —       | ready-for-human | Z1–Z6, H2                        |
+| A     | `approval-decider-scope/issues/01-required-scope.md`                    | yes     | resolved        | P                                |
+| A2    | `approval-decider-scope/issues/02-admin-does-not-pass-stamped-scope.md` | yes     | ready-for-agent | A                                |
+| D     | `case-documents/issues/01-case-documents.md`                            | no      | resolved        | P                                |
+| S1    | `stage-1/issues/01-product-case-steps-1-5.md`                           | no      | resolved        | P, D                             |
+| S2    | `stage-1/issues/02-bod-review-step-6.md`                                | no      | ready-for-human | S1, A                            |
+| S3    | `stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`         | no      | ready-for-agent | S2                               |
+| S4    | `stage-1/issues/04-item-code-sku-signoff-step-9.md`                     | no      | ready-for-agent | S3                               |
+| S5    | `stage-1/issues/05-place-order-hand-off.md`                             | no      | ready-for-agent | S4                               |
+| S6    | `stage-1/issues/06-sla-by-category-and-pic-routing.md`                  | no      | ready-for-agent | S5                               |
+| S7    | `stage-1/issues/07-stage-1-evals.md`                                    | no      | ready-for-agent | S6                               |
+| PK    | `packaging-design/issues/01-colour-packaging-and-pre-production.md`     | no      | ready-for-agent | P, D                             |
+| W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md` (E-HSDT v3 look)   | no      | in progress     | P                                |
+| H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                        | yes     | ready-for-agent | ENV, U                           |
+| H2    | `hosting/issues/02-live-domain.md`                                      | —       | ready-for-human | H                                |
 
 **Next:** Z4 (S1, U in), then S3 (S2 in); Z5 after Z4 and Z2; Z6 after Z4.
 Platform hardening and the FCI rerank land from `platform/main` once the
@@ -226,37 +227,48 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
   Zalo. Dữ liệu nào được đi qua (mã, tên SP, trạng thái, tên NCC, giá, chứng từ)? Có quy
   định nội bộ nào cấm không?
 
-**Đạt:**
+**Đạt:** none open. QO-1 to QO-8 were decided on 2026-10-06 (Đạt delegated
+them: "tự quyết định cho hướng tốt nhất"); see "Decided on 2026-10-06" below.
 
-- **QO-1** Has the sales-dev database ever run the archive's migration chain? P
-  re-points four revisions; running the new chain on such a database breaks it.
-- **QO-2** Review ADR 0011–0023 (all Proposed).
-- **QO-3** SMTP for the Keycloak realm (password reset, email verification):
-  whose server?
-- **QO-4** Login page branding: a neutral theme or Elmich's own.
-- **QO-5** When and by which slices generic pieces go upstream (ADR 0011, open
-  point 1).
-- **QO-6** Confirm deferring container loading as its own step (step 14) until
-  Elmich answers QE-15; until then it stays inside `qc` → `in_transit`.
+### Decided on 2026-10-06 (Đạt delegated QO-1 to QO-8)
 
-- **QO-8** Provisional choices made while building A, D, S1 (2026-10-05/06),
-  recorded as amendments to ADR 0016, 0020, 0021 for review: `platform_admin`
-  passes `required_scope`; cross-workspace approval reads left to
-  platform-runtime approval-audit-and-workspace 02; case documents in their own
-  bucket, FK CASCADE, first workspace-narrowed tables (documents and product
-  cases, while `po_cases` stays tenant-only); `proposal_code` unique per tenant
-  (a 409 across workspaces confirms a code is taken); supplier optional until
-  step 2; Category free text until S6; `sc_rnd` holds no exceptions duty, so
-  with the platform policy R&D cannot flag or resume a product case (a tenant
-  override can move those steps to `rnd`);
-  product duties a separate policy reusing the action-duties scopes.
-- **QO-7** Strict approvals need a written comment, so a Zalo approval at steps
-  6 and 9 is `DUYỆT 4821 <nhận xét>`, not bare `DUYỆT 4821` (Z5 Comments).
-  Confirm, or pick one of the alternatives in ADR 0014 point 6: the page asks
-  for a default comment when it issues the code, or strict types are decided
-  on the web only; or drop the comment floor for these types (a platform floor
-  change, ADR needed). Also confirm 4 digits, 15 minutes, 5 wrong tries
-  per 15 minutes.
+- **QO-1 Database.** Elmich runs on its own database (`dw_elmichs` locally, its
+  own instance when hosted). This chain is never run against the sales-dev
+  database, whatever that database has run; nothing here needs its data.
+- **QO-2 ADRs 0011–0023:** Accepted, with their dated amendments.
+- **QO-8, the provisional choices of A, D, S1, S2:** kept, with one reversal:
+  a **stamped `required_scope` is not satisfied by `platform_admin`**. A
+  platform operator is not Elmich's BGĐ; a business approval needs the scope
+  itself (human-in-command). Ticket A2 (`approval-decider-scope/issues/02`).
+  Everything else stands: documents and product cases are workspace-narrowed
+  while `po_cases` stays tenant-only; `proposal_code` unique per tenant;
+  supplier from step 2; Category free text until S6; `sc_rnd` without the
+  exceptions duty; product duties in their own policy.
+- **QO-3 SMTP:** the customer's own mail domain, set per deployment from env
+  (realm SMTP is configuration, never committed). Until it is set, password
+  resets go through an administrator; local development sends no mail.
+- **QO-4 Login page:** Elmich's own branding (logo, name, the v3 colours this
+  repo's web uses), as a Keycloak theme in this repo. A product repo per
+  customer brands per customer.
+- **QO-5 Upstream:** continuous, not batched. A fix to a platform package lands
+  in `codebase` first and comes back here with `git merge platform/main`; a
+  product's design (theme, page layouts) stays in the product (Đạt, 2026-10-06:
+  "design này theo từng dự án").
+- **QO-6 Step 14:** deferred as its own step until Elmich answers QE-15;
+  container loading stays inside `qc` → `in_transit`.
+- **QO-7 Zalo approvals at steps 6 and 9:** the approver writes the comment on
+  the portal when the page issues the code (they must open the portal to see
+  the code anyway); Zalo carries `DUYỆT <mã>` or `KHÔNG <mã> <lý do>`. The code
+  is **6 digits**, valid **10 minutes**, single use; **5 wrong tries** lock that
+  code. ADR 0014 amended.
+- **Accounting documents (QE-02 addition):** `deposit_docs`, `payment_docs`
+  and `purchase_order` are accounting records, which Vietnamese law (Luật Kế
+  toán 2015, Nghị định 174/2016) keeps at least 10 years; the platform never
+  deletes a case document on its own (documents leave only when a tenant is
+  offboarded, and the offboarding bundle hands them back first). The duty to
+  keep them rests with Elmich as owner of the records; ADR 0021 amended.
+- **Monthly volume** (how many new products and POs) is not a process question
+  and is not asked of Elmich for the build.
 
 ## Working notes
 

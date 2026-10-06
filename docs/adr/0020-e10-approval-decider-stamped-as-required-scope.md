@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../../packages/python/dw_agent_runtime/src/dw_agent_runtime/approval_flow.py # decide 96-140, is_strict 37-44

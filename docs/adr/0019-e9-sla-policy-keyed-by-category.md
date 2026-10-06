@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../products/elmich/process.md#32-bảng-17-bước # đoạn dưới bảng: SLA theo Cate

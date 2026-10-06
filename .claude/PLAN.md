@@ -50,11 +50,8 @@ the reference after each `git merge platform/main`.
   documents per step, revision loop, sign-off order, item code and SKU format,
   categories, PIC reassignment, Zalo events, what case data may pass through
   Zalo).
-- **Đạt, product:** QO-1–QO-8 in `supply-chain.md` (sales-dev database and the
-  re-pointed migrations; review ADR 0011–0023; realm SMTP; login branding;
-  upstream timing; deferring step 14's container loading; the comment a strict
-  approval needs in Zalo, code length and expiry; the provisional choices made
-  in A, D, S1).
+- **Đạt, product:** none open; QO-1–QO-8 decided 2026-10-06 (delegated), see
+  `supply-chain.md` "Decided on 2026-10-06".
 - **Đạt, inherited from the platform:**
     - a plan quota on direct model calls; the model profile and key for
       uat/production; whether CI runs the web vitest and Playwright suites;

@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../../packages/python/dw_connectors/src/dw_connectors/ports.py # ChatSenderPort, dòng 27-41

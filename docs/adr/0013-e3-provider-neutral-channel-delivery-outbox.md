@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../../packages/python/dw_platform/src/dw_platform/adapters/persistence/notifications.py # deliver, dòng 101-131

@@ -40,3 +40,13 @@ Trang Supply Chain trông và hành xử như các trang khác của shell antd 
 - `CLAUDE.md`, "Web UI".
 
 ## Comments
+
+- 2026-10-06, Đạt: giao diện theo ngôn ngữ thiết kế E-HSDT v3
+  (`docs/design/ehsdt/design_handoff_ehsdt_v3/`, chỉ có trên máy; README và
+  `doi-chieu-codebase.md` là luật), sửa cho đúng quy trình Elmich. Thiết kế theo từng dự
+  án: theme, nhãn trạng thái, mẫu trang nằm trong repo này, không đưa lên `codebase`.
+  Bản tham chiếu đã làm cùng ngôn ngữ đó: `dw-proterial` commit `92b155a` (theme trong
+  `@dw/ui`: Be Vietnam Pro, JetBrains Mono, primary `#006edc` vì `#0071e3` chỉ đạt 4,31:1;
+  `StatusTag` theo bảng màu nhãn; navbar theo context; mẫu trang danh sách và chi tiết).
+  Không chờ các ticket antd-shell 07/08/09 của nền tảng: phần cần dùng dựng ngay trong
+  repo này.

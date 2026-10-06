@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../../apps/api/src/dw_api/settings.py # is_deployed 241, validate_for_profile 256-299, cors_origins 64
