@@ -23,28 +23,62 @@ NULL keeps today's rule, so every request already in the table is unchanged.
   either. `test_privileges.py` asserts it from the catalog.
 - Approval RLS is unchanged here: it narrows by tenant only. Narrowing reads
   by workspace is platform-runtime/approval-audit-and-workspace ticket 02.
+
+**Twin.** The platform took this change back as its own revision
+`36dabf47619c` (same column, CHECK and grant), which merging `platform/main`
+brings here on a second branch alembic may run before or after this one. So
+every statement is idempotent (the column if missing, the CHECK only if no
+constraint of that name exists, the same REVOKE/GRANT pair), and downgrade is a
+no-op while the twin is still applied: whichever of the pair is downgraded last
+removes the objects. The platform revision does the same, mirrored.
 """
 
 from __future__ import annotations
 
-from alembic import op
+from alembic import context, op
+from alembic.script import ScriptDirectory
 
 revision = "5d3965984679"
 down_revision = "cf66605631d7"
 branch_labels = None
 depends_on = None
 
+# The platform revision that carries the same change (see docstring).
+_TWIN = "36dabf47619c"
+
 # What `SqlApprovalRepository.save` writes; nothing else updates the table.
 _DECISION_COLUMNS = "status, decided_at, version"
 
 
+def _twin_applied() -> bool:
+    script = ScriptDirectory.from_config(context.config)
+    heads = op.get_context().get_current_heads()
+    return any(
+        rev.revision == _TWIN for head in heads for rev in script.iterate_revisions(head, "base")
+    )
+
+
 def upgrade() -> None:
-    op.execute("ALTER TABLE platform.approval_requests ADD COLUMN required_scope text")
     op.execute(
-        "ALTER TABLE platform.approval_requests"
-        " ADD CONSTRAINT ck_approval_requests_required_scope CHECK ("
-        " required_scope IS NULL"
-        r" OR required_scope ~ '^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$')"
+        "ALTER TABLE platform.approval_requests ADD COLUMN IF NOT EXISTS required_scope text"
+    )
+    op.execute(
+        r"""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conrelid = 'platform.approval_requests'::regclass
+                  AND conname = 'ck_approval_requests_required_scope'
+            ) THEN
+                ALTER TABLE platform.approval_requests
+                    ADD CONSTRAINT ck_approval_requests_required_scope CHECK (
+                        required_scope IS NULL
+                        OR required_scope ~ '^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$');
+            END IF;
+        END
+        $$
+        """
     )
     op.execute(
         f"""
@@ -61,6 +95,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if _twin_applied():
+        return
     op.execute(
         f"""
         DO $$
