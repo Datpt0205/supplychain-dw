@@ -14,6 +14,10 @@ hosts the review graph on its own runner, over the same tables, checkpointer
 and plan allowance the API's runner uses; a decision then resumes the run in
 the API, which hosts the same graph.
 
+The Zalo proposal command (zalo-channel ticket 04, Z4b) is built here too: the
+chat's "Đồng ý" creates a product case through the same `ProposeProductCase`
+the API's route calls, over the same tables and the same duty policy file.
+
 Built here, at this process's composition root: the concrete adapters are
 imported only here, the policies are the shipped files the API also loads
 (named once in `dw_supply_chain.policy_files`).
@@ -34,6 +38,7 @@ from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardStore
 from dw_agent_runtime.autonomy import AutonomyApprovalPolicy
 from dw_agent_runtime.model.budget import RunBudgetLedger
 from dw_agent_runtime.model.run_policy import load_worker_run_policy
+from dw_agent_runtime.ports import ModelGateway
 from dw_agent_runtime.registry import GraphRegistry, WorkerRegistry
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_observability.telemetry import TelemetryPort
@@ -43,6 +48,7 @@ from dw_platform.adapters.persistence.policy_overrides import SqlPolicyOverrideR
 from dw_platform.adapters.persistence.scope_holders import SqlScopeHolders
 from dw_platform.adapters.persistence.tenant_plans import SqlTenantPlans
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
+from dw_platform.adapters.persistence.workspace_names import SqlWorkspaceNames
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_supply_chain.adapters.persistence.case_document_repository import (
@@ -57,20 +63,28 @@ from dw_supply_chain.adapters.persistence.product_case_repository import (
     SqlProductCaseRepository,
     SqlWorkspacesAwaitingReview,
 )
+from dw_supply_chain.adapters.persistence.proposal_draft_repository import (
+    SqlProposalDraftRepository,
+    SqlProposalDraftRetention,
+)
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
 from dw_supply_chain.application.document_orphan_sweep import SweepOrphanDocuments
 from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
 from dw_supply_chain.application.ports import CaseDocumentObjectListingPort
+from dw_supply_chain.application.product_cases import ProposeProductCase
 from dw_supply_chain.application.product_reviews import EnsureBodReview, ReconcileBodReviews
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
 from dw_supply_chain.policy_files import (
     ADVANCE_PRODUCT_CASE_WORKER_FILE,
     FOLLOW_UP_POLICY_FILE,
+    PRODUCT_ACTION_DUTIES_POLICY_FILE,
     PRODUCT_APPROVALS_POLICY_FILE,
     SLA_POLICY_FILE,
 )
+from dw_supply_chain.presentation.zalo_proposal import ZaloProposalCommand
+from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.product_approvals import load_supply_chain_product_approvals
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
 from dw_supply_chain.workflows import advance_product_case_graph as product_review_graph
@@ -174,6 +188,46 @@ def build_product_review_reconcile(
             ids=ids,
         ),
     )
+
+
+def build_zalo_proposal_command(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    configs_dir: Path,
+    gateway: ModelGateway,
+    ids: IdGenerator,
+    clock: UtcClock,
+    web_url: str,
+) -> ZaloProposalCommand:
+    """The chat proposal command. `gateway` is the process's one-call gateway
+    (`ModelStack.one_call`), so the plan's daily allowance is checked before
+    each model call and the per-run ledger entry freed after it."""
+    return ZaloProposalCommand(
+        propose=ProposeProductCase(
+            repo=SqlProductCaseRepository(sessions),
+            authz=ScopeAuthorizationService(),
+            policy_override_repo=SqlPolicyOverrideRepository(sessions),
+            platform_default_duties=load_supply_chain_product_action_duties(
+                configs_dir / "policies" / PRODUCT_ACTION_DUTIES_POLICY_FILE
+            ),
+            ids=ids,
+            clock=clock,
+        ),
+        drafts=SqlProposalDraftRepository(sessions),
+        gateway=gateway,
+        workspaces=SqlWorkspaceNames(sessions),
+        ids=ids,
+        clock=clock,
+        web_url=web_url,
+    )
+
+
+def build_proposal_draft_retention(
+    sessions: async_sessionmaker[AsyncSession],
+) -> SqlProposalDraftRetention:
+    """Satisfies `RetentionPrunePort`; registered as
+    `supply_chain_proposal_drafts_retention` on the retention cadence."""
+    return SqlProposalDraftRetention(session_factory=sessions)
 
 
 def build_product_review_reconcile_consumer(

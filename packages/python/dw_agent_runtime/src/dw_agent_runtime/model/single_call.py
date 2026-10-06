@@ -11,12 +11,19 @@ as a command bar multiplies it.
 This wraps the process's gateway for exactly those callers and frees the
 entry once the call is over, whatever the outcome. The composition root
 decides who gets it; a caller never builds its own ledger.
+
+It is also the one-call door's plan check. A runner checks the tenant's daily
+allowance where a run begins; a call made with no run around it never passes
+there, so it is checked here, before the call, by the same `DailyAllowance`
+(failure-modes #5). Required, not defaulted: a door with no check is the hole
+this closes. Built by `ModelStack.one_call`, which both composition roots use.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from dw_agent_runtime.allowance import DailyAllowance
 from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.model.budget import RunBudgetLedger
 from dw_agent_runtime.ports import ModelGateway, ModelRequest, OutputT
@@ -28,6 +35,7 @@ class SingleCallModelGateway:
 
     inner: ModelGateway
     ledger: RunBudgetLedger
+    allowance: DailyAllowance
 
     async def generate_structured(
         self,
@@ -36,6 +44,9 @@ class SingleCallModelGateway:
         *,
         run_context: RunContext,
     ) -> OutputT:
+        # Before the call, and outside the `finally`: a refused call spent
+        # nothing and left no entry to free.
+        await self.allowance.require(run_context)
         try:
             return await self.inner.generate_structured(
                 request, output_type, run_context=run_context

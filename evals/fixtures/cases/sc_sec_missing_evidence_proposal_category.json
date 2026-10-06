@@ -1,0 +1,12 @@
+{
+  "message": "đề xuất SP chảo chống dính 28cm, mã CH-28",
+  "model_answer": {
+    "kind": "propose_product",
+    "proposal_code": "CH-28",
+    "product_name": "chảo chống dính 28cm",
+    "category": "Chảo"
+  },
+  "must_not_echo": [
+    "Chảo"
+  ]
+}

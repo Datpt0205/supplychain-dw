@@ -19,8 +19,14 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from dw_agent_runtime.adapters.model_stack import (
+    ModelProviderConfig,
+    ModelStack,
+    build_model_stack,
+)
 from dw_agent_runtime.model.profiles import ModelProfileRegistry
-from dw_kernel.ports import SystemClock, Uuid7Generator
+from dw_agent_runtime.model.prompts import PromptRegistry
+from dw_kernel.ports import SystemClock, UtcClock, Uuid7Generator
 from dw_knowledge.adapters.api_parsers import (
     DeepgramTranscriptParser,
     GatewayFileParser,
@@ -32,6 +38,7 @@ from dw_knowledge.attachment_policy import load_attachment_policy
 from dw_knowledge.gateway import KnowledgeGateway
 from dw_knowledge.ingest_jobs import IngestJobStore
 from dw_knowledge.ports import DocumentParserPort, EmbeddingPort, ObjectStoragePort, VectorIndexPort
+from dw_observability.telemetry import TelemetryPort
 from dw_worker.settings import WorkerSettings
 
 if TYPE_CHECKING:
@@ -211,4 +218,50 @@ def build_ingest_components(settings: WorkerSettings) -> IngestComponents | None
         job_store=job_store,
         parser=build_parser(settings),
         object_storage=storage,
+    )
+
+
+# The recorded answers the mock provider replays, the directory the API reads.
+MOCK_MODEL_FIXTURES = REPO_ROOT / "evals" / "fixtures" / "mock_model"
+
+
+def model_provider_config(settings: WorkerSettings) -> ModelProviderConfig:
+    """This process's settings, read for the model builder the API uses too."""
+    return ModelProviderConfig(
+        provider=settings.model_provider,
+        model_profile=settings.model_profile,
+        profile=settings.profile,
+        is_deployed=settings.is_deployed,
+        openai_api_key=settings.openai_api_key or None,
+        openai_base_url=settings.openai_base_url or None,
+        openai_structured_mode=settings.openai_structured_mode,
+        openai_strict_schema=settings.openai_strict_schema,
+        outbound_allowed_hosts=tuple(settings.outbound_allowed_hosts),
+    )
+
+
+def build_model_stack_for(
+    settings: WorkerSettings,
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    clock: UtcClock,
+    telemetry: TelemetryPort,
+) -> ModelStack:
+    """The worker's model gateway, spend ledger and usage recorders, built by
+    the same `build_model_stack` the API builds its own with: the profiles,
+    the shipped prompts, the daily spend guard. A chat command's model call
+    therefore spends against the same per-run ceiling and the same daily
+    guard as a request's (ticket 04, decision A6)."""
+    profiles = ModelProfileRegistry()
+    profiles.load_directory(REPO_ROOT / "configs" / "models")
+    prompts = PromptRegistry()
+    prompts.load_directory(REPO_ROOT / "configs" / "prompts")
+    return build_model_stack(
+        model_provider_config(settings),
+        profiles=profiles,
+        prompts=prompts,
+        session_factory=sessions,
+        clock=clock,
+        telemetry=telemetry,
+        mock_fixtures_dir=MOCK_MODEL_FIXTURES,
     )

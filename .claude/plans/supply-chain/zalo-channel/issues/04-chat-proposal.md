@@ -1,6 +1,6 @@
 # 04 — Đề xuất sản phẩm (bước 1) bằng chat Zalo; nền cho lệnh đến
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: .claude/plans/supply-chain/zalo-channel/issues/01-zalo-link.md, .claude/plans/supply-chain/personal-settings/issues/01-settings-page-and-login.md, .claude/plans/supply-chain/stage-1/issues/01-product-case-steps-1-5.md, .claude/plans/supply-chain/case-documents/issues/01-case-documents.md
 Area: supply-chain
 
@@ -108,37 +108,46 @@ AccessContext theo người đã liên kết, khử trùng theo id tin
       nối", trước khi chat đó gửi được lệnh đề xuất đầu tiên. Test: liên kết, rồi đọc
       hộp thư và `GET /zalo/status` của người đó, rồi mới chạy lệnh. Mutation: bỏ lần ghi
       thông báo khi liên kết thì test đỏ.
-- [ ] **Không từ tin:** test đưa tin chứa tenant id, workspace id, user id, `pic_user_id`
+- [x] **Không từ tin:** test đưa tin chứa tenant id, workspace id, user id, `pic_user_id`
       của người khác: hồ sơ tạo ra (nếu có) ở workspace của bước 3, PIC là người đã liên
       kết. Mutation: lấy tenant từ tin thì test đỏ.
 - [x] **Test âm danh tính:** chat chưa liên kết không tạo gì, không gọi mô hình; liên kết
       đã gỡ giữa hai lượt thì lượt sau bị từ chối; membership bị gỡ thì từ chối;
       `SqlMembershipLookup.find_access` với `issuer='zalo'` vẫn không ra membership (test
       của Z1 vẫn xanh).
-- [ ] **Scope tối thiểu:** context dựng cho lệnh đề xuất không mang `approvals.decide` dù
+- [x] **Scope tối thiểu:** context dựng cho lệnh đề xuất không mang `approvals.decide` dù
       membership có; người thiếu scope tạo hồ sơ nhận câu từ chối và không có bản nháp.
       Test chạy lệnh đề xuất với đúng trần của nó (bắt lệch trần với handler).
-- [ ] **Xác nhận:** không có "Đồng ý" thì không có hồ sơ; "đồng ý" không dấu cũng nhận;
+- [x] **Xác nhận:** không có "Đồng ý" thì không có hồ sơ; "đồng ý" không dấu cũng nhận;
       "ok", "được" không tạo; ảnh đến sau tóm tắt thì "Đồng ý" bị đòi tóm tắt lại.
       Mutation: bỏ so `summarized_version` thì test đỏ.
-- [ ] **Idempotency:** cùng update "Đồng ý" tới hai lần (poll rồi webhook, hai giao dịch
+      _(Z4b: thay đổi sau tóm tắt là sửa trường; phần "ảnh đến sau tóm tắt" đi cùng
+      ảnh sang `04b-photos.md`.)_
+- [x] **Idempotency:** cùng update "Đồng ý" tới hai lần (poll rồi webhook, hai giao dịch
       thật) tạo đúng một hồ sơ. Mutation: bỏ khử trùng theo id tin và khóa idempotency thì
       test đỏ.
-- [ ] **Giải dữ liệu:** NCC chỉ có ở tenant B, hỏi từ tenant A: không khớp, bot hỏi lại,
+      _(Z4b, quyết định C4: thay khóa idempotency HTTP bằng việc tiêu bản nháp có canh
+      `draft_version` trong cùng giao dịch tạo hồ sơ.)_
+- [x] **Giải dữ liệu:** NCC chỉ có ở tenant B, hỏi từ tenant A: không khớp, bot hỏi lại,
       câu trả lời không chứa tên nào của B. Category không có: hỏi lại với danh sách của
       tenant A. Mã trùng: hỏi mã khác.
-- [ ] **Không đoán:** mô hình giả trả schema hỏng, hoặc `unsupported`: bot nói "chưa hiểu",
+      _(Z4b, quyết định A1/A2: NCC không thu ở bước 1 (ghi ở `request_sample`, ADR 0016
+      sửa đổi 3), nên phần NCC chuyển thành kiểm mã trùng theo constraint của tenant và
+      ca eval xuyên tenant; phần Category tách thành tiêu chí ngay dưới.)_
+- [ ] **Category không có: hỏi lại với danh sách** của tenant A — **chờ S6/QE-13** (quyết
+      định A2: chưa có danh sách Category; Z4b giữ Category là chữ nguyên văn đã kiểm).
+- [x] **Không đoán:** mô hình giả trả schema hỏng, hoặc `unsupported`: bot nói "chưa hiểu",
       bản nháp không đổi; mention không có nguyên văn trong tin bị bỏ và bot hỏi lại trường
       đó.
-- [ ] **Hết hạn:** bản nháp quá 30 phút: "Đồng ý" không tạo, bot nói bản nháp đã hết hạn.
+- [x] **Hết hạn:** bản nháp quá 30 phút: "Đồng ý" không tạo, bot nói bản nháp đã hết hạn.
 - [ ] ~~**Ảnh**~~: chuyển sang `04b-photos.md` (quyết định Z4 của lead, 7/10/2026).
-- [ ] **Test âm RLS** cho `proposal_drafts`: tenant B không đọc, không sửa bản nháp của A;
+- [x] **Test âm RLS** cho `proposal_drafts`: tenant B không đọc, không sửa bản nháp của A;
       `test_rls_coverage.py`, `test_privileges.py` xanh với ba bảng mới. Không có hàm
       SECURITY DEFINER mới nào trong migration của ticket này.
-- [ ] Eval smoke xanh; mỗi ca an ninh đỏ khi gỡ lớp chặn của nó (ghi vào Comments).
-- [ ] Chạy với model thật (`make check-model`) ba tin mẫu tiếng Việt, có dấu và không dấu;
+- [x] Eval smoke xanh; mỗi ca an ninh đỏ khi gỡ lớp chặn của nó (ghi vào Comments).
+- [x] Chạy với model thật (`make check-model`) ba tin mẫu tiếng Việt, có dấu và không dấu;
       ghi kết quả vào Comments, vì mock không đọc được.
-- [ ] `make ci` xanh; integration của `dw_platform` và `dw_supply_chain` xanh.
+- [x] `make ci` xanh; integration của `dw_platform` và `dw_supply_chain` xanh.
 
 ## Nguồn
 
@@ -223,3 +232,102 @@ AccessContext theo người đã liên kết, khử trùng theo id tin
       privileges; route `/zalo/workspace`, `ZaloWorkspaceSelect`, client
       `get/setZaloWorkspace`; wiring worker (`build_zalo_inbound`, lane retention,
       `public_web_url`); contract import-linter mở rộng.
+
+- 2026-10-07, **Z4b xong (bước 4–7, 9, 10 theo C1–C9); Status `resolved`.** Còn mở có
+  chủ: ảnh (`04b-photos.md`), danh sách Category (S6/QE-13), chạy trên điện thoại thật (ZL).
+    - **Đã làm.** `domain/product_proposal.py`: `ProductProposalIntent` (`extra="forbid"`,
+      `kind` + `proposal_code`/`product_name`/`category` là trích nguyên văn; không có
+      trường PIC, tenant, workspace, NCC, trạng thái), `ground` (mã phải trọn từ),
+      `is_confirmation`/`is_cancellation` (cả tin, bỏ hoa thường và dấu, cho phép `.`/`!`
+      cuối), `ProposalDraft`, `DraftClaim`, `ProposalOrigin`, `DRAFT_TTL` 30 phút. Prompt
+      `product_proposal_understanding@1.0.0.yaml` (tin trong `<input>`, `<`/`>` viết thành
+      `\u003c`/`\u003e`), `workflows/product_proposal_understanding.py`. Lệnh
+      `presentation/zalo_proposal.py` (`ZaloProposalCommand`; `plan_turn` thuần, dùng
+      chung với grader), đăng ký `supply_chain.product_proposal` ở
+      `dw_worker.main.build_channel_commands`. `ProposeProductCase` thêm `propose_scopes`
+      (một chủ cho "propose đòi gì"), `origin` (chỉ vào audit: kênh + `chat_reference`,
+      không có chat id) và `consume`; `SqlProductCaseRepository.add` xóa bản nháp có canh
+      `draft_version = summarized_version`, chưa hết hạn, cùng giao dịch, trước insert.
+      Migration `d4048e50d4a3` (`down_revision` = `988592a8100f`):
+      `supply_chain.proposal_drafts` (UNIQUE `(tenant, workspace, user, channel)`, FK tới
+      membership `ON DELETE CASCADE`, CHECK, RLS ENABLE+FORCE hình workspace chuẩn,
+      `worker_drain_proposal_drafts` cho lane dọn, trigger `touch_updated_at`, grant: chỉ
+      UPDATE `draft`, `draft_version`, `summarized_version`, `expires_at`); không hàm
+      SECURITY DEFINER. Lane `supply_chain_proposal_drafts_retention`. Update không có chữ
+      (ảnh, sticker) nhận đúng câu "Mình chưa nhận ảnh qua Zalo; anh/chị tải ảnh ở trang hồ
+      sơ sau khi tạo", không định tuyến, không lưu, không tải (hình dạng update ảnh chưa
+      đo, nên nhận diện theo "không có chữ"; 04b thay bằng nhận diện thật).
+    - **A6 (ADR 0012, mục "Bổ sung 7/10/2026 (Z4b)", Proposed):** một bộ dựng
+      `dw_agent_runtime.adapters.model_stack` cho cả API và worker; `DailyAllowance`
+      (`dw_agent_runtime.allowance`) tách từ runner, dùng chung cho runner và
+      `SingleCallModelGateway` (giờ bắt buộc có allowance). **Hệ quả ở API:** các lượt
+      gọi một lần của Supply Chain qua HTTP cũng bị từ chối khi gói hết lượt/trần trong
+      ngày. `WorkerSettings` thêm `model_provider` (mặc định `mock`, cấm ở profile deploy
+      khi lane poll bật), `openai_structured_mode`, `openai_strict_schema`,
+      `outbound_allowed_hosts`; compose truyền `DW_WORKER_MODEL_PROVIDER`. Lượt gọi mô
+      hình bị cắt ở 20 giây (A7). `PRODUCT_ACTION_DUTIES_POLICY_FILE` vào
+      `policy_files.py` (API và worker đọc cùng tên). `dw_kernel.channels.chat_reference`
+      thay `_chat_hash` của Z1 (cùng công thức). `fold`/`names_whole_words` chuyển sang
+      `domain/evidence.py` (case query và đề xuất dùng chung).
+    - **A5 (ADR 0012 điều kiện 2, bổ sung Z4b):** router cắt theo `PROPOSAL_CEILING`
+      (write + scope mọi duty, suy từ `CaseDuty`), lệnh cắt tiếp còn đúng
+      `propose_scopes` của tenant; thiếu thì từ chối, không bản nháp, không gọi mô hình.
+    - **A3 tạm thời (chờ QE-20):** câu trả lời chỉ nhắc lại chữ người gửi và tên
+      workspace; mã trùng thì báo "đã có trong công ty" và hỏi mã khác, **không liệt kê**
+      ứng viên nào (giới hạn "tối đa 5" vì thế chưa dùng tới). Mã trùng do constraint của
+      tenant quyết, lúc "Đồng ý"; bản nháp bỏ mã, tăng version, phải tóm tắt lại.
+    - **A1:** không trường NCC; bản tóm tắt luôn ghi "NCC được ghi ở bước 2 (yêu cầu
+      mẫu) trên cổng" (không có trường thì không biết tin có nêu NCC hay không).
+    - **Khác bước 7 của ticket theo C4/A5:** trần không có `supply_chain.document.write`;
+      không dùng `Idempotency-Key` HTTP.
+    - **Lệnh và số:** `make lint`, `typecheck`, `test-unit`, `test-architecture`,
+      `test-contract`, `test-hooks`, `eval-smoke`, `release-manifest-check` (đủ các bước
+      của `make ci`, chạy riêng từng bước): tất cả exit 0. `make test-unit` 2121 passed,
+      3 skipped; contract 5; hooks 76; import-linter 9 kept; eval smoke `platform` 4/4,
+      `supply_chain@1.2.0` 30/30 (22 cũ + 8 mới), security coverage ok; release manifest
+      tạo lại (LF). Integration (`make infra-up` của repo này, `uv run pytest -m
+integration <gói>/tests`): dw_platform 225 (+1 test privileges mới, chạy riêng cùng
+      `test_rls_coverage`/`test_privileges`: 22 passed), dw_agent_runtime 72,
+      dw_supply_chain 203 (15 mới, `test_proposal_drafts.py`), apps/worker 31 (10 mới,
+      `test_zalo_proposal_db.py`). Unit mới: `test_product_proposal.py` 31,
+      `test_zalo_proposal.py` 25, `test_single_call_gateway.py` +3, router +2 (thay 1),
+      worker +1. Web không đổi, không chạy vitest.
+    - **Mutation (gỡ, chạy, khôi phục), 31 lần, 30 đỏ, 1 sống — ghi đúng như đo:** đỏ:
+      lệnh bỏ so `summarized_version`; DB bỏ `summarized_version = draft_version`; DB bỏ
+      canh version/hạn; bỏ canh consume (test DB hai giao dịch thật); **bỏ khử trùng VÀ
+      canh consume** (test worker cùng id, đếm câu trả lời); DB bỏ hạn; lệnh bỏ hạn; lệnh
+      bỏ kiểm scope (unit và worker); lệnh giữ context rộng; trần viết tay thay policy
+      của tenant; lấy tenant từ tin; `ground` giữ mọi giá trị (unit và eval); intent nhận
+      trường lạ (unit và eval); prompt bỏ `<input>` (eval); "ok" thành đồng ý; bỏ timeout;
+      quota thành "chưa hiểu"; one-call gateway bỏ allowance (unit, worker runs/ngày,
+      worker spend/ngày); policy `USING (true)` (test cô lập và `test_rls_coverage`); bỏ
+      policy drain; grant UPDATE cả bảng; bỏ escape tin; ảnh không được trả lời; worker
+      deploy nhận mock. **Sống:** bỏ canh consume rồi chạy test worker hai "Đồng ý" khác
+      id: vẫn một hồ sơ, vì UNIQUE `(tenant_id, proposal_code)` chặn hồ sơ thứ hai (lớp
+      thứ ba, cùng bản nháp thì cùng mã). Canh consume được chứng minh ở mức DB
+      (`test_two_real_transactions_with_the_same_dong_y_create_one_case`, hai mã khác nhau
+      cùng một claim: đỏ khi gỡ).
+    - **Eval, ca an ninh đỏ khi gỡ lớp chặn:** `sc-sec-prompt-injection-proposal-fields`
+      (gỡ `extra="forbid"`), `sc-sec-prompt-injection-proposal-prompt` (gỡ `<input>`),
+      `sc-sec-cross-tenant-proposal-foreign-values` và
+      `sc-sec-missing-evidence-proposal-category` (gỡ kiểm nguyên văn trong `ground`).
+    - **Model thật (C8).** `make check-model`: profile `luna`, endpoint
+      `portal.dxrank.vn`, `structured_extraction` và `reasoning` đều ok (gpt-5.6-luna).
+      Ba tin, mỗi tin đúng một lượt gọi qua `understand_product_proposal`, ý định thô:
+        1. "đề xuất SP chảo chống dính 28cm, NCC ABC, nhóm Chảo" →
+           `{"kind": "propose_product", "proposal_code": null, "product_name": "chảo chống
+dính 28cm", "category": "Chảo"}`; grounded giữ cả hai, không bỏ gì; NCC không
+           có chỗ trong schema. 810 token vào / 37 ra, 3235 ms.
+        2. "de xuat SP chao chong dinh 28cm, ma CH-28, NCC ABC, nhom Chao" →
+           `{"kind": "propose_product", "proposal_code": "CH-28", "product_name": "chao
+chong dinh 28cm", "category": "Chao"}`; giữ cả ba, nguyên văn không dấu. 817 /
+           84, 2638 ms.
+        3. "đề xuất SP nồi inox 3 đáy 24cm mã NI-24" → `{"kind": "propose_product",
+"proposal_code": "NI-24", "product_name": "nồi inox 3 đáy 24cm", "category":
+null}`; mô hình không bịa Category; bot sẽ hỏi Category. 809 / 40, 3300 ms.
+    - **Không nhận:** chưa chạy với điện thoại thật (ZL, `07-live-run.md`);
+      `message.message_id` và hình dạng update ảnh vẫn chưa đo (ZL, 04b).
+    - **Ứng viên đưa ngược lên platform (chưa đưa):** `dw_agent_runtime.allowance`,
+      `adapters/model_stack.py`, `SingleCallModelGateway` có allowance, runner gọi
+      `DailyAllowance`, `dw_kernel.channels`, `SqlWorkspaceNames`, `NO_PHOTOS` trong
+      `zalo_inbound.py`, settings/compose model của worker, `check_model_gateway.py`.

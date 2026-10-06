@@ -50,7 +50,7 @@ from dw_platform.adapters.persistence.zalo_link_repo import SqlZaloLink
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.identity import DbAccessContextFactory, VerifiedClaims
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
-from dw_worker.main import build_channel_commands, build_zalo_inbound
+from dw_worker.main import build_zalo_inbound
 from dw_worker.settings import WorkerSettings
 
 pytestmark = pytest.mark.integration
@@ -359,7 +359,7 @@ async def test_one_update_delivered_twice_at_once_is_acted_on_once(
 async def test_with_no_command_a_linked_person_is_told_it_was_not_handled(
     sessions: async_sessionmaker[AsyncSession], migrator: AsyncEngine
 ) -> None:
-    """The registry as the worker ships it in Z4a: empty."""
+    """An empty registry (the worker's shape in Z4a): nothing takes the message."""
     user = await _user(migrator)
     await _member(migrator, user)
     chat = _chat()
@@ -371,7 +371,7 @@ async def test_with_no_command_a_linked_person_is_told_it_was_not_handled(
         sessions,
         bot,
         SystemClock(),
-        build_channel_commands(),
+        ChannelCommandRegistry[AccessContext](),
     )
     await build_zalo_poll_consumer(bot, inbound)()
 

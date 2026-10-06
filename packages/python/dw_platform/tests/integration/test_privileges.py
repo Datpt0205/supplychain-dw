@@ -372,3 +372,44 @@ async def test_the_application_may_only_close_a_sample_round(db_urls: DatabaseUr
                 assert not await column(name, "UPDATE"), name
     finally:
         await migrator.dispose()
+
+
+async def test_the_application_may_only_change_a_proposal_drafts_own_state(
+    db_urls: DatabaseUrls,
+) -> None:
+    """`supply_chain.proposal_drafts` (migration d4048e50d4a3): `dw_app` reads,
+    creates and deletes a chat proposal draft (the case consumes it; the
+    retention lane sweeps it), and updates only its content, versions and
+    expiry — never whose it is, where it lives, or the channel it came from.
+    Asked of the catalog, so a later blanket GRANT goes red."""
+    table_name = "supply_chain.proposal_drafts"
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+
+            async def table(verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text("SELECT has_table_privilege('dw_app', :t, :verb)"),
+                        {"t": table_name, "verb": verb},
+                    )
+                )
+
+            async def column(name: str, verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text("SELECT has_column_privilege('dw_app', :t, :col, :verb)"),
+                        {"t": table_name, "col": name, "verb": verb},
+                    )
+                )
+
+            for verb in ("SELECT", "INSERT", "DELETE"):
+                assert await table(verb), verb
+            assert not await table("UPDATE")
+            assert not await table("TRUNCATE")
+            for name in ("draft", "draft_version", "summarized_version", "expires_at"):
+                assert await column(name, "UPDATE"), name
+            for name in ("id", "tenant_id", "workspace_id", "user_id", "channel", "created_at"):
+                assert not await column(name, "UPDATE"), name
+    finally:
+        await migrator.dispose()

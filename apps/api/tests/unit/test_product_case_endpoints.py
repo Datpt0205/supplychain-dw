@@ -81,6 +81,7 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevState,
     SampleRound,
 )
+from dw_supply_chain.domain.product_proposal import DraftClaim
 from dw_supply_chain.presentation.product_case_routes import ProposeProductCaseRequest
 from dw_supply_chain.product_action_duties import (
     PRODUCT_ACTION_DUTIES_POLICY_ID,
@@ -226,8 +227,15 @@ class FakeCases:
         return case
 
     async def add(
-        self, context: AccessContext, case: ProductDevelopmentCase, *, audit: AuditEvent
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        *,
+        audit: AuditEvent,
+        consume: DraftClaim | None = None,
     ) -> None:
+        if consume is not None:
+            raise NotImplementedError("not exercised by the HTTP route, which has no draft")
         if any(
             c.tenant_id == case.tenant_id and c.proposal_code == case.proposal_code
             for c in self.rows.values()

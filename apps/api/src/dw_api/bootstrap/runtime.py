@@ -14,17 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from dw_agent_runtime.adapters.checkpoint import SqlAlchemyCheckpointSaver
 from dw_agent_runtime.adapters.langchain_usage import LangchainUsageMeter
 from dw_agent_runtime.adapters.langgraph_runner import LangGraphWorkflowRunner
+from dw_agent_runtime.adapters.model_stack import ModelStack, build_model_stack
 from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
-from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardRecorder, SqlSpendGuardStore
-from dw_agent_runtime.adapters.telemetry_usage import TelemetryUsageRecorder
+from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardStore
 from dw_agent_runtime.adapters.tool_execution_store import SqlToolExecutionStore
-from dw_agent_runtime.adapters.usage_recorders import CompositeUsageRecorder
 from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_agent_runtime.autonomy import AutonomyApprovalPolicy
 from dw_agent_runtime.executor import ToolExecutor
-from dw_agent_runtime.model.budget import RunBudgetLedger
 from dw_agent_runtime.model.copy import load_runtime_copy
-from dw_agent_runtime.model.gateway import RoutingModelGateway, UsageRecorderPort
 from dw_agent_runtime.model.profiles import ModelProfileRegistry
 from dw_agent_runtime.model.prompts import PromptRegistry
 from dw_agent_runtime.ports import RunAllowancePort
@@ -35,9 +32,10 @@ from dw_agent_runtime.toolsets import ToolsetRegistry
 from dw_api.adapters.document_indexing import KnowledgeDocumentIndexingAdapter
 from dw_api.bootstrap.container import RuntimeSeam
 from dw_api.bootstrap.knowledge import build_embeddings, build_reranker, build_vector_index
-from dw_api.bootstrap.models import build_chat_model_factory, build_model_adapters
+from dw_api.bootstrap.models import build_chat_model_factory, model_provider_config
 from dw_api.bootstrap.paths import (
     ATTACHMENT_POLICY,
+    MOCK_MODEL_FIXTURES,
     MODEL_PROFILES_DIR,
     PROMPTS_DIR,
     RUNTIME_COPY_CONFIG,
@@ -72,6 +70,9 @@ class RuntimeWiring:
     document_indexing: KnowledgeDocumentIndexingAdapter
     memory_service: MemoryService
     tool_registry: ToolRegistry
+    # The gateway, ledger and recorders, as the shared builder made them; a
+    # context's one-call handlers take `model_stack.one_call(allowance)`.
+    model_stack: ModelStack
 
 
 def _build_memory_ranker(
@@ -119,37 +120,24 @@ def build_runtime(
     copy = load_runtime_copy(RUNTIME_COPY_CONFIG)
 
     # ---- model gateway ---------------------------------------------------
-    # `platform.model_usage_ledger` is gone (migration aefe7c1f5d9b): nothing
-    # here invoices anybody, and its readers — a per-tenant daily spend cap and
-    # an admin dashboard — went with it. `tenant_daily_spend_guard` below is
-    # not that table back: no admin route, no dashboard, one row per
-    # tenant-per-day rather than one per call, read by nothing but the
-    # runner's own gate (Ops hardening Phase 3). The composite stays because a
-    # recorder that raises must not take the run down — `telemetry` is always
-    # a real `OtelTelemetry` now (Ops hardening Phase 5: metrics are wired
-    # unconditionally, Langfuse configured or not), so unlike before there is
-    # no "telemetry off" state left to skip this recorder for.
-    recorders: list[UsageRecorderPort] = [
-        SqlSpendGuardRecorder(session_factory=session_factory, clock=clock),
-        TelemetryUsageRecorder(telemetry),
-    ]
-    usage_recorder: UsageRecorderPort = CompositeUsageRecorder(recorders)
-    # ONE per-run spend ledger for the whole process, shared by the structured
-    # gateway, every agent's budget middleware (on the seam, below) and the
-    # runner that frees a run's entry when it ends. Two ledgers would split a
-    # run's spend so neither half reaches the ceiling, and the gateway's own
-    # default was never freed at all.
-    budget = RunBudgetLedger()
-    gateway = RoutingModelGateway(
+    # Built by the one builder the worker uses too (`build_model_stack`): the
+    # gateway, ONE per-run spend ledger for the whole process — shared by the
+    # structured gateway, every agent's budget middleware (on the seam, below)
+    # and the runner that frees a run's entry when it ends — and the usage
+    # recorders (the daily spend guard and telemetry). Two ledgers would split
+    # a run's spend so neither half reaches the ceiling.
+    model_stack = build_model_stack(
+        model_provider_config(settings),
         profiles=profiles,
         prompts=prompts,
-        adapters=build_model_adapters(settings),
-        usage_recorder=usage_recorder,
-        # Resolved here so a profile id nobody registered fails at startup,
-        # not on the first model call.
-        default_profile=profiles.resolve(settings.model_profile).profile_id,
-        budget=budget,
+        session_factory=session_factory,
+        clock=clock,
+        telemetry=telemetry,
+        mock_fixtures_dir=MOCK_MODEL_FIXTURES,
     )
+    budget = model_stack.budget
+    gateway = model_stack.gateway
+    usage_recorder = model_stack.usage_recorder
     # The LangChain path (agent loops, structured output) bills into the same
     # ledger through this meter rather than going unmetered.
     usage_meter = LangchainUsageMeter(profiles=profiles, recorder=usage_recorder)
@@ -281,4 +269,5 @@ def build_runtime(
         document_indexing=document_indexing,
         memory_service=memory_service,
         tool_registry=tool_registry,
+        model_stack=model_stack,
     )

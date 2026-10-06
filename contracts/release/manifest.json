@@ -30,12 +30,12 @@
       "version": "1.1.0"
     },
     {
-      "checksum": "08d74cc5b32038ce12c38e694cec00b636618f7c0436776066b011aa03a8ff08",
+      "checksum": "f2fb7eae13a1b1d02ed303162deb8bc96eef4994bfa557870fbff72f1d1d191c",
       "dataset_id": "supply_chain_smoke",
-      "version": "1.1.0"
+      "version": "1.2.0"
     }
   ],
-  "git_sha": "9a297217c358e256165558b4be5a2649ed86f826",
+  "git_sha": "6f491fb80f24bd4b07eb2c1d71956a2e716bb1d3",
   "knowledge_index_version": "2026-07-25.structure-1",
   "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
@@ -110,6 +110,11 @@
     {
       "checksum": "cf05a993c4810ad65a18a98dba7e630ab957825ae38c221b3119e4bad22d1a99",
       "prompt_id": "supply_chain.delay_impact_analysis",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "9eb1e01932904d135d9a9ee38494c205188ca2ed648238fe68eb6c27e357985d",
+      "prompt_id": "supply_chain.product_proposal_understanding",
       "version": "1.0.0"
     },
     {

@@ -29,14 +29,19 @@ from typing import TYPE_CHECKING
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from dw_agent_runtime.adapters.checkpoint_retention import SqlCheckpointRetention
-from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardRetention
+from dw_agent_runtime.adapters.model_stack import ModelStack
+from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
+from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardRetention, SqlSpendGuardStore
+from dw_agent_runtime.allowance import DailyAllowance
+from dw_agent_runtime.model.run_policy import load_worker_run_policy
+from dw_agent_runtime.ports import ModelGateway, RunAllowancePort
 from dw_agent_runtime.release import UNRELEASED, release_manifest_ref
 from dw_connectors.adapters.zalo_bot import ZaloBotClient
 from dw_connectors.adapters.zalo_inbound import ZaloInbound
 from dw_connectors.adapters.zalo_link import link_help
 from dw_connectors.inbound import ChannelCommandRegistry, InboundRouter
 from dw_connectors.ports import ChatSenderPort
-from dw_kernel.ports import SystemClock, UtcClock, Uuid7Generator
+from dw_kernel.ports import IdGenerator, SystemClock, UtcClock, Uuid7Generator
 from dw_knowledge.adapters.evidence_store import SqlEvidenceStore
 from dw_knowledge.retention import SqlKnowledgeRetention
 from dw_memory.policy import MemoryWritePolicy
@@ -60,6 +65,7 @@ from dw_platform.adapters.persistence.zalo_link_repo import (
 )
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.channel_access import LinkedUserAccess
+from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_platform.retention_policy import load_retention_policy
 from dw_worker.composition import (
     REPO_ROOT,
@@ -69,6 +75,7 @@ from dw_worker.composition import (
     build_export_bucket,
     build_feedback_bucket,
     build_ingest_components,
+    build_model_stack_for,
     build_object_storage,
     build_vector_index,
 )
@@ -88,6 +95,8 @@ from dw_worker.consumers.supply_chain import (
     build_follow_up_sweep,
     build_product_review_reconcile,
     build_product_review_reconcile_consumer,
+    build_proposal_draft_retention,
+    build_zalo_proposal_command,
 )
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
 from dw_worker.health import beat
@@ -101,6 +110,8 @@ logger = logging.getLogger("dw_worker")
 # A module constant so the test holding this file to the classes code can
 # assign reads the file the sweeps below read, not a copy of its name.
 RETENTION_POLICY_PATH = REPO_ROOT / "configs" / "policies" / "retention@1.6.0.yaml"
+# The run store's staleness, the file the reconcile lane's runner reads too.
+WORKER_RUN_POLICY = "worker_runs@1.0.0.yaml"
 
 
 def _build_worker_telemetry(settings: WorkerSettings) -> TelemetryPort:
@@ -149,18 +160,61 @@ def release_manifest_ref_for(settings: WorkerSettings, repo_root: Path) -> str:
     return ref
 
 
-def build_channel_commands() -> ChannelCommandRegistry[AccessContext]:
+def build_one_call_gateway(
+    stack: ModelStack,
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    allowance: RunAllowancePort,
+    clock: UtcClock,
+) -> ModelGateway:
+    """The gateway a chat command reads one message with: the stack the model
+    builder made (`build_model_stack_for`, the API's builder too), checked
+    against the tenant's plan day — runs and spend — by the same
+    `DailyAllowance` the runner checks a run's start with, before any call."""
+    run_policy = load_worker_run_policy(REPO_ROOT / "configs" / "policies" / WORKER_RUN_POLICY)
+    return stack.one_call(
+        DailyAllowance(
+            allowance=allowance,
+            runs=SqlWorkerRunStore(
+                sessions, stale_run_after_seconds=run_policy.stale_run_after_seconds
+            ),
+            spend=SqlSpendGuardStore(session_factory=sessions),
+            clock=clock,
+        )
+    )
+
+
+def build_channel_commands(
+    settings: WorkerSettings,
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    gateway: ModelGateway,
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> ChannelCommandRegistry[AccessContext]:
     """What a linked person can ask for through a chat, in the order it is asked.
 
     The seam a context plugs its chat commands into. Order is policy, not
     convenience: Z5's decide command first (a reply to a pending decision is
-    never re-read as a new request), then an open conversation (Z4b's proposal
-    draft), then intent classification. Empty until those land, and empty is a
-    working state: a linked person is told "Mình chưa xử lý được tin này".
-    Each command declares its own scope ceiling; the router builds its context
-    from the person's membership cut to that ceiling.
+    never re-read as a new request), then an open conversation, then intent
+    classification. Z4b's proposal is both of the last two today: it continues
+    an open draft or reads a new message as a proposal. Each command declares
+    its own scope ceiling; the router builds its context from the person's
+    membership cut to that ceiling.
     """
-    return ChannelCommandRegistry[AccessContext]()
+    commands = ChannelCommandRegistry[AccessContext]()
+    commands.register(
+        "supply_chain.product_proposal",
+        build_zalo_proposal_command(
+            sessions,
+            configs_dir=REPO_ROOT / "configs",
+            gateway=gateway,
+            ids=ids,
+            clock=clock,
+            web_url=settings.public_web_url,
+        ),
+    )
+    return commands
 
 
 def build_zalo_inbound(
@@ -255,6 +309,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     product_review_reconcile: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's case-document orphan sweep: a database and the bucket.
     document_orphans: RetentionPrunePort | None = None
+    # Supply Chain's chat proposal drafts past their 30 minutes: a database.
+    proposal_drafts_retention: RetentionPrunePort | None = None
 
     if settings.database_url:
         # ---- transactional outbox ----------------------------------------
@@ -320,10 +376,25 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         notifications_retention = SqlNotificationRetention(session_factory=sessions)
         channel_link_nonces_retention = SqlChannelLinkNonceRetention(session_factory=sessions)
         channel_inbound_messages_retention = SqlChannelInboundRetention(session_factory=sessions)
+        proposal_drafts_retention = build_proposal_draft_retention(sessions)
         if settings.zalo_poll_enabled:
             bot = ZaloBotClient(bot_token=settings.zalo_bot_token.get_secret_value())
+            commands = build_channel_commands(
+                settings,
+                sessions,
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    # The plan catalogue the API's allowance and the reconcile
+                    # lane's runner read.
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                ids=ids,
+                clock=clock,
+            )
             zalo_poll_consumer = build_zalo_poll_consumer(
-                bot, build_zalo_inbound(settings, sessions, bot, clock, build_channel_commands())
+                bot, build_zalo_inbound(settings, sessions, bot, clock, commands)
             )
         follow_up_consumer = build_follow_up_consumer(
             build_follow_up_sweep(
@@ -407,6 +478,16 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         registry.register(
             "supply_chain_document_orphans",
             build_retention_consumer(document_orphans),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
+
+    # Chat proposal drafts nobody answered within DRAFT_TTL (zalo-channel
+    # ticket 04): its own lane, on the retention cadence, whether or not this
+    # process polls — a webhook host's drafts expire the same way.
+    if proposal_drafts_retention is not None:
+        registry.register(
+            "supply_chain_proposal_drafts_retention",
+            build_retention_consumer(proposal_drafts_retention),
             interval_seconds=RETENTION_INTERVAL_SECONDS,
         )
 

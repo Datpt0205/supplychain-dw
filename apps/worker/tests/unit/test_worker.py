@@ -101,7 +101,7 @@ def test_a_host_with_no_infrastructure_wires_no_lane() -> None:
 
 
 def test_only_the_platform_lanes_are_wired() -> None:
-    """Eleven lanes a database alone is enough for, and no more.
+    """Twelve lanes a database alone is enough for, and no more.
 
     The outbox, and retention twice. Retention joined the platform set the day
     memory got a lifecycle: `memory.items` is a platform table, so the platform
@@ -139,6 +139,9 @@ def test_only_the_platform_lanes_are_wired() -> None:
     review for a product case waiting without one (a refused or failed start,
     or a case that reached the state before the review existed). It starts
     runs, so this process hosts the review graph; it claims no queue either.
+    `supply_chain_proposal_drafts_retention` is the third: chat proposal
+    drafts nobody answered within `DRAFT_TTL`, deleted on the retention
+    cadence whether or not this process polls Zalo.
 
     Naming the whole set is the point: a context's lane arriving in this process
     becomes a visible change rather than a silent one.
@@ -156,6 +159,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "channel_inbound_messages_retention",
         "supply_chain_follow_ups",
         "supply_chain_product_review_reconcile",
+        "supply_chain_proposal_drafts_retention",
     }
 
 

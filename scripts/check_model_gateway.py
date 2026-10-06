@@ -4,9 +4,10 @@ Usage (reads DW_MODEL_PROVIDER, DW_API_MODEL_PROFILE, OPENAI_BASE_URL and
 OPENAI_API_KEY from the environment; `make check-model` exports `.env`):
     make check-model
 
-Built the way the API builds it (`build_model_adapters`, the profiles under
-`configs/models`, `default_profile` from the settings), so a pass here means
-the API's own model calls reach the model this deployment configured. The key
+Built the way the API and the worker build it (the shared `build_model_adapters`
+of `dw_agent_runtime.adapters.model_stack`, the profiles under `configs/models`,
+`default_profile` from the settings), so a pass here means the processes' own
+model calls reach the model this deployment configured. The key
 is never printed; the endpoint is shown by host only.
 
 Exit code is non-zero when any route fails or echoes the wrong token.
@@ -41,12 +42,14 @@ class Echo(BaseModel):
 
 
 async def probe() -> int:
+    from dw_agent_runtime.adapters.model_stack import build_model_adapters
     from dw_agent_runtime.contracts import RunContext
     from dw_agent_runtime.model.gateway import InMemoryUsageRecorder, RoutingModelGateway
     from dw_agent_runtime.model.profiles import ModelProfileRegistry, ModelRoute
     from dw_agent_runtime.model.prompts import PromptArtifact, PromptRegistry
     from dw_agent_runtime.ports import ModelRequest, RouteKind
-    from dw_api.bootstrap.models import build_model_adapters
+    from dw_api.bootstrap.models import model_provider_config
+    from dw_api.bootstrap.paths import MOCK_MODEL_FIXTURES
     from dw_api.settings import ApiSettings
 
     settings = ApiSettings()
@@ -59,7 +62,9 @@ async def probe() -> int:
     gateway = RoutingModelGateway(
         profiles=profiles,
         prompts=prompts,
-        adapters=build_model_adapters(settings),
+        adapters=build_model_adapters(
+            model_provider_config(settings), mock_fixtures_dir=MOCK_MODEL_FIXTURES
+        ),
         usage_recorder=recorder,
         default_profile=profile.profile_id,
     )

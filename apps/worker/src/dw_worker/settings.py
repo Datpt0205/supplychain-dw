@@ -164,6 +164,35 @@ class WorkerSettings(BaseSettings):
     openai_api_key: str = Field(
         default="", validation_alias=AliasChoices("DW_WORKER_OPENAI_API_KEY", "OPENAI_API_KEY")
     )
+    # The structured-output model a chat command reads a message with (Zalo
+    # proposal, zalo-channel ticket 04). Same names and defaults the API reads,
+    # mapped onto the one builder both processes use
+    # (`dw_agent_runtime.adapters.model_stack`). "mock" is refused in a
+    # deployed profile there and in `validate_for_profile`.
+    model_provider: str = Field(
+        default="mock",
+        validation_alias=AliasChoices(
+            "DW_WORKER_MODEL_PROVIDER", "DW_API_MODEL_PROVIDER", "DW_MODEL_PROVIDER"
+        ),
+    )
+    openai_structured_mode: str = Field(
+        default="json_schema",
+        validation_alias=AliasChoices(
+            "DW_WORKER_OPENAI_STRUCTURED_MODE", "DW_API_OPENAI_STRUCTURED_MODE"
+        ),
+    )
+    openai_strict_schema: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "DW_WORKER_OPENAI_STRICT_SCHEMA", "DW_API_OPENAI_STRICT_SCHEMA"
+        ),
+    )
+    outbound_allowed_hosts: list[str] = Field(
+        default=[],
+        validation_alias=AliasChoices(
+            "DW_WORKER_OUTBOUND_ALLOWED_HOSTS", "DW_API_OUTBOUND_ALLOWED_HOSTS"
+        ),
+    )
     # Reads uploaded documents and images. Verified per modality, not chosen by
     # tier: gpt-4.1-mini reads a PDF correctly through this gateway but does NOT
     # receive images - asked the colour of a solid blue square it answered
@@ -290,4 +319,10 @@ class WorkerSettings(BaseSettings):
             raise RuntimeError(
                 f"a vector store is required in the {self.profile} profile - "
                 "the in-memory index is not durable"
+            )
+        if self.zalo_poll_enabled and self.model_provider == "mock":
+            # The poll lane reads chat messages with the model; fixtures are
+            # not a model.
+            raise RuntimeError(
+                f"the mock model provider is forbidden in the {self.profile} profile"
             )

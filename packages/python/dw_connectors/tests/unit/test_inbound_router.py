@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from dw_connectors.adapters.zalo_inbound import ZaloInbound
+from dw_connectors.adapters.zalo_inbound import NO_PHOTOS, ZaloInbound
 from dw_connectors.adapters.zalo_link import ConnectToken, link_help, make_connect_token
 from dw_connectors.inbound import (
     FAILED,
@@ -412,9 +412,19 @@ async def test_a_text_without_a_message_id_is_not_routed() -> None:
     assert sender.sent == [(_CHAT, NOT_HANDLED)]
 
 
-async def test_an_update_without_text_is_left_alone() -> None:
+async def test_a_photo_gets_the_fixed_sentence_and_nothing_is_routed_or_stored() -> None:
+    """Z4b: a photo update's shape is not measured yet (ticket 04b), so nothing
+    reads one — no download, no draft, no command — and the person is told to
+    upload images on the case page."""
     routes, sender = _Routes(), _Sender()
     await _entry(_LinkStore(), routes, sender).handle(
         {"result": {"message": {"chat": {"id": _CHAT}, "message_id": "zm-3"}}}
     )
+    assert routes.routed == []
+    assert sender.sent == [(_CHAT, NO_PHOTOS)]
+
+
+async def test_an_update_without_a_chat_is_left_alone() -> None:
+    routes, sender = _Routes(), _Sender()
+    await _entry(_LinkStore(), routes, sender).handle({"result": {"message": {"text": "hi"}}})
     assert routes.routed == [] and sender.sent == []

@@ -18,7 +18,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import UTC, timedelta
+from datetime import UTC
 from typing import Any, cast
 
 from langgraph.store.base import BaseStore
@@ -32,6 +32,7 @@ from dw_agent_runtime.adapters.run_store import (
     SqlWorkerRunStore,
 )
 from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardStore
+from dw_agent_runtime.allowance import DailyAllowance
 from dw_agent_runtime.autonomy import AutonomyApprovalPolicy, lower_autonomy
 from dw_agent_runtime.context import access_context_from_run
 from dw_agent_runtime.contracts import RunContext, WorkerDefinition
@@ -42,7 +43,6 @@ from dw_kernel.errors import (
     ConflictError,
     InfrastructureError,
     NotFoundError,
-    QuotaExceededError,
 )
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.ports import IdGenerator, UtcClock
@@ -243,80 +243,25 @@ class LangGraphWorkflowRunner:
             }
         )
 
-    async def _require_run_allowance(self, run_context: RunContext) -> None:
-        """Refuse a run the tenant's plan has no allowance left for today.
+    async def _require_allowance(self, run_context: RunContext) -> None:
+        """Refuse a run the tenant's plan has no runs or spend left for today.
 
         Here rather than at the API, because the API is not the only door: a
-        worker reacting to an inbound event starts runs nobody clicked, and a
-        quota enforced on one door only is a quota a connector can walk around.
-        This is the single place a run begins.
+        worker reacting to an inbound event starts runs nobody clicked. The
+        check itself is `DailyAllowance`, the same object a single model call
+        outside a run is checked with (`SingleCallModelGateway`), so the two
+        doors answer the plan's limits one way.
 
-        The plan comes from `run_context`, which carries what the requester was
-        entitled to when the turn started — the same stamp a resume replays. A
-        resume does not pass through here at all: the run was already counted
+        A resume does not pass through here at all: the run was already counted
         when it started, and charging it again would let an approval a manager
         signs on Tuesday be refused by Tuesday's quota.
-
-        Not transactional, and deliberately so: counting is a read, and holding
-        a lock across the whole start path to make the count exact would
-        serialise every run a tenant makes. The slack is bounded by how many
-        runs one tenant starts in the same instant, which is the difference
-        between 200 and 203 a day, not between 200 and unlimited.
         """
-        day_start = (
-            self.clock.now().astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-        )
-        limit = self.allowance.runs_per_day(run_context.plan_id)
-        if limit is None:
-            return
-        used = await self.run_store.started_since(run_context.tenant_id, day_start)
-        if used < limit:
-            return
-        raise QuotaExceededError(
-            "hôm nay đã dùng hết số lượt chạy của gói; thử lại sau 00:00 UTC"
-            " hoặc nâng gói để có thêm lượt",
-            details={
-                "quota": "runs_per_day",
-                "limit": str(limit),
-                "used": str(used),
-                "plan_id": run_context.plan_id,
-                "resets_at": (day_start + timedelta(days=1)).isoformat(),
-            },
-        )
-
-    async def _require_spend_allowance(self, run_context: RunContext) -> None:
-        """Refuse a run once the tenant has spent its plan's daily ceiling.
-
-        Same shape and same slack as `_require_run_allowance`: not
-        transactional, so a burst of runs starting in the same instant can
-        overshoot by whatever they spend before the next one checks — bounded
-        by how much one tenant spends in an instant, not by the ceiling being
-        meaningless.
-
-        `spend_store` is `None` for any wiring that predates this guard, and
-        every plan ships `spend_usd_per_day=None` today (no dollar thresholds
-        decided yet) — both mean this returns immediately, same as before this
-        existed. Recording still runs either way; only the gate is off.
-        """
-        if self.spend_store is None:
-            return
-        limit = self.allowance.spend_usd_per_day(run_context.plan_id)
-        if limit is None:
-            return
-        today = self.clock.now().astimezone(UTC).date()
-        spent = await self.spend_store.spend_today(run_context.tenant_id, today)
-        if spent < limit:
-            return
-        raise QuotaExceededError(
-            "hôm nay đã dùng hết trần chi tiêu của gói; thử lại sau 00:00 UTC"
-            " hoặc nâng gói để có thêm trần",
-            details={
-                "quota": "spend_usd_per_day",
-                "limit": str(limit),
-                "used": str(spent),
-                "plan_id": run_context.plan_id,
-            },
-        )
+        await DailyAllowance(
+            allowance=self.allowance,
+            runs=self.run_store,
+            spend=self.spend_store,
+            clock=self.clock,
+        ).require(run_context)
 
     async def start(
         self,
@@ -326,8 +271,7 @@ class LangGraphWorkflowRunner:
     ) -> uuid.UUID:
         worker = self.worker_registry.resolve(run_context.worker_id, run_context.worker_version)
         run_context = self._with_autonomy(run_context, worker.definition)
-        await self._require_run_allowance(run_context)
-        await self._require_spend_allowance(run_context)
+        await self._require_allowance(run_context)
         graph = self._graph(worker.definition.worker_id, worker.definition.graph_version)
 
         await self.run_store.create(
@@ -382,8 +326,7 @@ class LangGraphWorkflowRunner:
         """
         worker = self.worker_registry.resolve(run_context.worker_id, run_context.worker_version)
         run_context = self._with_autonomy(run_context, worker.definition)
-        await self._require_run_allowance(run_context)
-        await self._require_spend_allowance(run_context)
+        await self._require_allowance(run_context)
         graph = self._graph(worker.definition.worker_id, worker.definition.graph_version)
 
         await self.run_store.create(

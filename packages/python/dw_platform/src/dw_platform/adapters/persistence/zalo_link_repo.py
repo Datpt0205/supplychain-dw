@@ -37,13 +37,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from hashlib import sha256
 from typing import Protocol
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from dw_kernel.channels import chat_reference
 from dw_platform.adapters.persistence import tables
 from dw_platform.adapters.persistence.notifications import DELIVER_NOTIFICATION
 
@@ -83,11 +83,6 @@ _MESSAGES: dict[str, tuple[str, str]] = {
         "khoản của bạn không còn kết nối Zalo. Nếu điều này bất thường, báo quản trị viên.",
     ),
 }
-
-
-def _chat_hash(zalo_id: str) -> str:
-    """A stable reference to a chat for the audit trail, not the address itself."""
-    return sha256(f"{_ZALO}:{zalo_id}".encode()).hexdigest()[:16]
 
 
 class _NoTenantToRecordInError(Exception):
@@ -262,7 +257,7 @@ class SqlZaloLink:
                     resource_id=str(user_id),
                     details={
                         "channel": _ZALO,
-                        "chat_id_hash": _chat_hash(zalo_id),
+                        "chat_id_hash": chat_reference(_ZALO, zalo_id),
                         "actor": actor,
                         "event_id": str(event_id),
                     },

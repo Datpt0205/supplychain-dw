@@ -39,6 +39,7 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevState,
     SampleRound,
 )
+from dw_supply_chain.domain.product_proposal import DraftClaim, ProposalDraft, ProposalField
 from dw_supply_chain.domain.supplier_update import SupplierUpdate, SupplierUpdateId
 
 
@@ -602,9 +603,18 @@ class ProductCaseRepositoryPort(Protocol):
     transaction that writes the state. `save` is optimistic on `version`."""
 
     async def add(
-        self, context: AccessContext, case: ProductDevelopmentCase, *, audit: AuditEvent
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        *,
+        audit: AuditEvent,
+        consume: DraftClaim | None = None,
     ) -> None:
-        """`ConflictError` when the tenant already has the proposal code."""
+        """`ConflictError` when the tenant already has the proposal code.
+
+        With `consume`, the chat draft the case is made from is deleted in the
+        same transaction, guarded on its version being the summarised one and
+        unexpired; `ProposalDraftChangedError` (and no case) when it is not."""
         ...
 
     async def get(
@@ -637,4 +647,34 @@ class ProductCaseRepositoryPort(Protocol):
         self, context: AccessContext, case_id: ProductDevelopmentCaseId
     ) -> list[SampleRound]:
         """The case's sample rounds, first round first."""
+        ...
+
+
+class ProposalDraftRepositoryPort(Protocol):
+    """The caller's own open chat proposal (zalo-channel ticket 04).
+
+    Keyed by the context: tenant and workspace by RLS and by name, the person by
+    `context.principal_id`. No method takes a user id, so no caller can read or
+    write somebody else's draft."""
+
+    async def open_draft(self, context: AccessContext, channel: str) -> ProposalDraft | None: ...
+
+    async def put(
+        self,
+        context: AccessContext,
+        channel: str,
+        *,
+        fields: Mapping[ProposalField, str],
+        draft_version: int,
+        summarized_version: int | None,
+        expires_at: datetime,
+        previous_version: int | None,
+    ) -> ProposalDraft:
+        """Create the draft (`previous_version=None`) or replace the one at
+        `previous_version`; `ProposalDraftChangedError` when another write got
+        there first."""
+        ...
+
+    async def discard(self, context: AccessContext, channel: str) -> bool:
+        """Delete the caller's draft; False when there was none."""
         ...

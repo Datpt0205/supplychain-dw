@@ -9,6 +9,10 @@ file name would let the worker keep evaluating last month's numbers.
 Both hosts also raise BGĐ's review of a product case (the API from the step,
 the worker's reconcile lane for one a step missed), so both read the product
 approvals policy and host the review graph's worker definition.
+
+Both hosts propose a product case too (the API from the web form, the worker
+from a chat's "Đồng ý"), so both read the product step-to-duty policy that
+`propose` is authorized against.
 """
 
 from __future__ import annotations
@@ -17,3 +21,4 @@ SLA_POLICY_FILE = "supply_chain_sla@1.2.0.yaml"
 FOLLOW_UP_POLICY_FILE = "supply_chain_follow_ups@1.0.0.yaml"
 PRODUCT_APPROVALS_POLICY_FILE = "supply_chain_product_approvals@1.0.0.yaml"
 ADVANCE_PRODUCT_CASE_WORKER_FILE = "supply_chain_advance_product_case.yaml"
+PRODUCT_ACTION_DUTIES_POLICY_FILE = "supply_chain_product_action_duties@1.0.0.yaml"

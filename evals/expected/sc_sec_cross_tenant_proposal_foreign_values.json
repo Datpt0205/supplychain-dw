@@ -1,0 +1,15 @@
+{
+  "kind": "propose_product",
+  "kept": {
+    "product_name": "chảo chống dính 28cm"
+  },
+  "dropped": [
+    "proposal_code",
+    "category"
+  ],
+  "missing": [
+    "proposal_code",
+    "category"
+  ],
+  "complete": false
+}

@@ -52,6 +52,18 @@ một bảng liên kết có `tenant_id`; chưa làm.
       `platform_admin` qua mọi kiểm scope (`ScopeAuthorizationService`), nên một role
       mang theo sẽ vượt trần. Quyền của lệnh là đúng phần scope giao với trần
       (`SqlMembershipLookup.find_linked_access`, `LinkedUserAccess`).
+    - **Trần của lệnh đề xuất suy từ chính policy handler thi hành** (bổ sung 7/10/2026,
+      Z4b). Trần không phải danh sách viết tay: `ProposeProductCase.propose_scopes`
+      trả `supply_chain.product_case.write` cộng scope của duty mà policy
+      `supply_chain_product_action_duties` của tenant (bản override nếu có) giao cho
+      `propose`, và handler đòi đúng tập đó. Router cắt context theo
+      `PROPOSAL_CEILING` (write cộng scope của mọi duty, suy từ enum `CaseDuty`),
+      rồi lệnh cắt tiếp còn đúng `propose_scopes` của tenant trước khi làm gì; thiếu
+      một scope trong đó thì từ chối, không bản nháp, không gọi mô hình. Vẫn là giao
+      với membership: không `approvals.decide`, không `supply_chain.document.write`
+      (ảnh chưa nhận qua Zalo, ticket 04b), không scope đọc nào. Test: lệnh chạy với
+      đúng trần đó qua `ScopeAuthorizationService` thật (unit) và qua lane poll
+      (integration); tenant đổi duty của `propose` thì trần đổi theo.
 3. **Token dùng một lần.** Token HMAC hiện có hạn 15 phút nhưng dùng lại được trong
    hạn: ai thấy token đều gắn được Zalo của mình vào người đó. Token thêm `jti`; bảng
    `platform.channel_link_nonces` (jti khóa chính, `user_id` FK `ON DELETE CASCADE`
@@ -87,6 +99,32 @@ một bảng liên kết có `tenant_id`; chưa làm.
    adapter.
 7. **Token bot nằm trong URL.** Mọi lỗi httpx và log phải xóa token trước khi ghi
    (SEC-20 của sản phẩm đấu thầu).
+
+## Bổ sung 7/10/2026 (Z4b): mô hình chạy trong worker, qua một bộ dựng chung
+
+Trạng thái: Proposed (chờ Đạt xác nhận cùng lúc review Z4b).
+
+Lane poll nằm trong worker, nên lệnh đề xuất đọc tin bằng mô hình ở worker, nơi
+trước Z4b không có `ModelGateway`. Quyết định:
+
+- **Một bộ dựng, hai composition root.** `dw_agent_runtime.adapters.model_stack`
+  (`build_model_adapters`, `build_model_stack`, `ModelStack`) dựng adapter nhà cung
+  cấp (chặn SSRF, cấm mock ở profile deploy), một `RunBudgetLedger` cho cả tiến
+  trình và các usage recorder (spend guard theo ngày, telemetry). API
+  (`bootstrap/runtime.py`) và worker (`dw_worker.composition.build_model_stack_for`)
+  cùng gọi nó; mỗi bên chỉ ánh xạ settings của mình sang `ModelProviderConfig`.
+  `apps/worker` không import `dw_api`.
+- **Cổng một lượt gọi kiểm hạn mức gói.** `DailyAllowance`
+  (`dw_agent_runtime.allowance`) là phần runner vốn kiểm khi bắt đầu run (số run
+  mỗi ngày, trần chi tiêu mỗi ngày), tách ra để runner và
+  `SingleCallModelGateway` dùng chung. `ModelStack.one_call(allowance)` kiểm trước
+  mỗi lượt gọi không có run bao quanh, rồi giải phóng mục ledger sau lượt gọi.
+  **Hệ quả ở API:** các lượt gọi một lần của Supply Chain qua HTTP (hỏi hồ sơ, đọc
+  cập nhật NCC, phân tích trễ, tóm tắt bản tin) từ nay cũng bị từ chối
+  (`QuotaExceededError`) khi gói hết lượt hoặc hết trần trong ngày, như run.
+- **Có giới hạn thời gian.** Lane xử lý từng update một; lượt gọi của lệnh đề xuất
+  bị cắt ở `MODEL_CALL_TIMEOUT_SECONDS` (20 giây) để `/start` không bị chặn, và quá
+  hạn được trả lời "chưa hiểu" như mô hình không gọi được.
 
 ## Phương án đã cân nhắc
 

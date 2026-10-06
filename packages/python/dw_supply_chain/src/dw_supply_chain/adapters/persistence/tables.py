@@ -210,3 +210,25 @@ sample_revision_requests = sa.Table(
         "sent_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )
+
+# A chat proposal being drafted (zalo-channel ticket 04): one open draft per
+# person, workspace and channel; consumed when it becomes a case.
+proposal_drafts = sa.Table(
+    "proposal_drafts",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("user_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("channel", sa.Text, nullable=False),
+    sa.Column("draft", JSONB, nullable=False),
+    sa.Column("draft_version", sa.Integer, nullable=False),
+    sa.Column("summarized_version", sa.Integer, nullable=True),
+    sa.Column("expires_at", sa.TIMESTAMP(timezone=True), nullable=False),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+    sa.Column(
+        "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)

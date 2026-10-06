@@ -76,6 +76,7 @@ from dw_supply_chain.domain.product_development_case import (
     apply_product_action,
     document_refusal,
 )
+from dw_supply_chain.domain.product_proposal import DraftClaim, ProposalOrigin
 from dw_supply_chain.product_action_duties import SupplyChainProductActionDuties
 from dw_supply_chain.workflows.advance_product_case_graph import (
     BOD_REVIEW_APPROVAL_TYPE,
@@ -135,7 +136,14 @@ class ProposeProductCase:
     `handle` has no parameter that could name another person. Gated twice,
     both before anything is read: the context's write, as `CreatePOCase` is
     gated (lead decision 9), and the duty the tenant's policy gives
-    `propose` (decision 7)."""
+    `propose` (decision 7). `propose_scopes` is that set, the one answer both
+    this handler and a chat command's ceiling read (ADR 0012 condition 2).
+
+    The web route and the Zalo proposal command both call `handle`. The chat
+    passes two things the route does not, neither of which decides anything
+    about the case: `origin` (channel and chat reference, for the audit record
+    only) and `consume` (the draft the case is made from, deleted in the case's
+    own transaction, guarded on its summarised version)."""
 
     repo: ProductCaseRepositoryPort
     authz: AuthorizationPort
@@ -144,20 +152,30 @@ class ProposeProductCase:
     ids: IdGenerator
     clock: UtcClock
 
-    async def handle(
-        self, context: AccessContext, *, proposal_code: str, product_name: str, category: str
-    ) -> ProductDevelopmentCase:
-        await self.authz.require(
-            context=context, action=PRODUCT_CASE_WRITE, resource_type=_RESOURCE
-        )
+    async def propose_scopes(self, context: AccessContext) -> frozenset[str]:
+        """Every scope proposing needs in the caller's tenant: the write, and
+        the scope of the duty the tenant's own policy gives `propose`."""
         duties = await resolve_product_action_duties(
             context, self.policy_override_repo, self.platform_default_duties
         )
+        return frozenset({PRODUCT_CASE_WRITE, duty_scope(duties.duty_for(ProductAction.PROPOSE))})
+
+    async def handle(
+        self,
+        context: AccessContext,
+        *,
+        proposal_code: str,
+        product_name: str,
+        category: str,
+        origin: ProposalOrigin | None = None,
+        consume: DraftClaim | None = None,
+    ) -> ProductDevelopmentCase:
+        # The write first, before the tenant's policy is even read.
         await self.authz.require(
-            context=context,
-            action=duty_scope(duties.duty_for(ProductAction.PROPOSE)),
-            resource_type=_RESOURCE,
+            context=context, action=PRODUCT_CASE_WRITE, resource_type=_RESOURCE
         )
+        for scope in sorted(await self.propose_scopes(context)):
+            await self.authz.require(context=context, action=scope, resource_type=_RESOURCE)
         case = ProductDevelopmentCase.propose(
             id=ProductDevelopmentCaseId(self.ids.new_uuid()),
             tenant_id=TenantId(context.tenant_id),
@@ -167,17 +185,19 @@ class ProposeProductCase:
             category=category,
             actor_id=context.principal_id,
         )
+        details: dict[str, object] = {
+            "proposal_code": case.proposal_code,
+            "category": case.category,
+        }
+        if origin is not None:
+            details["origin"] = {"channel": origin.channel, "chat_ref": origin.chat_ref}
         await self.repo.add(
             context,
             case,
             audit=product_case_audit(
-                context,
-                self.ids,
-                self.clock,
-                case,
-                ProductAction.PROPOSE.value,
-                {"proposal_code": case.proposal_code, "category": case.category},
+                context, self.ids, self.clock, case, ProductAction.PROPOSE.value, details
             ),
+            consume=consume,
         )
         return case
 

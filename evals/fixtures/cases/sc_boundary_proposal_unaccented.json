@@ -1,0 +1,9 @@
+{
+  "message": "de xuat SP chao chong dinh 28cm, ma CH-28, nhom Chao",
+  "model_answer": {
+    "kind": "propose_product",
+    "proposal_code": "CH-28",
+    "product_name": "chao chong dinh 28cm",
+    "category": "Chao"
+  }
+}

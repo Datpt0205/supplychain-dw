@@ -69,6 +69,7 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevState,
     SampleRound,
 )
+from dw_supply_chain.domain.product_proposal import DraftClaim
 from dw_supply_chain.product_action_duties import (
     PRODUCT_ACTION_DUTIES_POLICY_ID,
     SupplyChainProductActionDuties,
@@ -155,8 +156,15 @@ class FakeCases:
             self.steps.append(step)
 
     async def add(
-        self, context: AccessContext, case: ProductDevelopmentCase, *, audit: AuditEvent
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        *,
+        audit: AuditEvent,
+        consume: DraftClaim | None = None,
     ) -> None:
+        if consume is not None:
+            raise NotImplementedError("not exercised here: test_zalo_proposal.py holds drafts")
         if any(
             c.tenant_id == case.tenant_id and c.proposal_code == case.proposal_code
             for c in self.rows.values()
@@ -412,10 +420,20 @@ async def test_the_proposer_is_the_pic_and_the_proposal_is_audited() -> None:
 
 def test_the_propose_command_takes_no_pic_at_all() -> None:
     """Not only the route model: the command itself has nowhere to put one, so
-    no other caller (Zalo, a tool) can name a PIC either."""
+    no other caller (Zalo, a tool) can name a PIC either. The chat's two extra
+    arguments name where it came from (audit only) and the draft it consumes,
+    never a person, tenant or workspace."""
     parameters = inspect.signature(ProposeProductCase.handle).parameters
     assert not any("pic" in name for name in parameters)
-    assert set(parameters) == {"self", "context", "proposal_code", "product_name", "category"}
+    assert set(parameters) == {
+        "self",
+        "context",
+        "proposal_code",
+        "product_name",
+        "category",
+        "origin",
+        "consume",
+    }
 
 
 async def test_rnd_cannot_propose() -> None:

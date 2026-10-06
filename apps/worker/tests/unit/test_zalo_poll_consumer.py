@@ -194,3 +194,24 @@ def test_the_lane_never_builds_an_access_context_from_zalo_data() -> None:
     for module in (link, lane, entry, router):
         source = Path(module.__file__ or "").read_text(encoding="utf-8")
         assert "access_context_factory" not in source, module.__name__
+
+
+_DEPLOYED: dict[str, object] = {
+    "profile": "production",
+    "database_url": _DB,
+    "embedding_provider": "openai_compatible",
+    "qdrant_url": "http://qdrant:6333",
+    "zalo_bot_token": "tok",
+    "zalo_link_secret": "sec",
+}
+
+
+def test_a_deployed_poll_lane_refuses_the_fixture_model() -> None:
+    """The poll lane reads chat messages with the model (Z4b); a deployed
+    profile with the mock provider fails at startup, not on the first message."""
+    with pytest.raises(RuntimeError, match="mock model provider"):
+        bare_settings(**_DEPLOYED, model_provider="mock").validate_for_profile()
+    bare_settings(**_DEPLOYED, model_provider="openai_compatible").validate_for_profile()
+    bare_settings(
+        **{**_DEPLOYED, "zalo_bot_token": ""}, model_provider="mock"
+    ).validate_for_profile()

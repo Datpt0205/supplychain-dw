@@ -44,6 +44,7 @@ from dw_supply_chain.domain.product_development_case import (
     SampleRound,
     document_refusal,
 )
+from dw_supply_chain.domain.product_proposal import DraftClaim, ProposalDraftChangedError
 
 _c = tables.product_dev_cases
 _t = tables.product_dev_case_state_transitions
@@ -70,6 +71,28 @@ def _constraint(exc: IntegrityError) -> str | None:
     # DBAPI error's cause (as `dw_platform`'s separation-of-duties adapter reads it).
     name = getattr(getattr(exc.orig, "__cause__", None), "constraint_name", None)
     return name if isinstance(name, str) else None
+
+
+async def _consume_draft(session: AsyncSession, context: AccessContext, claim: DraftClaim) -> None:
+    """Delete the caller's draft at exactly the summarised version, unexpired;
+    refuse (rolling the case back with it) when there is no such row."""
+    _d = tables.proposal_drafts
+    result = await session.execute(
+        sa.delete(_d).where(
+            *_in_scope(_d, context),
+            _d.c.user_id == context.principal_id,
+            _d.c.id == claim.draft_id,
+            _d.c.draft_version == claim.draft_version,
+            _d.c.summarized_version == claim.draft_version,
+            _d.c.expires_at > sa.func.now(),
+        )
+    )
+    assert isinstance(result, CursorResult)
+    if result.rowcount != 1:
+        raise ProposalDraftChangedError(
+            "bản nháp đề xuất đã đổi, hết hạn hoặc đã được dùng",
+            details={"draft_id": str(claim.draft_id)},
+        )
 
 
 def _in_scope(table: sa.Table, context: AccessContext) -> tuple[sa.ColumnElement[bool], ...]:
@@ -222,13 +245,22 @@ class SqlProductCaseRepository:
         return None
 
     async def add(
-        self, context: AccessContext, case: ProductDevelopmentCase, *, audit: AuditEvent
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        *,
+        audit: AuditEvent,
+        consume: DraftClaim | None = None,
     ) -> None:
         steps = case.pop_pending_steps()
         try:
             async with tenant_session(
                 self.session_factory, TenantScope.from_access_context(context)
             ) as session:
+                if consume is not None:
+                    # First, so a second "Đồng ý" racing this one waits on the
+                    # row lock and then finds nothing to consume.
+                    await _consume_draft(session, context, consume)
                 row = (
                     await session.execute(
                         sa.insert(_c)

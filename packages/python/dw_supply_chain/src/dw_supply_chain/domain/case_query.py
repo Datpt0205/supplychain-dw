@@ -25,14 +25,13 @@ as if it had not. That is the fail-open shape.
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from dw_supply_chain.domain.evidence import is_verbatim, normalize
+from dw_supply_chain.domain.evidence import fold, is_verbatim, names_whole_words
 from dw_supply_chain.domain.po_case import CaseState
 
 _QUOTE = Field(default=None, min_length=1, max_length=200)
@@ -102,19 +101,6 @@ class GroundedQuery:
     dropped: tuple[GroundedField, ...]
 
 
-def _names_whole_words(mention: str, question: str) -> bool:
-    """A mention that becomes an identifier has to be whole words of the
-    question, not part of one. A letter or digit next to it extends it
-    ("PO-12" inside "PO-1234"), and so does a code separator ("-", "/", ".")
-    followed by one ("PO-12" inside "PO-12-A", "PO-12/1", "PO-12.5"):
-    resolving either would open a PO the question never named. A separator
-    that ends the sentence ("PO-12.") does not extend it."""
-    if not is_verbatim(mention, question):
-        return False
-    pattern = r"(?<!\w)(?<!\w[-/.])" + re.escape(normalize(mention)) + r"(?!\w)(?![-/.]\w)"
-    return re.search(pattern, normalize(question)) is not None
-
-
 def ground(intent: CaseQueryIntent, question: str) -> GroundedQuery:
     """Keeps only what the question itself says.
 
@@ -133,7 +119,7 @@ def ground(intent: CaseQueryIntent, question: str) -> GroundedQuery:
         if not claimed:
             return False
         found = quote is not None and (
-            _names_whole_words(quote, question) if whole_words else is_verbatim(quote, question)
+            names_whole_words(quote, question) if whole_words else is_verbatim(quote, question)
         )
         if found and quote is not None:
             citations.append((field, quote))
@@ -174,17 +160,6 @@ def ground(intent: CaseQueryIntent, question: str) -> GroundedQuery:
     )
 
 
-def _fold(text: str) -> str:
-    """Case-, accent- and spacing-insensitive form, for MATCHING only —
-    "dong nai" finds "Đồng Nai". Canonical decomposition (NFD), not the
-    compatibility kind: NFKD would turn "Sunhouse™" into "sunhousetm" and
-    move the word boundary a whole-word match depends on. What gets used
-    afterwards is always the stored name, never this form."""
-    decomposed = unicodedata.normalize("NFD", text.replace("đ", "d").replace("Đ", "D"))
-    unaccented = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
-    return " ".join(unaccented.casefold().split())
-
-
 @dataclass(frozen=True, slots=True)
 class SupplierResolution:
     """`name` is the one stored supplier name the mention resolved to, or
@@ -198,17 +173,17 @@ class SupplierResolution:
 def resolve_supplier(mention: str, known_names: Iterable[str]) -> SupplierResolution:
     """One stored name for `mention`, or the reason there is not one.
 
-    An equal name (after `_fold`) wins outright; failing that, a name that
+    An equal name (after `fold`) wins outright; failing that, a name that
     contains the mention as whole words ("sunhouse" in "Sunhouse Co.", never
     "sun" in "Sunhouse"). Exactly one match resolves; zero or several are
     returned as candidates for the user to see, never narrowed by a guess. A
     mention with no letter or digit names nothing, whatever it contains.
     """
-    folded = _fold(mention)
+    folded = fold(mention)
     names = sorted(set(known_names))
     if not any(ch.isalnum() for ch in folded):
         return SupplierResolution(name=None, candidates=())
-    equal = [name for name in names if _fold(name) == folded]
+    equal = [name for name in names if fold(name) == folded]
     if equal:
         return (
             SupplierResolution(name=equal[0], candidates=())
@@ -216,7 +191,7 @@ def resolve_supplier(mention: str, known_names: Iterable[str]) -> SupplierResolu
             else SupplierResolution(name=None, candidates=tuple(equal))
         )
     whole_words = re.compile(rf"(?<!\w){re.escape(folded)}(?!\w)")
-    containing = [name for name in names if whole_words.search(_fold(name))]
+    containing = [name for name in names if whole_words.search(fold(name))]
     if len(containing) == 1:
         return SupplierResolution(name=containing[0], candidates=())
     return SupplierResolution(name=None, candidates=tuple(containing))

@@ -1,7 +1,9 @@
 """Model provider wiring: which adapters exist and what the gateway routes to.
 
-Two shapes are built here and they are not the same thing. ``ModelProviderAdapter``
-is the structured-output path the gateway routes profile-by-profile;
+Two shapes are wired here and they are not the same thing. The structured-output
+path the gateway routes profile-by-profile is built by the shared
+``dw_agent_runtime.adapters.model_stack`` (the worker builds its own with it);
+this module only maps the settings onto it (``model_provider_config``).
 ``ChatModelFactory`` is the tool-calling path an agent loop runs on. A host can
 have one without the other, so each is built and returned separately.
 """
@@ -13,21 +15,14 @@ from dw_agent_runtime.adapters.chat_model import (
     MockChatModelFactory,
     OpenAICompatibleChatModelFactory,
 )
-from dw_agent_runtime.adapters.mock_model import MockModelAdapter
-from dw_agent_runtime.adapters.openai_compatible import OpenAICompatibleAdapter
-from dw_agent_runtime.adapters.openai_responses import OpenAIResponsesAdapter
+from dw_agent_runtime.adapters.model_stack import (
+    MockModelForbiddenError,
+    ModelProviderConfig,
+)
 from dw_agent_runtime.model.copy import RuntimeCopy
-from dw_agent_runtime.model.gateway import ModelProviderAdapter
-from dw_agent_runtime.model.profiles import ModelProfileRegistry, Provider
-from dw_api.bootstrap.paths import MOCK_MODEL_FIXTURES
+from dw_agent_runtime.model.profiles import ModelProfileRegistry
 from dw_api.settings import ApiSettings
 from dw_kernel.net_guard import ensure_allowed_outbound_url
-from dw_kernel.ports import SystemClock
-from dw_kernel.resilience import CircuitBreaker
-
-
-class MockModelForbiddenError(RuntimeError):
-    """A deployed profile asked for the fixture model."""
 
 
 def checked_base_url(settings: ApiSettings, url: str) -> str:
@@ -39,34 +34,20 @@ def checked_base_url(settings: ApiSettings, url: str) -> str:
     )
 
 
-def build_model_adapters(settings: ApiSettings) -> dict[str, ModelProviderAdapter]:
-    adapters: dict[str, ModelProviderAdapter] = {}
-    if settings.model_provider == "mock":
-        if settings.is_deployed:
-            raise MockModelForbiddenError(
-                f"the mock model provider is forbidden in the {settings.profile} profile"
-            )
-        adapters[Provider.MOCK] = MockModelAdapter(fixtures_dir=MOCK_MODEL_FIXTURES)
-    if settings.openai_api_key and settings.openai_base_url:
-        base_url = checked_base_url(settings, settings.openai_base_url)
-        adapters[Provider.OPENAI_COMPATIBLE] = OpenAICompatibleAdapter(
-            base_url=base_url,
-            api_key=settings.openai_api_key,
-            structured_mode=settings.openai_structured_mode,
-            breaker=CircuitBreaker(clock=SystemClock(), name="model.openai_compatible"),
-        )
-        # Responses-dialect adapter (real OpenAI only): same credentials, but
-        # /v1/responses returns the model's reasoning summary for visible
-        # thinking. Profiles opt in with `provider: openai_responses`.
-        adapters[Provider.OPENAI_RESPONSES] = OpenAIResponsesAdapter(
-            base_url=base_url,
-            api_key=settings.openai_api_key,
-            strict_schema=settings.openai_strict_schema,
-            breaker=CircuitBreaker(clock=SystemClock(), name="model.openai_responses"),
-        )
-    if settings.is_deployed and Provider.OPENAI_COMPATIBLE not in adapters:
-        raise RuntimeError(f"the {settings.profile} profile requires a real model provider")
-    return adapters
+def model_provider_config(settings: ApiSettings) -> ModelProviderConfig:
+    """This process's settings, read for the shared model builder
+    (`dw_agent_runtime.adapters.model_stack`), which the worker calls too."""
+    return ModelProviderConfig(
+        provider=settings.model_provider,
+        model_profile=settings.model_profile,
+        profile=settings.profile,
+        is_deployed=settings.is_deployed,
+        openai_api_key=settings.openai_api_key,
+        openai_base_url=settings.openai_base_url,
+        openai_structured_mode=settings.openai_structured_mode,
+        openai_strict_schema=settings.openai_strict_schema,
+        outbound_allowed_hosts=tuple(settings.outbound_allowed_hosts),
+    )
 
 
 def build_chat_model_factory(

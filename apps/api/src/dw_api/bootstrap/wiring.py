@@ -38,6 +38,8 @@ from sqlalchemy.ext.asyncio import (
 
 from dw_agent_runtime.adapters.run_events import RunStateListener
 from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
+from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardStore
+from dw_agent_runtime.allowance import DailyAllowance
 from dw_agent_runtime.model.run_policy import load_worker_run_policy
 from dw_api.bootstrap.container import ApiContainer
 from dw_api.bootstrap.identity import build_token_verifier
@@ -282,7 +284,6 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     # seam field of its own (only platform-native handlers use it today, all
     # built the same way — from this function's own local, same as here) so it
     # comes from the closure directly rather than from `wiring.seam`.
-    from dw_agent_runtime.model.single_call import SingleCallModelGateway
     from dw_supply_chain.action_duties import load_supply_chain_action_duties
     from dw_supply_chain.adapters.persistence.delay_impact_repository import (
         SqlDelayImpactAnalysisRepository,
@@ -344,8 +345,17 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     supplier_update_repo = SqlSupplierUpdateRepository(wiring.seam.session_factory)
     delay_impact_repo = SqlDelayImpactAnalysisRepository(wiring.seam.session_factory)
     # Every Supply Chain model call is a one-call run with no runner around it,
-    # so nothing else would ever free its spend-ledger entry (failure-modes #6).
-    one_call_gateway = SingleCallModelGateway(inner=wiring.seam.gateway, ledger=wiring.seam.budget)
+    # so nothing else would ever free its spend-ledger entry (failure-modes #6),
+    # and nothing else would check the tenant's plan day before it spends: the
+    # same `DailyAllowance` the runner checks a run's start with.
+    one_call_gateway = wiring.model_stack.one_call(
+        DailyAllowance(
+            allowance=entitlement,
+            runs=run_store,
+            spend=SqlSpendGuardStore(session_factory=session_factory),
+            clock=clock,
+        )
+    )
     container.supply_chain_create_po_case = CreatePOCase(
         repo=po_case_repo, authz=authorization, ids=wiring.seam.ids
     )
