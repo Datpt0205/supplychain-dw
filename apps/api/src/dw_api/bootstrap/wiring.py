@@ -68,6 +68,7 @@ from dw_platform.adapters.cache import NullCache, ValkeyCache
 from dw_platform.adapters.persistence.admin_console_repo import SqlAdminConsoleRepository
 from dw_platform.adapters.persistence.approval_queries import SqlPendingApprovalQuery
 from dw_platform.adapters.persistence.caching_lookup import CachingMembershipLookup
+from dw_platform.adapters.persistence.channel_preferences import SqlChannelPreferences
 from dw_platform.adapters.persistence.directory import SqlWorkspaceDirectory
 from dw_platform.adapters.persistence.hierarchy_repo import SqlHierarchyRepository
 from dw_platform.adapters.persistence.idempotency_store import SqlIdempotencyStore
@@ -215,6 +216,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
             clock=clock,
             bot_link=settings.zalo_bot_link,
         )
+        container.channel_preferences = SqlChannelPreferences(session_factory)
 
     # ---- provisioning ----------------------------------------------------
     # A second engine as the provisioner role: writes across tenants but holds

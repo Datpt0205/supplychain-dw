@@ -120,6 +120,27 @@ channel_link_nonces = sa.Table(
     ),
 )
 
+# One row per inbound chat message id, claimed before the message is acted on
+# (migration 988592a8100f). Identity plane like the nonces above: the dedupe runs
+# before a tenant is known, so there is no tenant to narrow by.
+channel_inbound_messages = sa.Table(
+    "channel_inbound_messages",
+    metadata,
+    sa.Column("channel", sa.Text, primary_key=True),
+    sa.Column("external_message_id", sa.Text, primary_key=True),
+    sa.Column(
+        "user_id",
+        UUID(as_uuid=True),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    ),
+    sa.Column(
+        "received_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+    sa.Column("outcome", sa.Text, nullable=False, server_default="processing"),
+)
+
 plans = sa.Table(
     "plans",
     metadata,
@@ -150,6 +171,23 @@ memberships = sa.Table(
         "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
     sa.UniqueConstraint("tenant_id", "workspace_id", "user_id", name="uq_memberships_scope_user"),
+)
+
+# The workspace a person chose for their chat commands (migration 988592a8100f).
+# RLS by `app.principal_id`, not by tenant: the row is the person's, and the bot
+# reads it before a tenant is known. The FK to the membership keeps it naming a
+# workspace the person belongs to, and removes it with the membership.
+channel_preferences = sa.Table(
+    "channel_preferences",
+    metadata,
+    sa.Column("user_id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.ForeignKeyConstraint(
+        ["tenant_id", "workspace_id", "user_id"],
+        ["memberships.tenant_id", "memberships.workspace_id", "memberships.user_id"],
+        ondelete="CASCADE",
+    ),
 )
 
 entitlements = sa.Table(

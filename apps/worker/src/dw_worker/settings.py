@@ -225,6 +225,12 @@ class WorkerSettings(BaseSettings):
         min_length=1,
         validation_alias=AliasChoices("DW_WORKER_PRODUCT_NAME", "DW_PRODUCT_NAME"),
     )
+    # The web app's public URL, the API's value: the bot links a person with
+    # several workspaces to `<this>/settings` to choose the one for Zalo.
+    public_web_url: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("DW_WORKER_PUBLIC_WEB_URL", "DW_PUBLIC_WEB_URL"),
+    )
 
     @property
     def zalo_poll_enabled(self) -> bool:

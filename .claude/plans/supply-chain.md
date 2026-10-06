@@ -42,36 +42,38 @@ This repo is the Elmich product: bounded context
 Specs and tickets under `.claude/plans/supply-chain/<feature>/`. "Generic"
 means platform code, an upstream candidate (ADR 0011).
 
-| Slice | Ticket                                                                  | Generic | Status          | Blocked by                       |
-| ----- | ----------------------------------------------------------------------- | ------- | --------------- | -------------------------------- |
-| P     | `port/issues/01-port-dw-supply-chain.md`                                | no      | resolved        | —                                |
-| P2    | `port/issues/02-audit-and-spend-on-supply-chain-writes.md`              | partly  | ready-for-agent | P                                |
-| P3    | `port/issues/03-follow-ups-retention.md`                                | no      | ready-for-agent | P                                |
-| ENV   | `env/issues/01-env-example-and-init-env.md`                             | yes     | resolved        | P                                |
-| Z1    | `zalo-channel/issues/01-zalo-link.md`                                   | yes     | resolved        | P, ENV                           |
-| U     | `personal-settings/issues/01-settings-page-and-login.md`                | yes     | resolved        | Z1, ENV, web-ui antd-shell 03/05 |
-| Z2    | `zalo-channel/issues/02-channel-delivery.md`                            | yes     | ready-for-agent | Z1                               |
-| Z3    | `zalo-channel/issues/03-zalo-webhook.md`                                | yes     | ready-for-agent | Z1                               |
-| Z4    | `zalo-channel/issues/04-chat-proposal.md`                               | partly  | ready-for-agent | Z1, U, S1, D                     |
-| Z5    | `zalo-channel/issues/05-approve-via-zalo.md`                            | partly  | ready-for-agent | Z4, Z2, A, S2                    |
-| Z6    | `zalo-channel/issues/06-read-only-qa.md`                                | partly  | ready-for-agent | Z4                               |
-| ZL    | `zalo-channel/issues/07-live-run.md`                                    | —       | ready-for-human | Z1–Z6, H2                        |
-| A     | `approval-decider-scope/issues/01-required-scope.md`                    | yes     | resolved        | P                                |
-| A2    | `approval-decider-scope/issues/02-admin-does-not-pass-stamped-scope.md` | yes     | resolved        | A                                |
-| D     | `case-documents/issues/01-case-documents.md`                            | no      | resolved        | P                                |
-| S1    | `stage-1/issues/01-product-case-steps-1-5.md`                           | no      | resolved        | P, D                             |
-| S2    | `stage-1/issues/02-bod-review-step-6.md`                                | no      | ready-for-human | S1, A                            |
-| S3    | `stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`         | no      | ready-for-agent | S2                               |
-| S4    | `stage-1/issues/04-item-code-sku-signoff-step-9.md`                     | no      | ready-for-agent | S3                               |
-| S5    | `stage-1/issues/05-place-order-hand-off.md`                             | no      | ready-for-agent | S4                               |
-| S6    | `stage-1/issues/06-sla-by-category-and-pic-routing.md`                  | no      | ready-for-agent | S5                               |
-| S7    | `stage-1/issues/07-stage-1-evals.md`                                    | no      | ready-for-agent | S6                               |
-| PK    | `packaging-design/issues/01-colour-packaging-and-pre-production.md`     | no      | ready-for-agent | P, D                             |
-| W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md` (E-HSDT v3 look)   | no      | ready-for-agent | P; Playwright viewports owed     |
-| H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                        | yes     | ready-for-agent | ENV, U                           |
-| H2    | `hosting/issues/02-live-domain.md`                                      | —       | ready-for-human | H                                |
+| Slice | Ticket                                                                    | Generic | Status          | Blocked by                          |
+| ----- | ------------------------------------------------------------------------- | ------- | --------------- | ----------------------------------- |
+| P     | `port/issues/01-port-dw-supply-chain.md`                                  | no      | resolved        | —                                   |
+| P2    | `port/issues/02-audit-and-spend-on-supply-chain-writes.md`                | partly  | ready-for-agent | P                                   |
+| P3    | `port/issues/03-follow-ups-retention.md`                                  | no      | ready-for-agent | P                                   |
+| ENV   | `env/issues/01-env-example-and-init-env.md`                               | yes     | resolved        | P                                   |
+| Z1    | `zalo-channel/issues/01-zalo-link.md`                                     | yes     | resolved        | P, ENV                              |
+| U     | `personal-settings/issues/01-settings-page-and-login.md`                  | yes     | resolved        | Z1, ENV, web-ui antd-shell 03/05    |
+| Z2    | `zalo-channel/issues/02-channel-delivery.md`                              | yes     | ready-for-agent | Z1                                  |
+| Z3    | `zalo-channel/issues/03-zalo-webhook.md`                                  | yes     | ready-for-agent | Z1                                  |
+| Z4a   | `zalo-channel/issues/04-chat-proposal.md` (steps 1–3, `/settings` select) | yes     | resolved        | Z1, U                               |
+| Z4b   | `zalo-channel/issues/04-chat-proposal.md` (steps 4–7, 9, 10)              | no      | ready-for-agent | Z4a, S1, D                          |
+| Z4p   | `zalo-channel/issues/04b-photos.md` (photos, old step 8)                  | no      | ready-for-human | Z4b; a real photo update as fixture |
+| Z5    | `zalo-channel/issues/05-approve-via-zalo.md`                              | partly  | ready-for-agent | Z4, Z2, A, S2                       |
+| Z6    | `zalo-channel/issues/06-read-only-qa.md`                                  | partly  | ready-for-agent | Z4                                  |
+| ZL    | `zalo-channel/issues/07-live-run.md`                                      | —       | ready-for-human | Z1–Z6, H2                           |
+| A     | `approval-decider-scope/issues/01-required-scope.md`                      | yes     | resolved        | P                                   |
+| A2    | `approval-decider-scope/issues/02-admin-does-not-pass-stamped-scope.md`   | yes     | resolved        | A                                   |
+| D     | `case-documents/issues/01-case-documents.md`                              | no      | resolved        | P                                   |
+| S1    | `stage-1/issues/01-product-case-steps-1-5.md`                             | no      | resolved        | P, D                                |
+| S2    | `stage-1/issues/02-bod-review-step-6.md`                                  | no      | ready-for-human | S1, A                               |
+| S3    | `stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`           | no      | ready-for-agent | S2                                  |
+| S4    | `stage-1/issues/04-item-code-sku-signoff-step-9.md`                       | no      | ready-for-agent | S3                                  |
+| S5    | `stage-1/issues/05-place-order-hand-off.md`                               | no      | ready-for-agent | S4                                  |
+| S6    | `stage-1/issues/06-sla-by-category-and-pic-routing.md`                    | no      | ready-for-agent | S5                                  |
+| S7    | `stage-1/issues/07-stage-1-evals.md`                                      | no      | ready-for-agent | S6                                  |
+| PK    | `packaging-design/issues/01-colour-packaging-and-pre-production.md`       | no      | ready-for-agent | P, D                                |
+| W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md` (E-HSDT v3 look)     | no      | ready-for-agent | P; Playwright viewports owed        |
+| H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
+| H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** Z4 (S1, U in), then S3 (S2 in); Z5 after Z4 and Z2; Z6 after Z4.
+**Next:** Z4b (Z4a in), then S3 (S2 in); Z5 after Z4 and Z2; Z6 after Z4.
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 
@@ -89,20 +91,21 @@ email as a second channel.
 
 ## Slice log
 
-| Slice  | Commit    | What                                                                                                                                                                                    |
-| ------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P, ENV | `c2f04dc` | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                                                                                                |
-| U, Z1  | `51c0ef7` | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                                                                                                 |
-| A      | `dabf5c4` | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                                                                                                    |
-| D      | `51e3400` | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep.                                                                              |
-| S1     | `6dfb1ef` | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages.                |
-| PR-02  | `7b411df` | Platform: approvals, runs and audit read only the caller's workspace.                                                                                                                   |
-| S2     | `446083e` | BGĐ review at step 6: graph-only approve/reject, decider as actor, idempotent start plus a reconcile lane, `sc_bod`.                                                                    |
-| A2     | `ae4202b` | A stamped `required_scope` is not satisfied by `platform_admin`; the server computes `can_decide` for `/approvals`.                                                                     |
-| W      | `82b5c13` | Supply Chain pages on antd in the E-HSDT v3 look: theme, `StatusTag`, `PageHeader`, `RegionState`, context navbar; Playwright viewports owed.                                           |
-| PM-1   | `6d6459a` | Merge `platform/main` (`c16857c`): hosted rerank (TEI gone), memory/compaction/retrieval hardening, run-less decided event, dev-harness gate.                                           |
-| PM-2   | `c596a4b` | Merge `platform/main` (`9cc47cf`), upstreamed approval work back as one copy; `96c57d5`: twin migrations idempotent, head `57ca5f1df964`.                                               |
-| PM-3   | merge     | Merge `platform/main` (`96f95ad`): a stamped approval is seen only by its deciders and requester (ADR 0020 sửa đổi 2026-10-07); `raised_by_payload` for the BGĐ dedupe; head unchanged. |
+| Slice  | Commit      | What                                                                                                                                                                                          |
+| ------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P, ENV | `c2f04dc`   | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                                                                                                      |
+| U, Z1  | `51c0ef7`   | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                                                                                                       |
+| A      | `dabf5c4`   | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                                                                                                          |
+| D      | `51e3400`   | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep.                                                                                    |
+| S1     | `6dfb1ef`   | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages.                      |
+| PR-02  | `7b411df`   | Platform: approvals, runs and audit read only the caller's workspace.                                                                                                                         |
+| S2     | `446083e`   | BGĐ review at step 6: graph-only approve/reject, decider as actor, idempotent start plus a reconcile lane, `sc_bod`.                                                                          |
+| A2     | `ae4202b`   | A stamped `required_scope` is not satisfied by `platform_admin`; the server computes `can_decide` for `/approvals`.                                                                           |
+| W      | `82b5c13`   | Supply Chain pages on antd in the E-HSDT v3 look: theme, `StatusTag`, `PageHeader`, `RegionState`, context navbar; Playwright viewports owed.                                                 |
+| PM-1   | `6d6459a`   | Merge `platform/main` (`c16857c`): hosted rerank (TEI gone), memory/compaction/retrieval hardening, run-less decided event, dev-harness gate.                                                 |
+| PM-2   | `c596a4b`   | Merge `platform/main` (`9cc47cf`), upstreamed approval work back as one copy; `96c57d5`: twin migrations idempotent, head `57ca5f1df964`.                                                     |
+| PM-3   | merge       | Merge `platform/main` (`96f95ad`): a stamped approval is seen only by its deciders and requester (ADR 0020 sửa đổi 2026-10-07); `raised_by_payload` for the BGĐ dedupe; head unchanged.       |
+| Z4a    | next commit | Inbound Zalo foundation: router and `ChannelCommandRegistry` (empty), message-id dedupe, linked-user AccessContext cut to a ceiling with no role, `channel_preferences` + `/settings` select. |
 
 ## Open — named, not fixed, still true after the port
 

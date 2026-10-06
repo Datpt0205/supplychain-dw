@@ -48,6 +48,10 @@ một bảng liên kết có `tenant_id`; chưa làm.
       nào rộng hơn membership. Trần lệch với quyền handler thật đòi thì lệnh bị từ chối,
       không mở rộng: hướng lệch đóng, và mỗi lệnh có test chạy được với đúng trần của nó.
     - tenant bị khóa hoặc membership đã gỡ thì từ chối như đăng nhập.
+    - AccessContext này không mang role nào (bổ sung 7/10/2026, Z4a): role
+      `platform_admin` qua mọi kiểm scope (`ScopeAuthorizationService`), nên một role
+      mang theo sẽ vượt trần. Quyền của lệnh là đúng phần scope giao với trần
+      (`SqlMembershipLookup.find_linked_access`, `LinkedUserAccess`).
 3. **Token dùng một lần.** Token HMAC hiện có hạn 15 phút nhưng dùng lại được trong
    hạn: ai thấy token đều gắn được Zalo của mình vào người đó. Token thêm `jti`; bảng
    `platform.channel_link_nonces` (jti khóa chính, `user_id` FK `ON DELETE CASCADE`

@@ -156,6 +156,13 @@ const zaloConnectSchema = z.object({
 });
 export type ZaloConnect = z.infer<typeof zaloConnectSchema>;
 
+/** The workspace the caller's Zalo commands act in; both null until chosen. */
+const zaloWorkspaceSchema = z.object({
+  tenant_id: z.string().nullable(),
+  workspace_id: z.string().nullable(),
+});
+export type ZaloWorkspace = z.infer<typeof zaloWorkspaceSchema>;
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -326,7 +333,8 @@ void _meMirrorsTheRoute;
 const _zaloMirrorsTheRoute: [
   SameType<ZaloStatus, Generated["ZaloStatusView"]>,
   SameType<keyof ZaloConnect, keyof Generated["ZaloConnectView"]>,
-] = [true, true];
+  SameType<ZaloWorkspace, Generated["ZaloWorkspaceView"]>,
+] = [true, true, true];
 void _zaloMirrorsTheRoute;
 
 const _followUpMirrorsTheRoute: [
@@ -1033,6 +1041,20 @@ export class ApiClient {
 
   disconnectZalo(): Promise<void> {
     return this.requestNoContent("POST", "/api/v1/zalo/disconnect");
+  }
+
+  getZaloWorkspace(): Promise<ZaloWorkspace> {
+    return this.request("GET", "/api/v1/zalo/workspace", zaloWorkspaceSchema);
+  }
+
+  /** 404 `not_found` when the pair is not one of the caller's own memberships. */
+  setZaloWorkspace(
+    tenantId: string,
+    workspaceId: string,
+  ): Promise<ZaloWorkspace> {
+    return this.request("PUT", "/api/v1/zalo/workspace", zaloWorkspaceSchema, {
+      body: { tenant_id: tenantId, workspace_id: workspaceId },
+    });
   }
 
   // ---- supply chain ---------------------------------------------------

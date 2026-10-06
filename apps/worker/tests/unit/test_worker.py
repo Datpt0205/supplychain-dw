@@ -101,7 +101,7 @@ def test_a_host_with_no_infrastructure_wires_no_lane() -> None:
 
 
 def test_only_the_platform_lanes_are_wired() -> None:
-    """Ten lanes a database alone is enough for, and no more.
+    """Eleven lanes a database alone is enough for, and no more.
 
     The outbox, and retention twice. Retention joined the platform set the day
     memory got a lifecycle: `memory.items` is a platform table, so the platform
@@ -128,6 +128,9 @@ def test_only_the_platform_lanes_are_wired() -> None:
     compliance answer like memory's (`checkpoints` in the same file).
     `channel_link_nonces_retention` is the eighth: one-time link tokens a day
     past their expiry, a technical bound like the spend guard's.
+    `channel_inbound_messages_retention` is the ninth: inbound chat message ids
+    kept seven days for the dedupe (`INBOUND_MESSAGE_RETENTION`), its own lane
+    because each pruner is.
 
     `supply_chain_follow_ups` is the first context lane: Supply Chain's sweep
     that turns due reminders, escalations and SLA breaches into follow-ups
@@ -150,6 +153,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "notifications_retention",
         "checkpoint_retention",
         "channel_link_nonces_retention",
+        "channel_inbound_messages_retention",
         "supply_chain_follow_ups",
         "supply_chain_product_review_reconcile",
     }

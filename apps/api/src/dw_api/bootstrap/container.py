@@ -52,6 +52,7 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.application.admin_console import AdminConsoleService
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.cache import CachePort
+from dw_platform.application.channel_access import ChannelPreferencesPort
 from dw_platform.application.entitlement import PlanEntitlementService
 from dw_platform.application.hierarchy import HierarchyService
 from dw_platform.application.idempotency import HttpIdempotency
@@ -240,6 +241,9 @@ class ApiContainer:
     # The signed-in user's own Zalo link. ``None`` unless the bot token and the
     # link secret are both set, and then /api/v1/zalo/* is not mounted.
     zalo_linking: ZaloLinking | None = None
+    # The workspace the signed-in user's Zalo commands act in. Wired with
+    # ``zalo_linking`` and ``None`` without it, like the routes that read it.
+    channel_preferences: ChannelPreferencesPort | None = None
     cache: CachePort | None = None
     # Dedicated to the readiness probe — the runtime's own retrieval/memory
     # clients are built (and disposed) deeper inside `build_runtime`, only

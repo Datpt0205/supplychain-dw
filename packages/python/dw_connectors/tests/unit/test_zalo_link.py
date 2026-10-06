@@ -81,6 +81,9 @@ class _FakeStore:
     async def zalo_id_for(self, user_id: uuid.UUID) -> str | None:
         return self.links.get(user_id)
 
+    async def user_id_for(self, zalo_id: str) -> uuid.UUID | None:
+        return next((u for u, z in self.links.items() if z == zalo_id), None)
+
     async def unlink_by_user(self, user_id: uuid.UUID) -> None:
         self.links.pop(user_id, None)
 

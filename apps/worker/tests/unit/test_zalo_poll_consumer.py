@@ -15,7 +15,9 @@ from typing import Any
 import pytest
 from test_worker import bare_settings
 
+from dw_connectors.adapters.zalo_inbound import ZaloInbound
 from dw_connectors.adapters.zalo_link import ConnectToken, make_connect_token
+from dw_connectors.inbound import InboundMessage
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
 from dw_worker.main import build_registry
 
@@ -96,10 +98,33 @@ class _FakeStore:
     async def unlink_by_zalo(self, zalo_id: str) -> bool:
         return self.links.pop(zalo_id, None) is not None
 
+    async def user_id_for(self, zalo_id: str) -> uuid.UUID | None:
+        return self.links.get(zalo_id)
 
-def _consumer(bot: _FakeBot, store: _FakeStore) -> Any:
+
+class _FakeRouter:
+    """Records what the entry hands the inbound router; ``boom`` raises."""
+
+    def __init__(self) -> None:
+        self.routed: list[InboundMessage] = []
+
+    async def route(self, message: InboundMessage) -> None:
+        if message.text == "boom":
+            raise RuntimeError("database went away")
+        self.routed.append(message)
+
+
+def _consumer(bot: _FakeBot, store: _FakeStore, router: _FakeRouter | None = None) -> Any:
     return build_zalo_poll_consumer(
-        bot, store, link_secret=_SECRET, clock=_Clock(), product_name="Cổng thử"
+        bot,
+        ZaloInbound(
+            link_secret=_SECRET,
+            store=store,
+            sender=bot,
+            clock=_Clock(),
+            product_name="Cổng thử",
+            router=router or _FakeRouter(),
+        ),
     )
 
 
@@ -134,6 +159,20 @@ async def test_stop_in_a_poll_tick_unlinks() -> None:
     assert "Đã ngắt kết nối Zalo" in bot.sent[0][1]
 
 
+async def test_free_text_in_a_poll_tick_reaches_the_router_and_a_failure_spares_the_rest() -> None:
+    router = _FakeRouter()
+    bot = _FakeBot(
+        [
+            {"message": {"chat": {"id": "chat-1"}, "message_id": "z1", "text": "boom"}},
+            {"message": {"chat": {"id": "chat-1"}, "message_id": "z2", "text": "đề xuất SP"}},
+        ]
+    )
+
+    await _consumer(bot, _FakeStore(set()), router)()
+
+    assert [(m.message_id, m.text) for m in router.routed] == [("z2", "đề xuất SP")]
+
+
 async def test_an_idle_tick_does_nothing() -> None:
     bot = _FakeBot([])
     await _consumer(bot, _FakeStore(set()))()
@@ -142,13 +181,16 @@ async def test_an_idle_tick_does_nothing() -> None:
 
 def test_the_lane_never_builds_an_access_context_from_zalo_data() -> None:
     """ADR 0012 condition 2: inbound Zalo data never reaches the access-context
-    factory. Z4-Z6 build their context by a separate path keyed by user_id.
-    The API route has the same check in ``test_zalo_endpoint.py``."""
+    factory. Commands get their context from the platform's linked-user path,
+    keyed by the user the link row names (``LinkedUserAccess``), through the
+    router. The API route has the same check in ``test_zalo_endpoint.py``."""
     from pathlib import Path
 
+    import dw_connectors.adapters.zalo_inbound as entry
     import dw_connectors.adapters.zalo_link as link
+    import dw_connectors.inbound as router
     import dw_worker.consumers.zalo_poll as lane
 
-    for module in (link, lane):
+    for module in (link, lane, entry, router):
         source = Path(module.__file__ or "").read_text(encoding="utf-8")
         assert "access_context_factory" not in source, module.__name__

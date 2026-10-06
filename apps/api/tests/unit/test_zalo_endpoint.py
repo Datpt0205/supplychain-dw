@@ -92,7 +92,35 @@ class FakeAccountStore:
         self.links.pop(user_id, None)
 
 
-def make_container(store: FakeAccountStore | None) -> ApiContainer:
+class FakePreferences:
+    """``ChannelPreferencesPort`` in memory: memberships as ``FakeMembershipLookup`` has them."""
+
+    def __init__(self) -> None:
+        self.held = {
+            ALICE: [(TENANT, WORKSPACE), (SECOND_TENANT, SECOND_WORKSPACE)],
+            BOB: [(TENANT, WORKSPACE)],
+        }
+        self.choices: dict[uuid.UUID, tuple[uuid.UUID, uuid.UUID]] = {}
+
+    async def chosen(self, user_id: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID] | None:
+        return self.choices.get(user_id)
+
+    async def memberships(self, user_id: uuid.UUID) -> list[tuple[uuid.UUID, uuid.UUID]]:
+        return list(self.held.get(user_id, []))
+
+    async def choose(
+        self, user_id: uuid.UUID, tenant_id: uuid.UUID, workspace_id: uuid.UUID
+    ) -> bool:
+        # The SQL store confirms the membership under the caller's principal; so must this.
+        if (tenant_id, workspace_id) not in self.held.get(user_id, []):
+            return False
+        self.choices[user_id] = (tenant_id, workspace_id)
+        return True
+
+
+def make_container(
+    store: FakeAccountStore | None, preferences: FakePreferences | None = None
+) -> ApiContainer:
     async def ok_probe() -> CheckState:
         return "ok"
 
@@ -116,6 +144,7 @@ def make_container(store: FakeAccountStore | None) -> ApiContainer:
             if store is not None
             else None
         ),
+        channel_preferences=(preferences or FakePreferences()) if store is not None else None,
     )
 
 
@@ -141,7 +170,14 @@ async def _call(
 
 
 @pytest.mark.parametrize(
-    ("method", "path"), [("GET", "/status"), ("POST", "/connect"), ("POST", "/disconnect")]
+    ("method", "path"),
+    [
+        ("GET", "/status"),
+        ("POST", "/connect"),
+        ("POST", "/disconnect"),
+        ("GET", "/workspace"),
+        ("PUT", "/workspace"),
+    ],
 )
 async def test_without_a_bearer_token_every_route_is_refused(method: str, path: str) -> None:
     """The platform answers a missing bearer token with 403 ``permission_denied``
@@ -235,6 +271,58 @@ async def test_a_non_member_of_the_workspace_is_refused() -> None:
     assert store.nonces == []
 
 
+# ---- the workspace Zalo commands act in -----------------------------------------
+
+
+async def test_the_workspace_is_unset_until_chosen() -> None:
+    response = await _call(make_container(FakeAccountStore()), "GET", "/workspace")
+    assert response.status_code == 200
+    assert response.json() == {"tenant_id": None, "workspace_id": None}
+
+
+async def test_choosing_one_of_my_workspaces_is_kept_for_me_only() -> None:
+    preferences = FakePreferences()
+    container = make_container(FakeAccountStore(), preferences)
+    choice = {"tenant_id": str(SECOND_TENANT), "workspace_id": str(SECOND_WORKSPACE)}
+
+    put = await _call(container, "PUT", "/workspace", json=choice)
+    mine = await _call(container, "GET", "/workspace")
+    bobs = await _call(container, "GET", "/workspace", subject="dev|bob")
+
+    assert put.status_code == 200 and put.json() == choice
+    assert mine.json() == choice
+    assert bobs.json() == {"tenant_id": None, "workspace_id": None}
+    assert preferences.choices == {ALICE: (SECOND_TENANT, SECOND_WORKSPACE)}
+
+
+async def test_a_workspace_i_do_not_belong_to_answers_404_and_changes_nothing() -> None:
+    """Bob is no member of the second tenant: the same 404 as for a workspace
+    that does not exist, so the answer says nothing about it."""
+    preferences = FakePreferences()
+    container = make_container(FakeAccountStore(), preferences)
+
+    for choice in (
+        {"tenant_id": str(SECOND_TENANT), "workspace_id": str(SECOND_WORKSPACE)},
+        {"tenant_id": str(uuid.uuid4()), "workspace_id": str(uuid.uuid4())},
+    ):
+        response = await _call(container, "PUT", "/workspace", subject="dev|bob", json=choice)
+        assert response.status_code == 404
+        assert response.json()["code"] == "not_found"
+    assert preferences.choices == {}
+
+
+async def test_the_choice_cannot_name_whose_it_is() -> None:
+    preferences = FakePreferences()
+    response = await _call(
+        make_container(FakeAccountStore(), preferences),
+        "PUT",
+        "/workspace",
+        json={"tenant_id": str(TENANT), "workspace_id": str(WORKSPACE), "user_id": str(BOB)},
+    )
+    assert response.status_code == 422
+    assert preferences.choices == {}
+
+
 # ---- no configuration, no door -------------------------------------------------
 
 _WIRING = {
@@ -295,4 +383,4 @@ def test_the_route_never_builds_an_access_context_from_zalo_data() -> None:
         and isinstance(node.value, ast.Name)
         and node.value.id == "container"
     }
-    assert taken == {"zalo_linking"}
+    assert taken == {"zalo_linking", "channel_preferences"}

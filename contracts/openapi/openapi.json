@@ -4923,6 +4923,61 @@
         ],
         "title": "ZaloStatusView",
         "type": "object"
+      },
+      "ZaloWorkspaceChoice": {
+        "additionalProperties": false,
+        "properties": {
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "workspace_id"
+        ],
+        "title": "ZaloWorkspaceChoice",
+        "type": "object"
+      },
+      "ZaloWorkspaceView": {
+        "properties": {
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "workspace_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "workspace_id"
+        ],
+        "title": "ZaloWorkspaceView",
+        "type": "object"
       }
     }
   },
@@ -9037,6 +9092,66 @@
           }
         },
         "summary": "Zalo Status",
+        "tags": [
+          "zalo"
+        ]
+      }
+    },
+    "/api/v1/zalo/workspace": {
+      "get": {
+        "operationId": "zalo_workspace_api_v1_zalo_workspace_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZaloWorkspaceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Zalo Workspace",
+        "tags": [
+          "zalo"
+        ]
+      },
+      "put": {
+        "operationId": "zalo_choose_workspace_api_v1_zalo_workspace_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ZaloWorkspaceChoice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZaloWorkspaceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Zalo Choose Workspace",
         "tags": [
           "zalo"
         ]

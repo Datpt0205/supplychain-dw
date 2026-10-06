@@ -11,6 +11,7 @@ import { errorMessage } from "../../lib/error-message";
 import { roleLabels } from "../../lib/nav/roles";
 import { apiClient } from "../../lib/session";
 import { ZaloConnectCard } from "./zalo-connect-card";
+import { ZaloWorkspaceSelect } from "./zalo-workspace-select";
 
 type MeState =
   | { kind: "loading" }
@@ -116,7 +117,9 @@ export function PersonalSettings() {
         )}
       </Card>
 
-      <ZaloConnectCard />
+      <ZaloConnectCard>
+        <ZaloWorkspaceSelect memberships={memberships} />
+      </ZaloConnectCard>
     </Flex>
   );
 }

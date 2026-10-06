@@ -58,6 +58,29 @@ class MembershipLookupPort(Protocol):
     ) -> MembershipAccess | None: ...
 
 
+def context_from(access: MembershipAccess) -> AccessContext:
+    """The access context for a membership the database confirmed.
+
+    One mapping for every way a context is built — a signed-in request here, a
+    linked chat in ``channel_access`` — so a field added to the snapshot cannot
+    reach one path and silently default on the other.
+    """
+    return AccessContext(
+        tenant_id=access.tenant_id,
+        workspace_id=access.workspace_id,
+        principal_id=access.principal_id,
+        roles=access.roles,
+        groups=access.groups,
+        scopes=access.scopes,
+        clearance=access.clearance,
+        plan_id=access.plan_id,
+        feature_flags=access.feature_flags,
+        record_visibility=access.record_visibility,
+        visible_owners=access.visible_owners,
+        max_autonomy_level=access.max_autonomy_level,
+    )
+
+
 @dataclass(frozen=True)
 class DbAccessContextFactory:
     """Implements ``AccessContextFactoryPort`` on top of the membership lookup."""
@@ -85,17 +108,4 @@ class DbAccessContextFactory:
                 "no membership for the requested tenant/workspace",
                 details={"tenant_id": str(requested_tenant_id)},
             )
-        return AccessContext(
-            tenant_id=access.tenant_id,
-            workspace_id=access.workspace_id,
-            principal_id=access.principal_id,
-            roles=access.roles,
-            groups=access.groups,
-            scopes=access.scopes,
-            clearance=access.clearance,
-            plan_id=access.plan_id,
-            feature_flags=access.feature_flags,
-            record_visibility=access.record_visibility,
-            visible_owners=access.visible_owners,
-            max_autonomy_level=access.max_autonomy_level,
-        )
+        return context_from(access)

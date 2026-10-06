@@ -221,6 +221,56 @@ async def test_the_application_may_only_mark_a_link_nonce_used(db_urls: Database
         await migrator.dispose()
 
 
+async def test_the_application_may_only_settle_an_inbound_message_and_choose_a_workspace(
+    db_urls: DatabaseUrls,
+) -> None:
+    """Migration 988592a8100f. `channel_inbound_messages`: `dw_app` claims
+    (INSERT), reads, settles (UPDATE of `outcome` only) and prunes (DELETE) —
+    it can never move a claimed id to another user or re-date it.
+    `channel_preferences`: `dw_app` reads, inserts and updates the chosen
+    tenant/workspace, never the owning `user_id`, and never deletes (the row
+    goes with the membership, by cascade). Asked of the catalog."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+
+            async def table(name: str, verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text("SELECT has_table_privilege('dw_app', :t, :verb)"),
+                        {"t": f"platform.{name}", "verb": verb},
+                    )
+                )
+
+            async def column(name: str, col: str, verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text("SELECT has_column_privilege('dw_app', :t, :col, :verb)"),
+                        {"t": f"platform.{name}", "col": col, "verb": verb},
+                    )
+                )
+
+            inbound = "channel_inbound_messages"
+            for verb in ("SELECT", "INSERT", "DELETE"):
+                assert await table(inbound, verb), verb
+            assert not await table(inbound, "UPDATE")
+            assert not await table(inbound, "TRUNCATE")
+            assert await column(inbound, "outcome", "UPDATE")
+            for col in ("channel", "external_message_id", "user_id", "received_at"):
+                assert not await column(inbound, col, "UPDATE"), col
+
+            chosen = "channel_preferences"
+            assert await table(chosen, "SELECT")
+            assert await table(chosen, "INSERT")
+            for verb in ("UPDATE", "DELETE", "TRUNCATE"):
+                assert not await table(chosen, verb), verb
+            assert await column(chosen, "tenant_id", "UPDATE")
+            assert await column(chosen, "workspace_id", "UPDATE")
+            assert not await column(chosen, "user_id", "UPDATE")
+    finally:
+        await migrator.dispose()
+
+
 async def test_the_application_may_only_record_a_decision_on_an_approval(
     db_urls: DatabaseUrls,
 ) -> None:

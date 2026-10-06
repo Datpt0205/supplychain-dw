@@ -101,7 +101,7 @@ AccessContext theo người đã liên kết, khử trùng theo id tin
 
 ## Tiêu chí chấp nhận
 
-- [ ] **Liên kết do chat khác tạo phải thấy được trước mọi lệnh Z4** (mối đe dọa "người
+- [x] **Liên kết do chat khác tạo phải thấy được trước mọi lệnh Z4** (mối đe dọa "người
       khác đổi mã `/start` của tôi trước", ADR 0012 điều kiện 3): một liên kết tạo bằng
       mã của người dùng từ một chat lạ hiện trong hộp thư của họ ("Zalo vừa được kết nối",
       audit của Z1 bước 9) ở mọi tenant họ là thành viên, và trên `/settings` là "đã kết
@@ -111,7 +111,7 @@ AccessContext theo người đã liên kết, khử trùng theo id tin
 - [ ] **Không từ tin:** test đưa tin chứa tenant id, workspace id, user id, `pic_user_id`
       của người khác: hồ sơ tạo ra (nếu có) ở workspace của bước 3, PIC là người đã liên
       kết. Mutation: lấy tenant từ tin thì test đỏ.
-- [ ] **Test âm danh tính:** chat chưa liên kết không tạo gì, không gọi mô hình; liên kết
+- [x] **Test âm danh tính:** chat chưa liên kết không tạo gì, không gọi mô hình; liên kết
       đã gỡ giữa hai lượt thì lượt sau bị từ chối; membership bị gỡ thì từ chối;
       `SqlMembershipLookup.find_access` với `issuer='zalo'` vẫn không ra membership (test
       của Z1 vẫn xanh).
@@ -131,9 +131,7 @@ AccessContext theo người đã liên kết, khử trùng theo id tin
       bản nháp không đổi; mention không có nguyên văn trong tin bị bỏ và bot hỏi lại trường
       đó.
 - [ ] **Hết hạn:** bản nháp quá 30 phút: "Đồng ý" không tạo, bot nói bản nháp đã hết hạn.
-- [ ] **Ảnh:** host ngoài danh sách bị từ chối không tải; tệp không phải JPEG, PNG bị từ
-      chối; ảnh nhận được thành `product_image` của đúng hồ sơ, `object_key` dưới tiền tố
-      tenant và workspace.
+- [ ] ~~**Ảnh**~~: chuyển sang `04b-photos.md` (quyết định Z4 của lead, 7/10/2026).
 - [ ] **Test âm RLS** cho `proposal_drafts`: tenant B không đọc, không sửa bản nháp của A;
       `test_rls_coverage.py`, `test_privileges.py` xanh với ba bảng mới. Không có hàm
       SECURITY DEFINER mới nào trong migration của ticket này.
@@ -163,3 +161,65 @@ AccessContext theo người đã liên kết, khử trùng theo id tin
 - 2026-10-05, review: bước 3 bỏ hàm SECURITY DEFINER liệt kê membership, dùng
   `app.principal_id` như baseline; policy của `channel_preferences` ghi rõ. Tiêu chí
   "liên kết do chat khác tạo phải thấy được" thêm cho mối đe dọa đổi mã trước (ADR 0012).
+- 2026-10-07, **Z4a xong (bước 1, 2, 3 và ô chọn `/settings`); Z4b còn mở** (bước 4–7, 9,
+  10 theo quyết định C1–C9 của lead; bước 8 sang `04b-photos.md`). Status giữ
+  `ready-for-agent` tới khi Z4b xong.
+    - **Đã làm.** Bộ định tuyến `dw_connectors/inbound.py` (`InboundRouter`,
+      `ChannelCommandRegistry`, cổng `ChannelIdentityPort`, `InboundLedgerPort`,
+      `LinkedAccessPort`); lối vào `adapters/zalo_inbound.py` (`ZaloInbound.handle`:
+      `/start`, `/stop` sang `handle_update` của Z1 nguyên như cũ, chữ khác sang router;
+      webhook Z3 gọi đúng hàm này). Lane poll chỉ nối với lối vào đó
+      (`build_zalo_inbound`, `build_channel_commands` trong `dw_worker/main.py`); registry
+      rỗng, chat đã liên kết nhận "Mình chưa xử lý được tin này". Chat chưa liên kết nhận
+      `link_help` (nhánh help của `handle_update`, một câu), không ghi gì, không lệnh nào
+      chạy. `SqlZaloLink.user_id_for` (B2). Migration `988592a8100f`:
+      `platform.channel_inbound_messages` (PK `(channel, external_message_id)`, `outcome`
+      CHECK, claim `ON CONFLICT DO NOTHING` commit trước khi xử lý; lỗi thì `failed` và trả
+      câu lỗi ngắn; id không bao giờ xử lý lại) với lane `channel_inbound_messages_retention`
+      (7 ngày, `INBOUND_MESSAGE_RETENTION`), và `platform.channel_preferences` (RLS ENABLE +
+      FORCE, một policy `channel_preferences_self` theo `app.principal_id`, FK tới membership
+      `ON DELETE CASCADE`); grant trong migration. `SqlMembershipLookup.find_linked_access`
+      và `LinkedUserAccess` (B4): đặt `app.principal_id` và `app.tenant_id` bằng
+      `set_config(..., true)`, cùng phần thân với `find_access` (`_access_in`), scope =
+      effective ∩ trần; không hàm SECURITY DEFINER. Route `GET/PUT /api/v1/zalo/workspace`
+      và ô "Workspace dùng cho Zalo" trên `/settings` (chỉ hiện khi có từ hai membership);
+      nhiều membership mà chưa chọn thì bot gửi `<DW_PUBLIC_WEB_URL>/settings`.
+    - **Quyết định thêm, ghi ở ADR 0012 điều kiện 2:** context dựng cho lệnh từ chat
+      **không mang role nào**, vì `platform_admin` qua mọi kiểm scope và sẽ vượt trần.
+    - **Chưa đo (failure-modes #4):** id tin đọc ở `message.message_id` theo tài liệu Bot
+      Platform; fixture poll của Z1 không có trường này. Tin chữ không có id thì không định
+      tuyến (log "dropped", trả "chưa xử lý được"). ZL (07) xác nhận trên bot thật.
+    - **Bundle export** không mang `channel_preferences` (policy không tên
+      `tenant_isolation_*`); purge xóa nó qua cascade của membership. Đổi lựa chọn
+      workspace không ghi audit (cài đặt của chính người đó).
+    - **`test_rls_coverage.py`:** thêm `_PRINCIPAL_ONLY_ON_PURPOSE` (mỗi policy chỉ theo
+      principal phải có lý do; test này lộ ra hai policy cũ `tenants_self_select`,
+      `workspaces_self_select`, nay có lý do) và test kết nối không đặt principal đọc 0
+      dòng `channel_preferences`.
+    - **Test:** dw_connectors unit 18 mới (router, lối vào); dw_platform integration 13 mới
+      (`test_channel_access.py`) + 2 ở `test_rls_coverage.py` + 1 ở `test_privileges.py`;
+      apps/worker integration 8 mới (`test_zalo_inbound_db.py`, gồm tiêu chí "liên kết do
+      chat khác tạo thấy được trước lệnh đầu" và cùng một update tới hai lần đồng thời, hai
+      giao dịch thật); API unit 4 mới; vitest 5 mới. Tổng: `make test-unit` 2061 passed;
+      integration dw_platform 225, dw_agent_runtime 72, dw_supply_chain 188, apps/worker
+      21; vitest apps/web 289; import-linter 9 contract kept; eval smoke, release manifest,
+      hooks (76) xanh.
+    - **Mutation (gỡ, đỏ, khôi phục), 17/17 đỏ:** bỏ ghi thông báo khi liên kết; router bỏ
+      qua kết quả claim; claim luôn True; settle đổi nhãn id đã chốt; retention không xóa;
+      bỏ cắt scope theo trần; giữ role; tenant khóa không bị từ chối; lookup không theo
+      `user_id`; `user_id_for` bỏ lọc chat (lần đầu sống sót, test đã sửa để có liên kết
+      của người khác); nhiều workspace không chọn vẫn chạy lệnh; lệnh lỗi không ghi
+      `failed`; `/start` sang router; policy `USING (true)`; `WITH CHECK (true)`; `choose`
+      bỏ kiểm membership; route bỏ qua từ chối của store. Web: ô chọn hiện với một
+      membership thì vitest đỏ.
+    - **Còn cho Z4b:** ý định, prompt, bản nháp, xác nhận, eval, model ở worker (A6), giới
+      hạn thời gian gọi model (A7), câu trả lời cố định cho update ảnh. Các tiêu chí còn
+      trống ở trên thuộc Z4b hoặc 04b.
+    - **Ứng viên đưa ngược lên repo platform (chưa đưa):** `dw_connectors/inbound.py`,
+      `adapters/zalo_inbound.py`, thay đổi ở `zalo_link.py`; `dw_platform`
+      `channel_inbound.py`, `channel_preferences.py`, `application/channel_access.py`,
+      `membership_lookup.py` (`_access_in`, `find_linked_access`), `identity.context_from`,
+      `SqlZaloLink.user_id_for`, `tables.py`, migration `988592a8100f`, các test RLS và
+      privileges; route `/zalo/workspace`, `ZaloWorkspaceSelect`, client
+      `get/setZaloWorkspace`; wiring worker (`build_zalo_inbound`, lane retention,
+      `public_web_url`); contract import-linter mở rộng.

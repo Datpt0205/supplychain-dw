@@ -121,6 +121,23 @@ class SqlZaloLink:
             ).first()
         return row[0] if row else None
 
+    async def user_id_for(self, zalo_id: str) -> UUID | None:
+        """The user this chat is linked to, or None — read afresh for every message.
+
+        The chat-to-person step every inbound command starts from (ADR 0012
+        condition 2). Not cached: an unlink between two messages must refuse
+        the second.
+        """
+        async with self.session_factory() as session:
+            row = (
+                await session.execute(
+                    sa.select(_identities.c.user_id)
+                    .where(_identities.c.provider == _ZALO, _identities.c.subject == zalo_id)
+                    .limit(1)
+                )
+            ).first()
+        return row[0] if row else None
+
     async def issue_nonce(self, token: LinkTokenClaims) -> None:
         """Record a freshly minted token so it can be redeemed exactly once."""
         async with self.session_factory() as session, session.begin():

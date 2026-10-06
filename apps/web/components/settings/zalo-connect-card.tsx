@@ -64,8 +64,11 @@ function statusFromError(error: unknown): Status {
  */
 export function ZaloConnectCard({
   now = () => new Date(),
+  children,
 }: {
   now?: () => Date;
+  /** Drawn under the status once the server answered (the workspace choice). */
+  children?: ReactNode;
 }) {
   const { modal, message } = App.useApp();
   const online = useOnline();
@@ -288,6 +291,8 @@ export function ZaloConnectCard({
               )}
             </div>
           )}
+
+          {children}
 
           {!online && (
             <Alert type="warning" showIcon message={OFFLINE_REASON} />

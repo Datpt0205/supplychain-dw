@@ -374,18 +374,25 @@ forbidden_modules = ["qdrant_client", "minio", "boto3"]
 ignore_imports = ["dw_memory.adapters.qdrant_ranker -> qdrant_client"]
 
 [[tool.importlinter.contracts]]
-# ADR 0014 / zalo-channel ticket 01: what the bot hears decides nothing. The
-# self-link flow links and unlinks a chat and replies; it cannot reach the
-# approval service or build an access context, so no text in a Zalo message can
-# approve, reject or act as anyone. Z5 opens one separate, code-gated path and
-# keeps this contract on the link flow. The worker's poll lane is in it too,
+# ADR 0014 / zalo-channel ticket 01: what the bot hears decides nothing on its
+# own. The self-link flow links and unlinks a chat and replies; it cannot reach
+# the approval service or build an access context. Since Z4 the update entry
+# (`zalo_inbound`) and the inbound router (`dw_connectors.inbound`) are in it
+# too: they hand a linked person's message to commands registered at the
+# composition root, which receive a context the PLATFORM built from that
+# person's own membership, cut to the command's ceiling (ADR 0012 condition 2).
+# None of these modules can build one, read a scope or reach approvals — the
+# router's context type is a parameter the composition root binds. Z5's decide
+# command is registered the same way. The worker's poll lane is in it too,
 # which is why `dw_worker` and `dw_api` are root packages: an app package left
 # out of `root_packages` is one import-linter cannot see into.
-name = "The Zalo link flow cannot reach approvals or access contexts"
+name = "The Zalo link flow and inbound router cannot reach approvals or access contexts"
 type = "forbidden"
 source_modules = [
     "dw_connectors.adapters.zalo_link",
     "dw_connectors.adapters.zalo_bot",
+    "dw_connectors.adapters.zalo_inbound",
+    "dw_connectors.inbound",
     "dw_worker.consumers.zalo_poll",
 ]
 forbidden_modules = ["dw_agent_runtime", "dw_platform", "dw_api"]
