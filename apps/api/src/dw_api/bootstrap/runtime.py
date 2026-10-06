@@ -54,6 +54,7 @@ from dw_knowledge.ingest_jobs import IngestJobStore
 from dw_knowledge.ports import ObjectStoragePort
 from dw_memory.adapters.qdrant_ranker import QdrantMemoryRanker
 from dw_memory.policy import MemoryWritePolicy
+from dw_memory.review import MEMORY_REVIEW, require_clearance_for_review
 from dw_memory.service import MemoryService
 from dw_observability.telemetry import TelemetryPort
 from dw_platform.application.ports import PlatformUnitOfWorkFactory
@@ -163,6 +164,7 @@ def build_runtime(
         clock=clock,
         id_generator=ids,
         reranker=build_reranker(settings),
+        telemetry=telemetry,
     )
     # Upload path: the API stages the raw file and enqueues; the worker ingests.
     ingest_jobs = IngestJobStore(session_factory=session_factory, clock=clock, id_generator=ids)
@@ -240,6 +242,13 @@ def build_runtime(
         run_store=run_store,
         clock=clock,
         id_generator=ids,
+        # A held memory is a fact the system will repeat to everyone in the
+        # workspace once approved: the person whose run proposed it may not
+        # vouch for it alone, and whoever does says why. A context adds its own
+        # prefixes with `|=` where it is wired.
+        strict_approval_prefixes=frozenset({"memory."}),
+        # And nobody decides on a memory they are not cleared to read.
+        decision_guards={MEMORY_REVIEW: require_clearance_for_review},
     )
 
     seam = RuntimeSeam(

@@ -31,6 +31,9 @@ _KEYWORD_PAYLOAD_INDEXES = (
     # Every attachment query narrows by it, so an unindexed one would scan the
     # tenant's whole point set on each question about a file.
     "attachment_scope",
+    # A search that names documents narrows by it before top-k, as do the
+    # per-document delete and tombstone.
+    "source_document_id",
 )
 
 
@@ -243,6 +246,7 @@ class QdrantVectorIndexAdapter:
         trusted_filter: TrustedSearchFilter,
         top_k: int,
         extra_filters: Sequence[tuple[str, str]] = (),
+        document_ids: Sequence[uuid.UUID] = (),
     ) -> list[VectorHit]:
         # Mandatory constraints come EXCLUSIVELY from the trusted filter.
         conditions: list[models.FieldCondition] = [
@@ -270,6 +274,16 @@ class QdrantVectorIndexAdapter:
             models.FieldCondition(key=key, match=models.MatchValue(value=value))
             for key, value in extra_filters
         )
+        # Asking for particular documents is the same kind of narrowing, and it
+        # has to happen here rather than on the hits: `limit` below is applied
+        # to whatever this filter admits.
+        if document_ids:
+            conditions.append(
+                models.FieldCondition(
+                    key="source_document_id",
+                    match=models.MatchAny(any=[str(d) for d in document_ids]),
+                )
+            )
         # Tenant isolation OR global (legal) scope: a point is visible if it is in
         # the caller's tenant+workspace, OR it is a cross-tenant global document.
         own_tenant = models.Filter(

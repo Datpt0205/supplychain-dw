@@ -19,8 +19,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from dw_agent_runtime.model.profiles import ModelProfileRegistry, ModelRoute
-from dw_kernel.errors import InfrastructureError
+from dw_agent_runtime.model.profiles import ModelProfileRegistry
 from dw_kernel.ports import SystemClock, Uuid7Generator
 from dw_knowledge.adapters.api_parsers import (
     DeepgramTranscriptParser,
@@ -28,6 +27,7 @@ from dw_knowledge.adapters.api_parsers import (
     PlaintextAttachmentParser,
 )
 from dw_knowledge.adapters.composite_parser import CompositeParser
+from dw_knowledge.adapters.embedding_factory import build_embeddings as shared_build_embeddings
 from dw_knowledge.attachment_policy import load_attachment_policy
 from dw_knowledge.gateway import KnowledgeGateway
 from dw_knowledge.ingest_jobs import IngestJobStore
@@ -120,49 +120,19 @@ def build_case_document_storage(settings: WorkerSettings) -> MinioCaseDocumentSt
 
 def build_embeddings(settings: WorkerSettings) -> EmbeddingPort:
     """Public because two lanes need it: knowledge ingestion, and the memory
-    index. A second builder would be a second answer to "which model embeds
-    this deployment's text", and the copy nobody edits keeps the old model."""
-    """The index's shape comes from config, never from a runtime default.
-
-    The model id and the vector width are one decision, so they live together on
-    the profile's embedding route rather than half in YAML and half in an env
-    var that a second process could disagree about.
+    index. Built by `dw_knowledge`'s one builder, the one the API embeds
+    questions with, so "which model embeds this deployment's text" has a
+    single answer: the `embedding` route of the configured model profile.
     """
-    if settings.embedding_provider == "openai_compatible":
-        from dw_knowledge.adapters.openai_embedding import OpenAICompatibleEmbeddingAdapter
-
-        route = _embedding_route(settings)
-        assert route.dimensions is not None  # enforced by ModelProfile
-        return OpenAICompatibleEmbeddingAdapter(
-            base_url=settings.openai_base_url,
-            api_key=settings.openai_api_key,
-            model=route.model,
-            _dimension=route.dimensions,
-            timeout=float(route.timeout_seconds),
-        )
-    if settings.embedding_provider == "tei" and settings.embed_url:
-        from dw_knowledge.adapters.tei_embedding import TeiEmbeddingAdapter
-
-        return TeiEmbeddingAdapter(base_url=settings.embed_url, _dimension=settings.embed_dimension)
-    from dw_knowledge.adapters.hash_embedding import HashEmbeddingAdapter
-
-    return HashEmbeddingAdapter()
-
-
-def _embedding_route(settings: WorkerSettings) -> ModelRoute:
     profiles = ModelProfileRegistry()
     profiles.load_directory(REPO_ROOT / "configs" / "models")
-    profile = profiles.resolve(settings.model_profile)
-    if profile.embedding is None:
-        raise InfrastructureError(
-            "the model profile declares no embedding route",
-            details={"profile_id": settings.model_profile},
-        )
-    if not settings.openai_base_url or not settings.openai_api_key:
-        raise InfrastructureError(
-            "openai_compatible embeddings need OPENAI_BASE_URL and OPENAI_API_KEY"
-        )
-    return profile.embedding
+    return shared_build_embeddings(
+        settings.embedding_provider,
+        profiles.resolve(settings.model_profile).embedding,
+        base_url=settings.openai_base_url,
+        api_key=settings.openai_api_key,
+        profile_id=settings.model_profile,
+    )
 
 
 def build_vector_index(settings: WorkerSettings) -> VectorIndexPort:

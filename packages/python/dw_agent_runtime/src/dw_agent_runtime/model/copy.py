@@ -37,6 +37,11 @@ class RuntimeCopy(BaseModel):
     # the user had written it.
     context_summary_prompt: str | None = None
     context_summary_frame: str | None = None
+    # 1.6.0: the prompt that updates an existing summary instead of starting
+    # over. Compaction refuses a copy without it — summarising only what came
+    # after the last summary, with no sight of that summary, drops what the last
+    # compaction kept.
+    context_summary_update_prompt: str | None = None
     # 1.5.0, same rule again: recalled memory is material the agent wrote from
     # documents a customer supplied, so it reaches the model framed as data. A
     # host that wires recall must load a copy that carries this frame — pasting

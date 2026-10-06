@@ -18,6 +18,15 @@ So this checks the reference against the chunk it names before writing it:
   from material this deployment actually holds.
 - Its `document_id` must equal the reference's `source_document_id`, or the
   citation points at one document while quoting another.
+- Its document must be one the memory's workspace may draw on: its own, or a
+  global one — `tables.visible_from_workspace`, the rule listing and full read
+  apply. RLS stops at the tenant, so without this one team's material became
+  another team's remembered fact.
+
+The classification recorded is the DOCUMENT's, never the reference's. The
+reference's copy is whatever the producer wrote down; the document row is the
+owner of that fact. `record` returns the most restrictive of them, so the
+caller can refuse a memory that claims to be less sensitive than its sources.
 
 A reference with no `chunk_id` is refused rather than recorded unverified.
 `EvidenceRef` allows it and the retrieval gateway never produces one — and
@@ -38,7 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dw_kernel.errors import DomainError
 from dw_kernel.ports import UtcClock
 from dw_knowledge import tables
-from dw_knowledge.contracts import EvidenceRef
+from dw_knowledge.contracts import EvidenceRef, classification_rank
 
 __all__ = ["SqlEvidenceStore"]
 
@@ -56,8 +65,9 @@ class SqlEvidenceStore:
         *,
         tenant_id: UUID,
         workspace_id: UUID,
-    ) -> None:
-        """Verify every reference, then write them. Raises before writing anything.
+    ) -> str:
+        """Verify every reference, write them, and return the strictest
+        classification among the documents cited. Raises before writing anything.
 
         Runs in the caller's session on purpose: the evidence and the memory it
         justifies are one fact, and a memory that committed while its evidence
@@ -79,7 +89,11 @@ class SqlEvidenceStore:
                     tables.chunks.c.id,
                     tables.chunks.c.document_id,
                     tables.chunks.c.provenance_hash,
-                ).where(tables.chunks.c.id.in_([ref.chunk_id for ref in refs]))
+                    tables.documents.c.classification,
+                    tables.visible_from_workspace(workspace_id).label("visible"),
+                )
+                .join(tables.documents, tables.documents.c.id == tables.chunks.c.document_id)
+                .where(tables.chunks.c.id.in_([ref.chunk_id for ref in refs]))
             )
         ).all()
         stored = {row.id: row for row in rows}
@@ -104,6 +118,18 @@ class SqlEvidenceStore:
                         "cited_document_id": str(ref.source_document_id),
                     },
                 )
+            if not chunk.visible:
+                raise DomainError(
+                    "evidence cites a document from another workspace",
+                    details={"chunk_id": str(ref.chunk_id)},
+                )
+
+        try:
+            strictest: str = max((row.classification for row in rows), key=classification_rank)
+        except ValueError as exc:
+            # A document labelled off the ladder: ranking it would be a guess
+            # about who may read the memory built on it.
+            raise DomainError("evidence cites a document with an unknown classification") from exc
 
         now = self.clock.now()
         await session.execute(
@@ -121,10 +147,11 @@ class SqlEvidenceStore:
                     "end_offset": ref.end_offset,
                     "quote": ref.quote,
                     "relevance_score": ref.relevance_score,
-                    "classification": ref.classification,
+                    "classification": stored[ref.chunk_id].classification,
                     "provenance_hash": ref.provenance_hash,
                     "created_at": now,
                 }
                 for ref in refs
             ],
         )
+        return strictest

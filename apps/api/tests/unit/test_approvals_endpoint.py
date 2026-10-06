@@ -33,7 +33,13 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_platform.application.identity import DbAccessContextFactory, MembershipAccess
-from dw_platform.domain.approval import ApprovalDecision, ApprovalRequest, ApprovalStatus
+from dw_platform.domain.approval import (
+    ApprovalDecision,
+    ApprovalRequest,
+    ApprovalStatus,
+    decided_event_type,
+)
+from dw_platform.domain.outbox import OutboxEvent
 
 pytestmark = pytest.mark.unit
 
@@ -105,8 +111,25 @@ class FakeApprovalRepo:
 
 
 @dataclass
+class FakeOutbox:
+    """A request with no run announces its decision through the outbox."""
+
+    events: list[OutboxEvent] = field(default_factory=list)
+
+    async def add(self, event: OutboxEvent) -> None:
+        self.events.append(event)
+
+    async def list_unprocessed(self, limit: int = 100) -> list[OutboxEvent]:
+        raise NotImplementedError("not exercised by the approvals routes")
+
+    async def has_unprocessed(self, event_type: str, aggregate_id: uuid.UUID) -> bool:
+        raise NotImplementedError("not exercised by the approvals routes")
+
+
+@dataclass
 class FakeUoW:
     approvals: FakeApprovalRepo
+    outbox: FakeOutbox
 
     async def __aenter__(self) -> "FakeUoW":
         return self
@@ -143,12 +166,16 @@ def make_request(
     )
 
 
-def make_container(repo: FakeApprovalRepo, scopes: frozenset[str]) -> ApiContainer:
+def make_container(
+    repo: FakeApprovalRepo, scopes: frozenset[str], outbox: FakeOutbox | None = None
+) -> ApiContainer:
+    resolved_outbox = outbox or FakeOutbox()
+
     async def ok_probe() -> CheckState:
         return "ok"
 
     def uow_factory(context: AccessContext) -> Any:
-        return FakeUoW(approvals=repo)
+        return FakeUoW(approvals=repo, outbox=resolved_outbox)
 
     return ApiContainer(
         settings=ApiSettings(profile="test", dev_secret=SECRET),
@@ -231,7 +258,10 @@ async def test_the_server_refuses_a_decision_the_page_would_have_locked() -> Non
 async def test_a_holder_of_the_stamp_decides_over_http() -> None:
     request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOD_SCOPE)
     repo = FakeApprovalRepo(request)
-    container = make_container(repo, frozenset({"approvals.read", "approvals.decide", BOD_SCOPE}))
+    outbox = FakeOutbox()
+    container = make_container(
+        repo, frozenset({"approvals.read", "approvals.decide", BOD_SCOPE}), outbox
+    )
 
     response = await _call(
         container, "POST", f"/{request.id}/decisions", {"approve": True, "comment": "đồng ý"}
@@ -241,6 +271,10 @@ async def test_a_holder_of_the_stamp_decides_over_http() -> None:
     assert response.json()["status"] == "approved"
     assert response.json()["required_scope"] == BOD_SCOPE
     assert len(repo.decisions) == 1
+    # No run to resume, so the decision is announced once, in its own transaction.
+    assert [e.event_type for e in outbox.events] == [
+        decided_event_type("supply_chain.product_action.approve")
+    ]
 
 
 async def test_another_workspaces_approval_is_neither_listed_nor_found_nor_decided() -> None:

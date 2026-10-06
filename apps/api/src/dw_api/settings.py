@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from dw_knowledge.contracts import DEFAULT_COLLECTION
@@ -159,19 +159,30 @@ class ApiSettings(BaseSettings):
     )
 
     # --- embeddings / rerank ---
-    # "hash" (offline default) | "tei" (self-hosted) | "openai_compatible"
-    # (the configured gateway; model and width come from the model profile).
+    # "hash" (offline default) | "openai_compatible" (the configured gateway;
+    # model and width come from the model profile). Anything else is refused at
+    # startup rather than quietly read as "hash".
     embedding_provider: str = Field(
         default="hash", validation_alias=AliasChoices("DW_API_EMBEDDING_PROVIDER")
     )
-    embed_url: str | None = Field(
-        default=None, validation_alias=AliasChoices("DW_API_EMBED_URL", "TEI_EMBED_URL")
+    # "none" (vector order, the default) | "cohere_compatible" (a hosted
+    # `POST {base_url}/rerank` API, e.g. the FPT Cloud AI Marketplace).
+    rerank_provider: str = Field(
+        default="none", validation_alias=AliasChoices("DW_API_RERANK_PROVIDER")
     )
-    rerank_url: str | None = Field(
-        default=None, validation_alias=AliasChoices("DW_API_RERANK_URL", "TEI_RERANK_URL")
+    rerank_base_url: str | None = Field(
+        default=None, validation_alias=AliasChoices("DW_API_RERANK_BASE_URL")
     )
-    embed_dimension: int = Field(
-        default=1024, validation_alias=AliasChoices("DW_API_EMBED_DIMENSION")
+    rerank_api_key: str | None = Field(
+        default=None, validation_alias=AliasChoices("DW_API_RERANK_API_KEY")
+    )
+    rerank_model: str = Field(
+        default="bge-reranker-v2-m3", validation_alias=AliasChoices("DW_API_RERANK_MODEL")
+    )
+    # A search waits on this, so it stays short: past it the gateway keeps the
+    # vector order instead of failing the search.
+    rerank_timeout_seconds: float = Field(
+        default=10.0, gt=0, le=60, validation_alias=AliasChoices("DW_API_RERANK_TIMEOUT_SECONDS")
     )
 
     # --- model provider ---
@@ -278,6 +289,15 @@ class ApiSettings(BaseSettings):
         validation_alias=AliasChoices("DW_API_LANGFUSE_SECRET_KEY", "LANGFUSE_SECRET_KEY"),
     )
 
+    @field_validator("embedding_provider", "rerank_provider", mode="before")
+    @classmethod
+    def _blank_means_unset(cls, value: object, info: ValidationInfo) -> object:
+        """Compose reads ``${X:-default}``, so a blank line in .env is "unset" in
+        a container; the same .env on the host must not mean something else."""
+        if value == "" and info.field_name is not None:
+            return cls.model_fields[info.field_name].default
+        return value
+
     @property
     def is_deployed(self) -> bool:
         """True for profiles real people sign into (``uat``, ``production``)."""
@@ -316,7 +336,7 @@ class ApiSettings(BaseSettings):
             if self.embedding_provider == "hash":
                 raise RuntimeError(
                     "the hash embedding provider carries no meaning and is forbidden in the "
-                    f"{self.profile} profile — configure 'tei' or 'openai_compatible'"
+                    f"{self.profile} profile — configure 'openai_compatible'"
                 )
             if not self.qdrant_url:
                 raise RuntimeError(

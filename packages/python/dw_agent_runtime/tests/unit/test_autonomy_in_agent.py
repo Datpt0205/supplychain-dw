@@ -21,7 +21,7 @@ from fakes import NOW, FakeExecutionStore, FakeUoWFactory
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import BaseModel
-from test_agent_factory import PROFILE_ID, THREAD, _profiles
+from test_agent_factory import PROFILE_ID, THREAD, _profiles, prompt_fields
 from test_langchain_tools import COPY, LeadInput, LeadOutput, make_definition, make_run_context
 
 from dw_agent_runtime.adapters.agent_factory import AgentSpec, build_agent
@@ -78,7 +78,7 @@ def _spec(
         executor=executor,
         copy=COPY,
         approval_type_prefix="sales_chat.",
-        render_prompt=lambda request: "Trợ lý.",
+        **prompt_fields("Trợ lý.", template=""),
         budget=RunBudgetLedger(),
         profiles=_profiles(ceiling_tokens=1_000_000),
         profile_id=PROFILE_ID,

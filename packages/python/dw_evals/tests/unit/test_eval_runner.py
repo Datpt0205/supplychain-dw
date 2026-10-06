@@ -17,7 +17,7 @@ DATASETS = sorted((REPO_ROOT / "evals" / "datasets").glob("*.json"))
 
 
 def test_datasets_exist() -> None:
-    assert {p.name for p in DATASETS} >= {"platform@1.0.0.json"}
+    assert {p.name for p in DATASETS} >= {"platform@1.1.0.json"}
 
 
 @pytest.mark.parametrize("path", DATASETS, ids=lambda p: p.stem)

@@ -177,31 +177,31 @@ def grade_cross_tenant_rejected(
 def grade_memory_policy(
     ctx: GraderContext, input_data: dict[str, Any], expected: dict[str, Any]
 ) -> GradeResult:
-    """Memory writes fail closed: no provenance → reject, restricted → review."""
+    """Memory writes fail closed: no provenance → reject, restricted → review,
+    one source → review. `sources` is how many distinct documents a case cites;
+    the confidence is the policy's to compute, so a case cannot state one."""
     from dw_knowledge.contracts import EvidenceRef
     from dw_memory.policy import MemoryCandidate, MemoryWritePolicy
 
     policy = MemoryWritePolicy()
     decisions: list[str] = []
     for raw in input_data["candidates"]:
-        provenance: tuple[EvidenceRef, ...] = ()
-        if raw.get("has_provenance", False):
-            provenance = (
-                EvidenceRef(
-                    evidence_id=uuid.uuid5(_FIXED_CASE, "evidence"),
-                    source_document_id=uuid.uuid5(_FIXED_CASE, "document"),
-                    source_version="1",
-                    relevance_score=0.9,
-                    classification="internal",
-                    provenance_hash="b" * 64,
-                ),
+        provenance = tuple(
+            EvidenceRef(
+                evidence_id=uuid.uuid5(_FIXED_CASE, f"evidence-{n}"),
+                source_document_id=uuid.uuid5(_FIXED_CASE, f"document-{n}"),
+                source_version="1",
+                relevance_score=0.9,
+                classification="internal",
+                provenance_hash="b" * 64,
             )
+            for n in range(raw.get("sources", 0))
+        )
         candidate = MemoryCandidate(
             worker_id=raw.get("worker_id", "dw.demo"),
             memory_type=raw.get("memory_type", "semantic"),
             content=raw["content"],
             provenance_refs=provenance,
-            confidence=raw["confidence"],
             classification=raw.get("classification", "internal"),
         )
         decisions.append(policy.evaluate(candidate).decision.value)

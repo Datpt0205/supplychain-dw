@@ -31,6 +31,7 @@ from dw_knowledge.ports import IndexableChunk, TrustedSearchFilter, VectorHit
 from dw_knowledge.retention import SqlKnowledgeRetention
 from dw_platform.retention_policy import (
     AuditRetention,
+    CheckpointRetention,
     KnowledgeRetention,
     RetentionClass,
     RetentionPolicy,
@@ -59,6 +60,7 @@ def _policy() -> RetentionPolicy:
         classes={"default": RetentionClass(days=730, description="thường")},
         knowledge=KnowledgeRetention(deleted_grace_days=GRACE_DAYS, orphan_evidence_grace_days=7),
         audit=AuditRetention(months_ahead=1, enforced=False, tables={}),
+        checkpoints=CheckpointRetention(superseded_days=7, idle_thread_days=730),
         batch_limit=1000,
     )
 
@@ -92,6 +94,7 @@ class _RecordingIndex:
         trusted_filter: TrustedSearchFilter,
         top_k: int,
         extra_filters: Sequence[tuple[str, str]] = (),
+        document_ids: Sequence[uuid.UUID] = (),
     ) -> list[VectorHit]:
         return []
 

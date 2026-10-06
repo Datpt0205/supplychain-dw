@@ -135,6 +135,7 @@ def test_offboarding_empties_tenant_a_in_both_buckets_and_keeps_tenant_b(
         attachments=feedback,
         case_documents=documents,
         vector_index=_Vectors(),
+        memory_vectors=None,
         clock=_Clock(),
     )
 

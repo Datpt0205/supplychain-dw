@@ -2163,6 +2163,110 @@
         "title": "MemberRefView",
         "type": "object"
       },
+      "MemoryCandidateView": {
+        "properties": {
+          "candidate_id": {
+            "format": "uuid",
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_run_id": {
+            "format": "uuid",
+            "title": "Created By Run Id",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "fact_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fact Key"
+          },
+          "memory_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Id"
+          },
+          "memory_type": {
+            "title": "Memory Type",
+            "type": "string"
+          },
+          "provenance_refs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Provenance Refs",
+            "type": "array"
+          },
+          "structured_facts": {
+            "additionalProperties": true,
+            "title": "Structured Facts",
+            "type": "object"
+          },
+          "subject_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Subject Refs",
+            "type": "array"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "worker_id",
+          "memory_type",
+          "content",
+          "structured_facts",
+          "subject_refs",
+          "fact_key",
+          "provenance_refs",
+          "classification",
+          "confidence",
+          "decision",
+          "memory_id",
+          "created_by_run_id",
+          "created_at"
+        ],
+        "title": "MemoryCandidateView",
+        "type": "object"
+      },
       "MemoryItemView": {
         "properties": {
           "classification": {
@@ -6237,6 +6341,49 @@
         "summary": "Me",
         "tags": [
           "identity"
+        ]
+      }
+    },
+    "/api/v1/memory/candidates/{candidate_id}": {
+      "get": {
+        "operationId": "get_candidate_api_v1_memory_candidates__candidate_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryCandidateView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Candidate",
+        "tags": [
+          "memory"
         ]
       }
     },

@@ -1,11 +1,14 @@
 """Context compaction: recorded, failure-tolerant, and never user-authored.
 
-Each test pins one of the three things `PlatformSummarizationMiddleware` changes
-about the library's `SummarizationMiddleware`, and each is written so that
-undoing that change turns it red. The two properties the library already got
-right — a pending approval survives, a history too long for one pass is still
-compacted — are pinned too, so a future upgrade that breaks them is caught here
-rather than in a customer's run.
+Each test pins one of the things `PlatformSummarizationMiddleware` changes about
+the library's `SummarizationMiddleware` (numbered as in its module docstring),
+and each is written so that undoing that change turns it red. That includes the
+two the audit measured on the pinned langchain: a long tool loop inside one turn
+is compacted, and a history too long for one summary call is summarised in
+chunks bounded by the summary route's `max_input_tokens`, starting from the
+previous summary — not trimmed to its tail. The property the library already got
+right — a pending approval survives — is pinned too, so a future upgrade that
+breaks it is caught here rather than in a customer's run.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
-from test_agent_factory import PROFILE_ID, THREAD, _profiles, _spec
+from test_agent_factory import LOOP_CEILING_TOKENS, PROFILE_ID, THREAD, _profiles, _spec
 from test_langchain_tools import make_run_context
 
 from dw_agent_runtime.adapters.agent_factory import platform_middleware
@@ -41,7 +44,7 @@ from dw_platform.domain.audit import AuditEvent
 pytestmark = pytest.mark.unit
 
 _COPY_DIR = Path(__file__).resolve().parents[5] / "configs" / "copy"
-COPY = load_runtime_copy(_COPY_DIR / "runtime@1.4.0.yaml")
+COPY = load_runtime_copy(_COPY_DIR / "runtime@1.6.0.yaml")
 SUMMARY = "Khách cần báo giá cho 3 máy chủ."
 
 # Small, so a short scripted history crosses them.
@@ -75,6 +78,8 @@ def _compactor(
     summariser: MockChatModel,
     audit: FakeAuditRepo | None = None,
     budget: RunBudgetLedger | None = None,
+    summary_input_tokens: int = 8000,
+    ceiling_tokens: int = LOOP_CEILING_TOKENS,
 ) -> tuple[PlatformSummarizationMiddleware, FakeAuditRepo]:
     repo = audit if audit is not None else FakeAuditRepo()
     middleware = PlatformSummarizationMiddleware(
@@ -84,7 +89,9 @@ def _compactor(
         clock=FixedClock(NOW),
         ids=SequentialIdGenerator(),
         budget=budget if budget is not None else RunBudgetLedger(),
-        profiles=_profiles(),
+        profiles=_profiles(
+            ceiling_tokens=ceiling_tokens, summary_input_tokens=summary_input_tokens
+        ),
         profile_id=PROFILE_ID,
         summary_profile_id=PROFILE_ID,
         trigger=("messages", TRIGGER_MESSAGES),
@@ -94,6 +101,12 @@ def _compactor(
 
 
 async def _run(middleware: PlatformSummarizationMiddleware, turns: int) -> list[BaseMessage]:
+    return await _run_history(middleware, _history(turns))
+
+
+async def _run_history(
+    middleware: PlatformSummarizationMiddleware, history: list[BaseMessage]
+) -> list[BaseMessage]:
     agent: Any = create_agent(
         model=MockChatModel(responses=[AIMessage(content="xong")], mock_reply="xong"),
         tools=[],
@@ -101,7 +114,7 @@ async def _run(middleware: PlatformSummarizationMiddleware, turns: int) -> list[
         context_schema=RunContext,
         checkpointer=InMemorySaver(),
     )
-    await agent.ainvoke({"messages": _history(turns)}, THREAD, context=make_run_context())
+    await agent.ainvoke({"messages": history}, THREAD, context=make_run_context())
     state = await agent.aget_state(THREAD)
     return cast(list[BaseMessage], state.values["messages"])
 
@@ -140,7 +153,7 @@ async def test_every_compaction_is_recorded_before_it_removes_anything() -> None
     [event] = [e for e in audit.events if e.action == COMPACTED_ACTION]
     assert cast(int, event.details["removed_messages"]) > 0
     assert len(cast(str, event.details["removed_digest"])) == 64
-    assert event.details["copy_version"] == "1.4.0"
+    assert event.details["copy_version"] == "1.6.0"
 
 
 async def test_the_same_history_digests_the_same() -> None:
@@ -186,16 +199,20 @@ async def test_a_failing_summariser_leaves_history_intact_and_the_turn_alive() -
 
 async def test_history_too_large_to_summarise_is_not_traded_for_a_placeholder() -> None:
     """The library removes the history and inserts "too long to summarize" in its
-    place. Nothing summarisable means nothing is compacted."""
-    middleware, audit = _compactor(_summariser())
-    # Below any single message's size, so trimming leaves nothing to summarise.
-    middleware.trim_tokens_to_summarize = 1
+    place. What is left of that case here: one message larger than the summary
+    route's whole input budget, which no chunking can fit. It compacts nothing,
+    and spends nothing finding that out."""
+    summariser = _summariser()
+    middleware, audit = _compactor(summariser, summary_input_tokens=2000)
+    history = _history(8)
+    history[1] = AIMessage(content="z" * 40_000, id="a0")  # ~10k tokens, one message
 
-    messages = await _run(middleware, turns=8)
+    messages = await _run_history(middleware, history)
 
     assert "h0" in [m.id for m in messages]
     assert not any("too long" in str(m.content).lower() for m in messages)
     assert audit.events == []
+    assert summariser.calls == []
 
 
 # --------------------------------------------------- 5. counted and bounded --
@@ -322,11 +339,13 @@ async def test_a_pending_approval_survives_compaction() -> None:
 # ------------------------------------------------------------------ guards --
 
 
-def test_it_refuses_a_copy_without_the_summary_text() -> None:
-    with pytest.raises(ConfigError, match=r"runtime@1\.4\.0"):
+@pytest.mark.parametrize("older", ["runtime@1.3.0.yaml", "runtime@1.5.0.yaml"])
+def test_it_refuses_a_copy_without_the_summary_text(older: str) -> None:
+    """1.5.0 has a summary prompt but none that updates an existing summary."""
+    with pytest.raises(ConfigError, match=r"runtime@1\.6\.0"):
         PlatformSummarizationMiddleware(
             _summariser(),
-            copy=load_runtime_copy(_COPY_DIR / "runtime@1.3.0.yaml"),
+            copy=load_runtime_copy(_COPY_DIR / older),
             uow_factory=FakeUoWFactory(),
             clock=FixedClock(NOW),
             ids=SequentialIdGenerator(),
@@ -350,3 +369,219 @@ def test_the_synchronous_path_refuses_instead_of_compacting_unrecorded() -> None
 
     with pytest.raises(NotImplementedError, match="async-only"):
         agent.invoke({"messages": _history(8)}, context=make_run_context())
+
+
+# ------------------------------------------------------- measured by the audit --
+
+OLD_ANCHOR = "MÃ-NEO-7731"
+
+
+def _previous_summary() -> HumanMessage:
+    """What an earlier compaction left at the head of the thread."""
+    return HumanMessage(
+        content=COPY.context_summary(f"Khách đã chốt hợp đồng {OLD_ANCHOR}."),
+        id="summary-0",
+        additional_kwargs={"lc_source": "summarization", "dw_system_generated": True},
+    )
+
+
+def _tool_loop(calls: int) -> list[BaseMessage]:
+    """One turn: a single question, then a long run of tool calls (~1000 tokens each)."""
+    out: list[BaseMessage] = [_previous_summary(), HumanMessage(content="tra hồ sơ", id="q")]
+    for i in range(calls):
+        out.append(
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "crm__read", "args": {"page": i}, "id": f"t{i}"}],
+                id=f"c{i}",
+            )
+        )
+        out.append(ToolMessage(content=f"T{i:02d}|" + "d" * 3995, tool_call_id=f"t{i}", id=f"r{i}"))
+    return out
+
+
+def _long_thread(turns: int) -> list[BaseMessage]:
+    """Many turns after an earlier compaction: 1000-char questions, 3000-char answers."""
+    out: list[BaseMessage] = [_previous_summary()]
+    for i in range(turns):
+        out.append(HumanMessage(content=f"H{i:02d}|" + "x" * 995, id=f"h{i}"))
+        out.append(AIMessage(content=f"A{i:02d}|" + "y" * 2995, id=f"a{i}"))
+    return out
+
+
+def _summariser_inputs(summariser: MockChatModel) -> list[str]:
+    return ["\n".join(str(m.content) for m in call) for call in summariser.calls]
+
+
+async def test_a_long_tool_loop_inside_one_turn_is_compacted() -> None:
+    """Measured by the audit on the pinned langchain: the removed part was the
+    old summary, the one question, then 12 tool calls of ~1000 tokens each. The
+    library's trim keeps the last 4000 tokens starting on a human message, the
+    only human message was older than that, so it returned nothing and the
+    step compacted nothing at all."""
+    summariser = _summariser()
+    middleware, audit = _compactor(summariser, ceiling_tokens=1_000_000)
+
+    messages = await _run_history(middleware, _tool_loop(14))
+
+    assert summariser.calls, "the summariser was never asked"
+    assert [e.action for e in audit.events] == [COMPACTED_ACTION]
+    assert "q" not in [m.id for m in messages]
+
+
+async def test_the_previous_summary_reaches_the_summariser_as_its_anchor() -> None:
+    """Measured by the audit: the old summary and the first 17 turns never reached
+    the summariser, so each compaction dropped what the last one had kept."""
+    summariser = _summariser()
+    middleware, _ = _compactor(summariser, ceiling_tokens=1_000_000)
+
+    await _run_history(middleware, _long_thread(22))
+
+    inputs = _summariser_inputs(summariser)
+    assert inputs, "the summariser was never asked"
+    assert OLD_ANCHOR in inputs[0]
+    seen = "\n".join(inputs)
+    assert all(f"H{i:02d}|" in seen for i in range(20)), "a turn never reached the summariser"
+
+
+# ------------------------------------------------- bounded by the profile --
+
+
+async def _calls_at(budget: int) -> tuple[list[int], int, RunBudgetLedger, uuid.UUID]:
+    summariser = _summariser()
+    ledger = RunBudgetLedger()
+    middleware, audit = _compactor(
+        summariser, budget=ledger, summary_input_tokens=budget, ceiling_tokens=1_000_000
+    )
+    context = make_run_context().model_copy(update={"run_id": uuid.uuid4()})
+    agent: Any = create_agent(
+        model=MockChatModel(responses=[AIMessage(content="xong")], mock_reply="xong"),
+        tools=[],
+        middleware=[middleware],
+        context_schema=RunContext,
+        checkpointer=InMemorySaver(),
+    )
+    await agent.ainvoke({"messages": _long_thread(22)}, THREAD, context=context)
+    [event] = audit.events
+    assert event.details["summary_calls"] == len(summariser.calls)
+    return (
+        [middleware.token_counter(call) for call in summariser.calls],
+        len(summariser.calls),
+        ledger,
+        context.run_id,
+    )
+
+
+async def test_the_summary_routes_budget_bounds_every_call() -> None:
+    """The window has one owner, the summary route's `max_input_tokens`: change
+    it there and what each call is sent changes with it."""
+    small, small_calls, _, _ = await _calls_at(2000)
+    large, large_calls, _, _ = await _calls_at(8000)
+
+    assert max(small) <= 2000
+    assert max(large) <= 8000
+    assert max(large) > 2000, "the larger budget was not used"
+    assert small_calls > large_calls
+
+
+async def test_every_chunk_counts_against_the_runs_ceiling() -> None:
+    _, calls, ledger, run_id = await _calls_at(2000)
+
+    assert calls > 1
+    assert ledger.spend[run_id].calls == calls
+
+
+async def test_each_chunk_carries_the_summary_so_far() -> None:
+    """Chunk two must update chunk one's summary, not start again beside it."""
+    summariser = MockChatModel(
+        responses=[AIMessage(content="BẢN-TÓM-TẮT-KHÚC")], mock_reply="BẢN-TÓM-TẮT-KHÚC"
+    )
+    middleware, _ = _compactor(summariser, summary_input_tokens=2000, ceiling_tokens=1_000_000)
+
+    await _run_history(middleware, _long_thread(22))
+
+    inputs = _summariser_inputs(summariser)
+    assert len(inputs) > 1
+    assert OLD_ANCHOR in inputs[0]
+    assert all("BẢN-TÓM-TẮT-KHÚC" in later for later in inputs[1:])
+
+
+async def test_a_tool_call_and_its_result_land_in_the_same_chunk() -> None:
+    summariser = _summariser()
+    middleware, _ = _compactor(summariser, summary_input_tokens=2000, ceiling_tokens=1_000_000)
+
+    await _run_history(middleware, _tool_loop(14))
+
+    inputs = _summariser_inputs(summariser)
+    assert len(inputs) > 1
+    for i in range(12):
+        [holder] = [text for text in inputs if f"T{i:02d}|" in text]
+        assert f'"page": {i}' in holder, f"tool result {i} was sent without its call"
+
+
+class _FailsAfterFirst(MockChatModel):
+    """Every call after the first fails, retries included: the library wraps
+    the summariser in `with_retry`, so failing once is not failing."""
+
+    count: int = 0
+
+    def _generate(self, *args: Any, **kwargs: Any) -> ChatResult:
+        self.count += 1
+        if self.count >= 2:
+            raise RuntimeError("nhà cung cấp tóm tắt sập giữa chừng")
+        return super()._generate(*args, **kwargs)
+
+
+async def test_a_failing_chunk_abandons_the_whole_compaction() -> None:
+    """A summary of only the chunks that worked would drop the rest silently."""
+    middleware, audit = _compactor(
+        _FailsAfterFirst(responses=[AIMessage(content=SUMMARY)], mock_reply=SUMMARY),
+        summary_input_tokens=2000,
+        ceiling_tokens=1_000_000,
+    )
+
+    messages = await _run_history(middleware, _long_thread(22))
+
+    assert "h0" in [m.id for m in messages]
+    assert audit.events == []
+
+
+def test_a_summary_route_without_an_input_budget_is_refused_at_build() -> None:
+    with pytest.raises(ConfigError, match="max_input_tokens"):
+        PlatformSummarizationMiddleware(
+            _summariser(),
+            copy=COPY,
+            uow_factory=FakeUoWFactory(),
+            clock=FixedClock(NOW),
+            ids=SequentialIdGenerator(),
+            budget=RunBudgetLedger(),
+            profiles=_profiles(summary_input_tokens=None),
+            profile_id=PROFILE_ID,
+            summary_profile_id=PROFILE_ID,
+            trigger=("messages", TRIGGER_MESSAGES),
+            keep=("messages", KEEP_MESSAGES),
+        )
+
+
+async def test_a_chunk_past_the_ceiling_is_stopped_too() -> None:
+    """Checked before every chunk, not once: a compaction long enough to need
+    many calls is exactly the one that can cross the ceiling half way."""
+    summariser = _summariser()
+    ledger = RunBudgetLedger()
+    # Room for the first chunk's ~1.7k input tokens, not for a second chunk.
+    middleware, audit = _compactor(
+        summariser, budget=ledger, summary_input_tokens=2000, ceiling_tokens=1500
+    )
+    context = make_run_context().model_copy(update={"run_id": uuid.uuid4()})
+    agent: Any = create_agent(
+        model=MockChatModel(responses=[AIMessage(content="xong")], mock_reply="xong"),
+        tools=[],
+        middleware=[middleware],
+        context_schema=RunContext,
+        checkpointer=InMemorySaver(),
+    )
+
+    with pytest.raises(BudgetExceededError):
+        await agent.ainvoke({"messages": _long_thread(22)}, THREAD, context=context)
+    assert len(summariser.calls) == 1
+    assert audit.events == []

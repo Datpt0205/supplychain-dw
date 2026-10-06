@@ -89,6 +89,15 @@ class PromptRegistry:
         digest = checksum or hashlib.sha256(artifact.model_dump_json().encode()).hexdigest()
         self._prompts.put(key, (artifact, digest), tenant_id=tenant_id)
 
+    def has(self, prompt_id: str, version: str) -> bool:
+        """Whether the platform layer holds this version.
+
+        The platform layer only: a tenant's override is a variation of a prompt
+        the platform ships, and resolution falls back to the platform, so a
+        version only some tenant holds is one every other tenant cannot render.
+        """
+        return self._prompts.existing((prompt_id, version)) is not None
+
     def render(
         self,
         prompt_id: str,

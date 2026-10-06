@@ -49,6 +49,10 @@ write_candidates = sa.Table(
     sa.Column("memory_id", UUID(as_uuid=True), nullable=True),
     sa.Column("created_by_run_id", UUID(as_uuid=True), nullable=False),
     sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False),
+    # Revision 5e6ccac63d45: what a reviewed candidate needs to become the item
+    # it describes — recall matches on the subjects, supersession on the key.
+    sa.Column("subject_refs", JSONB, nullable=False),
+    sa.Column("fact_key", sa.Text, nullable=True),
 )
 
 # Migration 0007. Which memory rests on which evidence, with real foreign keys in

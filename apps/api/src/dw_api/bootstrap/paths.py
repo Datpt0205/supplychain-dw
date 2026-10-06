@@ -36,7 +36,7 @@ POLICIES_DIR = CONFIGS / "policies"
 # deployment can change them without a release.
 # 1.4.0 is 1.3.0 verbatim plus the context-compaction text; a worker that wires
 # compaction refuses to start on anything older.
-RUNTIME_COPY_CONFIG = CONFIGS / "copy" / "runtime@1.5.0.yaml"
+RUNTIME_COPY_CONFIG = CONFIGS / "copy" / "runtime@1.6.0.yaml"
 WORKER_RUN_POLICY = POLICIES_DIR / "worker_runs@1.0.0.yaml"
 ATTACHMENT_POLICY = POLICIES_DIR / "attachment_ingest@1.1.0.yaml"
 SUPPLY_CHAIN_SLA_POLICY = POLICIES_DIR / SLA_POLICY_FILE

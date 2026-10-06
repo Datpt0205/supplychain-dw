@@ -49,3 +49,22 @@ def test_search_query_bounds() -> None:
         SearchQuery(text="", top_k=5)
     with pytest.raises(ValidationError):
         SearchQuery(text="x", top_k=500)
+
+
+def test_classifications_run_from_least_to_most_restrictive() -> None:
+    """Read off the clearance ladder rather than typed out a second time: a
+    clearance reads its own classification and everything below it, so the
+    order IS the ladder."""
+    from dw_knowledge.contracts import CLASSIFICATIONS, classification_rank
+
+    assert CLASSIFICATIONS == ("internal", "confidential", "restricted")
+    assert [classification_rank(c) for c in CLASSIFICATIONS] == [0, 1, 2]
+
+
+def test_an_unknown_classification_has_no_rank() -> None:
+    """Ranking a value this build does not know would be a guess about how
+    restrictive it is, and the guess decides who may recall it."""
+    from dw_knowledge.contracts import classification_rank
+
+    with pytest.raises(ValueError, match="public"):
+        classification_rank("public")

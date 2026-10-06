@@ -5,7 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
+from pydantic import (
+    AliasChoices,
+    Field,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from dw_knowledge.contracts import DEFAULT_COLLECTION
@@ -120,8 +127,9 @@ class WorkerSettings(BaseSettings):
         validation_alias=AliasChoices("DW_WORKER_QDRANT_COLLECTION", "QDRANT_COLLECTION"),
     )
 
-    # "hash" (offline default) | "tei" (self-hosted) | "openai_compatible"
-    # (the configured gateway; model and width come from the profile below).
+    # "hash" (offline default) | "openai_compatible" (the configured gateway;
+    # model and width come from the profile below). Anything else is refused
+    # at startup rather than quietly read as "hash".
     embedding_provider: str = Field(
         default="hash", validation_alias=AliasChoices("DW_WORKER_EMBEDDING_PROVIDER")
     )
@@ -167,15 +175,6 @@ class WorkerSettings(BaseSettings):
     )
     deepgram_api_key: str = Field(
         default="", validation_alias=AliasChoices("DW_WORKER_DEEPGRAM_API_KEY", "DEEPGRAM_API_KEY")
-    )
-    embed_url: str | None = Field(
-        default=None, validation_alias=AliasChoices("DW_WORKER_EMBED_URL", "TEI_EMBED_URL")
-    )
-    rerank_url: str | None = Field(
-        default=None, validation_alias=AliasChoices("DW_WORKER_RERANK_URL", "TEI_RERANK_URL")
-    )
-    embed_dimension: int = Field(
-        default=1024, validation_alias=AliasChoices("DW_WORKER_EMBED_DIMENSION")
     )
 
     # Jobs drained concurrently per tick. More than one because a single slow
@@ -236,6 +235,15 @@ class WorkerSettings(BaseSettings):
             and bool(self.zalo_link_secret.get_secret_value())
         )
 
+    @field_validator("embedding_provider", mode="before")
+    @classmethod
+    def _blank_means_unset(cls, value: object, info: ValidationInfo) -> object:
+        """Compose reads ``${X:-default}``, so a blank line in .env is "unset" in
+        a container; the same .env on the host must not mean something else."""
+        if value == "" and info.field_name is not None:
+            return cls.model_fields[info.field_name].default
+        return value
+
     @model_validator(mode="after")
     def _the_heartbeat_outruns_the_lease(self) -> WorkerSettings:
         """Caught at startup, because the failure mode is a silent double bill.
@@ -270,7 +278,7 @@ class WorkerSettings(BaseSettings):
         if self.embedding_provider == "hash":
             raise RuntimeError(
                 "the hash embedding provider carries no meaning and is forbidden in the "
-                f"{self.profile} profile - configure 'tei' or 'openai_compatible'"
+                f"{self.profile} profile - configure 'openai_compatible'"
             )
         if not self.qdrant_url:
             raise RuntimeError(

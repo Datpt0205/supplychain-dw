@@ -21,6 +21,14 @@ appended below it. That parameter is not usable for a prompt that names today's
 date and the screen in view, because it is resolved once at build time and
 these agents are compiled once per process - hence a middleware that renders
 per call and keeps the same shape.
+
+The text is a registry artifact, `(prompt_id, version)`, never a free callable:
+a worker's wording is versioned like every other prompt, a tenant whose wording
+differs gets its own artifact through `TenantOverlay`, and the version the
+runner bills the loop under is the version rendered here. Only the per-call
+VARIABLES come from the host. Whose override applies is read from the run's
+`RunContext`, which the runner built from a verified context - never from the
+request, and never from anything the model or a user wrote.
 """
 
 from __future__ import annotations
@@ -31,15 +39,51 @@ from typing import Any, cast
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from langchain_core.messages import SystemMessage
 
+from dw_agent_runtime.contracts import RunContext
+from dw_agent_runtime.model.prompts import PromptRegistry
+from dw_kernel.errors import ConfigError, TenantContextMissingError
+
 __all__ = ["WorkerSystemPrompt"]
 
 
 class WorkerSystemPrompt(AgentMiddleware[Any, Any]):
     """Renders the worker prompt per model call and puts it above the rest."""
 
-    def __init__(self, render: Callable[[ModelRequest[Any]], str]) -> None:
+    def __init__(
+        self,
+        prompts: PromptRegistry,
+        prompt_id: str,
+        prompt_version: str,
+        variables: Callable[[ModelRequest[Any]], dict[str, str]],
+    ) -> None:
         super().__init__()
-        self._render = render
+        # At build, not on the first call: an agent is compiled once per
+        # process, and a pin that names nothing is a deploy that cannot answer.
+        if not prompts.has(prompt_id, prompt_version):
+            raise ConfigError(
+                "agent prompt not registered",
+                details={"prompt_id": prompt_id, "version": prompt_version},
+            )
+        self._prompts = prompts
+        self._prompt_id = prompt_id
+        self._prompt_version = prompt_version
+        self._variables = variables
+
+    def _render(self, request: ModelRequest[Any]) -> str:
+        run_context = getattr(request.runtime, "context", None)
+        if not isinstance(run_context, RunContext):
+            # Whose wording to render is the run's tenant. A run that never
+            # passed the boundary that resolves it gets nobody's.
+            raise TenantContextMissingError("an agent prompt is rendered for a run's tenant")
+        rendered = self._prompts.render(
+            self._prompt_id,
+            self._prompt_version,
+            self._variables(request),
+            tenant_id=run_context.tenant_id,
+        )
+        # The artifact's fixed part, then its per-call part.
+        parts = (rendered.system.strip(), rendered.user.strip())
+        return "\n\n".join(part for part in parts if part)
 
     async def awrap_model_call(
         self,

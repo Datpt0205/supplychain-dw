@@ -43,6 +43,57 @@ Mốc 6 (running many customers) is half done:
 - **Writes are asynchronous:** the outbox handler for
   `memory.candidate_proposed` calls `propose` with the event id as the
   idempotency key, and tenancy comes from the envelope, not the payload.
+- **What a write trusts** (2026-10-06, `memory-write-trust`): confidence is
+  the policy's, from how many distinct documents are cited (two to auto-write;
+  payload `1.1` cannot carry one). Evidence must come from the caller's
+  workspace or a global document, and the item may not claim a lower
+  classification than its documents.
+- **Held for review** (2026-10-06, `memory-review-queue`): a REVIEW candidate
+  has its evidence and label verified (savepoint, rolled back) and opens a
+  `memory.review` approval, run-less, payload identifiers and label only.
+  `decide` writes `memory.review.decided` to the outbox; the worker's handler
+  calls `settle_review`, which writes the item through the same
+  `_store_item` as an auto-write (evidence recorded and re-checked then) or
+  records the refusal. `memory.` is strict, and a decider's clearance must
+  cover the stamped label (`decision_guards`). Content is read at
+  `GET /memory/candidates/{id}` under `memory.read` and clearance. The fixed-set columns have CHECKs
+  pinned to the enums by a catalog test; memory retention has one class,
+  `default`.
+- **Compaction and checkpoints** (2026-10-06, `compaction`): what compaction
+  removes is summarised whole, in chunks no larger than the summary route's
+  `max_input_tokens` (a route used as summariser must declare it; build
+  refuses otherwise), a tool call never split from its result, the previous
+  summary (`dw_system_generated`) handed to the first call as the anchor it
+  updates (`context_summary_update_prompt`, runtime copy 1.6.0) and each
+  chunk's summary to the next. `_budget.check`/`record` per call; any chunk
+  failing, or one message larger than the budget, compacts nothing. Run
+  checkpoints are pruned by the worker's `checkpoint_retention` lane
+  (`SqlCheckpointRetention`, `retention@1.6.0.yaml` `checkpoints`: 7 days for
+  a thread's non-newest checkpoints, 730 for an idle thread), only on threads
+  with a finished run visible and no unfinished one, so a missing
+  `worker_drain_worker_runs` policy stops the sweep instead of emptying a
+  paused run. A thread with no run row is left for offboarding.
+- **Retrieval and the agent prompt** (2026-10-06, `retrieval-correctness`):
+  `SearchQuery.document_ids` is a `MatchAny` on `source_document_id` in the
+  same `must` as the trusted conditions, so it narrows before top-k (payload
+  index added). One embedding builder,
+  `dw_knowledge.adapters.embedding_factory`, used by API and worker;
+  `ConfigError` lives in `dw_kernel.errors` (re-exported by the registry). The
+  agent-loop prompt is a registry artifact pinned on `WorkerDefinition`
+  (`agent_prompt_id`/`_version`), rendered per call for the run's tenant, and
+  the loop's spend is billed under that pin (a plain graph under
+  `graph:<worker_id>@<graph_version>`); `0.0.0` is gone. Open: the pin is not
+  on the `worker_runs` row, and `AgentSpec` restates it rather than reading
+  the definition.
+- **Run-less `.decided` events with no handler (found 2026-10-06, not fixed):**
+  every run-less approval now writes `<type>.decided`; the worker claims only
+  the types it has handlers for, and nothing deletes outbox rows. A product
+  whose run-less approval type registers no handler leaves one unclaimed row
+  per decision, invisible to the backlog metric (which counts handled types).
+- **Outbox (found on the way, not fixed):** `_deliver` treats
+  `UndeliverableEventError` like any other error (retried to `max_attempts`),
+  so the class records a reason but does not stop retries, which its
+  docstring says it does.
 
 ## Open
 
@@ -96,6 +147,32 @@ Mốc 6 (running many customers) is half done:
   `platform-runtime/unauthenticated-401/`, ticket 01 `needs-triage`):
   `bearer_token` raises `PermissionDeniedError` on every route. Found by Elmich
   Z1, whose route criterion was amended to the real behaviour.
+- **Harness hardening, from the 2026-10-06 harness audit** (all
+  `ready-for-agent`, product-neutral, in this order), each under
+  `platform-runtime/<folder>/`: `memory-vectors` (Qdrant memory points deleted
+  by retention, supersession and offboarding; the ranker reorders only the ids
+  SQL recalled; **resolved 2026-10-06** in `55bd789`),
+  `memory-write-trust` (classification from the cited documents,
+  workspace-checked evidence, confidence computed by code, CHECKs, retention
+  classes nothing can assign removed; **resolved 2026-10-06**), `memory-review-queue` (REVIEW becomes a
+  `memory.review` approval; **resolved 2026-10-06**; the decision audit and
+  the workspace narrowing of `decide` stay with `approval-audit-and-workspace`
+  01–02; here 02 is done (above) and covers `memory.review`, 01 is open),
+  `compaction` (long tool loops and multi-turn threads really compact, budget
+  from the profile, checkpoint retention; **resolved 2026-10-06**),
+  `retrieval-correctness`
+  (`document_ids` inside the Qdrant filter, one embedding builder, a pinned
+  agent-loop prompt; **resolved 2026-10-06**), `dev-harness` (commit gate for PowerShell and
+  `git -C`/`-c`, per-session Stop hook, plugin wording, `ui-quality.md`;
+  **resolved 2026-10-06**: `scripts/test_claude_hooks.sh` in `make ci` and the
+  CI python job, green on Git Bash without jq and on Alpine with jq; a real
+  PowerShell-tool commit was blocked in a nested session. Not done: no
+  `permissions.deny` on the gate switches, because a shell `touch` gets past it,
+  so it is gitignore plus a human-only note; the new CI step has not been
+  watched on GitHub; the Stop hook cannot tell which session made a commit).
+  Dropped as already true here: the rerank outage fallback (`4cb45dc`), and
+  offboarding purging run checkpoints (catalog discovery already does; the
+  `compaction` ticket only pins it with a test).
 - **`build_agent` has no production caller** (checked 2026-09-29): this
   checkout ships no bounded context.
 - **Platform pieces waiting for their first context** (failure-modes #1).
@@ -133,6 +210,21 @@ Mốc 6 (running many customers) is half done:
 - **`make check-deepgram` and `make check-search` run scripts that do not
   exist**, left over from the product this was extracted from.
   `make check-model` was the third, and works since 2026-09-28.
+- **Reranking is a hosted API, and self-hosted TEI is gone** (2026-10-06).
+  `DW_API_RERANK_PROVIDER=cohere_compatible` calls `POST {base_url}/rerank`
+  (FPT Cloud AI Marketplace, `bge-reranker-v2-m3`); `make check-rerank`
+  probes it live. A reranker that fails costs ranking, not the search: the
+  gateway keeps the vector order, logs `rerank_skipped`, leaves the
+  `dw.knowledge.rerank` span in error and counts
+  `dw_retrieval_rerank_skipped_total{error}`. A short or empty answer, a URL
+  the client cannot use (no scheme, credentials, plain http when deployed)
+  and a call past `DW_API_RERANK_TIMEOUT_SECONDS` as a whole are each refused
+  rather than taken as a ranking. Open: a skipped rerank stores the vector
+  score as `relevance_score`, a different scale from the reranker's; harmless
+  while every caller asks `min_relevance=0`, not once one asks more.
+  An unknown `embedding_provider` (the retired `tei` included) now stops
+  startup instead of quietly becoming hash vectors. The key is only in local
+  `.env`; uat/production have none yet.
 
 ## Deliberately not taken
 

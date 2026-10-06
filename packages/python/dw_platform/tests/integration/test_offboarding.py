@@ -234,6 +234,56 @@ async def test_purge_rows_respects_fk_order_and_leaves_the_other_tenant_alone(
     )
 
 
+async def _seed_checkpoint(sessions: async_sessionmaker[AsyncSession], t: _Tenant) -> None:
+    """One run checkpoint and one pending write: the verbatim conversation a
+    thread leaves behind, which must go with the tenant."""
+    thread = uuid.uuid4()
+    async with sessions() as session, session.begin():
+        await session.execute(
+            sa.text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(t.tenant_id)}
+        )
+        await session.execute(
+            sa.text(
+                "INSERT INTO platform.run_checkpoints"
+                " (thread_id, checkpoint_ns, checkpoint_id, tenant_id, workspace_id,"
+                "  type, checkpoint, metadata)"
+                " VALUES (:th, '', 'c1', :t, :w, 'msgpack', '\\x00', '\\x00')"
+            ),
+            {"th": thread, "t": t.tenant_id, "w": t.workspace_id},
+        )
+        await session.execute(
+            sa.text(
+                "INSERT INTO platform.run_checkpoint_writes"
+                " (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, tenant_id,"
+                "  workspace_id, channel, type, value)"
+                " VALUES (:th, '', 'c1', 'task', 0, :t, :w, 'messages', 'msgpack', '\\x00')"
+            ),
+            {"th": thread, "t": t.tenant_id, "w": t.workspace_id},
+        )
+
+
+async def test_purge_deletes_the_tenants_run_checkpoints(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """Pinned, not built: the lane finds both checkpoint tables from the catalog
+    (a `tenant_isolation_%` policy and `dw_app` holding DELETE), so nothing here
+    names them. This is what goes red if either stops being true."""
+    mine, theirs = _new_tenant(), _new_tenant()
+    for t in (mine, theirs):
+        await _seed_tenant(sessions, t)
+        await _seed_checkpoint(sessions, t)
+
+    await SqlTenantOffboarding(session_factory=sessions).purge_rows(mine.tenant_id)
+
+    for table in ("run_checkpoints", "run_checkpoint_writes"):
+        assert await _count(sessions, mine.tenant_id, "platform", table) == 0, (
+            f"platform.{table} kept the offboarded tenant's conversation"
+        )
+        assert await _count(sessions, theirs.tenant_id, "platform", table) == 1, (
+            f"platform.{table} lost the other tenant's row too"
+        )
+
+
 async def test_purge_records_an_audit_event_before_deleting_anything(
     sessions: async_sessionmaker[AsyncSession], db_urls: DatabaseUrls
 ) -> None:

@@ -6,7 +6,7 @@ from typing import Any, cast
 import pytest
 
 from dw_agent_runtime.adapters.run_store import RunRecord, RunStatus
-from dw_agent_runtime.approval_flow import ApproveAndResumeService
+from dw_agent_runtime.approval_flow import ApproveAndResumeService, DecisionGuard
 from dw_agent_runtime.contracts import RunContext
 from dw_kernel.autonomy import AutonomyLevel
 from dw_kernel.errors import ConflictError, NotFoundError, PermissionDeniedError
@@ -16,6 +16,7 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.ports import PlatformUnitOfWork
 from dw_platform.domain.approval import ApprovalDecision, ApprovalRequest, ApprovalStatus
+from dw_platform.domain.outbox import OutboxEvent
 
 pytestmark = pytest.mark.unit
 
@@ -45,8 +46,28 @@ class FakeApprovalRepo:
 
 
 @dataclass
+class FakeOutbox:
+    """Keeps what was added and whether the UoW had already committed by then:
+    an event added after the commit is one a crash between the two loses."""
+
+    events: list[OutboxEvent] = field(default_factory=list)
+    added_after_commit: list[OutboxEvent] = field(default_factory=list)
+    committed: bool = False
+
+    async def add(self, event: OutboxEvent) -> None:
+        (self.added_after_commit if self.committed else self.events).append(event)
+
+    async def list_unprocessed(self, limit: int = 100) -> list[OutboxEvent]:
+        raise NotImplementedError("not exercised by ApproveAndResumeService")
+
+    async def has_unprocessed(self, event_type: str, aggregate_id: uuid.UUID) -> bool:
+        raise NotImplementedError("not exercised by ApproveAndResumeService")
+
+
+@dataclass
 class FakeUoW:
     approvals: FakeApprovalRepo
+    outbox: FakeOutbox = field(default_factory=FakeOutbox)
 
     async def __aenter__(self) -> "FakeUoW":
         return self
@@ -54,7 +75,8 @@ class FakeUoW:
     async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         return None
 
-    async def commit(self) -> None: ...
+    async def commit(self) -> None:
+        self.outbox.committed = True
 
     async def rollback(self) -> None: ...
 
@@ -159,11 +181,14 @@ def make_service(
     repo: FakeApprovalRepo | None = None,
     run_status: RunStatus = RunStatus.WAITING_APPROVAL,
     run_workspace: uuid.UUID = WORKSPACE,
+    outbox: FakeOutbox | None = None,
+    guards: dict[str, DecisionGuard] | None = None,
 ) -> ApproveAndResumeService:
     resolved = repo or FakeApprovalRepo(request=request)
+    resolved_outbox = outbox or FakeOutbox()
 
     def uow_factory(context: AccessContext) -> PlatformUnitOfWork:
-        return cast(PlatformUnitOfWork, FakeUoW(approvals=resolved))
+        return cast(PlatformUnitOfWork, FakeUoW(approvals=resolved, outbox=resolved_outbox))
 
     return ApproveAndResumeService(
         uow_factory=uow_factory,
@@ -172,6 +197,7 @@ def make_service(
         clock=FixedClock(NOW),
         id_generator=SequentialIdGenerator(),
         strict_approval_prefixes=prefixes,
+        decision_guards=guards or {},
     )
 
 
@@ -600,3 +626,90 @@ async def test_a_bystander_without_the_right_cannot_reject_someone_elses() -> No
             context=context_without_the_right(APPROVER),
             authorization=ScopeAuthorizationService(),
         )
+
+
+# ------------------------------------------- run-less approvals: the hook --
+
+
+async def test_a_runless_decision_announces_itself_inside_the_transaction() -> None:
+    """Nothing resumes a run-less approval, so a context hears of its decision
+    only through this event. Added after the commit, a crash between the two
+    would leave a decision nobody ever acts on."""
+    request = make_request("memory.review")
+    outbox = FakeOutbox()
+    repo = FakeApprovalRepo(request=request)
+    service = make_service(request, frozenset(), repo=repo, outbox=outbox)
+
+    await decide(service, APPROVER, "đã đọc")
+
+    assert outbox.added_after_commit == []
+    [event] = outbox.events
+    assert event.event_type == "memory.review.decided"
+    assert event.aggregate_id == request.id
+    assert event.tenant_id == request.tenant_id
+    assert event.workspace_id == request.workspace_id
+    assert event.actor_id == APPROVER
+    assert event.payload == {
+        "approval_id": str(request.id),
+        "decision_id": str(repo.decisions[0].id),
+        "outcome": "approved",
+        "decided_by": str(APPROVER),
+    }
+
+
+async def test_a_rejection_announces_the_rejection() -> None:
+    request = make_request("memory.review")
+    outbox = FakeOutbox()
+    service = make_service(request, frozenset(), outbox=outbox)
+
+    await service.decide(
+        approval_id=request.id,
+        approve=False,
+        comment="không đúng",
+        context=make_context(APPROVER),
+        authorization=ScopeAuthorizationService(),
+    )
+
+    assert [event.payload["outcome"] for event in outbox.events] == ["rejected"]
+
+
+async def test_a_decision_that_resumes_a_run_announces_nothing() -> None:
+    """The run is that decision's consequence; a second channel for it would be
+    a second consumer acting on one decision."""
+    request = make_request("demo.dispatch", run_id=RUN_ID)
+    outbox = FakeOutbox()
+    service = make_service(request, frozenset(), runner=FakeRunner(hosted=True), outbox=outbox)
+
+    await decide(service, APPROVER, "")
+
+    assert outbox.events == []
+
+
+def _refuse(request: ApprovalRequest, context: AccessContext) -> None:
+    raise PermissionDeniedError("not cleared for this approval")
+
+
+async def test_a_guard_registered_for_the_type_can_refuse_and_nothing_is_recorded() -> None:
+    request = make_request("memory.review")
+    repo = FakeApprovalRepo(request=request)
+    outbox = FakeOutbox()
+    service = make_service(
+        request, frozenset(), repo=repo, outbox=outbox, guards={"memory.review": _refuse}
+    )
+
+    with pytest.raises(PermissionDeniedError, match="not cleared"):
+        await decide(service, APPROVER, "ok")
+
+    assert request.status is ApprovalStatus.PENDING
+    assert repo.decisions == []
+    assert outbox.events == []
+
+
+async def test_a_guard_for_another_type_is_not_asked() -> None:
+    service = make_service(
+        make_request("demo.dispatch"), frozenset(), guards={"memory.review": _refuse}
+    )
+
+    decided = await decide(service, APPROVER, "")
+
+    assert decided.status is ApprovalStatus.APPROVED

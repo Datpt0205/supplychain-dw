@@ -101,7 +101,7 @@ def test_a_host_with_no_infrastructure_wires_no_lane() -> None:
 
 
 def test_only_the_platform_lanes_are_wired() -> None:
-    """Nine lanes a database alone is enough for, and no more.
+    """Ten lanes a database alone is enough for, and no more.
 
     The outbox, and retention twice. Retention joined the platform set the day
     memory got a lifecycle: `memory.items` is a platform table, so the platform
@@ -120,10 +120,13 @@ def test_only_the_platform_lanes_are_wired() -> None:
     `spend_guard_retention` is the fifth, and reads no policy file at all —
     unlike audit/memory/knowledge, its window answers no compliance question,
     so it is a technical constant in code, not a term in
-    `retention@1.4.0.yaml` (see `SqlSpendGuardRetention`'s docstring).
+    `retention@1.6.0.yaml` (see `SqlSpendGuardRetention`'s docstring).
     `notifications_retention` is the sixth, on the same footing: the in-app
     inbox's 90 days live in `platform.prune_notifications()` itself.
-    `channel_link_nonces_retention` is the seventh: one-time link tokens a day
+    `checkpoint_retention` is the seventh, and reads the policy file again:
+    a checkpoint holds a conversation verbatim, so how long it stays is a
+    compliance answer like memory's (`checkpoints` in the same file).
+    `channel_link_nonces_retention` is the eighth: one-time link tokens a day
     past their expiry, a technical bound like the spend guard's.
 
     `supply_chain_follow_ups` is the first context lane: Supply Chain's sweep
@@ -145,6 +148,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "partitions",
         "spend_guard_retention",
         "notifications_retention",
+        "checkpoint_retention",
         "channel_link_nonces_retention",
         "supply_chain_follow_ups",
         "supply_chain_product_review_reconcile",
@@ -216,3 +220,19 @@ def test_the_bgd_review_reconcile_runs_on_its_own_configurable_cadence(
     )
     assert default.interval_for("supply_chain_product_review_reconcile", 1.0) == 300.0
     assert quick.interval_for("supply_chain_product_review_reconcile", 1.0) == 30.0
+
+
+def test_the_pinned_retention_policy_promises_only_classes_code_can_assign() -> None:
+    """A memory class nothing can put on a row is a promise in a compliance
+    file that the code does not keep (`failure-modes.md` #1). `sensitive`,
+    `ephemeral` and `legal_hold` were exactly that until 1.5.0; a class comes
+    back together with the path that assigns it, and this goes red until then.
+
+    Equality, so the other direction holds too: the class the service writes
+    has a term in the file the sweep reads.
+    """
+    from dw_memory.service import RETENTION_CLASS
+    from dw_platform.retention_policy import load_retention_policy
+    from dw_worker.main import RETENTION_POLICY_PATH
+
+    assert set(load_retention_policy(RETENTION_POLICY_PATH).classes) == {RETENTION_CLASS}

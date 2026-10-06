@@ -109,7 +109,7 @@ class SqlSpendGuardRetention:
 
     Not a legal retention term the way audit/memory/knowledge are — nothing
     here answers a compliance question, so the window is a technical
-    constant rather than a decision in `configs/policies/retention@1.4.0.yaml`.
+    constant rather than a decision in `configs/policies/retention@1.6.0.yaml`.
     Rows are cold within a day or two: nothing ever reads a `spend_date` once
     the day it named has passed. `keep_days` is a buffer against clock skew
     and a slow sweep, not a term anyone had to choose.

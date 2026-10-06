@@ -46,6 +46,16 @@ class DomainError(DWError):
     code = ErrorCode.VALIDATION_FAILED
 
 
+class ConfigError(DomainError):
+    """A configuration artifact is invalid; startup must fail.
+
+    Here rather than beside the registries that raise it most, because the
+    composition roots of both processes build components from packages that do
+    not depend on each other (the knowledge adapters, the runtime registries),
+    and a refusal at startup has to be one type whichever package refused.
+    """
+
+
 class NotFoundError(DWError):
     code = ErrorCode.NOT_FOUND
 

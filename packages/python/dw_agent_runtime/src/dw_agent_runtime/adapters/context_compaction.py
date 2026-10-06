@@ -28,18 +28,28 @@ found wrong for a multi-tenant platform; this class fixes exactly those things.
    guarantees nothing: the guarantee is that every tool still passes scope
    checks and the approval gate in code, whatever the model was persuaded of.
 
-4. **It destroys history for a placeholder.** When the older turns cannot be
-   trimmed small enough to summarise, the library returns the English sentence
-   "Previous conversation was too long to summarize." — and still removes the
-   history and inserts that sentence in its place. Real content traded for a
-   line that says nothing. Here that case compacts nothing.
+4. **It summarises only the tail, or nothing.** Before summarising, the library
+   trims what it removes to its last 4000 tokens, starting on a human message.
+   Measured on the pinned version: in a long tool loop the only human message
+   is older than that, the trim returns nothing, and the step compacts nothing
+   — the context grows until the provider refuses it. On a long thread the trim
+   keeps the last few turns, so the previous summary and everything before
+   those turns never reach the summariser, and each compaction drops what the
+   last one kept while the audit says the whole span was compacted. When even
+   that trim leaves nothing, it removes the history anyway and inserts "Previous
+   conversation was too long to summarize." Here nothing is trimmed away: what
+   is removed is summarised in chunks no larger than the summary route's
+   `max_input_tokens`, a tool call never separated from its result, the
+   previous summary handed to the first call as the anchor it updates and each
+   chunk's summary to the next. A single message larger than that budget
+   compacts nothing — never a placeholder.
 
 5. **Its spend is invisible to the run's ceiling.** The summariser is called
    directly, not through the agent's model node, so `RunBudgetMiddleware` never
    sees it. Measured: summariser called, one ledger entry — the agent's. A run
    that kept tripping compaction would spend on summaries with no limit. Here the
-   ceiling is checked before summarising and the summary's tokens are added to
-   the same ledger after.
+   ceiling is checked before every summary call and each call's tokens are added
+   to the same ledger after.
 
 Two things measured and left alone because they were already right: a file the
 model cannot read never reaches the summariser (history is serialised to text
@@ -52,6 +62,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Iterator
 from datetime import UTC
 from typing import Any
 
@@ -59,7 +70,13 @@ from langchain.agents.middleware import SummarizationMiddleware
 from langchain.agents.middleware.internal_call_transformer import internal_call_metadata
 from langchain.agents.middleware.summarization import ContextSize
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AnyMessage, HumanMessage, RemoveMessage
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    RemoveMessage,
+    ToolMessage,
+)
 from langchain_core.messages.utils import get_buffer_string
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
@@ -69,7 +86,7 @@ from dw_agent_runtime.context import access_context_from_run
 from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.model.budget import RunBudgetLedger, route_cost
 from dw_agent_runtime.model.copy import RuntimeCopy
-from dw_agent_runtime.model.profiles import ModelProfileRegistry
+from dw_agent_runtime.model.profiles import ModelProfileRegistry, ModelRoute
 from dw_agent_runtime.registry import ConfigError
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.ports import IdGenerator, UtcClock
@@ -107,17 +124,33 @@ class PlatformSummarizationMiddleware(SummarizationMiddleware):
         trigger: ContextSize,
         keep: ContextSize,
     ) -> None:
-        if copy.context_summary_prompt is None or copy.context_summary_frame is None:
+        if (
+            copy.context_summary_prompt is None
+            or copy.context_summary_frame is None
+            or copy.context_summary_update_prompt is None
+        ):
             # Refuse rather than fall back to the library's own prompt: that one is
             # English, knows nothing of pending approvals, and is exactly what this
-            # class exists not to use.
+            # class exists not to use. Without the update prompt, a summary could
+            # not carry the previous one forward.
             raise ConfigError(
                 f"runtime copy {copy.version} has no context summary text; "
-                "load runtime@1.4.0 or later"
+                "load runtime@1.6.0 or later"
             )
+        # At build, on the platform layer: a deployment whose summary route
+        # declares no input budget fails here, not on the first long run.
+        _input_budget(chat_route(profiles, summary_profile_id), summary_profile_id)
         super().__init__(
-            model, trigger=trigger, keep=keep, summary_prompt=copy.context_summary_prompt
+            model,
+            trigger=trigger,
+            keep=keep,
+            summary_prompt=copy.context_summary_prompt,
+            # Never used: `_summarise` chunks to the route's budget instead of
+            # trimming to the library's 4000. None so nothing reading the
+            # attribute believes a limit applies that does not.
+            trim_tokens_to_summarize=None,
         )
+        self._update_prompt = copy.context_summary_update_prompt
         self._copy = copy
         self._uow_factory = uow_factory
         self._clock = clock
@@ -149,46 +182,77 @@ class PlatformSummarizationMiddleware(SummarizationMiddleware):
             return None
         removed, preserved = self._partition_messages(messages, cutoff)
         run_context = runtime.context
-
-        # Outside the fail-open block below, on purpose. A run over its ceiling
-        # must stop; caught there, the refusal would read as "the summariser
-        # failed, carry on" and the ceiling would stop nothing.
         profile = self._profiles.resolve(self._profile_id, tenant_id=run_context.tenant_id)
-        self._budget.check(run_context.run_id, profile.budgets, task=COMPACTION_TASK)
-
-        try:
-            summarised = await self._summarise(removed)
-        except Exception:
-            # Deliberately broad: the summariser is a model call and can fail in
-            # every way a provider can. Whatever it was, the answer is the same —
-            # leave the history intact and let the turn carry on. `CancelledError`
-            # is a BaseException and passes straight through, so a closed tab
-            # still stops the run.
-            logger.warning(
-                "context compaction skipped: summariser failed; history left intact",
-                exc_info=True,
-            )
-            return None
-        if summarised is None:
-            # Nothing fit in a summary. Removing the history anyway would trade
-            # real turns for a placeholder, which is the library's behaviour and
-            # not this one's.
-            return None
-        summary, input_tokens, output_tokens = summarised
-        # Recorded the moment it is known, before the audit: the tokens were spent
-        # whether or not the compaction goes ahead.
         summary_route = chat_route(
             self._profiles, self._summary_profile_id, tenant_id=run_context.tenant_id
         )
-        self._budget.record(
-            run_context.run_id,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cost_usd=route_cost(summary_route, input_tokens, output_tokens),
-        )
+        budget = _input_budget(summary_route, self._summary_profile_id)
+
+        anchor, pending = _anchor_and_rest(removed)
+        if not pending:
+            # Only the previous summary would go: nothing new to fold into it.
+            return None
+        units = list(_units(pending))
+        # The smallest any call's frame can be: the update prompt with an empty
+        # anchor. A message that does not fit beside it fits in no call.
+        room = budget - self._tokens(self._update_prompt.format(summary="", messages=""))
+        if any(self._unit_tokens(unit) > room for unit in units):
+            logger.warning(
+                "context compaction skipped: a message is larger than the summary "
+                "route's max_input_tokens (%d); history left intact",
+                budget,
+            )
+            return None
+
+        calls = 0
+        while units:
+            used = self._tokens(self._render(anchor=anchor, messages=""))
+            chunk: list[AnyMessage] = []
+            while units and used + self._unit_tokens(units[0]) <= budget:
+                used += self._unit_tokens(units[0])
+                chunk.extend(units.pop(0))
+            if not chunk:
+                # The running summary has grown past what leaves room for the next
+                # message. Stopping part-way would drop the rest, so stop whole.
+                logger.warning(
+                    "context compaction skipped: the running summary leaves no room "
+                    "within max_input_tokens (%d); history left intact",
+                    budget,
+                )
+                return None
+            # Outside the fail-open block below, on purpose, and before EVERY
+            # call: a run over its ceiling must stop. Caught there, the refusal
+            # would read as "the summariser failed, carry on" and the ceiling
+            # would stop nothing.
+            self._budget.check(run_context.run_id, profile.budgets, task=COMPACTION_TASK)
+            try:
+                summary, input_tokens, output_tokens = await self._summarise(anchor, chunk)
+            except Exception:
+                # Deliberately broad: the summariser is a model call and can fail
+                # in every way a provider can. Whatever it was, the answer is the
+                # same — leave the history intact and let the turn carry on. A
+                # chunk failing part-way abandons the whole compaction: a summary
+                # of only the earlier chunks would silently drop the later ones.
+                # `CancelledError` is a BaseException and passes straight
+                # through, so a closed tab still stops the run.
+                logger.warning(
+                    "context compaction skipped: summariser failed; history left intact",
+                    exc_info=True,
+                )
+                return None
+            # Recorded the moment it is known, per call, before the audit: the
+            # tokens were spent whether or not the compaction goes ahead.
+            self._budget.record(
+                run_context.run_id,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_usd=route_cost(summary_route, input_tokens, output_tokens),
+            )
+            calls += 1
+            anchor = summary
 
         try:
-            await self._record(run_context, removed, preserved, summary)
+            await self._record(run_context, removed, preserved, anchor, calls)
         except Exception:
             # The invariant this class exists for: no record, no removal. The
             # summary is thrown away and the history stays, so the next step can
@@ -202,7 +266,7 @@ class PlatformSummarizationMiddleware(SummarizationMiddleware):
         return {
             "messages": [
                 RemoveMessage(id=REMOVE_ALL_MESSAGES),
-                *self._build_new_messages(summary),
+                *self._build_new_messages(anchor),
                 *preserved,
             ]
         }
@@ -218,20 +282,29 @@ class PlatformSummarizationMiddleware(SummarizationMiddleware):
             "platform context compaction is async-only; invoke the agent with ainvoke/astream"
         )
 
-    async def _summarise(self, removed: list[AnyMessage]) -> tuple[str, int, int] | None:
-        """The summary and what it cost, or None when nothing could be summarised.
+    def _render(self, *, anchor: str, messages: str) -> str:
+        if anchor:
+            return self._update_prompt.format(summary=anchor, messages=messages).rstrip()
+        return self.summary_prompt.format(messages=messages).rstrip()
 
-        The library's own summary call discards the response once it has the text,
-        and with it the token counts the ceiling needs; and where trimming leaves
-        nothing it returns a placeholder sentence that would then replace real
-        history. Same prompt, same trimming, same serialisation — only those two
-        outcomes differ.
+    def _tokens(self, text: str) -> int:
+        """Counted the way the middleware counts everything, so the budget and
+        the trigger agree on what a token is."""
+        return int(self.token_counter([HumanMessage(content=text)]))
+
+    def _unit_tokens(self, unit: list[AnyMessage]) -> int:
+        # Each unit counted on its own errs high, never low: every count rounds
+        # up and adds a per-message overhead the joined text pays once.
+        return self._tokens(get_buffer_string(unit, format="xml") + "\n")
+
+    async def _summarise(self, anchor: str, chunk: list[AnyMessage]) -> tuple[str, int, int]:
+        """One chunk's summary, updating the anchor, and what it cost.
+
+        The library's own summary call discards the response once it has the
+        text, and with it the token counts the ceiling needs.
         """
-        trimmed = self._trim_messages_for_summary(removed)
-        if not trimmed:
-            return None
         response = await self._summary_model.ainvoke(
-            self.summary_prompt.format(messages=get_buffer_string(trimmed, format="xml")).rstrip(),
+            self._render(anchor=anchor, messages=get_buffer_string(chunk, format="xml")),
             config={"metadata": {"lc_source": "summarization", **internal_call_metadata()}},
         )
         usage = getattr(response, "usage_metadata", None) or {}
@@ -247,14 +320,17 @@ class PlatformSummarizationMiddleware(SummarizationMiddleware):
         removed: list[AnyMessage],
         preserved: list[AnyMessage],
         summary: str,
+        calls: int,
     ) -> None:
         """One audit event per compaction, written before anything is removed.
 
-        The digest of what was removed is what makes the event worth keeping: the
-        text itself is gone from the checkpoint after this, and a digest lets any
-        copy kept elsewhere be proven to be the thing that was compacted. The
-        summary is stored as a digest too, not verbatim — it is already in the
-        run's state, and an audit row is not the place for a transcript.
+        The digest of what was removed is what makes the event worth keeping: it
+        proves which messages left the run's live state, and lets any copy kept
+        elsewhere be shown to be the thing that was compacted. The text leaves
+        the NEW checkpoint only — earlier checkpoints of the thread still hold it
+        verbatim until the worker's retention lane prunes them. The summary is
+        stored as a digest too, not verbatim — it is already in the run's state,
+        and an audit row is not the place for a transcript.
         """
         event = AuditEvent(
             id=self._ids.new_uuid(),
@@ -272,6 +348,7 @@ class PlatformSummarizationMiddleware(SummarizationMiddleware):
                 "removed_digest": _digest(removed),
                 "summary_digest": hashlib.sha256(summary.encode("utf-8")).hexdigest(),
                 "summary_chars": len(summary),
+                "summary_calls": calls,
                 "copy_version": self._copy.version,
             },
             occurred_at=self._clock.now().astimezone(UTC),
@@ -294,3 +371,47 @@ def _digest(messages: list[AnyMessage]) -> str:
         default=str,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _input_budget(route: ModelRoute, profile_id: str) -> int:
+    """The summary route's input budget, or a refusal: never a number nobody chose."""
+    if route.max_input_tokens is None:
+        raise ConfigError(
+            "the summary model route declares no max_input_tokens",
+            details={"profile_id": profile_id},
+        )
+    return route.max_input_tokens
+
+
+def _is_summary(message: AnyMessage) -> bool:
+    return bool(message.additional_kwargs.get("dw_system_generated"))
+
+
+def _anchor_and_rest(removed: list[AnyMessage]) -> tuple[str, list[AnyMessage]]:
+    """The previous summary's text, and everything else that is being removed.
+
+    The anchor is found by the marker `_build_new_messages` sets, not inferred
+    from position or wording. Should there be more than one, the latest is the
+    one that already folded in the others.
+    """
+    summaries = [m for m in removed if _is_summary(m)]
+    anchor = str(summaries[-1].content) if summaries else ""
+    return anchor, [m for m in removed if not _is_summary(m)]
+
+
+def _units(messages: list[AnyMessage]) -> Iterator[list[AnyMessage]]:
+    """Messages grouped so no chunk boundary falls between a tool call and its results."""
+    i = 0
+    while i < len(messages):
+        head = messages[i]
+        unit = [head]
+        i += 1
+        if isinstance(head, AIMessage) and head.tool_calls:
+            ids = {call.get("id") for call in head.tool_calls}
+            while i < len(messages):
+                follower = messages[i]
+                if not (isinstance(follower, ToolMessage) and follower.tool_call_id in ids):
+                    break
+                unit.append(follower)
+                i += 1
+        yield unit

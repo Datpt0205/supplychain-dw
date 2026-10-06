@@ -14,6 +14,7 @@ import pytest
 
 from dw_platform.retention_policy import (
     AuditRetention,
+    CheckpointRetention,
     KnowledgeRetention,
     RetentionClass,
     RetentionPolicy,
@@ -43,6 +44,7 @@ def _policy() -> RetentionPolicy:
             enforced=True,
             tables={"audit_events": RetentionClass(days=None, description="giữ")},
         ),
+        checkpoints=CheckpointRetention(superseded_days=7, idle_thread_days=730),
         batch_limit=100,
     )
 
@@ -91,3 +93,11 @@ def test_the_same_term_has_a_cutoff_once_enforced() -> None:
     )
     # 1095 = 3*365, and 2024 was a leap year, so this is three years less a day.
     assert live.cutoff_for("audit_events", now=NOW) == datetime(2023, 9, 19, tzinfo=UTC)
+
+
+def test_an_idle_term_shorter_than_the_superseded_one_is_refused() -> None:
+    """The checkpoint sweep selects by the shorter term and decides by the
+    longer: reversed, a thread would be emptied before its own superseded
+    checkpoints expire."""
+    with pytest.raises(ValueError, match="idle_thread_days"):
+        CheckpointRetention(superseded_days=30, idle_thread_days=7)

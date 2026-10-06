@@ -58,7 +58,9 @@ class InMemoryVectorIndexAdapter:
         trusted_filter: TrustedSearchFilter,
         top_k: int,
         extra_filters: Sequence[tuple[str, str]] = (),
+        document_ids: Sequence[uuid.UUID] = (),
     ) -> list[VectorHit]:
+        wanted = set(document_ids)
         principals = set(trusted_filter.acl_principals)
         allowed = set(trusted_filter.allowed_classifications)
         hits: list[VectorHit] = []
@@ -69,6 +71,8 @@ class InMemoryVectorIndexAdapter:
             # ever drop a chunk the trusted checks below would have allowed.
             payload = dict(chunk.extra_payload)
             if any(payload.get(key) != value for key, value in extra_filters):
+                continue
+            if wanted and chunk.document_id not in wanted:
                 continue
             # Own tenant+workspace OR a cross-tenant global (legal) document.
             own = (

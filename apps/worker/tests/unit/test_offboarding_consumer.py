@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import uuid
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from io import BytesIO
@@ -123,6 +123,9 @@ def _lane(
         attachments=attachments,
         case_documents=case_documents or _FakeBucket("case-documents"),
         vector_index=_FakeVectorIndex(),
+        # A deployment without Qdrant has no memory points; the real-store case
+        # is `tests/integration/test_offboarding_memory_vectors.py`.
+        memory_vectors=None,
         clock=_FrozenClock(),
     )
 
@@ -218,6 +221,28 @@ async def test_a_failing_tenant_does_not_stop_another_claimed_on_the_same_tick()
     assert failed[-1][4] is not None, "the error message is recorded"
     completed_other = [c for c in store.calls if c[0] == "mark_status" and c[1] == OTHER_TENANT]
     assert completed_other[-1][2] == "completed", "the other tenant's pass still finished"
+
+
+async def test_a_memory_vector_purge_that_fails_is_reported_not_completed() -> None:
+    """A tenant whose embeddings are still in the memory store is not gone,
+    and a `completed` status would tell an operator it was."""
+
+    @dataclass
+    class _DownMemoryVectors:
+        async def delete_by_tenant(self, tenant_id: uuid.UUID) -> None:
+            raise RuntimeError("qdrant xuống")
+
+    store = _FakeStore(claimed=[TENANT])
+    lane = replace(
+        _lane(store, _FakeBucket("a"), _FakeBucket("e"), _FakeBucket("f")),
+        memory_vectors=_DownMemoryVectors(),
+    )
+
+    await build_offboarding_consumer(lane)()
+
+    statuses = [c[2] for c in store.calls if c[0] == "mark_status"]
+    assert statuses[-1] == "failed"
+    assert "completed" not in statuses
 
 
 def test_json_default_handles_every_type_a_row_can_hold() -> None:

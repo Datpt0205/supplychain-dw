@@ -16,13 +16,18 @@
       "checksum": "dcfeed6e919c29bac34362aea015040597fcec5657dbc8fe82a86866fc9ec1db",
       "copy_id": "platform.runtime",
       "version": "1.5.0"
+    },
+    {
+      "checksum": "f7cd2b502af52c5a650162e7392e1ee3b3b841387f44e6726afaf7bad67fe5f7",
+      "copy_id": "platform.runtime",
+      "version": "1.6.0"
     }
   ],
   "eval_datasets": [
     {
-      "checksum": "ce36d6b3e5531666e296c86cd5b907f91734079ddfe99d3924b72a601d9c00e6",
+      "checksum": "4504460eb6160e093df4edba7e8a1e955f16a8e9916af80b35a36c22ac86dd5d",
       "dataset_id": "platform_smoke",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "checksum": "08d74cc5b32038ce12c38e694cec00b636618f7c0436776066b011aa03a8ff08",
@@ -30,9 +35,9 @@
       "version": "1.1.0"
     }
   ],
-  "git_sha": "9bee4c477b8672197ba34a4d2f9a8a5484e802ec",
+  "git_sha": "e53a9f3c289418719d84fd3706222d828cca5846",
   "knowledge_index_version": "2026-07-25.structure-1",
-  "memory_policy_version": "1.0.0",
+  "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
   "policies": [
     {
@@ -41,9 +46,9 @@
       "version": "1.1.0"
     },
     {
-      "checksum": "5eefabcbed58080bf1cfeb524bbe9d8ce395b4adee9bbb9de4e357534d04a03e",
+      "checksum": "fde5e39c166b55b2616311be8e132555def7c4e2e634d938ed4b58d28a961bf8",
       "policy_id": "retention",
-      "version": "1.4.0"
+      "version": "1.6.0"
     },
     {
       "checksum": "c6d6f1a09275a46b91150dadbf20c39fc46079ce76332898015398fbf8dacead",
@@ -119,6 +124,8 @@
   "toolsets": [],
   "workers": [
     {
+      "agent_prompt_id": null,
+      "agent_prompt_version": null,
       "autonomy_level": "A2",
       "graph_version": "1.0.0",
       "memory_policy_version": "1.0.0",
@@ -129,6 +136,8 @@
       "worker_version": "1.0.0"
     },
     {
+      "agent_prompt_id": null,
+      "agent_prompt_version": null,
       "autonomy_level": "A2",
       "graph_version": "1.0.0",
       "memory_policy_version": "1.0.0",

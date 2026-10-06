@@ -7,7 +7,9 @@ search → evidence pack with provenance.
 
 from __future__ import annotations
 
+import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -17,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from dw_kernel.errors import PermissionDeniedError
+from dw_kernel.errors import InfrastructureError, PermissionDeniedError
 from dw_kernel.pagination import CursorPosition, Page, PageRequest, build_page
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_knowledge import tables
@@ -36,13 +38,19 @@ from dw_knowledge.ports import (
     ObjectStoragePort,
     RerankCandidate,
     RerankPort,
+    RerankResult,
     TrustedSearchFilter,
+    VectorHit,
     VectorIndexPort,
 )
+from dw_observability.metrics import DW_RETRIEVAL_RERANK_SKIPPED_TOTAL
+from dw_observability.telemetry import NullTelemetry, TelemetryPort
 from dw_platform.adapters.persistence.keyset import after_position, newest_first
 from dw_platform.application.access_context import AccessContext
 
 _SET_TENANT = text("SELECT set_config('app.tenant_id', :tenant_id, true)")
+
+logger = logging.getLogger("dw_knowledge.gateway")
 
 
 # Bumped for structure-aware chunking + contextual embedding (Phase A).
@@ -196,6 +204,7 @@ class KnowledgeGateway:
     reranker: RerankPort | None = None
     # Over-fetch this many x top_k for the reranker to reorder (recall->precision).
     rerank_fetch_multiplier: int = 4
+    telemetry: TelemetryPort = field(default_factory=NullTelemetry)
     _ready: bool = field(default=False, init=False)
 
     async def ensure_ready(self) -> None:
@@ -426,10 +435,7 @@ class KnowledgeGateway:
                 .where(
                     # Own workspace OR any global (legal) doc — RLS permits the
                     # cross-tenant read only for scope='global' rows.
-                    sa.or_(
-                        tables.documents.c.workspace_id == context.workspace_id,
-                        tables.documents.c.scope == "global",
-                    ),
+                    tables.visible_from_workspace(context.workspace_id),
                     tables.documents.c.status == "active",
                     tables.documents.c.classification.in_(allowed),
                     sa.or_(
@@ -504,10 +510,7 @@ class KnowledgeGateway:
                     ).where(
                         tables.documents.c.id == document_id,
                         tables.documents.c.status == "active",
-                        sa.or_(
-                            tables.documents.c.workspace_id == context.workspace_id,
-                            tables.documents.c.scope == "global",
-                        ),
+                        tables.visible_from_workspace(context.workspace_id),
                         tables.documents.c.classification.in_(allowed),
                         sa.or_(
                             *[
@@ -568,22 +571,30 @@ class KnowledgeGateway:
         vector = (await self.embeddings.embed([query.text]))[0]
         # Over-fetch when a reranker is present: dense recall then cross-encoder precision.
         fetch_k = query.top_k * self.rerank_fetch_multiplier if self.reranker else query.top_k
-        hits = await self.vector_index.search(vector, trusted_filter, fetch_k, query.filters)
-        if query.document_ids:
-            hits = [h for h in hits if h.document_id in query.document_ids]
+        # The document narrowing goes to the index with the trusted filter, so
+        # it is applied before top-k and only ever intersects with it.
+        hits = await self.vector_index.search(
+            vector, trusted_filter, fetch_k, query.filters, query.document_ids
+        )
 
         rerank_scores: dict[str, float] = {}
-        if self.reranker and hits:
-            candidates = [RerankCandidate(id=str(h.chunk_id), text=h.content) for h in hits]
-            ranked = await self.reranker.rerank(query.text, candidates, query.top_k)
+        ranked = (
+            await _rerank_or_none(self.reranker, self.telemetry, query, hits)
+            if self.reranker and hits
+            else None
+        )
+        if ranked is None:
+            hits = hits[: query.top_k]
+        else:
             by_id = {str(h.chunk_id): h for h in hits}
             hits = [by_id[r.id] for r in ranked if r.id in by_id]
             rerank_scores = {r.id: r.score for r in ranked}
-        else:
-            hits = hits[: query.top_k]
 
         evidence: list[EvidenceChunk] = []
         for hit in hits:
+            # The reranker's score when it ranked, the vector's when it was
+            # skipped: two scales, both in [0, 1]. A min_relevance above zero
+            # would filter the two differently.
             score = rerank_scores.get(str(hit.chunk_id), hit.score)
             if score < query.min_relevance:
                 continue
@@ -603,3 +614,43 @@ class KnowledgeGateway:
                 )
             )
         return evidence
+
+
+async def _rerank_or_none(
+    reranker: RerankPort, telemetry: TelemetryPort, query: SearchQuery, hits: Sequence[VectorHit]
+) -> list[RerankResult] | None:
+    """The reranker's order, or None to keep the vector order.
+
+    Reranking buys precision; it is not what makes retrieval correct. A hosted
+    reranker that is down or answers nonsense therefore costs ranking quality,
+    not the search that asked. The hits were already narrowed by the trusted
+    filter before they got here, so falling back widens nothing.
+
+    The call is a span of its own (its latency is the provider's), and a
+    failure leaves that span in error and counts a skipped rerank, so an
+    unranked search shows on the trace and the dashboard, not only in a log.
+    """
+    candidates = [RerankCandidate(id=str(h.chunk_id), text=h.content) for h in hits]
+    try:
+        with telemetry.span(
+            "dw.knowledge.rerank", {"candidates": len(candidates), "top_k": query.top_k}
+        ):
+            return await reranker.rerank(query.text, candidates, query.top_k)
+    except InfrastructureError as exc:
+        telemetry.add_metric(
+            DW_RETRIEVAL_RERANK_SKIPPED_TOTAL,
+            1,
+            {"error": exc.details.get("error", type(exc).__name__)},
+        )
+        logger.warning(
+            "rerank skipped, keeping vector order: %s (%s)",
+            type(exc).__name__,
+            exc.details.get("error"),
+            extra={
+                "rerank_skipped": True,
+                "error_type": type(exc).__name__,
+                "error_cause": exc.details.get("error"),
+                "status": exc.details.get("status"),
+            },
+        )
+        return None

@@ -66,6 +66,14 @@ def test_manifest_contains_every_required_section() -> None:
         for w in manifest["workers"]
         if w["toolset_version"] is not None
     } <= pinned
+    # Same for the prompt an agent-loop worker pins: a run's spend is recorded
+    # under it, so it must be a prompt this release ships.
+    bundled = {(p["prompt_id"], p["version"]) for p in manifest["prompt_bundles"]}
+    assert {
+        (w["agent_prompt_id"], w["agent_prompt_version"])
+        for w in manifest["workers"]
+        if w["agent_prompt_id"] is not None
+    } <= bundled
     assert {d["dataset_id"] for d in manifest["eval_datasets"]} >= {"platform_smoke"}
 
 

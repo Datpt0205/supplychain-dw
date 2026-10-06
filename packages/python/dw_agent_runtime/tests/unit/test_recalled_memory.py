@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
-from test_agent_factory import OFFERED, PROFILE_ID, _profiles, _registry
+from test_agent_factory import OFFERED, PROFILE_ID, _profiles, _registry, prompt_fields
 from test_langchain_tools import make_run_context
 
 from dw_agent_runtime.adapters.agent_factory import AgentSpec, build_agent, platform_middleware
@@ -89,7 +89,7 @@ def _spec(model: MockChatModel, recall: Any, *, copy: Any = COPY_WITH_FRAME) -> 
         executor=executor,
         copy=copy,
         approval_type_prefix="sales_chat.",
-        render_prompt=lambda request: WORKER_PROMPT,
+        **prompt_fields(WORKER_PROMPT, template=""),
         budget=RunBudgetLedger(),
         profiles=_profiles(),
         profile_id=PROFILE_ID,

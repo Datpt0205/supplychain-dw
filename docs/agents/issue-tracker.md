@@ -9,6 +9,11 @@ When the branch is pushed and the team works on GitHub, switch this file to
 the GitHub template (re-run `/setup-matt-pocock-skills`) and move open tickets
 over; do not run both.
 
+The skills that read this file come from the `mattpocock-skills` plugin, which
+is installed per checkout, not by the repository (`CLAUDE.md` "Agent skills";
+`claude plugin list` shows "failed to load" where it is enabled but not
+installed). Without it, this layout is still the plan the session hooks read.
+
 ## Layout
 
 - `.claude/PLAN.md` is the index: where each area stands, what is next, what

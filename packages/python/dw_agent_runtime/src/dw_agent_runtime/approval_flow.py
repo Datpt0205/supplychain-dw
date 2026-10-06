@@ -3,12 +3,19 @@
 Bridges platform approvals and the workflow runner: the human decision is
 persisted first (aggregate invariant: decided exactly once), then the durable
 run resumes with the decision payload.
+
+An approval with no run has nothing to resume, so its decision is announced
+instead: one outbox event, `decided_event_type(approval_type)`, written in the
+decision's own transaction. A context that wants a consequence registers a
+handler for its type where the worker is composed; this service never learns
+which types exist.
 """
 
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from datetime import UTC
 from typing import Any
 
@@ -22,7 +29,24 @@ from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.ports import PlatformUnitOfWorkFactory
-from dw_platform.domain.approval import APPROVALS_DECIDE, ApprovalRequest, DecisionOutcome
+from dw_platform.domain.approval import (
+    APPROVALS_DECIDE,
+    ApprovalDecision,
+    ApprovalRequest,
+    DecisionOutcome,
+    decided_event_type,
+)
+from dw_platform.domain.outbox import OutboxEvent
+
+DecisionGuard = Callable[[ApprovalRequest, AccessContext], None]
+"""A condition one approval type puts on who may decide it, beyond the scope.
+
+Raises to refuse. Registered by type at the composition root, the way strict
+prefixes are, so a context with its own rule adds an entry rather than a branch
+in `decide` (memory: the decider must be cleared for what they are deciding on).
+"""
+
+DECIDED_EVENT_SCHEMA = "1.0"
 
 
 @dataclass
@@ -33,6 +57,10 @@ class ApproveAndResumeService:
     clock: UtcClock
     id_generator: IdGenerator
     strict_approval_prefixes: frozenset[str] = frozenset()
+    # Keyed by the exact approval type. Checked where the decision is made,
+    # before anything is written: a rule the inbox merely hides a button for is
+    # a rule a direct POST walks past.
+    decision_guards: Mapping[str, DecisionGuard] = field(default_factory=dict)
 
     def is_strict(self, approval_type: str) -> bool:
         """Whether this type demands a second person and a written reason.
@@ -141,6 +169,9 @@ class ApproveAndResumeService:
                     )
             if self.is_strict(request.approval_type):
                 self._enforce_strict_rules(request, comment, context)
+            guard = self.decision_guards.get(request.approval_type)
+            if guard is not None:
+                guard(request, context)
             record = await self._resumable_run(context, request)
 
             decision = request.decide(
@@ -152,6 +183,8 @@ class ApproveAndResumeService:
             )
             await uow.approvals.save(request)
             await uow.approvals.add_decision(decision)
+            if request.run_id is None:
+                await uow.outbox.add(self._decided_event(request, decision))
             await uow.commit()
 
         if record is not None and request.run_id is not None:
@@ -206,6 +239,27 @@ class ApproveAndResumeService:
                 resume_payload=resume_payload,
             )
         return request
+
+    def _decided_event(self, request: ApprovalRequest, decision: ApprovalDecision) -> OutboxEvent:
+        """Identifiers and the outcome only. The comment and the request's payload
+        stay where their readers are authorized: the outbox is read by a
+        dispatcher that serves every tenant, not by a person with a scope."""
+        return OutboxEvent(
+            id=self.id_generator.new_uuid(),
+            tenant_id=request.tenant_id,
+            workspace_id=request.workspace_id,
+            event_type=decided_event_type(request.approval_type),
+            schema_version=DECIDED_EVENT_SCHEMA,
+            aggregate_id=request.id,
+            occurred_at=decision.decided_at,
+            payload={
+                "approval_id": str(request.id),
+                "decision_id": str(decision.id),
+                "outcome": decision.outcome.value,
+                "decided_by": str(decision.decided_by.value),
+            },
+            actor_id=decision.decided_by.value,
+        )
 
     def _run_context_for(self, context: AccessContext, run_id: uuid.UUID) -> RunContext:
         return RunContext(

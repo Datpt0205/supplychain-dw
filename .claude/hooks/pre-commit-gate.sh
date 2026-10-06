@@ -1,34 +1,50 @@
 #!/usr/bin/env bash
-# PreToolUse(Bash) hook. Fires before a command runs; exit 2 blocks it and sends
-# stderr back as feedback. Registered in .claude/settings.json.
+# PreToolUse(Bash|PowerShell) hook. Fires before a command runs; exit 2 blocks it
+# and sends stderr back as feedback. Registered in .claude/settings.json, for both
+# shell tools: on Windows a commit can go through either, and a gate on one is a
+# gate with a door beside it. Tested by scripts/test_claude_hooks.sh.
 #
 # Why a hook and not a rule or a skill: both of those are advice, and advice is
 # forgotten exactly when a change is large enough to matter. This runs at the one
 # moment that cannot be skipped — the commit — and it runs the mechanical checks
 # itself rather than asking for them to be remembered.
 #
-# It only speaks up for `git commit`. Every other command passes through.
+# It only speaks up for `git … commit`. Every other command passes through.
 #
-# To disable: touch .claude/no-commit-gate
+# To disable: a PERSON creates .claude/no-commit-gate (gitignored, so it switches
+# the gate off in this checkout only). An agent never creates it: a gate the gated
+# party can switch off is advice again.
 set -uo pipefail
 
 root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$root" || exit 0
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 [ -f "$root/.claude/no-commit-gate" ] && exit 0
 
-input=$(cat)
+read_hook_input
+command_line=$(hook_string '.tool_input.command' command)
+# A payload neither jq nor the fallback could read is matched whole: an unread
+# command must not mean an ungated one.
+[ -z "$command_line" ] && command_line=$hook_input
 
-if command -v jq >/dev/null 2>&1; then
-  command_line=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
-else
-  command_line=$(printf '%s' "$input" | tr ',' '\n' | grep -o '"command"[^,]*' | head -1)
-fi
-
-case "$command_line" in
-  *"git commit"*) ;;
-  *) exit 0 ;;
-esac
+# git (git.exe, a path to it, or quoted) at the start of a line or after a
+# separator, then any number of global options (-C <dir>, -c <k=v>,
+# --git-dir[=]<dir>, --no-pager, ...), then `commit` as a word of its own. So
+# `git -C x commit` is gated, and `git commit-tree`, `git log --grep commit` and
+# `echo "git commit"` are not. An alias (`git ci`) is not seen: this is a
+# reminder at the commit, not a sandbox.
+#
+# Matched without regard to case, because Windows resolves `Git` and `GIT.EXE`
+# to git in both shells; and a line ending in a continuation (`\` in bash, a
+# backtick in PowerShell) is joined to the next first, because `git \` + newline
+# + `commit` is one command to the shell and two lines to grep.
+value='("[^"]*"|'"'[^']*'"'|[^[:space:];&|]+)'
+global_option="(-C|-c|--git-dir|--work-tree|--namespace|--config-env|--exec-path)[[:space:]]+$value|--?[A-Za-z][-A-Za-z]*(=$value)?"
+commit_pattern="(^|[[:space:];&|(\`{/\\\"'])git(\.exe)?[\"']?([[:space:]]+($global_option))*[[:space:]]+commit([[:space:];&|)]|\$)"
+printf '%s\n' "$command_line" \
+  | awk '{ if (sub(/[\\`]$/, "")) printf "%s ", $0; else print }' \
+  | grep -qiE "$commit_pattern" || exit 0
 
 # --- the mechanical half: invariants this repository has actually broken ------
 if ! invariants=$(uv run python scripts/verify_invariants.py 2>&1); then

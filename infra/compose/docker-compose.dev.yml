@@ -8,7 +8,6 @@
 #   docker compose --project-name sales_dev_dw --env-file .env \
 #     -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.dev.yml \
 #     --profile full up -d --build
-# (No `--profile models`: embeddings come from the gateway, not a local TEI.)
 #
 # Host ports are deliberately non-default — 5432/6379/8000/3000 are taken by
 # other projects on the host (verify with `ss -tln`):
@@ -70,10 +69,6 @@ services:
       KC_HOSTNAME: ${KC_PUBLIC_HOSTNAME:?}
     ports: !override
       - "0.0.0.0:28686:8080"
-
-  # TEI (self-hosted embeddings/rerank) is retired on this stack: embeddings now
-  # come from the FPT AI Gateway via the `embedding` route of sales_luna.yaml, so
-  # the up command drops `--profile models` and no tei-* container runs here.
 
   # ------------------------------------------------ app services (profile full)
   # The base file talks to valkey/qdrant over unauthenticated internal URLs;

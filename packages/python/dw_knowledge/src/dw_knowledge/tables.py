@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
@@ -52,6 +54,18 @@ documents = sa.Table(
         server_default=sa.text("'{tenant:*}'::text[]"),
     ),
 )
+
+
+def visible_from_workspace(workspace_id: uuid.UUID) -> sa.ColumnElement[bool]:
+    """A document this workspace may draw on: its own, or any global one.
+
+    One expression for every SQL reader — listing, full read, and the evidence
+    check behind a stored memory — so "may this team use that document" has a
+    single answer. RLS still narrows by tenant; this is the narrower fence
+    inside it, between two teams of one tenant.
+    """
+    return sa.or_(documents.c.workspace_id == workspace_id, documents.c.scope == "global")
+
 
 chunks = sa.Table(
     "chunks",

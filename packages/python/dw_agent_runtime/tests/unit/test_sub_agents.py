@@ -17,7 +17,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import BaseModel
-from test_agent_factory import OFFERED, PROFILE_ID, READ, _profiles, _registry
+from test_agent_factory import OFFERED, PROFILE_ID, READ, _profiles, _registry, prompt_fields
 from test_langchain_tools import COPY, LeadInput, LeadOutput, make_run_context
 
 from dw_agent_runtime.adapters.agent_factory import AgentSpec, build_agent, platform_middleware
@@ -47,7 +47,7 @@ def _spec(
         executor=executor,
         copy=COPY,
         approval_type_prefix="sales_chat.",
-        render_prompt=lambda request: WORKER_PROMPT,
+        **prompt_fields(WORKER_PROMPT, template=""),
         budget=budget or RunBudgetLedger(),
         profiles=_profiles(),
         profile_id=PROFILE_ID,

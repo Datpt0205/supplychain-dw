@@ -18,7 +18,7 @@ Inherited areas came with the platform seed (`codebase` `main`, `bf553f4`) and
 change here only when work in this repo touches them; their upstream copy is
 the reference after each `git merge platform/main`.
 
-## Now (2026-10-05)
+## Now (2026-10-06)
 
 - **This is the Elmich product repo** (`supplychain-dw`), built on the
   platform seed. Everything is built here; generic pieces stay in platform
@@ -33,9 +33,9 @@ the reference after each `git merge platform/main`.
   `/settings` (U), Zalo link (Z1). `make ci` green.
 - **Done on branch `feat/elmich-a-d-s1` (2026-10-06, not pushed, not merged):**
   A (`dabf5c4`), D (`51e3400`), S1. Steps 1–5 run end to end in the app.
-- **2026-10-06:** platform-runtime 02 (`7b411df`) and S2 done. In progress:
-  platform hardening and the FCI rerank in the platform repo, then merged here;
-  then Z4 (Z4a, Z4b; photos split to 04b, waiting for a real photo update),
+- **2026-10-06:** platform-runtime 02 (`7b411df`), S2 and W done; platform
+  hardening and the FCI rerank merged from `platform/main` (`c16857c`). Next:
+  Z4 (Z4a, Z4b; photos split to 04b, waiting for a real photo update),
   S3 → S7, Z5, Z6.
 - **Run locally:** `make infra-up`, `make db-migrate`, seed
   (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
@@ -53,8 +53,10 @@ the reference after each `git merge platform/main`.
 - **Đạt, product:** none open; QO-1–QO-8 decided 2026-10-06 (delegated), see
   `supply-chain.md` "Decided on 2026-10-06".
 - **Đạt, inherited from the platform:**
-    - a plan quota on direct model calls; the model profile and key for
-      uat/production; whether CI runs the web vitest and Playwright suites;
+    - a plan quota on direct model calls; the model profile, model key and
+      rerank key for uat/production; whether CI runs the web vitest and
+      Playwright suites; how many independent documents a memory needs to be
+      written without review (`auto_write_sources`, 2 since 2026-10-06);
     - spend guard thresholds per plan; a retention term for offboarding
       bundles; how many superseded document versions to keep;
     - backfill ADRs: code cites ADR-001..003, which this repo never had.
@@ -70,6 +72,7 @@ the reference after each `git merge platform/main`.
    secrets, CORS, outbound URLs, and a scan of every new image.
 5. `mattpocock-skills` (`/ask-matt`): grilling to `/implement` and
    `/code-review`; `CLAUDE.md` "Agent skills" places layers 1–4 inside it.
+   Installed per checkout, not by the repo: check with `claude plugin list`.
 
 `.claude/rules/failure-modes.md` holds the counts behind layers 1–3; UI work
 also answers to `.claude/rules/ui-quality.md`. No layer replaces running the

@@ -19,6 +19,16 @@ from dw_kernel.ids import TenantId, UserId, WorkspaceId
 APPROVALS_DECIDE = "approvals.decide"
 
 
+def decided_event_type(approval_type: str) -> str:
+    """The outbox event a decision on a run-less approval of this type announces.
+
+    One function because two packages name it: the approval flow that writes the
+    event and the context that registers a handler for it. Spelt twice, a rename
+    on one side leaves the handler waiting for an event nobody sends.
+    """
+    return f"{approval_type}.decided"
+
+
 class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"

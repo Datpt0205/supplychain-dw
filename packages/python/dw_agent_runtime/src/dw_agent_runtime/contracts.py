@@ -74,6 +74,18 @@ class WorkerDefinition(BaseModel):
     # deepagents compiles with recursion_limit=9999; a runaway turn would burn
     # that whole budget before LangGraph stopped it.
     recursion_limit: int = Field(default=50, gt=0, le=500)
+    # The registry prompt an agent-loop worker's system message is rendered
+    # from (`AgentSpec.prompt_id`/`prompt_version`), and the pin the runner
+    # records the loop's spend under. None for a plain graph, which has no loop
+    # prompt - never a placeholder version for one that does.
+    agent_prompt_id: str | None = None
+    agent_prompt_version: str | None = Field(default=None, pattern=_SEMVER_PATTERN)
+
+    @model_validator(mode="after")
+    def _agent_prompt_is_one_pin(self) -> WorkerDefinition:
+        if (self.agent_prompt_id is None) != (self.agent_prompt_version is None):
+            raise ValueError("agent_prompt_id and agent_prompt_version are set together")
+        return self
 
     @field_validator("worker_id", "default_model_profile")
     @classmethod

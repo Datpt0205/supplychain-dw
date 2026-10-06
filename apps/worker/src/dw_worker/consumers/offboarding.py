@@ -4,8 +4,9 @@ The Postgres half (`SqlTenantOffboarding` in `dw_platform`) is catalog-driven
 and knows nothing about Qdrant or object storage — both live behind ports
 `dw_platform` may not import (import-linter's "Vector/object-storage SDKs
 only inside knowledge adapters"). This is the composition root, so it is the
-one place allowed to hold both halves at once: the generic Postgres rows and
-the two storage buckets and the vector index, orchestrated into one pass.
+one place allowed to hold both halves at once: the generic Postgres rows, the
+storage buckets and the two vector collections (knowledge chunks and the memory
+ranker's points), orchestrated into one pass.
 
 Every step here is safe to re-run from the top: `export_rows` only reads,
 uploading overwrites the same key, `purge_rows`/`delete_object`/
@@ -99,7 +100,8 @@ class BucketPort(Protocol):
 
 
 class VectorPurgePort(Protocol):
-    """Structurally `dw_knowledge.ports.VectorIndexPort.delete_by_tenant`."""
+    """Structurally `dw_knowledge.ports.VectorIndexPort.delete_by_tenant`, and
+    `dw_memory.ranking.MemoryVectorPurgePort.delete_by_tenant`."""
 
     async def delete_by_tenant(self, tenant_id: UUID) -> None: ...
 
@@ -133,6 +135,11 @@ class TenantOffboardingLane:
     # Supply Chain's case documents, in their own bucket (ADR 0021).
     case_documents: BucketPort
     vector_index: VectorPurgePort
+    # The memory ranker's collection. The SQL purge deletes `memory.items`, and
+    # each row's point is an embedding of its content; leaving them would keep
+    # the departed tenant's text in the one store this pass never named. No
+    # default: `None` is the composition root saying there is no vector store.
+    memory_vectors: VectorPurgePort | None
     clock: UtcClock
 
     async def run(self, tenant_id: UUID) -> None:
@@ -168,6 +175,8 @@ class TenantOffboardingLane:
         for key in document_keys:
             await self.case_documents.delete_object(key)
         await self.vector_index.delete_by_tenant(tenant_id)
+        if self.memory_vectors is not None:
+            await self.memory_vectors.delete_by_tenant(tenant_id)
 
         await self.store.mark_status(tenant_id, "completed", export_key=export_key)
 

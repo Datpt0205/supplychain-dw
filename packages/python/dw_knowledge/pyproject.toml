@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "dw-kernel",
     "dw-platform",
+    "dw-observability",
     "pydantic>=2.10,<3",
     "sqlalchemy[asyncio]>=2.0.36,<2.1",
     "qdrant-client>=1.12,<1.15",

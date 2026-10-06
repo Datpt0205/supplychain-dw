@@ -16,16 +16,13 @@ import yaml
 from pydantic import ValidationError
 
 from dw_agent_runtime.contracts import WorkerDefinition
-from dw_kernel.errors import DomainError, NotFoundError
+from dw_kernel.errors import ConfigError as ConfigError  # re-exported: its historical home
+from dw_kernel.errors import NotFoundError
 
 # A graph factory returns an *uncompiled* LangGraph StateGraph-like object; the
 # runner adapter compiles it with a checkpointer. Typed as Any at this boundary
 # because the engine type must not leak into non-adapter code.
 GraphFactory = Callable[[], Any]
-
-
-class ConfigError(DomainError):
-    """A configuration artifact is invalid; startup must fail."""
 
 
 @dataclass

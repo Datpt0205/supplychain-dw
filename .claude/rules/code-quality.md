@@ -1,5 +1,10 @@
 # SOLID, clean code, and reuse — how this codebase already does it
 
+**Scope: every session, on purpose.** This file has no `paths:` frontmatter, so it
+loads whatever part of the tree a session touches. That is deliberate: it applies to
+every change, not to one directory (`CLAUDE.md` "Work style" item 9). A rule that
+only applies to part of the tree carries `paths:`, as `ui-quality.md` does.
+
 Not textbook definitions. Every principle below is shown against a real
 pattern already in this repo, because "write SOLID code" is not
 actionable on its own — knowing what it looks like _here_, in this

@@ -59,6 +59,11 @@ def _workers() -> list[dict[str, Any]]:
                 # own field docstring; the invariant below only holds workers
                 # that declare one to a real pin.
                 "toolset_version": raw.get("toolset_version"),
+                # The registry prompt an agent loop renders and is billed
+                # under; None for a plain graph. Resolves to an entry of
+                # `prompt_bundles`, like toolset_version to `toolsets`.
+                "agent_prompt_id": raw.get("agent_prompt_id"),
+                "agent_prompt_version": raw.get("agent_prompt_version"),
                 "policy_version": raw["policy_version"],
                 "memory_policy_version": raw["memory_policy_version"],
                 "autonomy_level": raw.get("autonomy_level", "A2"),

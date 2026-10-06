@@ -30,7 +30,7 @@ class MockModelForbiddenError(RuntimeError):
     """A deployed profile asked for the fixture model."""
 
 
-def _checked_base_url(settings: ApiSettings, url: str) -> str:
+def checked_base_url(settings: ApiSettings, url: str) -> str:
     """SSRF guard: a provider endpoint must be public outside local development."""
     return ensure_allowed_outbound_url(
         url,
@@ -48,7 +48,7 @@ def build_model_adapters(settings: ApiSettings) -> dict[str, ModelProviderAdapte
             )
         adapters[Provider.MOCK] = MockModelAdapter(fixtures_dir=MOCK_MODEL_FIXTURES)
     if settings.openai_api_key and settings.openai_base_url:
-        base_url = _checked_base_url(settings, settings.openai_base_url)
+        base_url = checked_base_url(settings, settings.openai_base_url)
         adapters[Provider.OPENAI_COMPATIBLE] = OpenAICompatibleAdapter(
             base_url=base_url,
             api_key=settings.openai_api_key,
@@ -88,6 +88,6 @@ def build_chat_model_factory(
         return None
     return OpenAICompatibleChatModelFactory(
         profiles=profiles,
-        base_url=_checked_base_url(settings, settings.openai_base_url),
+        base_url=checked_base_url(settings, settings.openai_base_url),
         api_key=settings.openai_api_key,
     )

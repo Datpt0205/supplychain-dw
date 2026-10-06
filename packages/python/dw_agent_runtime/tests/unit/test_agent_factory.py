@@ -15,6 +15,7 @@ one hazard presence does not cover: a seventh middleware that swallows it.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -38,15 +39,24 @@ from dw_agent_runtime.executor import ToolExecutor
 from dw_agent_runtime.model.budget import BudgetExceededError, RunBudgetLedger
 from dw_agent_runtime.model.copy import load_runtime_copy
 from dw_agent_runtime.model.profiles import ModelProfile, ModelProfileRegistry
+from dw_agent_runtime.model.prompts import PromptArtifact, PromptRegistry
+from dw_agent_runtime.registry import ConfigError
 from dw_agent_runtime.tools import RegisteredTool, ToolRegistry
+from dw_kernel.errors import TenantContextMissingError
 from dw_kernel.ports import FixedClock, SequentialIdGenerator
 
 pytestmark = pytest.mark.unit
 
 WORKER_PROMPT = "Bạn là trợ lý bán hàng của FDX."
+# The worker prompt is a registry artifact, rendered per model call with the
+# variables of that call (today's date, the screen in view).
+PROMPT_ID = "agent_test.worker"
+PROMPT_VERSION = "1.0.0"
+DATED = "Hôm nay là {today}."
+TODAY = "06/10/2026"
 # Compaction needs the 1.4.0 text; everything else here still runs on 1.3.0.
 COMPACTING_COPY = load_runtime_copy(
-    Path(__file__).resolve().parents[5] / "configs" / "copy" / "runtime@1.4.0.yaml"
+    Path(__file__).resolve().parents[5] / "configs" / "copy" / "runtime@1.6.0.yaml"
 )
 THREAD: RunnableConfig = {"configurable": {"thread_id": "t-1"}}
 
@@ -114,9 +124,15 @@ PROFILE_ID = "agent_test"
 LOOP_CEILING_TOKENS = 60
 
 
-def _profiles(ceiling_tokens: int = LOOP_CEILING_TOKENS) -> ModelProfileRegistry:
+def _profiles(
+    ceiling_tokens: int = LOOP_CEILING_TOKENS, summary_input_tokens: int | None = 8000
+) -> ModelProfileRegistry:
     profiles = ModelProfileRegistry()
-    route = {"provider": "mock", "model": "mock-1"}
+    route: dict[str, object] = {"provider": "mock", "model": "mock-1"}
+    if summary_input_tokens is not None:
+        # The chat route doubles as the summariser's in these tests, and
+        # compaction refuses a summary route without an input budget.
+        route["max_input_tokens"] = summary_input_tokens
     profiles.register(
         ModelProfile.model_validate(
             {
@@ -136,6 +152,34 @@ def _profiles(ceiling_tokens: int = LOOP_CEILING_TOKENS) -> ModelProfileRegistry
     return profiles
 
 
+def prompt_artifact(
+    system: str = WORKER_PROMPT, template: str = DATED, version: str = PROMPT_VERSION
+) -> PromptArtifact:
+    return PromptArtifact(
+        schema_version="1.0",
+        prompt_id=PROMPT_ID,
+        version=version,
+        system=system,
+        template=template,
+        variables=frozenset({"today"}) if "{today}" in template else frozenset(),
+    )
+
+
+def prompt_fields(
+    system: str = WORKER_PROMPT, template: str = DATED, prompts: PromptRegistry | None = None
+) -> dict[str, Any]:
+    """The four `AgentSpec` fields that pin the worker prompt to the registry."""
+    if prompts is None:
+        prompts = PromptRegistry()
+        prompts.register(prompt_artifact(system, template))
+    return {
+        "prompt_id": PROMPT_ID,
+        "prompt_version": PROMPT_VERSION,
+        "prompts": prompts,
+        "prompt_variables": lambda request: {"today": TODAY} if "{today}" in template else {},
+    }
+
+
 def _spec(model: MockChatModel, budget: RunBudgetLedger | None = None) -> AgentSpec:
     registry, executor = _registry()
     return AgentSpec(
@@ -145,7 +189,7 @@ def _spec(model: MockChatModel, budget: RunBudgetLedger | None = None) -> AgentS
         executor=executor,
         copy=COPY,
         approval_type_prefix="sales_chat.",
-        render_prompt=lambda request: WORKER_PROMPT,
+        **prompt_fields(),
         budget=budget or RunBudgetLedger(),
         profiles=_profiles(),
         profile_id=PROFILE_ID,
@@ -221,6 +265,53 @@ async def test_the_worker_prompt_reaches_the_model_first() -> None:
     )
 
     assert model.system_prompts[0].startswith(WORKER_PROMPT)
+    # Rendered per call from the registry artifact, the call's variables in it.
+    assert f"Hôm nay là {TODAY}." in model.system_prompts[0]
+
+
+async def test_a_tenants_own_prompt_reaches_its_runs_and_no_one_elses() -> None:
+    """The tenant comes from the run, and resolution falls back to the platform.
+
+    Tenant A has its own wording. A's run renders it; B's run renders the
+    platform's - never A's, which would be one customer's wording shown to
+    another.
+    """
+    tenant_a = make_run_context()
+    tenant_b = make_run_context().model_copy(update={"tenant_id": uuid.uuid4()})
+    prompts = PromptRegistry()
+    prompts.register(prompt_artifact())
+    prompts.register(prompt_artifact("Bạn là trợ lý của riêng A."), tenant_id=tenant_a.tenant_id)
+    spec = replace(
+        _spec(MockChatModel(responses=[], mock_reply="x")), **prompt_fields(prompts=prompts)
+    )
+
+    seen = []
+    for run in (tenant_a, tenant_b):
+        model = MockChatModel(responses=[AIMessage(content="xong")], mock_reply="[mock]")
+        await build_agent(replace(spec, model=model)).ainvoke(
+            {"messages": [HumanMessage("chào")]}, context=run
+        )
+        seen.append(model.system_prompts[0])
+
+    assert seen[0].startswith("Bạn là trợ lý của riêng A.")
+    assert seen[1].startswith(WORKER_PROMPT)
+
+
+async def test_a_prompt_missing_from_the_registry_fails_the_build() -> None:
+    """Not a run that later finds no prompt, and not a free text in its place."""
+    spec = replace(_spec(MockChatModel(responses=[], mock_reply="x")), prompt_version="9.9.9")
+
+    with pytest.raises(ConfigError):
+        build_agent(spec)
+
+
+async def test_a_run_without_a_run_context_is_not_given_a_prompt() -> None:
+    """Whose wording to render is the run's tenant; with no run, nobody's."""
+    model = MockChatModel(responses=[AIMessage(content="xong")], mock_reply="[mock]")
+
+    with pytest.raises(TenantContextMissingError):
+        await build_agent(_spec(model)).ainvoke({"messages": [HumanMessage("chào")]})
+    assert model.system_prompts == []
 
 
 async def test_a_file_the_model_cannot_read_never_reaches_it() -> None:

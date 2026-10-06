@@ -214,8 +214,13 @@ class LangGraphWorkflowRunner:
         if self.usage_meter is None:
             yield None
             return
+        prompt_id, prompt_version = _loop_prompt(worker)
         async with self.usage_meter.track(
-            run_context, profile_id=worker.default_model_profile, task="agent_loop"
+            run_context,
+            profile_id=worker.default_model_profile,
+            task="agent_loop",
+            prompt_id=prompt_id,
+            prompt_version=prompt_version,
         ) as callbacks:
             yield list(callbacks)
 
@@ -774,3 +779,17 @@ class LangGraphWorkflowRunner:
             raise InfrastructureError(
                 "failed to write audit event", details={"action": action}
             ) from exc
+
+
+def _loop_prompt(worker: WorkerDefinition) -> tuple[str, str]:
+    """The versioned artifact a run's unclaimed model spend is billed under.
+
+    An agent loop: the prompt its worker pins, which is the one
+    `WorkerSystemPrompt` renders. A plain graph has no loop prompt - its nodes
+    bill their own prompts through inner trackers - so what is left over was
+    produced by the graph, and is named by the graph's version rather than by a
+    version that names nothing.
+    """
+    if worker.agent_prompt_id is not None and worker.agent_prompt_version is not None:
+        return worker.agent_prompt_id, worker.agent_prompt_version
+    return f"graph:{worker.worker_id}", worker.graph_version

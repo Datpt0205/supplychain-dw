@@ -1,6 +1,6 @@
 {
   "dataset_id": "platform_smoke",
-  "dataset_version": "1.0.0",
+  "dataset_version": "1.1.0",
   "worker_id": "dw.platform",
   "cases": [
     {
@@ -33,7 +33,7 @@
     {
       "case_id": "pf-sec-missing-evidence-memory",
       "category": "missing_evidence",
-      "description": "Memory không provenance bị reject, restricted phải review",
+      "description": "Memory không provenance bị reject, restricted hoặc chỉ một nguồn phải review",
       "input_ref": "evals/fixtures/cases/pf_memory_policy.json",
       "expected_ref": "evals/expected/pf_memory_policy.json",
       "grader": "memory.write_policy",

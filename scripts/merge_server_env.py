@@ -56,8 +56,6 @@ PRESERVE_LOCAL = frozenset(
         # re-index.
         "QDRANT_COLLECTION",
         "DW_API_EMBEDDING_PROVIDER",
-        "DW_API_EMBED_URL",
-        "DW_API_EMBED_DIMENSION",
         "REDIS_URL",
         "MINIO_ROOT_USER",
         "MINIO_ROOT_PASSWORD",
@@ -81,6 +79,13 @@ PRESERVE_LOCAL = frozenset(
         "DW_API_OPENAI_STRUCTURED_MODE",
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",
+        # The reranker is a per-developer key too; blank means "no reranking",
+        # which, like the mock, fails by quietly being worse.
+        "DW_API_RERANK_PROVIDER",
+        "DW_API_RERANK_BASE_URL",
+        "DW_API_RERANK_API_KEY",
+        "DW_API_RERANK_MODEL",
+        "DW_API_RERANK_TIMEOUT_SECONDS",
         "SERPER_API_KEY",
         "TAVILY_API_KEY",
         "EXA_API_KEY",
