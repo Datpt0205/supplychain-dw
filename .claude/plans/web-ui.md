@@ -197,17 +197,20 @@ before this change and after it. CI builds on Linux.
 
 ## Open
 
-- `lib/dates.ts` on dayjs, in Asia/Ho_Chi_Minh with the time first, and
-  `lib/money.ts`.
+- `lib/money.ts`. (`lib/dates.ts` is in Asia/Ho_Chi_Minh with the time first
+  and "giờ Việt Nam" since 2026-10-06, through `Intl`, not dayjs; supply-chain
+  slice W.)
 - Playwright projects for viewports (320px, both sides of 992px) and a
   non-Vietnam time zone.
 - Replace sonner with `App.useApp()`; its toasts stay light in dark mode.
-- `<html lang="en">` while the antd locale is `vi_VN` and the copy is mixed.
+- `<html lang="vi">` since 2026-10-06 (slice W); the platform pages' copy is
+  still English, so those read under the wrong language until translated.
 - Replace shadcn page by page. In dark mode, the literal colours left in
   pages read with low contrast: `text-slate-*` and `text-red-600` on memory
   and integrations, the sky link in markdown answers, the country select, and
-  the feedback asterisks. The first antd Table deletes the unlayered table
-  rules in `globals.css`.
+  the feedback asterisks. The unlayered table rules in `globals.css` went
+  with slice W (2026-10-06): shadcn tables on phones now scroll instead of
+  turning into cards.
 - The platform pages now render in palette A at antd's 14px, and follow the
   OS into dark mode. The server renders light, so a dark OS sees light until
   hydration: on `next dev` the body read `rgb(245, 245, 247)` before it
@@ -247,3 +250,10 @@ before this change and after it. CI builds on Linux.
 - CI does not run the web vitest suite or the Playwright specs, so every
   guard above runs only where someone runs it. Ticket 10, waiting on Đạt's
   decision (`PLAN.md`).
+- The E-HSDT v3 theme (slice W, 2026-10-06, `supply-chain.md`): light primary
+  #006edc (the handoff's #0071e3 is 4.31:1 on the page), field border #8c8c91,
+  pill buttons, `StatusTag` tones per colour mode, JetBrains Mono as
+  `fontFamilyCode`, `PageHeader` and `RegionState` in `@dw/ui`. Contrast pairs
+  are measured in `components/__tests__/theme.test.tsx`, not yet on the
+  rendered page; the e2e's `LIGHT_PRIMARY` follows the new primary and was not
+  run.

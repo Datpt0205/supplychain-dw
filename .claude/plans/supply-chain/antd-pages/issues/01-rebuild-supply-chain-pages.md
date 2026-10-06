@@ -50,3 +50,31 @@ Trang Supply Chain trông và hành xử như các trang khác của shell antd 
   `StatusTag` theo bảng màu nhãn; navbar theo context; mẫu trang danh sách và chi tiết).
   Không chờ các ticket antd-shell 07/08/09 của nền tảng: phần cần dùng dựng ngay trong
   repo này.
+- 2026-10-06, agent: dựng xong trong một commit (Đạt yêu cầu một commit, không phải mỗi
+  trang một commit). `@dw/ui`: theme v3 sáng và tối (primary sáng `#006edc`, viền ô
+  `#8c8c91`, nút viên thuốc, Table/Segmented/Breadcrumb theo bản vẽ), JetBrains Mono qua
+  next/font làm `fontFamilyCode`, `StatusTag` đọc `STATUS_TONES` theo chế độ màu,
+  `PageHeader` (breadcrumb, dòng loại, tiêu đề h1, tóm tắt, hành động), `RegionState`
+  với một bảng mã lỗi → trạng thái (403, gói, 404, xung đột, 500 kèm `request_id`, mất
+  mạng). `lib/dates.ts` giờ trước, theo `Asia/Ho_Chi_Minh`, "(giờ Việt Nam)";
+  `lib/search.ts` tìm bỏ dấu; `<html lang="vi">`; bỏ các luật bảng không layer trong
+  `globals.css` (ui-quality mục 11). Navbar: ai chỉ tới Supply Chain và không quản trị
+  thấy menu của context cùng trang Duyệt (BGĐ quyết ở đó), thương hiệu "Digital Worker ·
+  Supply Chain". Trang: danh sách và chi tiết Hồ sơ PO (dải tóm tắt bước/SLA/NCC/chờ
+  duyệt, "Máy đọc" và trích dẫn ở cập nhật NCC, "AI viết" ở phân tích trễ), danh sách và
+  chi tiết hồ sơ phát triển SP, thẻ Chứng từ, Cần chú ý, Control Tower và thanh hỏi, Bản
+  tin hôm nay và tóm tắt AI, Việc cần làm, `/approvals` (chỉ giao diện; logic khóa giữ
+  nguyên, nút đổi tên "Duyệt"/"Từ chối"). Nhãn trạng thái vẫn một chủ:
+  `CASE_STATE_LABEL`, `PRODUCT_DEV_STATE_LABEL`; test so từng nhãn với bảng của
+  `CONTEXT.md`. Lệnh: `make lint` xanh; `make typecheck` xanh (mypy 476 file, tsc 4 gói);
+  `make test-unit` 1920 passed, 3 skipped; `pnpm --filter @dw/web exec vitest run` 30
+  file, 283 test xanh (trước: 22 file, 125); `pnpm --filter @dw/web build` biên dịch,
+  kiểm kiểu và dựng 26 trang, rồi dừng ở bước chép standalone vì EPERM symlink trên
+  Windows (đã biết). Đã thử đột biến: đổi một nhãn, một tông tối, bỏ khóa mất mạng ở Việc
+  cần làm, bỏ `permission_denied` khỏi bảng, bỏ khóa Duyệt: mỗi cái làm test đỏ.
+  Chưa đạt, nên chưa `resolved`: tiêu chí Playwright (320 px, hai phía `lg`,
+  `getByRole` tiếng Việt) chưa viết và chưa chạy, cần stack đang chạy; không có
+  Playwright project theo bề rộng. Dữ liệu API không có nên không vẽ: số đếm trên tab
+  theo trạng thái và khung "Cần xử lý" ở trang danh sách (API phân trang keyset, không
+  trả số theo trạng thái); bảng không chuyển thành thẻ dưới ~1100 px (cuộn ngang, cột
+  phụ ẩn theo `responsive`).

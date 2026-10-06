@@ -8,6 +8,10 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { POCase, Page } from "@dw/contracts";
 
+// antd's Table and Select render slowly under jsdom on Windows; the default
+// 5 s budget measured too tight for a whole page.
+vi.setConfig({ testTimeout: 30_000 });
+
 vi.mock("../../../lib/auth/auth-context", () => ({
   useAuth: () => ({ active: { workspaceId: "ws-A" } }),
 }));
@@ -74,7 +78,7 @@ describe("PO cases list, filtered from the URL", () => {
     const replace = vi.spyOn(window.history, "replaceState");
     render(<POCasesPage />);
 
-    const clear = await screen.findByRole("button", { name: "Xoá bộ lọc" });
+    const clear = await screen.findByRole("button", { name: "Xóa bộ lọc" });
     clear.focus();
     fireEvent.click(clear);
 

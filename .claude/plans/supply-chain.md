@@ -67,7 +67,7 @@ means platform code, an upstream candidate (ADR 0011).
 | S6    | `stage-1/issues/06-sla-by-category-and-pic-routing.md`                  | no      | ready-for-agent | S5                               |
 | S7    | `stage-1/issues/07-stage-1-evals.md`                                    | no      | ready-for-agent | S6                               |
 | PK    | `packaging-design/issues/01-colour-packaging-and-pre-production.md`     | no      | ready-for-agent | P, D                             |
-| W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md` (E-HSDT v3 look)   | no      | in progress     | P                                |
+| W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md` (E-HSDT v3 look)   | no      | ready-for-agent | P; Playwright viewports owed     |
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                        | yes     | ready-for-agent | ENV, U                           |
 | H2    | `hosting/issues/02-live-domain.md`                                      | —       | ready-for-human | H                                |
 

@@ -5,17 +5,10 @@ import type {
   GroundedField,
   POCase,
 } from "@dw/contracts";
-import {
-  Badge,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@dw/ui";
+import { Flex, Table, Typography, type TableColumnsType } from "antd";
+import { StatusTag } from "@dw/ui";
 import { poCasesHref } from "../../lib/supply-chain/po-case-filter";
-import { CASE_STATE_LABEL, CaseStateBadge } from "./case-state-badge";
+import { CASE_STATE_LABEL, CaseStateTag } from "./case-state-badge";
 
 /**
  * Renders one command-bar answer — structured data, never model markup.
@@ -29,8 +22,8 @@ import { CASE_STATE_LABEL, CaseStateBadge } from "./case-state-badge";
  */
 export function CaseQueryAnswer({ answer }: { answer: AIWorkResponse }) {
   return (
-    <div className="space-y-3">
-      <p className="text-sm font-medium">{summary(answer)}</p>
+    <Flex vertical gap="small">
+      <Typography.Text strong>{summary(answer)}</Typography.Text>
       <Understood answer={answer} />
       {answer.outcome === "supplier_ambiguous" && (
         <SupplierCandidates answer={answer} />
@@ -38,7 +31,7 @@ export function CaseQueryAnswer({ answer }: { answer: AIWorkResponse }) {
       {answer.data_view && (
         <DataViewBlock view={answer.data_view} answer={answer} />
       )}
-    </div>
+    </Flex>
   );
 }
 
@@ -148,19 +141,15 @@ function Understood({ answer }: { answer: AIWorkResponse }) {
     });
   if (parts.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-      <span>Hiểu là:</span>
+    <Flex wrap gap="small" align="center">
+      <Typography.Text type="secondary">Hiểu là:</Typography.Text>
       {parts.map((part) => (
-        <Badge key={part.label} variant="secondary">
+        <StatusTag key={part.label} tone="gray">
           {part.label}
-          {part.quote && (
-            <span className="ml-1 font-normal opacity-70">
-              (từ “{part.quote}”)
-            </span>
-          )}
-        </Badge>
+          {part.quote && ` (từ “${part.quote}”)`}
+        </StatusTag>
       ))}
-    </div>
+    </Flex>
   );
 }
 
@@ -176,7 +165,7 @@ function SupplierCandidates({ answer }: { answer: AIWorkResponse }) {
   const shown = answer.candidates.slice(0, MAX_CANDIDATES_SHOWN);
   const hidden = answer.candidates.length - shown.length;
   return (
-    <ul className="flex flex-wrap items-center gap-2">
+    <ul className="m-0 flex list-none flex-wrap items-center gap-3 p-0">
       {shown.map((name) => (
         <li key={name}>
           <Link
@@ -185,15 +174,16 @@ function SupplierCandidates({ answer }: { answer: AIWorkResponse }) {
               state: understood.state ?? undefined,
               activeOnly: understood.active_only,
             })}
-            className="text-sm font-medium hover:underline"
           >
             {name}
           </Link>
         </li>
       ))}
       {hidden > 0 && (
-        <li className="text-sm text-muted-foreground">
-          và {hidden} nhà cung cấp khác — hỏi cụ thể hơn để thu hẹp.
+        <li>
+          <Typography.Text type="secondary">
+            và {hidden} nhà cung cấp khác — hỏi cụ thể hơn để thu hẹp.
+          </Typography.Text>
         </li>
       )}
     </ul>
@@ -227,13 +217,12 @@ function DataViewBlock({
       );
     case "case_link":
       return (
-        <Link
-          href={`/supply-chain/po-cases/${view.case.id}`}
-          className="flex items-center gap-2 text-sm font-medium hover:underline"
-        >
-          Mở case {view.case.po_reference}
-          <CaseStateBadge state={view.case.state} />
-        </Link>
+        <Flex gap="small" align="center">
+          <Link href={`/supply-chain/po-cases/${view.case.id}`}>
+            Mở case {view.case.po_reference}
+          </Link>
+          <CaseStateTag state={view.case.state} />
+        </Flex>
       );
     default: {
       const unreachable: never = view;
@@ -253,42 +242,38 @@ function CaseRows({
   hasMore: boolean;
   filtered: boolean;
 }) {
+  const columns: TableColumnsType<POCase> = [
+    {
+      title: "Hồ sơ PO",
+      key: "case",
+      render: (_: unknown, row) => (
+        <Link href={`/supply-chain/po-cases/${row.id}`}>
+          {row.po_reference}
+        </Link>
+      ),
+    },
+    { title: "NCC", dataIndex: "supplier_name" },
+    {
+      title: "Trạng thái",
+      key: "state",
+      render: (_: unknown, row) => <CaseStateTag state={row.state} />,
+    },
+  ];
   return (
-    <div className="space-y-2">
+    <Flex vertical gap="small" align="start">
       {rows.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>PO reference</TableHead>
-              <TableHead>Nhà cung cấp</TableHead>
-              <TableHead>Trạng thái</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="font-medium">
-                  <Link
-                    href={`/supply-chain/po-cases/${row.id}`}
-                    className="hover:underline"
-                  >
-                    {row.po_reference}
-                  </Link>
-                </TableCell>
-                <TableCell>{row.supplier_name}</TableCell>
-                <TableCell>
-                  <CaseStateBadge state={row.state} />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <Table<POCase>
+          rowKey="id"
+          size="small"
+          pagination={false}
+          scroll={{ x: "max-content" }}
+          columns={columns}
+          dataSource={rows}
+          className="w-full"
+        />
       )}
       {fullList && (
-        <Link
-          href={fullList}
-          className="text-sm font-medium text-primary hover:underline"
-        >
+        <Link href={fullList}>
           {hasMore && filtered
             ? "Xem tất cả case khớp"
             : hasMore
@@ -296,6 +281,6 @@ function CaseRows({
               : "Mở trong danh sách PO cases"}
         </Link>
       )}
-    </div>
+    </Flex>
   );
 }

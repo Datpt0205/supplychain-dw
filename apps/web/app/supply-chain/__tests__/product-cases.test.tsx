@@ -529,7 +529,7 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
         /Chờ người có quyền BGĐ \(supply_chain\.approve\.bod\) duyệt/,
       ),
     ).toBeTruthy();
-    const link = screen.getByRole("link", { name: "Mở trang Phê duyệt" });
+    const link = screen.getByRole("link", { name: "Mở trang Duyệt" });
     expect(link.getAttribute("href")).toBe("/approvals");
     expect(screen.queryByText(/chưa có trên hệ thống/)).toBeNull();
     // The page renders one button per action the server offers, so it cannot
@@ -557,9 +557,7 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
       await screen.findByText("Mẫu đã đạt; chưa trình được BGĐ."),
     ).toBeTruthy();
     expect(screen.getByText(/Hệ thống tự trình lại/)).toBeTruthy();
-    expect(
-      screen.queryByRole("link", { name: "Mở trang Phê duyệt" }),
-    ).toBeNull();
+    expect(screen.queryByRole("link", { name: "Mở trang Duyệt" })).toBeNull();
   });
 
   it("tells the tester when the review was not raised after a pass", async () => {

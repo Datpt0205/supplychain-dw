@@ -151,32 +151,14 @@ html {
   scrollbar-gutter: stable;
 }
 
-/* Calm, consistent application surfaces.
-
-   These restyle the shadcn card and table, and stay unlayered so they keep
-   beating those components' own utilities, as before. Unlayered also beats
-   antd: the change that adds the first antd Table deletes the table rules here
-   with the phone block's (ui-quality). */
+/* Calm, consistent application surfaces for the shadcn cards drawn before
+   antd. Unlayered, so they keep beating those components' own utilities. The
+   table rules that stood here went with the Supply Chain pages' antd Tables
+   (ui-quality §11): unlayered, they restyled every antd table's head and rows. */
 main section,
 main .rounded-2xl.border.bg-card {
   border-color: var(--ant-color-border-secondary);
   box-shadow: var(--ant-box-shadow-tertiary);
-}
-
-main table thead {
-  background: var(--ant-color-fill-alter);
-}
-main table th {
-  height: 2.75rem;
-  letter-spacing: 0.055em;
-}
-main table tbody tr {
-  transition:
-    background-color 0.18s ease,
-    box-shadow 0.18s ease;
-}
-main table tbody tr:hover {
-  background: var(--ant-color-fill-alter);
 }
 
 /* App-wide scrollbars (BA 2026-08-25): thin, both axes, and invisible until
@@ -286,60 +268,14 @@ textarea {
   }
 }
 
-/* Phones: antd's xs, below Tailwind's (now antd's) `sm`.
+/* Phones: antd's xs, below Tailwind's (now antd's) `sm`. The table-to-card
+   rules that stood here went with the first antd Tables (ui-quality §11): they
+   were unlayered and `!important`, so they flattened antd's `scroll.x`. A wide
+   table scrolls inside its own container instead.
 
-   Unlayered, as before antd, so the table-to-card rules beat the shadcn
-   table's own utilities without `!important`; the few that had it keep it,
-   and an `!`-utility still beats those. In a layer they would need
-   `!important` on everything, and in the base layer that outranks antd and
-   every utility, `!` included. They go with the first antd Table, whose
-   `scroll.x` they would flatten (ui-quality). */
+   16px stops iOS zooming into a focused field; it beats antd's control font
+   size on purpose. */
 @media (width < theme(--breakpoint-sm)) {
-  main table {
-    min-width: 0 !important;
-  }
-  main table thead {
-    display: none;
-  }
-  main table tbody {
-    display: grid;
-    gap: 0.625rem;
-    padding: 0.625rem;
-  }
-  main table tbody tr {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.5rem 1rem;
-    border: 1px solid var(--border) !important;
-    border-radius: 1rem;
-    padding: 0.875rem;
-    background: var(--card);
-  }
-  main table tbody tr:has(.animate-pulse) {
-    display: block;
-  }
-  main table tbody td {
-    padding: 0 !important;
-    min-width: 0;
-  }
-  main table tbody td:first-child {
-    grid-column: 1 / -1;
-    font-size: 0.9375rem;
-  }
-  main table tbody td:not(:first-child) {
-    font-size: 0.75rem;
-  }
-  main table tbody td:last-child {
-    text-align: right;
-  }
-  main .overflow-x-auto:has(> table) {
-    overflow: visible;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-  /* 16px stops iOS zooming into a focused field; it stays after the table
-     rules go, and it beats antd's control font size on purpose. */
   input,
   select,
   textarea {

@@ -1,10 +1,22 @@
-import type { LucideIcon } from "lucide-react";
+import type { ComponentType } from "react";
+
+/** An icon component: lucide's for the platform's pages, antd's for a
+ * context's. Either takes a class name. */
+export type NavIcon = ComponentType<{ className?: string }>;
+
+/** The bounded context a page belongs to, declared by the context's own
+ * manifest (see `barNav`). */
+export interface NavContext {
+  key: string;
+  /** What the brand says beside "Digital Worker" in that context's bar. */
+  product: string;
+}
 
 export interface NavItem {
   href: string;
   label: string;
   hint: string;
-  icon: LucideIcon;
+  icon: NavIcon;
   exact?: boolean;
   /** Scope required to see this item (omit = always visible). */
   scope?: string;
@@ -17,4 +29,11 @@ export interface NavItem {
   badgeKey?: string;
   /** Shown only to a Platform Operator (ADR-002), regardless of scope/role. */
   operatorOnly?: boolean;
+  /** Set on a bounded context's pages. */
+  context?: NavContext;
+  /** Administers the tenant or the platform (see `barNav`). */
+  administration?: boolean;
+  /** A platform page a context's people work in too (the approvals inbox),
+   * kept in a context's bar (see `barNav`). */
+  inContextBar?: boolean;
 }

@@ -83,9 +83,11 @@ async function renderWith(scopes: string[], item: Approval) {
   render(<ApprovalsPage />);
   return {
     approve: (await screen.findByRole("button", {
-      name: /Approve/,
+      name: "Duyệt",
     })) as HTMLButtonElement,
-    reject: screen.getByRole("button", { name: /Reject/ }) as HTMLButtonElement,
+    reject: screen.getByRole("button", {
+      name: "Từ chối",
+    }) as HTMLButtonElement,
   };
 }
 
@@ -151,5 +153,47 @@ describe("/approvals and the stamped scope (ADR 0020)", () => {
     );
 
     expect(approve.disabled).toBe(false);
+  });
+});
+
+describe("/approvals, each state of the list", () => {
+  it("says nothing is waiting when nothing is", async () => {
+    session = { workspaceId: crypto.randomUUID(), scopes: ["approvals.read"] };
+    listApprovals.mockResolvedValue({ items: [], next_cursor: null });
+    render(<ApprovalsPage />);
+    expect(
+      await screen.findByText(/Không có yêu cầu nào chờ quyết/),
+    ).toBeTruthy();
+  });
+
+  it("shows the server's sentence when the list fails, not its code", async () => {
+    session = { workspaceId: crypto.randomUUID(), scopes: ["approvals.read"] };
+    const { ApiError } = await import("@dw/api-client");
+    listApprovals.mockRejectedValue(
+      new ApiError(500, {
+        code: "internal",
+        message: "Máy chủ đang bận",
+        details: {},
+      }),
+    );
+    render(<ApprovalsPage />);
+    expect(await screen.findByText("Máy chủ đang bận")).toBeTruthy();
+    expect(screen.queryByText(/internal/)).toBeNull();
+  });
+
+  it("shows a pending request's status, reason and time in Vietnam", async () => {
+    session = { workspaceId: crypto.randomUUID(), scopes: ["approvals.read"] };
+    listApprovals.mockResolvedValue({
+      items: [approval({ required_scope: null })],
+      next_cursor: null,
+    });
+    render(<ApprovalsPage />);
+    expect(await screen.findByText("Chờ quyết")).toBeTruthy();
+    expect(screen.getByText("BGĐ duyệt phát triển sản phẩm")).toBeTruthy();
+    expect(
+      screen.getByText(/15:00 05\/10\/2026 \(giờ Việt Nam\)/),
+    ).toBeTruthy();
+    // Without approvals.decide the request is read-only, and says so.
+    expect(screen.getByText(/chỉ để xem/)).toBeTruthy();
   });
 });

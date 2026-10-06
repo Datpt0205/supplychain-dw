@@ -18,12 +18,12 @@ import type { TableColumnsType, UploadFile } from "antd";
 import {
   DownloadOutlined,
   PaperClipOutlined,
-  ReloadOutlined,
   UploadOutlined,
 } from "@ant-design/icons";
 import type { CaseDocument, DocumentType } from "@dw/api-client";
-import { formatDateTime } from "../../lib/dates";
-import { errorMessage } from "../../lib/error-message";
+import { RegionState, type RegionFailure } from "@dw/ui";
+import { formatDateTime, VN_TIME } from "../../lib/dates";
+import { errorMessage, regionFailure } from "../../lib/error-message";
 import { newIdempotencyKey } from "../../lib/idempotency-key";
 import { useOnline } from "../../lib/hooks/use-online";
 import { apiClient } from "../../lib/session";
@@ -102,7 +102,7 @@ function saveBlob(blob: Blob, filename: string): void {
 
 type ListState =
   | { kind: "loading" }
-  | { kind: "error"; message: string }
+  | { kind: "error"; failure: RegionFailure }
   | { kind: "ready"; documents: CaseDocument[] };
 
 /** One press's identity: a retry of the same type and file reuses its key. */
@@ -146,7 +146,7 @@ export function CaseDocumentsCard({
     try {
       setList({ kind: "ready", documents: await api.list(caseId) });
     } catch (error) {
-      setList({ kind: "error", message: errorMessage(error) });
+      setList({ kind: "error", failure: regionFailure(error) });
     }
   }, [api, caseId]);
 
@@ -206,7 +206,9 @@ export function CaseDocumentsCard({
     {
       title: "Phiên bản",
       dataIndex: "version",
-      render: (value: number) => `v${value}`,
+      render: (value: number) => (
+        <Typography.Text code>{`v${value}`}</Typography.Text>
+      ),
     },
     {
       title: "Tên file",
@@ -224,7 +226,7 @@ export function CaseDocumentsCard({
       render: (value: number) => formatSize(value),
     },
     {
-      title: "Tải lên lúc",
+      title: `Tải lên lúc (${VN_TIME})`,
       dataIndex: "uploaded_at",
       render: (value: string) => formatDateTime(value),
     },
@@ -273,25 +275,18 @@ export function CaseDocumentsCard({
     >
       <Flex vertical gap="middle">
         {list.kind === "error" ? (
-          <Alert
-            type="error"
-            showIcon
-            message={list.message}
-            action={
-              <Button
-                size="small"
-                icon={<ReloadOutlined aria-hidden />}
-                onClick={() => void load()}
-              >
-                Thử lại
-              </Button>
-            }
+          <RegionState
+            compact
+            failure={list.failure}
+            what="chứng từ"
+            onRetry={() => void load()}
           />
         ) : (
           <Table<CaseDocument>
             rowKey="id"
             size="small"
             pagination={false}
+            sticky
             scroll={{ x: "max-content" }}
             loading={list.kind === "loading"}
             columns={columns}
@@ -356,7 +351,7 @@ export function CaseDocumentsCard({
           )}
         </Flex>
         {lockReason && <Typography.Text>{lockReason}</Typography.Text>}
-        {uploadError && <Alert type="error" showIcon message={uploadError} />}
+        {uploadError && <Alert type="error" showIcon title={uploadError} />}
         <Typography.Text type="secondary">
           Nhận PDF, JPEG, PNG, XLSX, DOCX, EML, MSG. Mỗi lần tải lên cùng loại
           là một phiên bản mới; phiên bản cũ vẫn giữ.

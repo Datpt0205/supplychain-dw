@@ -1,22 +1,29 @@
 import type { MissingUpdateStatus } from "@dw/contracts";
-import { Badge, type BadgeProps } from "@dw/ui";
+import { StatusTag, type StatusTone } from "@dw/ui";
 
-const LABEL: Record<MissingUpdateStatus["status"], string> = {
-  on_track: "Có cập nhật gần đây",
-  reminder_due: "Cần nhắc nhở nhà cung cấp",
-  escalation_due: "Cần leo thang",
+const MISSING_UPDATE: Record<
+  MissingUpdateStatus["status"],
+  { label: string; tone: StatusTone }
+> = {
+  on_track: { label: "Có cập nhật gần đây", tone: "ok" },
+  reminder_due: { label: "Cần nhắc NCC", tone: "warn" },
+  escalation_due: { label: "Cần leo thang", tone: "err" },
 };
 
-const VARIANT: Record<MissingUpdateStatus["status"], BadgeProps["variant"]> = {
-  on_track: "success",
-  reminder_due: "warning",
-  escalation_due: "destructive",
-};
+export function missingUpdateLabel(
+  status: MissingUpdateStatus["status"],
+): string {
+  return MISSING_UPDATE[status].label;
+}
 
-export function MissingUpdateBadge({
+export function MissingUpdateTag({
   status,
 }: {
   status: MissingUpdateStatus["status"];
 }) {
-  return <Badge variant={VARIANT[status]}>{LABEL[status]}</Badge>;
+  return (
+    <StatusTag tone={MISSING_UPDATE[status].tone}>
+      {MISSING_UPDATE[status].label}
+    </StatusTag>
+  );
 }

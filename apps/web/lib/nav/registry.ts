@@ -32,10 +32,12 @@ const platformNav: NavItem[] = [
   },
   {
     href: "/approvals",
-    label: "Approvals",
-    hint: "Side effects waiting for a human decision",
+    label: "Duyệt",
+    hint: "Yêu cầu đang chờ một người quyết",
     icon: ClipboardCheck,
     scope: "approvals.read",
+    // BGĐ decides a product case's step 6 here.
+    inContextBar: true,
   },
   {
     href: "/knowledge",
@@ -74,6 +76,7 @@ const platformNav: NavItem[] = [
     icon: ShieldCheck,
     scope: "platform.members.read",
     exact: true,
+    administration: true,
   },
   {
     href: "/admin/workspaces",
@@ -81,6 +84,7 @@ const platformNav: NavItem[] = [
     hint: "The tenant's workspaces (departments)",
     icon: Building2,
     scope: "platform.workspaces.write",
+    administration: true,
   },
   {
     href: "/admin/hierarchy",
@@ -88,6 +92,7 @@ const platformNav: NavItem[] = [
     hint: "Who reports to whom in the workspace",
     icon: Network,
     scope: "platform.members.write",
+    administration: true,
   },
   {
     href: "/admin/separation-of-duties",
@@ -95,6 +100,7 @@ const platformNav: NavItem[] = [
     hint: "Duties no one person may hold, and this tenant's waivers",
     icon: Scale,
     scope: "platform.roles.read",
+    administration: true,
   },
   {
     href: "/admin/settings",
@@ -102,6 +108,7 @@ const platformNav: NavItem[] = [
     hint: "Tenant name, timezone and language",
     icon: Settings,
     scope: "platform.tenant.settings.write",
+    administration: true,
   },
   {
     href: "/admin/feedback",
@@ -109,6 +116,7 @@ const platformNav: NavItem[] = [
     hint: "What members reported, with their screenshots",
     icon: MessageSquarePlus,
     scope: "platform.members.read",
+    administration: true,
   },
   {
     href: "/platform",
@@ -116,6 +124,7 @@ const platformNav: NavItem[] = [
     hint: "Tenants, org admins and operators",
     icon: Building,
     operatorOnly: true,
+    administration: true,
   },
 ];
 

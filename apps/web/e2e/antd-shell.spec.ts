@@ -13,7 +13,7 @@ import { expect, test, type Page } from "@playwright/test";
 const FIXTURE = "/dev-login/layer-check";
 
 // What the browser reports for the theme's colours (@dw/ui theme.ts).
-const LIGHT_PRIMARY = "rgb(0, 113, 227)";
+const LIGHT_PRIMARY = "rgb(0, 110, 220)";
 const LIGHT_LINK = "rgb(0, 96, 192)";
 const LIGHT_LAYOUT = "rgb(245, 245, 247)";
 const DARK_LAYOUT = "rgb(0, 0, 0)";

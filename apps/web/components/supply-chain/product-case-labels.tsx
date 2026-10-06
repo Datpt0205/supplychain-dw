@@ -1,6 +1,6 @@
 "use client";
 
-import { Tag } from "antd";
+import { StatusTag, type StatusTone } from "@dw/ui";
 import {
   caseDutySchema,
   type CaseDuty,
@@ -29,32 +29,33 @@ export const PRODUCT_DEV_STATE_LABEL: Record<ProductDevState, string> = {
 };
 
 /**
- * Each state's antd status preset: a theme token, never a colour of its own.
- * Text always carries the meaning; the colour only groups (ui-quality §7).
+ * Each state's step of the 17 (CONTEXT.md's "Bước, ghi chú" column; null for
+ * an end or an interruption) and its tone. A step in progress is blue; the
+ * wait for BGĐ is its own tone, a decision pending; only an interruption asks
+ * for attention. The label always carries the meaning (ui-quality §7).
  */
-const STATE_STATUS: Record<
+export const PRODUCT_DEV_STATE_META: Record<
   ProductDevState,
-  "default" | "processing" | "success" | "warning" | "error"
+  { step: number | null; tone: StatusTone }
 > = {
-  proposed: "default",
-  sample_requested: "processing",
-  sample_testing: "processing",
-  revision_requested: "warning",
-  pending_bod_review: "success",
-  profile_in_progress: "processing",
-  waiting_external: "warning",
-  blocked: "error",
-  manual_review: "warning",
-  cancelled: "default",
+  proposed: { step: 1, tone: "pri" },
+  sample_requested: { step: 2, tone: "pri" },
+  sample_testing: { step: 3, tone: "pri" },
+  revision_requested: { step: 4, tone: "gold" },
+  pending_bod_review: { step: 6, tone: "geek" },
+  profile_in_progress: { step: 7, tone: "pri" },
+  waiting_external: { step: null, tone: "gold" },
+  blocked: { step: null, tone: "err" },
+  manual_review: { step: null, tone: "warn" },
+  cancelled: { step: null, tone: "gray" },
 };
 
-/** The case's state as a tag. Built here with antd's `Tag` until `@dw/ui`
- * ships its status tag (antd-shell 07/08); then this swaps for that. */
+/** The case's state as the shared status tag. */
 export function ProductDevStateTag({ state }: { state: ProductDevState }) {
   return (
-    <Tag color={STATE_STATUS[state]} bordered={false}>
+    <StatusTag tone={PRODUCT_DEV_STATE_META[state].tone}>
       {PRODUCT_DEV_STATE_LABEL[state]}
-    </Tag>
+    </StatusTag>
   );
 }
 
@@ -84,6 +85,23 @@ export const SAMPLE_RESULT_LABEL: Record<SampleResult, string> = {
   needs_revision: "Cần chỉnh sửa",
   rejected: "Hủy",
 };
+
+const SAMPLE_RESULT_TONE: Record<SampleResult, StatusTone> = {
+  passed: "ok",
+  needs_revision: "gold",
+  rejected: "err",
+};
+
+/** A round's result; a round still open is being tested. */
+export function SampleResultTag({ result }: { result: SampleResult | null }) {
+  return result ? (
+    <StatusTag tone={SAMPLE_RESULT_TONE[result]}>
+      {SAMPLE_RESULT_LABEL[result]}
+    </StatusTag>
+  ) : (
+    <StatusTag tone="pri">Đang test</StatusTag>
+  );
+}
 
 /** Each duty in the glossary's words (`CONTEXT.md`, Duty). */
 export const CASE_DUTY_LABEL: Record<CaseDuty, string> = {

@@ -62,7 +62,7 @@ describe("Việc cần làm", () => {
     expect(await screen.findByText("PO-2026-007")).toBeTruthy();
     expect(screen.queryByText("PO-2026-008")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Tất cả (2)" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Tất cả (2)" }));
     expect(await screen.findByText("PO-2026-008")).toBeTruthy();
     expect(screen.getByText("3 ngày ở bước đặt cọc, hạn 1 ngày")).toBeTruthy();
     // Only the caller's own can be closed from here.
@@ -92,5 +92,20 @@ describe("Việc cần làm", () => {
 
     expect(await screen.findByText(/Không tải được việc cần làm/)).toBeTruthy();
     expect(screen.queryByText("Không có việc nào")).toBeNull();
+  });
+
+  it("locks closing while offline, with the reason in words", async () => {
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    listFollowUps.mockResolvedValue([followUp({})]);
+    render(<FollowUpsPage />);
+
+    const close = await screen.findByRole("button", { name: "Đã xử lý" });
+    expect((close as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      screen.getByText("Không có kết nối mạng. Kết nối lại rồi thử lại."),
+    ).toBeTruthy();
+    fireEvent.click(close);
+    expect(closeFollowUp).not.toHaveBeenCalled();
+    online.mockRestore();
   });
 });

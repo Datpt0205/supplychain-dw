@@ -12,33 +12,38 @@ import {
   Form,
   Input,
   Modal,
-  Result,
+  Segmented,
   Select,
   Skeleton,
-  Switch,
   Table,
+  Tag,
   Tooltip,
   Typography,
 } from "antd";
 import type { TableColumnsType } from "antd";
-import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { CloseOutlined, PlusOutlined } from "@ant-design/icons";
+import { PageHeader, RegionState, type RegionFailure } from "@dw/ui";
 import {
   productDevStateSchema,
   type ProductCase,
   type ProductDevState,
 } from "@dw/contracts";
+import { stepLabel } from "../../../components/supply-chain/case-state-badge";
+import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
 import {
   PRODUCT_DEV_STATE_LABEL,
+  PRODUCT_DEV_STATE_META,
   ProductDevStateTag,
   dutyLock,
   dutyScope,
 } from "../../../components/supply-chain/product-case-labels";
 import { useAuth } from "../../../lib/auth/auth-context";
-import { formatDateTime } from "../../../lib/dates";
+import { formatDateTime, VN_TIME } from "../../../lib/dates";
 import { memberName, useWorkspaceMembers } from "../../../lib/directory";
-import { errorCode, errorMessage } from "../../../lib/error-message";
+import { errorMessage, regionFailure } from "../../../lib/error-message";
 import { useOnline } from "../../../lib/hooks/use-online";
 import { newIdempotencyKey } from "../../../lib/idempotency-key";
+import { matches } from "../../../lib/search";
 import { apiClient } from "../../../lib/session";
 
 /**
@@ -84,7 +89,7 @@ const STATE_OPTIONS = productDevStateSchema.options.map((value) => ({
 
 type ListState =
   | { kind: "loading" }
-  | { kind: "error"; message: string; code: string | null }
+  | { kind: "error"; failure: RegionFailure }
   | {
       kind: "ready";
       items: ProductCase[];
@@ -107,46 +112,70 @@ function ProductCasesView() {
   };
   const filtered = filter.state !== undefined || filter.mine;
 
+  const refocus = () => document.getElementById(STATE_SELECT_ID)?.focus();
+  const clearAll = () => {
+    apply({ mine: false });
+    refocus();
+  };
+
   return (
     <div className="mx-auto max-w-6xl">
+      <PageHeader
+        breadcrumb={supplyChainCrumbs("Phát triển SP")}
+        title="Hồ sơ phát triển sản phẩm"
+        description="Sản phẩm Cung ứng đề xuất ở bước 1, qua lấy mẫu, R&D test mẫu và BGĐ duyệt (bước 6) tới BM04. Mới nhất trước."
+        extra={<ProposeButton onOpen={() => setProposing(true)} />}
+      />
       <Flex vertical gap="middle">
-        <Flex justify="space-between" align="start" wrap gap="middle">
-          <div>
-            <Typography.Title level={3}>
-              Hồ sơ phát triển sản phẩm
-            </Typography.Title>
-            <Typography.Paragraph>
-              Sản phẩm Cung ứng đề xuất ở bước 1, qua lấy mẫu và test mẫu tới
-              khi chờ BGĐ duyệt.
-            </Typography.Paragraph>
-          </div>
-          <ProposeButton onOpen={() => setProposing(true)} />
-        </Flex>
-
         <Flex wrap gap="middle" align="center">
+          <Segmented<"all" | "mine">
+            aria-label="Hồ sơ của ai"
+            value={filter.mine ? "mine" : "all"}
+            disabled={principalId === null}
+            options={[
+              { value: "all", label: "Tất cả hồ sơ" },
+              { value: "mine", label: "Tôi là PIC" },
+            ]}
+            onChange={(value) => apply({ ...filter, mine: value === "mine" })}
+          />
           <Select<ProductDevState | "">
+            id={STATE_SELECT_ID}
             aria-label="Lọc theo trạng thái"
             className="min-w-56"
             value={filter.state ?? ""}
-            options={[
-              { value: "", label: "Tất cả trạng thái" },
-              ...STATE_OPTIONS,
-            ]}
+            options={[{ value: "", label: "Mọi trạng thái" }, ...STATE_OPTIONS]}
             onChange={(value) =>
               apply({ ...filter, state: value === "" ? undefined : value })
             }
             virtual={false}
           />
-          <Flex gap="small" align="center">
-            <Switch
-              id="product-cases-mine"
-              checked={filter.mine}
-              disabled={principalId === null}
-              onChange={(checked) => apply({ ...filter, mine: checked })}
-            />
-            <label htmlFor="product-cases-mine">Chỉ hồ sơ tôi là PIC</label>
-          </Flex>
         </Flex>
+        {filtered && (
+          <Flex wrap gap="small" align="center">
+            <Typography.Text>Đang lọc:</Typography.Text>
+            {filter.mine && (
+              <FilterChip
+                label="Tôi là PIC"
+                onRemove={() => {
+                  apply({ ...filter, mine: false });
+                  refocus();
+                }}
+              />
+            )}
+            {filter.state && (
+              <FilterChip
+                label={`Trạng thái: ${PRODUCT_DEV_STATE_LABEL[filter.state]}`}
+                onRemove={() => {
+                  apply({ ...filter, state: undefined });
+                  refocus();
+                }}
+              />
+            )}
+            <Button type="link" size="small" onClick={clearAll}>
+              Xóa tất cả
+            </Button>
+          </Flex>
+        )}
 
         {/* Keyed on the filter: a new filter is a fresh list, never page two
             of the old one spliced on. */}
@@ -155,12 +184,36 @@ function ProductCasesView() {
           state={filter.state}
           picUserId={filter.mine ? (principalId ?? undefined) : undefined}
           filtered={filtered}
-          onClearFilters={() => apply({ mine: false })}
+          onClearFilters={clearAll}
           onPropose={() => setProposing(true)}
         />
       </Flex>
       <ProposeModal open={proposing} onClose={() => setProposing(false)} />
     </div>
+  );
+}
+
+const STATE_SELECT_ID = "product-cases-state";
+
+/** An active filter as a chip, removed by its own button. */
+function FilterChip({
+  label,
+  onRemove,
+}: {
+  label: string;
+  onRemove: () => void;
+}) {
+  return (
+    <Tag className="me-0">
+      {label}
+      <Button
+        type="text"
+        size="small"
+        icon={<CloseOutlined aria-hidden />}
+        aria-label={`Bỏ lọc ${label}`}
+        onClick={onRemove}
+      />
+    </Tag>
   );
 }
 
@@ -305,7 +358,7 @@ function ProposeModal({
           <Alert
             type="error"
             showIcon
-            message={`Còn ${invalid} trường cần sửa`}
+            title={`Còn ${invalid} trường cần sửa`}
           />
         )}
         <Form.Item
@@ -340,7 +393,7 @@ function ProposeModal({
         >
           <Input />
         </Form.Item>
-        {error && <Alert type="error" showIcon message={error} />}
+        {error && <Alert type="error" showIcon title={error} />}
       </Form>
     </Modal>
   );
@@ -362,6 +415,7 @@ function ProductCaseResults({
   const members = useWorkspaceMembers();
   const { principalId } = useAuth();
   const [list, setList] = useState<ListState>({ kind: "loading" });
+  const [query, setQuery] = useState("");
 
   const loadFirst = useCallback(async () => {
     setList({ kind: "loading" });
@@ -375,11 +429,7 @@ function ProductCaseResults({
         moreError: null,
       });
     } catch (error) {
-      setList({
-        kind: "error",
-        message: errorMessage(error),
-        code: errorCode(error),
-      });
+      setList({ kind: "error", failure: regionFailure(error) });
     }
   }, [state, picUserId]);
 
@@ -409,46 +459,31 @@ function ProductCaseResults({
   };
 
   if (list.kind === "error") {
-    return list.code === "permission_denied" ? (
-      <Result
-        status="403"
-        title="Bạn chưa được xem hồ sơ phát triển sản phẩm"
-        subTitle="Cần một vai Supply Chain có quyền xem hồ sơ (supply_chain.product_case.read). Liên hệ quản trị workspace."
-      />
-    ) : (
-      <Alert
-        type="error"
-        showIcon
-        message="Không tải được danh sách hồ sơ"
-        description={list.message}
-        action={
-          <Button
-            size="small"
-            icon={<ReloadOutlined aria-hidden />}
-            onClick={() => void loadFirst()}
-          >
-            Thử lại
-          </Button>
-        }
+    return (
+      <RegionState
+        failure={list.failure}
+        what="hồ sơ phát triển sản phẩm"
+        onRetry={() => void loadFirst()}
       />
     );
   }
 
   const columns: TableColumnsType<ProductCase> = [
     {
-      title: "Mã đề xuất",
-      dataIndex: "proposal_code",
-      render: (value: string, row) => (
-        <Link href={`/supply-chain/product-cases/${row.id}`}>{value}</Link>
-      ),
-    },
-    {
-      title: "Sản phẩm",
-      dataIndex: "product_name",
-      render: (value: string) => (
-        <Typography.Text ellipsis={{ tooltip: value }} className="max-w-72">
-          {value}
-        </Typography.Text>
+      title: "Hồ sơ",
+      key: "case",
+      render: (_: unknown, row) => (
+        <Flex vertical>
+          <Link href={`/supply-chain/product-cases/${row.id}`}>
+            <Typography.Text code>{row.proposal_code}</Typography.Text>
+          </Link>
+          <Typography.Text
+            ellipsis={{ tooltip: row.product_name }}
+            className="max-w-72"
+          >
+            {row.product_name}
+          </Typography.Text>
+        </Flex>
       ),
     },
     { title: "Category", dataIndex: "category" },
@@ -467,13 +502,13 @@ function ProductCaseResults({
       title: "Trạng thái",
       dataIndex: "state",
       render: (value: ProductDevState, row) => (
-        <Flex wrap gap="small">
+        <Flex vertical gap={2} align="start">
           <ProductDevStateTag state={value} />
-          {row.interrupted_state && (
-            <Typography.Text>
-              tạm dừng tại {PRODUCT_DEV_STATE_LABEL[row.interrupted_state]}
-            </Typography.Text>
-          )}
+          <Typography.Text type="secondary">
+            {row.interrupted_state
+              ? `Tạm dừng tại ${PRODUCT_DEV_STATE_LABEL[row.interrupted_state]}`
+              : stepLabel(PRODUCT_DEV_STATE_META[value].step)}
+          </Typography.Text>
         </Flex>
       ),
     },
@@ -484,16 +519,28 @@ function ProductCaseResults({
       render: (value: number) => (value === 0 ? "Chưa có" : value),
     },
     {
-      title: "Tạo lúc",
+      title: `Tạo lúc (${VN_TIME})`,
       dataIndex: "created_at",
+      responsive: ["md"],
       render: (value: string | null) => formatDateTime(value),
     },
   ];
 
   const ready = list.kind === "ready";
   const items = ready ? list.items : [];
+  const shown = items.filter((item) =>
+    matches(query, [item.proposal_code, item.product_name, item.category]),
+  );
   return (
     <Flex vertical gap="small">
+      <Input.Search
+        allowClear
+        aria-label="Tìm theo mã đề xuất, tên sản phẩm hoặc Category"
+        placeholder="Ví dụ: noi inox"
+        className="max-w-md"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
       <Table<ProductCase>
         rowKey="id"
         size="middle"
@@ -502,10 +549,16 @@ function ProductCaseResults({
         scroll={{ x: "max-content" }}
         loading={!ready}
         columns={columns}
-        dataSource={items}
+        dataSource={shown}
         locale={{
           emptyText: !ready ? (
             " "
+          ) : items.length > 0 ? (
+            <Empty
+              description={`Không hồ sơ nào trong ${items.length} hồ sơ đã hiện khớp "${query}".`}
+            >
+              <Button onClick={() => setQuery("")}>Xóa ô tìm</Button>
+            </Empty>
           ) : filtered ? (
             <Empty description="Không có hồ sơ nào khớp bộ lọc.">
               <Button onClick={onClearFilters}>Xóa bộ lọc</Button>
@@ -523,7 +576,7 @@ function ProductCaseResults({
         <Flex justify="space-between" align="center" wrap gap="small">
           <Typography.Text role="status">
             {list.nextCursor
-              ? `Đã hiện ${items.length} hồ sơ; còn nữa.`
+              ? `Đã hiện ${items.length} hồ sơ; còn nữa. Ô tìm chỉ tìm trong hồ sơ đã hiện.`
               : `Đã hiện tất cả ${items.length} hồ sơ.`}
           </Typography.Text>
           {list.nextCursor && (
@@ -534,7 +587,7 @@ function ProductCaseResults({
         </Flex>
       )}
       {ready && list.moreError && (
-        <Alert type="error" showIcon message={list.moreError} />
+        <Alert type="error" showIcon title={list.moreError} />
       )}
     </Flex>
   );

@@ -8,13 +8,11 @@ import {
   App,
   Button,
   Card,
-  Descriptions,
   Empty,
   Flex,
   Form,
   Input,
   Modal,
-  Result,
   Select,
   Skeleton,
   Table,
@@ -23,7 +21,7 @@ import {
   Typography,
 } from "antd";
 import type { TableColumnsType } from "antd";
-import { ArrowLeftOutlined, ReloadOutlined } from "@ant-design/icons";
+import { PageHeader, RegionState, type RegionFailure } from "@dw/ui";
 import type {
   CaseDocument,
   PendingReview,
@@ -36,17 +34,28 @@ import {
   CaseDocumentsCard,
   DOC_TYPE_LABEL,
 } from "../../../../components/supply-chain/case-documents-card";
+import { stepLabel } from "../../../../components/supply-chain/case-state-badge";
+import {
+  CaseSummary,
+  type SummaryCell,
+} from "../../../../components/supply-chain/case-summary";
+import { supplyChainCrumbs } from "../../../../components/supply-chain/crumbs";
 import {
   PRODUCT_ACTION_LABEL,
   PRODUCT_DEV_STATE_LABEL,
+  PRODUCT_DEV_STATE_META,
   ProductDevStateTag,
-  SAMPLE_RESULT_LABEL,
+  SampleResultTag,
   dutyLock,
 } from "../../../../components/supply-chain/product-case-labels";
 import { useAuth } from "../../../../lib/auth/auth-context";
-import { formatDateTime } from "../../../../lib/dates";
+import {
+  formatDateTime,
+  formatDateTimeFull,
+  VN_TIME,
+} from "../../../../lib/dates";
 import { memberName, useWorkspaceMembers } from "../../../../lib/directory";
-import { errorCode, errorMessage } from "../../../../lib/error-message";
+import { errorMessage, regionFailure } from "../../../../lib/error-message";
 import { useOnline } from "../../../../lib/hooks/use-online";
 import { newIdempotencyKey } from "../../../../lib/idempotency-key";
 import { apiClient } from "../../../../lib/session";
@@ -56,7 +65,7 @@ const OFFLINE = "Không có kết nối mạng. Kết nối lại rồi thử l�
 
 type CaseState =
   | { kind: "loading" }
-  | { kind: "error"; message: string; code: string | null }
+  | { kind: "error"; failure: RegionFailure }
   | { kind: "ready"; detail: ProductCaseDetail };
 
 /**
@@ -75,11 +84,7 @@ export default function ProductCasePage() {
     try {
       setState({ kind: "ready", detail: await apiClient().getProductCase(id) });
     } catch (error) {
-      setState({
-        kind: "error",
-        message: errorMessage(error),
-        code: errorCode(error),
-      });
+      setState({ kind: "error", failure: regionFailure(error) });
     }
   }, [id]);
 
@@ -93,67 +98,45 @@ export default function ProductCasePage() {
     setHistoryTick((tick) => tick + 1);
   };
 
+  if (state.kind !== "ready") {
+    return (
+      <div className="mx-auto max-w-6xl">
+        <PageHeader
+          breadcrumb={LIST_CRUMBS}
+          title="Hồ sơ phát triển sản phẩm"
+        />
+        <RegionState
+          loading={state.kind === "loading"}
+          failure={state.kind === "error" ? state.failure : null}
+          what="hồ sơ"
+          onRetry={() => void load()}
+          rows={8}
+          copy={{
+            forbidden: {
+              title: "Bạn chưa được xem hồ sơ phát triển sản phẩm",
+              subTitle:
+                "Cần một vai Supply Chain có quyền xem hồ sơ. Liên hệ quản trị workspace.",
+            },
+          }}
+        />
+      </div>
+    );
+  }
   return (
     <div className="mx-auto max-w-6xl">
-      <Flex vertical gap="middle">
-        <Link href="/supply-chain/product-cases">
-          <ArrowLeftOutlined aria-hidden /> Danh sách hồ sơ phát triển sản phẩm
-        </Link>
-        {state.kind === "loading" ? (
-          <Skeleton active paragraph={{ rows: 8 }} />
-        ) : state.kind === "error" ? (
-          <CaseError state={state} onRetry={() => void load()} />
-        ) : (
-          <CaseView
-            detail={state.detail}
-            historyTick={historyTick}
-            onStep={afterStep}
-          />
-        )}
-      </Flex>
+      <CaseView
+        detail={state.detail}
+        historyTick={historyTick}
+        onStep={afterStep}
+      />
     </div>
   );
 }
 
-function CaseError({
-  state,
-  onRetry,
-}: {
-  state: { message: string; code: string | null };
-  onRetry: () => void;
-}) {
-  if (state.code === "not_found") {
-    // Another tenant's or workspace's case answers not found, never forbidden.
-    return (
-      <Result
-        status="404"
-        title="Không tìm thấy hồ sơ"
-        subTitle="Hồ sơ này không có trong workspace đang mở."
-      />
-    );
-  }
-  if (state.code === "permission_denied") {
-    return (
-      <Result
-        status="403"
-        title="Bạn chưa được xem hồ sơ phát triển sản phẩm"
-        subTitle="Cần một vai Supply Chain có quyền xem hồ sơ. Liên hệ quản trị workspace."
-      />
-    );
-  }
-  return (
-    <Result
-      status="500"
-      title="Không tải được hồ sơ"
-      subTitle={state.message}
-      extra={
-        <Button icon={<ReloadOutlined aria-hidden />} onClick={onRetry}>
-          Thử lại
-        </Button>
-      }
-    />
-  );
-}
+const LIST_CRUMBS = supplyChainCrumbs({
+  title: "Phát triển SP",
+  href: "/supply-chain/product-cases",
+});
 
 function CaseView({
   detail,
@@ -170,72 +153,66 @@ function CaseView({
   const who = (userId: string | null) =>
     userId === principalId ? "Bạn" : (memberName(members, userId) ?? "—");
 
+  const step = PRODUCT_DEV_STATE_META[detail.state].step;
+  const cells: SummaryCell[] = [
+    {
+      key: "step",
+      label: "Bước",
+      value: stepLabel(step) ?? PRODUCT_DEV_STATE_LABEL[detail.state],
+      sub: detail.interrupted_state
+        ? `Tạm dừng tại ${PRODUCT_DEV_STATE_LABEL[detail.interrupted_state]}`
+        : undefined,
+    },
+    {
+      key: "round",
+      label: "Vòng mẫu",
+      value:
+        detail.sample_round === 0
+          ? "Chưa nhận mẫu"
+          : `Vòng ${detail.sample_round}`,
+    },
+    {
+      key: "supplier",
+      label: "NCC",
+      value: detail.supplier_name ?? "Chưa chọn",
+      sub: detail.supplier_name ? undefined : "Chọn khi yêu cầu mẫu (bước 2)",
+    },
+    { key: "pic", label: "PIC", value: who(detail.pic_user_id) },
+  ];
+
   return (
-    <Flex vertical gap="middle">
-      <Flex vertical gap="small">
-        <Typography.Text>
-          Hồ sơ phát triển sản phẩm · {detail.proposal_code}
-        </Typography.Text>
-        <Typography.Title level={3}>{detail.product_name}</Typography.Title>
-        <Flex wrap gap="small" align="center">
-          <ProductDevStateTag state={detail.state} />
-          {detail.interrupted_state && (
-            <Typography.Text>
-              tạm dừng tại {PRODUCT_DEV_STATE_LABEL[detail.interrupted_state]}
-            </Typography.Text>
-          )}
-        </Flex>
-      </Flex>
-
-      <NextSteps
-        detail={detail}
-        onStep={onStep}
-        documentsTick={documentsTick}
+    <>
+      <PageHeader
+        breadcrumb={[...LIST_CRUMBS, { title: detail.proposal_code }]}
+        meta={
+          <Typography.Text type="secondary">
+            Hồ sơ phát triển sản phẩm ·{" "}
+            <Typography.Text code>{detail.proposal_code}</Typography.Text>
+          </Typography.Text>
+        }
+        title={detail.product_name}
+        tags={<ProductDevStateTag state={detail.state} />}
+        description={`Category ${detail.category} · tạo lúc ${formatDateTimeFull(detail.created_at)}`}
       />
+      <Flex vertical gap="middle">
+        <CaseSummary label="Tóm tắt hồ sơ" cells={cells} />
 
-      <Card title="Thông tin hồ sơ">
-        <Descriptions
-          column={{ xs: 1, sm: 2, lg: 3 }}
-          items={[
-            {
-              key: "code",
-              label: "Mã đề xuất",
-              children: detail.proposal_code,
-            },
-            { key: "category", label: "Category", children: detail.category },
-            {
-              key: "supplier",
-              label: "NCC",
-              children:
-                detail.supplier_name ?? "Chưa chọn (chọn khi yêu cầu mẫu)",
-            },
-            { key: "pic", label: "PIC", children: who(detail.pic_user_id) },
-            {
-              key: "round",
-              label: "Vòng mẫu",
-              children:
-                detail.sample_round === 0
-                  ? "Chưa nhận mẫu"
-                  : detail.sample_round,
-            },
-            {
-              key: "created",
-              label: "Tạo lúc",
-              children: formatDateTime(detail.created_at),
-            },
-          ]}
+        <NextSteps
+          detail={detail}
+          onStep={onStep}
+          documentsTick={documentsTick}
         />
-      </Card>
 
-      <RoundsCard rounds={detail.rounds} who={who} />
-      <HistoryCard caseId={detail.id} tick={historyTick} who={who} />
-      <CaseDocumentsCard
-        caseKind="product"
-        caseId={detail.id}
-        canUpload={hasScope(DOCUMENT_WRITE)}
-        onUploaded={() => setDocumentsTick((tick) => tick + 1)}
-      />
-    </Flex>
+        <RoundsCard rounds={detail.rounds} who={who} />
+        <HistoryCard caseId={detail.id} tick={historyTick} who={who} />
+        <CaseDocumentsCard
+          caseKind="product"
+          caseId={detail.id}
+          canUpload={hasScope(DOCUMENT_WRITE)}
+          onUploaded={() => setDocumentsTick((tick) => tick + 1)}
+        />
+      </Flex>
+    </>
   );
 }
 
@@ -335,7 +312,7 @@ function BodReviewNotice({ review }: { review: PendingReview | null }) {
       <Alert
         type="warning"
         showIcon
-        message="Mẫu đã đạt; chưa trình được BGĐ."
+        title="Mẫu đã đạt; chưa trình được BGĐ."
         description="Yêu cầu duyệt chưa tạo được (ví dụ gói đã hết lượt chạy trong ngày). Hệ thống tự trình lại sau ít phút; không cần làm lại bước Mẫu đạt. Trong lúc chờ, chỉ hủy hồ sơ được."
       />
     );
@@ -344,15 +321,15 @@ function BodReviewNotice({ review }: { review: PendingReview | null }) {
     <Alert
       type="info"
       showIcon
-      message="Mẫu đã đạt; hồ sơ chờ BGĐ duyệt."
+      title="Mẫu đã đạt; hồ sơ chờ BGĐ duyệt."
       description={
         <Flex vertical gap="small">
           <Typography.Text>
             Chờ người có quyền BGĐ ({review.required_scope ?? "—"}) duyệt, từ{" "}
-            {formatDateTime(review.created_at)}. Không duyệt thì hồ sơ bị hủy,
-            nhận xét của BGĐ là lý do. Trong lúc chờ, chỉ hủy hồ sơ được.
+            {formatDateTimeFull(review.created_at)}. Không duyệt thì hồ sơ bị
+            hủy, nhận xét của BGĐ là lý do. Trong lúc chờ, chỉ hủy hồ sơ được.
           </Typography.Text>
-          <Link href="/approvals">Mở trang Phê duyệt</Link>
+          <Link href="/approvals">Mở trang Duyệt</Link>
         </Flex>
       }
     />
@@ -497,7 +474,7 @@ function StepModal({
           <Alert
             type="error"
             showIcon
-            message={`Còn ${invalid} trường cần sửa`}
+            title={`Còn ${invalid} trường cần sửa`}
           />
         )}
         {option.takes_supplier && (
@@ -542,7 +519,7 @@ function StepModal({
           </Form.Item>
         )}
         {documentsError && (
-          <Alert type="error" showIcon message={documentsError} />
+          <Alert type="error" showIcon title={documentsError} />
         )}
         {noDocument && option.document_required && (
           <Typography.Paragraph>
@@ -566,7 +543,7 @@ function StepModal({
             <Input.TextArea rows={3} />
           </Form.Item>
         )}
-        {error && <Alert type="error" showIcon message={error} />}
+        {error && <Alert type="error" showIcon title={error} />}
       </Form>
     </Modal>
   );
@@ -582,15 +559,16 @@ function RoundsCard({
   const columns: TableColumnsType<SampleRound> = [
     { title: "Vòng", dataIndex: "round_no", align: "right" },
     {
-      title: "Nhận mẫu lúc",
+      title: `Nhận mẫu lúc (${VN_TIME})`,
       dataIndex: "opened_at",
       render: (value: string) => formatDateTime(value),
     },
     {
       title: "Kết quả",
       dataIndex: "result",
-      render: (value: SampleRound["result"]) =>
-        value ? SAMPLE_RESULT_LABEL[value] : "Đang test",
+      render: (value: SampleRound["result"]) => (
+        <SampleResultTag result={value} />
+      ),
     },
     {
       title: "Người kết luận",
@@ -634,7 +612,7 @@ function RoundsCard({
 
 type HistoryState =
   | { kind: "loading" }
-  | { kind: "error"; message: string }
+  | { kind: "error"; failure: RegionFailure }
   | { kind: "ready"; transitions: ProductCaseTransition[] };
 
 function HistoryCard({
@@ -655,7 +633,7 @@ function HistoryCard({
         transitions: await apiClient().listProductCaseTransitions(caseId),
       });
     } catch (error) {
-      setHistory({ kind: "error", message: errorMessage(error) });
+      setHistory({ kind: "error", failure: regionFailure(error) });
     }
   }, [caseId]);
 
@@ -668,21 +646,22 @@ function HistoryCard({
       {history.kind === "loading" ? (
         <Skeleton active paragraph={{ rows: 3 }} />
       ) : history.kind === "error" ? (
-        <Alert
-          type="error"
-          showIcon
-          message={history.message}
-          action={
-            <Button size="small" onClick={() => void load()}>
-              Thử lại
-            </Button>
-          }
+        <RegionState
+          compact
+          failure={history.failure}
+          what="lịch sử"
+          onRetry={() => void load()}
+        />
+      ) : history.transitions.length === 0 ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="Hồ sơ chưa qua bước nào."
         />
       ) : (
         <Timeline
           items={history.transitions.map((t) => ({
             key: `${t.occurred_at}-${t.action}`,
-            children: (
+            content: (
               <Flex vertical>
                 <Typography.Text strong>
                   {PRODUCT_ACTION_LABEL[t.action]}
@@ -693,8 +672,8 @@ function HistoryCard({
                   {PRODUCT_DEV_STATE_LABEL[t.to_state]}
                 </Typography.Text>
                 {t.reason && <Typography.Text>{t.reason}</Typography.Text>}
-                <Typography.Text>
-                  {who(t.actor_id)} · {formatDateTime(t.occurred_at)}
+                <Typography.Text type="secondary">
+                  {who(t.actor_id)} · {formatDateTimeFull(t.occurred_at)}
                 </Typography.Text>
               </Flex>
             ),

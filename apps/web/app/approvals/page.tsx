@@ -1,51 +1,50 @@
 "use client";
 
 import { useCallback, useState, type ReactNode } from "react";
-import { Tooltip, Typography } from "antd";
-import { BadgeCheck, CircleX, ClipboardCheck, RefreshCw } from "lucide-react";
-import type { Approval } from "@dw/contracts";
 import {
-  Badge,
+  Alert,
   Button,
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  Empty,
+  Flex,
   Input,
   Skeleton,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@dw/ui";
-import { EmptyState } from "../../components/empty-state";
-import { LoadMore } from "../../components/load-more";
-import { PageHeading } from "../../components/page-heading";
+  Tooltip,
+  Typography,
+  type TableColumnsType,
+} from "antd";
+import {
+  CheckOutlined,
+  CloseOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
+import type { Approval } from "@dw/contracts";
+import { PageHeader, StatusTag, type StatusTone } from "@dw/ui";
 import {
   ToolApprovalPayload,
   approvalTitle,
 } from "../../components/tool-approval";
 import { approvalClient } from "../../lib/approvals/registry";
 import { useAuth } from "../../lib/auth/auth-context";
-import { formatDateTime } from "../../lib/dates";
+import { formatDateTime, formatDateTimeFull, VN_TIME } from "../../lib/dates";
+import { errorMessage } from "../../lib/error-message";
 import { apiClient } from "../../lib/session";
 import { useCachedPages } from "../../lib/use-cached-pages";
 
-const STATUS_BADGE: Record<
-  Approval["status"],
+const STATUS: Record<Approval["status"], { label: string; tone: StatusTone }> =
   {
-    label: string;
-    variant: "warning" | "success" | "destructive" | "secondary";
-  }
-> = {
-  pending: { label: "Pending", variant: "warning" },
-  approved: { label: "Approved", variant: "success" },
-  rejected: { label: "Rejected", variant: "destructive" },
-  cancelled: { label: "Cancelled", variant: "secondary" },
-};
+    pending: { label: "Chờ quyết", tone: "warn" },
+    approved: { label: "Đã duyệt", tone: "ok" },
+    rejected: { label: "Từ chối", tone: "err" },
+    cancelled: { label: "Đã hủy", tone: "gray" },
+  };
+
+function ApprovalStatusTag({ status }: { status: Approval["status"] }) {
+  return (
+    <StatusTag tone={STATUS[status].tone}>{STATUS[status].label}</StatusTag>
+  );
+}
 
 export default function ApprovalsPage() {
   const { hasScope } = useAuth();
@@ -99,7 +98,7 @@ export default function ApprovalsPage() {
       setError(null);
       reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "unknown error");
+      setError(errorMessage(e));
     } finally {
       setBusyId(null);
     }
@@ -108,200 +107,216 @@ export default function ApprovalsPage() {
   const pending = approvals.filter((item) => item.status === "pending");
   const decided = approvals.filter((item) => item.status !== "pending");
 
+  const decidedColumns: TableColumnsType<Approval> = [
+    {
+      title: `Quyết lúc (${VN_TIME})`,
+      dataIndex: "decided_at",
+      render: (value: string | null) => formatDateTime(value),
+    },
+    {
+      title: "Loại",
+      dataIndex: "approval_type",
+      render: (value: string) => (
+        <Typography.Text code>{value}</Typography.Text>
+      ),
+    },
+    {
+      title: "Lý do",
+      dataIndex: "reason",
+      render: (value: string) => (
+        <Typography.Text ellipsis={{ tooltip: value }} className="max-w-64">
+          {value}
+        </Typography.Text>
+      ),
+    },
+    {
+      title: "Run",
+      dataIndex: "run_id",
+      responsive: ["lg"],
+      render: (value: string | null) =>
+        value ? <Typography.Text code>{value}</Typography.Text> : "—",
+    },
+    {
+      title: "Kết quả",
+      dataIndex: "status",
+      render: (value: Approval["status"]) => (
+        <ApprovalStatusTag status={value} />
+      ),
+    },
+  ];
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <PageHeading
-        icon={ClipboardCheck}
-        title="Approvals"
-        description="A run that asks to change something outside this system pauses here until a person decides. Nothing on this page has happened yet."
-        actions={
-          <Button variant="outline" size="icon" onClick={reload}>
-            <RefreshCw />
+    <div className="mx-auto max-w-6xl">
+      <PageHeader
+        title="Duyệt"
+        description="Một việc muốn thay đổi thứ gì đó bên ngoài hệ thống dừng ở đây tới khi một người quyết. Chưa việc nào trên trang này đã xảy ra."
+        extra={
+          <Button icon={<ReloadOutlined aria-hidden />} onClick={reload}>
+            Làm mới
           </Button>
         }
       />
-      {(error ?? loadError) != null && (
-        <p className="text-sm text-destructive">
-          {error ??
-            (loadError instanceof Error ? loadError.message : "unknown error")}
-        </p>
-      )}
-      {loading && loadError == null && <Skeleton className="h-64 w-full" />}
-      {!loading && pending.length === 0 && (
-        <EmptyState
-          icon={ClipboardCheck}
-          title="Nothing waiting for a decision"
-          description="A request appears here the moment a worker reaches a side effect its policy will not let it perform alone."
-        />
-      )}
+      <Flex vertical gap="middle">
+        {(error ?? loadError) != null && (
+          <Alert
+            type="error"
+            showIcon
+            title={error ?? errorMessage(loadError)}
+          />
+        )}
+        {loading && loadError == null && (
+          <Skeleton active paragraph={{ rows: 6 }} />
+        )}
+        {!loading && pending.length === 0 && (
+          <Empty description="Không có yêu cầu nào chờ quyết. Một yêu cầu hiện ở đây ngay khi một việc tới bước mà chính sách của nó không cho tự làm." />
+        )}
 
-      {pending.map((approval) => {
-        const lacking = missingScope(approval);
-        const lockReason =
-          lacking === null
-            ? null
-            : `Chỉ người có quyền ${lacking} được quyết yêu cầu này`;
-        // Withdrawing your own request is not deciding it: the server lets the
-        // requester reject without the stamped scope, so the page does too.
-        const approveLocked = lacking !== null;
-        const rejectLocked = lacking !== null && !approval.requested_by_me;
-        // A disabled button takes no pointer events, so the tooltip hangs on a
-        // wrapper; the same sentence also sits beside the buttons as text.
-        const withLock = (locked: boolean, button: ReactNode) =>
-          locked ? (
-            <Tooltip title={lockReason}>
-              <span className="inline-flex">{button}</span>
-            </Tooltip>
-          ) : (
-            button
-          );
-        return (
-          <Card key={approval.id} className="overflow-hidden">
-            <CardHeader className="border-b bg-muted/40">
-              <CardTitle className="flex flex-col items-start gap-3 text-base sm:flex-row sm:items-center sm:justify-between">
-                <span>{approvalTitle(approval.approval_type)}</span>
-                <Badge variant={STATUS_BADGE[approval.status].variant}>
-                  {STATUS_BADGE[approval.status].label}
-                </Badge>
-              </CardTitle>
-              <CardDescription>
-                <span className="font-mono text-xs">
-                  {approval.approval_type}
-                </span>{" "}
-                — {approval.reason}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 pt-5 text-sm">
-              <ToolApprovalPayload
-                payload={approval.payload}
-                className="bg-muted/50"
-              />
-              {!canDecide && (
-                <p className="text-xs text-muted-foreground">
-                  Your roles do not carry <strong>approvals.decide</strong>, so
-                  this request is read-only for you.
-                </p>
-              )}
-              {canDecide && (
-                <div className="rounded-xl border bg-muted/30 p-4">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-                    Your decision
-                  </p>
-                  <Input
-                    value={comments[approval.id] ?? ""}
-                    onChange={(event) =>
-                      setComments((current) => ({
-                        ...current,
-                        [approval.id]: event.target.value,
-                      }))
-                    }
-                    placeholder={
-                      approval.requires_comment
-                        ? "Note explaining the decision (required)"
-                        : "Note explaining the decision (optional)"
-                    }
-                  />
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {withLock(
-                      approveLocked,
-                      <Button
-                        onClick={() => void decide(approval, true)}
-                        disabled={
-                          approveLocked ||
-                          busyId === approval.id ||
-                          missingComment(approval)
-                        }
-                      >
-                        <BadgeCheck />
-                        {busyId === approval.id ? "Working…" : "Approve"}
-                      </Button>,
-                    )}
-                    {withLock(
-                      rejectLocked,
-                      <Button
-                        variant="destructive"
-                        onClick={() => void decide(approval, false)}
-                        disabled={
-                          rejectLocked ||
-                          busyId === approval.id ||
-                          missingComment(approval)
-                        }
-                      >
-                        <CircleX /> Reject
-                      </Button>,
-                    )}
-                    {lockReason !== null && (
-                      <Typography.Text type="secondary">
-                        {lockReason}
-                        {approval.requested_by_me &&
-                          ". Bạn vẫn rút được yêu cầu của mình."}
-                      </Typography.Text>
-                    )}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        );
-      })}
-
-      {decided.length > 0 && (
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle className="text-base">Recent decisions</CardTitle>
-            <CardDescription>
-              Already decided; kept here so a run can be traced back to the
-              person who released it.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-1">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Decided</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Reason</TableHead>
-                  <TableHead>Run id</TableHead>
-                  <TableHead>Outcome</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {decided.map((approval) => (
-                  <TableRow key={approval.id} className="align-top">
-                    <TableCell className="whitespace-nowrap font-mono text-xs">
-                      {formatDateTime(approval.decided_at)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
+        {pending.map((approval) => {
+          const lacking = missingScope(approval);
+          const lockReason =
+            lacking === null
+              ? null
+              : `Chỉ người có quyền ${lacking} được quyết yêu cầu này`;
+          // Withdrawing your own request is not deciding it: the server lets
+          // the requester reject without the stamped scope, so the page does
+          // too.
+          const approveLocked = lacking !== null;
+          const rejectLocked = lacking !== null && !approval.requested_by_me;
+          // A disabled button takes no pointer events, so the tooltip hangs
+          // on a wrapper; the same sentence also sits beside the buttons as
+          // text.
+          const withLock = (locked: boolean, button: ReactNode) =>
+            locked ? (
+              <Tooltip title={lockReason}>
+                <span className="inline-flex">{button}</span>
+              </Tooltip>
+            ) : (
+              button
+            );
+          return (
+            <Card
+              key={approval.id}
+              size="small"
+              title={
+                <Flex wrap gap="small" align="center">
+                  <span>{approvalTitle(approval.approval_type)}</span>
+                  <ApprovalStatusTag status={approval.status} />
+                </Flex>
+              }
+            >
+              <Flex vertical gap="middle">
+                <Flex vertical gap={2}>
+                  <Typography.Text>{approval.reason}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    <Typography.Text code>
                       {approval.approval_type}
-                    </TableCell>
-                    <TableCell className="max-w-64 truncate text-xs text-muted-foreground">
-                      {approval.reason}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {approval.run_id ?? "—"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={STATUS_BADGE[approval.status].variant}>
-                        {STATUS_BADGE[approval.status].label}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                    </Typography.Text>{" "}
+                    · tạo lúc {formatDateTimeFull(approval.created_at)}
+                  </Typography.Text>
+                </Flex>
+                <ToolApprovalPayload payload={approval.payload} />
+                {!canDecide ? (
+                  <Typography.Text>
+                    Vai của bạn không có quyền approvals.decide, nên yêu cầu này
+                    chỉ để xem.
+                  </Typography.Text>
+                ) : (
+                  <Flex vertical gap="small">
+                    <Input.TextArea
+                      aria-label={`Nhận xét cho ${approvalTitle(approval.approval_type)}`}
+                      rows={2}
+                      value={comments[approval.id] ?? ""}
+                      onChange={(event) =>
+                        setComments((current) => ({
+                          ...current,
+                          [approval.id]: event.target.value,
+                        }))
+                      }
+                      placeholder={
+                        approval.requires_comment
+                          ? "Nhận xét giải thích quyết định (bắt buộc)"
+                          : "Nhận xét giải thích quyết định (không bắt buộc)"
+                      }
+                    />
+                    <Flex wrap gap="small" align="center">
+                      {withLock(
+                        approveLocked,
+                        <Button
+                          type="primary"
+                          icon={<CheckOutlined aria-hidden />}
+                          loading={busyId === approval.id}
+                          onClick={() => void decide(approval, true)}
+                          disabled={
+                            approveLocked ||
+                            busyId === approval.id ||
+                            missingComment(approval)
+                          }
+                        >
+                          Duyệt
+                        </Button>,
+                      )}
+                      {withLock(
+                        rejectLocked,
+                        <Button
+                          danger
+                          icon={<CloseOutlined aria-hidden />}
+                          onClick={() => void decide(approval, false)}
+                          disabled={
+                            rejectLocked ||
+                            busyId === approval.id ||
+                            missingComment(approval)
+                          }
+                        >
+                          Từ chối
+                        </Button>,
+                      )}
+                      {lockReason !== null && (
+                        <Typography.Text>
+                          {lockReason}
+                          {approval.requested_by_me &&
+                            ". Bạn vẫn rút được yêu cầu của mình."}
+                        </Typography.Text>
+                      )}
+                    </Flex>
+                  </Flex>
+                )}
+              </Flex>
+            </Card>
+          );
+        })}
 
-      {!loading && pending.length > 0 && (
-        <LoadMore
-          hasMore={hasMore}
-          loading={loadingMore}
-          onLoadMore={loadMore}
-          shown={approvals.length}
-          noun="requests"
-        />
-      )}
+        {decided.length > 0 && (
+          <Card size="small" title="Đã quyết gần đây">
+            <Table<Approval>
+              rowKey="id"
+              size="small"
+              pagination={false}
+              sticky
+              scroll={{ x: "max-content" }}
+              columns={decidedColumns}
+              dataSource={decided}
+              footer={() =>
+                "Đã quyết; giữ ở đây để lần ngược một việc về người đã cho nó chạy."
+              }
+            />
+          </Card>
+        )}
+
+        {!loading && pending.length > 0 && (
+          <Flex justify="space-between" align="center" wrap gap="small">
+            <Typography.Text role="status">
+              {hasMore
+                ? `Đã hiện ${approvals.length} yêu cầu; còn nữa.`
+                : `Đã hiện tất cả ${approvals.length} yêu cầu.`}
+            </Typography.Text>
+            {hasMore && (
+              <Button loading={loadingMore} onClick={loadMore}>
+                Tải thêm
+              </Button>
+            )}
+          </Flex>
+        )}
+      </Flex>
     </div>
   );
 }

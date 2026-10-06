@@ -10,7 +10,7 @@ import { useAuth } from "../lib/auth/auth-context";
 import { AUTH_MODE } from "../lib/auth/config";
 import { useNavBadges } from "../lib/nav/badges";
 import { NAV_ITEMS } from "../lib/nav/registry";
-import { hasAnyRole } from "../lib/nav/roles";
+import { barNav, visibleNav } from "../lib/nav/visible";
 import { LoginScreen } from "./login-screen";
 import { NotificationBell } from "./notification-bell";
 import { SessionChip } from "./session-chip";
@@ -36,21 +36,16 @@ export function AppFrame({ children }: { children: ReactNode }) {
   const router = useRouter();
   const badges = useNavBadges();
 
-  // The nav the user can actually reach. Three filters: scope is the
-  // permission the API enforces anyway, role is who the page is for, and
-  // operatorOnly is the cross-tenant provisioning area.
-  const visibleNav = useMemo(
+  // The nav the user can actually reach, and the bar drawn from it: a
+  // context's own pages for someone whose work is that context alone.
+  const bar = useMemo(
     () =>
-      NAV_ITEMS.filter(
-        (item) =>
-          (!item.operatorOnly || isPlatformOperator) &&
-          (!item.scope || hasScope(item.scope)) &&
-          (!item.roles || hasAnyRole(roles, item.roles)),
-      ),
+      barNav(visibleNav(NAV_ITEMS, { isPlatformOperator, hasScope, roles })),
     [isPlatformOperator, hasScope, roles],
   );
+  const nav = bar.items;
   // Where the logo points; the old /feedback page is gone (spec 003 US5).
-  const home = visibleNav[0]?.href ?? "/";
+  const home = nav[0]?.href ?? "/";
 
   // Where to send the user when the page they are on isn't one they can use.
   const redirectTo = useMemo(() => {
@@ -127,7 +122,7 @@ export function AppFrame({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  const navItems: AppShellItem[] = visibleNav.map((item) => {
+  const navItems: AppShellItem[] = nav.map((item) => {
     const Icon = item.icon;
     const count = item.badgeKey ? badges[item.badgeKey] : undefined;
     return {
@@ -142,7 +137,7 @@ export function AppFrame({ children }: { children: ReactNode }) {
       ),
     };
   });
-  const selectedKey = visibleNav.find((item) =>
+  const selectedKey = nav.find((item) =>
     item.exact
       ? pathname === item.href
       : pathname === item.href || pathname.startsWith(item.href + "/"),
@@ -154,14 +149,26 @@ export function AppFrame({ children }: { children: ReactNode }) {
         brand={
           <Link
             href={home}
-            aria-label="Digital Worker"
+            aria-label={
+              bar.context
+                ? `Digital Worker · ${bar.context.product}, về trang đầu`
+                : "Digital Worker, về trang đầu"
+            }
             className="flex items-center gap-2.5"
           >
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <Bot className="size-4" />
             </span>
-            <Typography.Text strong className="hidden sm:inline">
+            <Typography.Text
+              strong
+              className="hidden whitespace-nowrap sm:inline"
+            >
               Digital Worker
+              {bar.context ? (
+                <Typography.Text type="secondary">
+                  {` · ${bar.context.product}`}
+                </Typography.Text>
+              ) : null}
             </Typography.Text>
           </Link>
         }

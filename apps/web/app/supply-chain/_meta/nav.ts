@@ -1,59 +1,72 @@
 import {
-  AlertTriangle,
-  FlaskConical,
-  ListTodo,
-  Newspaper,
-  PackageSearch,
-  TowerControl,
-} from "lucide-react";
-import type { NavItem } from "../../../lib/nav/types";
+  ControlOutlined,
+  ExperimentOutlined,
+  FileSearchOutlined,
+  ReadOutlined,
+  ScheduleOutlined,
+  WarningOutlined,
+} from "@ant-design/icons";
+import type { NavContext, NavItem } from "../../../lib/nav/types";
+
+/** Supply Chain as the navbar names it, when it is someone's whole bar. */
+const SUPPLY_CHAIN: NavContext = {
+  key: "supply-chain",
+  product: "Supply Chain",
+};
 
 /**
  * Supply Chain's own nav manifest — the plug-in point `lib/nav/registry.ts`
  * documents. Edited here as the context grows; the registry itself is
- * touched once, to add the import and the spread.
+ * touched once, to add the import and the spread. In process order: the
+ * day's work first, then stage 1 (steps 1–9), then stage 2 (steps 10–17).
  */
 export const supplyChainNav: NavItem[] = [
   {
     href: "/supply-chain/daily-brief",
     label: "Bản tin hôm nay",
     hint: "Việc cần xử lý, gom theo tín hiệu và xếp theo ưu tiên",
-    icon: Newspaper,
+    icon: ReadOutlined,
     scope: "supply_chain.po_case.read",
+    context: SUPPLY_CHAIN,
   },
   {
     href: "/supply-chain/follow-ups",
     label: "Việc cần làm",
     hint: "Nhắc NCC, leo thang và trễ SLA đã giao cho bạn",
-    icon: ListTodo,
+    icon: ScheduleOutlined,
     scope: "supply_chain.po_case.read",
+    context: SUPPLY_CHAIN,
+  },
+  {
+    href: "/supply-chain/product-cases",
+    label: "Phát triển SP",
+    hint: "Hồ sơ phát triển sản phẩm, bước 1–9: đề xuất, lấy mẫu, test mẫu, BGĐ duyệt",
+    icon: ExperimentOutlined,
+    scope: "supply_chain.product_case.read",
+    context: SUPPLY_CHAIN,
+  },
+  {
+    href: "/supply-chain/po-cases",
+    label: "Hồ sơ PO",
+    hint: "Hồ sơ PO, bước 10–17: trạng thái, SLA và cập nhật của NCC",
+    icon: FileSearchOutlined,
+    scope: "supply_chain.po_case.read",
+    context: SUPPLY_CHAIN,
   },
   {
     href: "/supply-chain/attention-queue",
     label: "Cần chú ý",
-    hint: "Case trễ SLA hoặc nhà cung cấp im lặng quá lâu",
-    icon: AlertTriangle,
+    hint: "Hồ sơ PO trễ SLA hoặc NCC im lặng quá lâu",
+    icon: WarningOutlined,
     scope: "supply_chain.po_case.read",
+    context: SUPPLY_CHAIN,
   },
   {
     href: "/supply-chain/control-tower",
     label: "Control Tower",
-    hint: "Toàn bộ case đang chạy theo trạng thái và nhà cung cấp",
-    icon: TowerControl,
+    hint: "Mọi Hồ sơ PO đang chạy theo trạng thái và NCC",
+    icon: ControlOutlined,
     scope: "supply_chain.po_case.read",
-  },
-  {
-    href: "/supply-chain/product-cases",
-    label: "Hồ sơ phát triển SP",
-    hint: "Sản phẩm đề xuất, lấy mẫu, test mẫu tới khi chờ BGĐ duyệt",
-    icon: FlaskConical,
-    scope: "supply_chain.product_case.read",
-  },
-  {
-    href: "/supply-chain/po-cases",
-    label: "PO cases",
-    hint: "Purchase orders, their state, SLA health and supplier updates",
-    icon: PackageSearch,
-    scope: "supply_chain.po_case.read",
+    context: SUPPLY_CHAIN,
   },
 ];
