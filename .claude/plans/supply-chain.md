@@ -136,6 +136,12 @@ after P before acting on one.
 
 ## Decisions recorded, and why
 
+- **Đạt, 2026-10-06:** a review or sign-off notice goes only to the people who
+  can actually decide it (they hold both the stamped scope and `approvals.decide`),
+  never to someone `decide` would refuse. An approval-only run (no model call)
+  counts against the plan's run quota like any run; a tenant out of runs gets its
+  review raised by the reconcile lane once runs are available.
+
 From the archive, still held:
 
 - **Own `supply_chain` schema;** a new schema ships its own USAGE and default
@@ -232,9 +238,7 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
   point 1).
 - **QO-6** Confirm deferring container loading as its own step (step 14) until
   Elmich answers QE-15; until then it stays inside `qc` → `in_transit`.
-- **QO-9** Should a run that only waits for an approval (no model call, e.g. S2's
-  BGĐ review) count against the plan's run quota? Today it does; a tenant out of
-  runs has its review raised by the reconcile lane once runs are available.
+
 - **QO-8** Provisional choices made while building A, D, S1 (2026-10-05/06),
   recorded as amendments to ADR 0016, 0020, 0021 for review: `platform_admin`
   passes `required_scope`; cross-workspace approval reads left to
