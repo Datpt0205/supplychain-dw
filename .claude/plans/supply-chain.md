@@ -98,6 +98,7 @@ email as a second channel.
 | S1     | `6dfb1ef` | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages. |
 | PR-02  | `7b411df` | Platform: approvals, runs and audit read only the caller's workspace.                                                                                                    |
 | S2     | `446083e` | BGĐ review at step 6: graph-only approve/reject, decider as actor, idempotent start plus a reconcile lane, `sc_bod`.                                                     |
+| W      | `82b5c13` | Supply Chain pages on antd in the E-HSDT v3 look: theme, `StatusTag`, `PageHeader`, `RegionState`, context navbar; Playwright viewports owed.                            |
 
 ## Open — named, not fixed, still true after the port
 
