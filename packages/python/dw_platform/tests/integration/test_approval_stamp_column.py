@@ -71,7 +71,9 @@ async def _get(
     sessions: async_sessionmaker[AsyncSession], context: AccessContext, request_id: uuid.UUID
 ) -> ApprovalRequest | None:
     async with tenant_session(sessions, TenantScope.from_access_context(context)) as session:
-        return await SqlApprovalRepository(session).get(request_id)
+        return await SqlApprovalRepository(session).get(
+            request_id, workspace_id=context.workspace_id
+        )
 
 
 @pytest.mark.parametrize("required_scope", [BOD_SCOPE, None])
@@ -130,7 +132,7 @@ async def test_a_decision_does_not_move_the_stamp(
 
     async with tenant_session(sessions, TenantScope.from_access_context(context)) as session:
         repo = SqlApprovalRepository(session)
-        loaded = await repo.get(request.id)
+        loaded = await repo.get(request.id, workspace_id=context.workspace_id)
         assert loaded is not None
         loaded.required_scope = "supply_chain.approve.anyone"
         loaded.decide(

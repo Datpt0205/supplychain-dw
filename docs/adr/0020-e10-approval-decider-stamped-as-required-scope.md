@@ -85,3 +85,17 @@ phần Quyết định ở trên:
    (`status`, `decided_at`, `version`): Postgres không thu được một cột khỏi quyền UPDATE
    toàn bảng. Việc này cũng khóa `approval_type`, `requested_by`, `payload`, vốn không code
    nào sửa.
+
+## Sửa đổi 2026-10-05 (tạm, platform-runtime/approval-audit-and-workspace/02; chờ Đạt duyệt ở QO-2)
+
+Phần "khác workspace" mà Sửa đổi 1 ở trên chuyển đi nay đã làm, vẫn không đổi policy RLS:
+
+1. `decide` đọc approval trong workspace của người quyết (`get(..., workspace_id=)` của
+   repository, lấy từ `AccessContext`). Approval của workspace khác trong cùng tenant là
+   `NotFoundError` "approval request not found", trước lệnh kiểm `approvals.decide` và
+   `required_scope`, trước mọi ghi và trước `resume`: người giữ cả hai scope ở workspace
+   khác cũng không quyết được. Test: `test_approval_workspace.py` của `dw_agent_runtime`.
+2. Run chạy tiếp với `workspace_id` của run (`RunRecord.workspace_id`, đọc từ dòng
+   `worker_runs`), không của người quyết, như roles, scopes và autonomy đã đọc từ run.
+3. `GET /approvals` và `GET /approvals/{id}` chỉ trả approval của workspace người gọi; cờ
+   khóa nút theo `required_scope` không đổi.

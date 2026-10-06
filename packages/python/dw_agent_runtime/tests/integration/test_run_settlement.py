@@ -50,10 +50,11 @@ STALE_AFTER_SECONDS_LOCAL = 3600
 BOOM = "nhà cung cấp mô hình từ chối"
 
 
-async def _recorded_actions(uow: Any) -> list[str]:
-    """Every action on the audit trail, newest first."""
+async def _recorded_actions(uow: Any, workspace_id: uuid.UUID) -> list[str]:
+    """Every action on the workspace's audit trail, newest first."""
     page = await uow.audit.list_page(
-        PageRequest(limit=50, after=None, query=PageQuery(key="test.audit"))
+        PageRequest(limit=50, after=None, query=PageQuery(key="test.audit")),
+        workspace_id=workspace_id,
     )
     return [event.action for event in page.items]
 
@@ -156,7 +157,7 @@ async def test_a_graph_that_raises_leaves_the_run_failed(
     assert BOOM in record.error["message"]
 
     async with stack.uow_factory(access_context_from_run(context)) as uow:
-        actions = await _recorded_actions(uow)
+        actions = await _recorded_actions(uow, context.workspace_id)
     assert "run.failed" in actions
     await stack.dispose()
 
@@ -186,7 +187,9 @@ async def test_abandoning_a_stream_still_records_the_approval(
     assert record.approval_request_id is not None
 
     async with stack.uow_factory(access_context_from_run(context)) as uow:
-        approval = await uow.approvals.get(record.approval_request_id)
+        approval = await uow.approvals.get(
+            record.approval_request_id, workspace_id=context.workspace_id
+        )
     assert approval is not None
     assert approval.approval_type == "demo.dispatch"
     await stack.dispose()
@@ -234,7 +237,7 @@ async def test_cancelling_a_run_settles_it_instead_of_reporting_success(
     assert record.error["type"] == "CancelledError"
 
     async with stack.uow_factory(access_context_from_run(context)) as uow:
-        actions = await _recorded_actions(uow)
+        actions = await _recorded_actions(uow, context.workspace_id)
     assert "run.cancelled" in actions
     await stack.dispose()
 

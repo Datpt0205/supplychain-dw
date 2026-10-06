@@ -246,7 +246,9 @@ class PendingApprovalsPort(Protocol):
     """Undecided approvals, read from the platform's approval inbox.
 
     Declared here, satisfied by `dw_platform` at the composition root — this
-    context never reads `platform.approval_requests` itself."""
+    context never reads `platform.approval_requests` itself. The caller's
+    tenant and workspace only, as the inbox itself reads them: the brief must
+    not show an approval the inbox would refuse."""
 
     async def list_pending_by_type_prefix(
         self, context: AccessContext, *, prefix: str, limit: int

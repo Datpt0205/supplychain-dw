@@ -1,4 +1,11 @@
-"""Persistence for worker runs (platform.worker_runs) under RLS."""
+"""Persistence for worker runs (platform.worker_runs) under RLS.
+
+RLS on `worker_runs` narrows by tenant only. A read on behalf of a person
+(`get`, `thread_belongs_to`) also narrows by workspace here, so a member never
+reads or stops another workspace's run (platform-runtime/approval-audit-and-
+workspace/02). Tenant-wide questions (`started_since` for the plan quota, the
+claim path's own thread) stay tenant-wide on purpose.
+"""
 
 from __future__ import annotations
 
@@ -70,6 +77,9 @@ def _announcement(run_context: RunContext, status: RunStatus) -> str:
 class RunRecord:
     id: uuid.UUID
     thread_id: uuid.UUID
+    # The workspace the run was started in. A resume replays it rather than
+    # taking the decider's, as it replays the requester's scopes below.
+    workspace_id: uuid.UUID
     status: RunStatus
     worker_id: str
     worker_version: str
@@ -264,8 +274,10 @@ class SqlWorkerRunStore:
         row = result.first()
         return None if row is None else row.approval_request_id
 
-    async def thread_belongs_to(self, tenant_id: uuid.UUID, thread_id: uuid.UUID) -> bool:
-        """Whether this tenant has ever run anything on this thread.
+    async def thread_belongs_to(
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, thread_id: uuid.UUID
+    ) -> bool:
+        """Whether this workspace of this tenant has ever run anything on this thread.
 
         `LangGraphWorkflowRunner.cancel_thread` looks a thread up in a dict keyed
         by thread id and nothing else — it has no tenant to check against,
@@ -277,10 +289,19 @@ class SqlWorkerRunStore:
         the caller's verified context, the row is invisible if it belongs to
         anybody else, and "not yours" and "never existed" are the same answer —
         which is what a caller should be told either way.
+
+        The workspace is narrowed here rather than by RLS, which on this table
+        narrows by tenant only: another workspace's thread is "never existed"
+        too.
         """
         result = await self._execute_for_tenant(
             tenant_id,
-            sa.select(worker_runs.c.id).where(worker_runs.c.thread_id == thread_id).limit(1),
+            sa.select(worker_runs.c.id)
+            .where(
+                worker_runs.c.thread_id == thread_id,
+                worker_runs.c.workspace_id == workspace_id,
+            )
+            .limit(1),
         )
         return result.first() is not None
 
@@ -410,8 +431,19 @@ class SqlWorkerRunStore:
         )
 
     async def get(self, run_context: RunContext, run_id: uuid.UUID) -> RunRecord:
+        """The run, read within `run_context`'s workspace.
+
+        Another workspace's run is "run not found", as another tenant's is: RLS
+        supplies the tenant, this query the workspace. Every caller already
+        holds a context in the run's workspace - the runner its own, the API
+        and `decide` the caller's.
+        """
         result = await self._execute(
-            run_context, sa.select(worker_runs).where(worker_runs.c.id == run_id)
+            run_context,
+            sa.select(worker_runs).where(
+                worker_runs.c.id == run_id,
+                worker_runs.c.workspace_id == run_context.workspace_id,
+            ),
         )
         row = result.first()
         if row is None:
@@ -419,6 +451,7 @@ class SqlWorkerRunStore:
         return RunRecord(
             id=row.id,
             thread_id=row.thread_id,
+            workspace_id=row.workspace_id,
             status=RunStatus(row.status),
             worker_id=row.worker_id,
             worker_version=row.worker_version,

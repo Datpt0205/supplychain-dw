@@ -122,7 +122,8 @@ async def test_denied_tool_call_is_audited(urls: RuntimeUrls) -> None:
     async with uow_factory(access_context_from_run(context)) as uow:
         events = (
             await uow.audit.list_page(
-                PageRequest(limit=10, after=None, query=PageQuery(key="test.audit"))
+                PageRequest(limit=10, after=None, query=PageQuery(key="test.audit")),
+                workspace_id=context.workspace_id,
             )
         ).items
     denied = [e for e in events if e.action == "tool.denied"]

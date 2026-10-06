@@ -104,7 +104,10 @@ class ApproveAndResumeService:
         approved_action_ids: list[str] | None = None,
     ) -> ApprovalRequest:
         async with self.uow_factory(context) as uow:
-            request = await uow.approvals.get(approval_id)
+            # Narrowed to the caller's workspace by the repository: RLS on
+            # approval_requests narrows by tenant only. Another workspace's
+            # request is not found, before any scope check, write or resume.
+            request = await uow.approvals.get(approval_id, workspace_id=context.workspace_id)
             if request is None:
                 raise NotFoundError(
                     "approval request not found", details={"approval_id": str(approval_id)}
@@ -116,7 +119,7 @@ class ApproveAndResumeService:
             # forever and its run stays parked (measured 2026-09-08: a sales
             # role got `permission_denied` on Reject as well as Approve).
             # The read moves above the gate so we know whose request it is;
-            # it is already tenant/workspace-scoped by RLS.
+            # it is tenant-scoped by RLS and workspace-scoped by the read above.
             if approve or request.requested_by.value != context.principal_id:
                 await authorization.require(
                     context=context,
@@ -160,7 +163,9 @@ class ApproveAndResumeService:
                     run_id=request.run_id,
                     thread_id=record.thread_id,
                     tenant_id=context.tenant_id,
-                    workspace_id=context.workspace_id,
+                    # The run's workspace, from its row, never the decider's:
+                    # what the resumed graph reads and writes is the run's.
+                    workspace_id=record.workspace_id,
                     actor_id=record.requested_by,
                     worker_id=record.worker_id,
                     worker_version=record.worker_version,

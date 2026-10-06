@@ -2,6 +2,12 @@
 
 All queries run inside a UoW session that already carries the SET LOCAL tenant
 context, so RLS constrains every statement here.
+
+RLS on `approval_requests` and `audit_events` narrows by tenant only. Their
+reads take the caller's `workspace_id` as a required keyword and narrow by it
+here, so a member never reads another workspace's approval payload or audit
+detail (platform-runtime/approval-audit-and-workspace/02). Required, not
+defaulted: a reader that forgets it does not type-check.
 """
 
 from __future__ import annotations
@@ -99,9 +105,16 @@ class SqlApprovalRepository:
             )
         )
 
-    async def get(self, request_id: uuid.UUID) -> ApprovalRequest | None:
+    async def get(
+        self, request_id: uuid.UUID, *, workspace_id: uuid.UUID
+    ) -> ApprovalRequest | None:
         result = await self.session.execute(
-            sa.select(tables.approval_requests).where(tables.approval_requests.c.id == request_id)
+            sa.select(tables.approval_requests).where(
+                tables.approval_requests.c.id == request_id,
+                # RLS narrows this table by tenant only; the workspace is
+                # narrowed here (approval-audit-and-workspace/02).
+                tables.approval_requests.c.workspace_id == workspace_id,
+            )
         )
         row = result.first()
         return _approval_from_row(row) if row else None
@@ -126,10 +139,13 @@ class SqlApprovalRepository:
                 details={"request_id": str(request.id)},
             )
 
-    async def list_pending(self, request: PageRequest) -> Page[ApprovalRequest]:
+    async def list_pending(
+        self, request: PageRequest, *, workspace_id: uuid.UUID
+    ) -> Page[ApprovalRequest]:
         result = await self.session.execute(
             sa.select(tables.approval_requests)
             .where(
+                tables.approval_requests.c.workspace_id == workspace_id,
                 tables.approval_requests.c.status == "pending",
                 after_position(
                     tables.approval_requests.c.created_at,
@@ -187,22 +203,28 @@ class SqlAuditRepository:
             )
         )
 
-    async def list_for_run(self, run_id: uuid.UUID, limit: int = 100) -> list[AuditEvent]:
+    async def list_for_run(
+        self, run_id: uuid.UUID, *, workspace_id: uuid.UUID, limit: int = 100
+    ) -> list[AuditEvent]:
         result = await self.session.execute(
             sa.select(tables.audit_events)
-            .where(tables.audit_events.c.run_id == run_id)
+            .where(
+                tables.audit_events.c.run_id == run_id,
+                tables.audit_events.c.workspace_id == workspace_id,
+            )
             .order_by(tables.audit_events.c.occurred_at)
             .limit(limit)
         )
         return self._map_rows(result)
 
-    async def list_page(self, request: PageRequest) -> Page[AuditEvent]:
+    async def list_page(self, request: PageRequest, *, workspace_id: uuid.UUID) -> Page[AuditEvent]:
         result = await self.session.execute(
             sa.select(tables.audit_events)
             .where(
+                tables.audit_events.c.workspace_id == workspace_id,
                 after_position(
                     tables.audit_events.c.occurred_at, tables.audit_events.c.id, request.after
-                )
+                ),
             )
             .order_by(*newest_first(tables.audit_events.c.occurred_at, tables.audit_events.c.id))
             .limit(request.fetch_limit)

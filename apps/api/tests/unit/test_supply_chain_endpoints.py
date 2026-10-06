@@ -456,8 +456,8 @@ class FakePolicyOverrideRepository:
 
 
 class FakePendingApprovals:
-    """Honors `PendingApprovalsPort`'s contract: the caller's tenant only,
-    pending only, the prefix matched literally, newest first, `limit` cut
+    """Honors `PendingApprovalsPort`'s contract: the caller's tenant and
+    workspace only, pending only, the prefix matched literally, newest first, `limit` cut
     after `total` is counted. Holds the platform's own `ApprovalRequest`, so
     a shape mismatch with the Protocol fails here, not in production."""
 
@@ -472,6 +472,7 @@ class FakePendingApprovals:
                 a
                 for a in self.approvals
                 if a.tenant_id.value == context.tenant_id
+                and a.workspace_id.value == context.workspace_id
                 and a.status is ApprovalStatus.PENDING
                 and a.approval_type.startswith(prefix)
             ),

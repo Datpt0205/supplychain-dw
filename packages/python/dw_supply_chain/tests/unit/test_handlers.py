@@ -2271,8 +2271,9 @@ def _brief_policy(order: tuple[BriefSignal, ...] = tuple(BriefSignal)) -> Supply
 
 
 class FakePendingApprovals:
-    """Honors the port's contract (tenant, pending, literal prefix, newest
-    first, `limit` after `total`) and records whether it was asked at all."""
+    """Honors the port's contract (tenant and workspace, pending, literal
+    prefix, newest first, `limit` after `total`) and records whether it was
+    asked at all."""
 
     def __init__(self, approvals: list[ApprovalRequest] | None = None) -> None:
         self.approvals = approvals or []
@@ -2286,7 +2287,9 @@ class FakePendingApprovals:
             (
                 a
                 for a in self.approvals
-                if a.tenant_id.value == context.tenant_id and a.approval_type.startswith(prefix)
+                if a.tenant_id.value == context.tenant_id
+                and a.workspace_id.value == context.workspace_id
+                and a.approval_type.startswith(prefix)
             ),
             key=lambda a: (a.created_at, a.id),
             reverse=True,

@@ -6,6 +6,7 @@ import { ChevronDown, LogOut, ScrollText } from "lucide-react";
 import { SettingOutlined } from "@ant-design/icons";
 import { Badge, cn } from "@dw/ui";
 import { useAuth } from "../lib/auth/auth-context";
+import { NAV_ITEMS } from "../lib/nav/registry";
 import { roleLabel } from "../lib/nav/roles";
 
 // Seniority low → high. Only the most senior role is badged, by its FULL name
@@ -14,6 +15,12 @@ import { roleLabel } from "../lib/nav/roles";
 // "Platform Admin". A role a bounded context adds is unranked and therefore
 // only badged when the person holds nothing else.
 const ROLE_RANK = ["member", "approver", "org_admin", "platform_admin"];
+
+// The menu's second door to the audit trail reads its scope from the nav
+// registry's entry, the one owner of "who is offered /audit": hard-coding a
+// scope here kept offering every member a page the API refuses
+// (approval-audit-and-workspace/02).
+const AUDIT_LOG = NAV_ITEMS.find((item) => item.href === "/audit");
 
 function badgeVariant(
   role: string | undefined,
@@ -99,7 +106,7 @@ export function SessionChip() {
             <SettingOutlined className="text-base" aria-hidden /> Cài đặt cá
             nhân
           </Link>
-          {hasScope("approvals.read") && (
+          {AUDIT_LOG && (!AUDIT_LOG.scope || hasScope(AUDIT_LOG.scope)) && (
             <Link
               href="/audit"
               onClick={() => setOpen(false)}

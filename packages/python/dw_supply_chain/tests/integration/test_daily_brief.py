@@ -165,7 +165,10 @@ async def test_the_brief_holds_only_the_callers_tenant(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     mine = _context(uuid.uuid4(), uuid.uuid4())
-    other = _context(uuid.uuid4(), uuid.uuid4())
+    # Same workspace id, another tenant (UUIDs are not tenant-bound): only the
+    # tenant boundary can keep its rows out, not the workspace filter the
+    # approval count carries since platform-runtime/approval-audit-and-workspace/02.
+    other = _context(uuid.uuid4(), mine.workspace_id)
     cases = SqlPOCaseRepository(sessions)
     updates = SqlSupplierUpdateRepository(sessions)
 

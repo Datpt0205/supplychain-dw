@@ -36,12 +36,12 @@ async def sessions(db_urls: DatabaseUrls) -> AsyncIterator[async_sessionmaker[As
     await engine.dispose()
 
 
-def _context() -> AccessContext:
+def _context(workspace_id: uuid.UUID | None = None) -> AccessContext:
     # A fresh tenant per test: approvals written by other tests in this
     # database never leak into these counts.
     return AccessContext(
         tenant_id=uuid.uuid4(),
-        workspace_id=uuid.uuid4(),
+        workspace_id=workspace_id or uuid.uuid4(),
         principal_id=uuid.uuid4(),
         roles=frozenset({"member"}),
         scopes=frozenset(),
@@ -106,7 +106,11 @@ async def test_the_count_is_every_match_and_the_rows_are_the_newest(
 async def test_another_tenants_approvals_are_not_there(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    mine, theirs = _context(), _context()
+    mine = _context()
+    # The other tenant's row carries MY workspace id (UUIDs are not
+    # tenant-bound): only the tenant boundary can keep it out, not the
+    # workspace filter of platform-runtime/approval-audit-and-workspace/02.
+    theirs = _context(workspace_id=mine.workspace_id)
     await _add(sessions, theirs, f"{_PREFIX}cancel")
 
     total, rows = await SqlPendingApprovalQuery(sessions).list_pending_by_type_prefix(

@@ -8,8 +8,11 @@ class satisfies it at the composition root, so no context reads
 `platform.approval_requests` itself.
 
 Queries name no `tenant_id` filter of their own: RLS is the one enforcement
-mechanism for a Postgres-backed store here, same as every repository in this
-package.
+mechanism for the tenant here, same as every repository in this package. RLS
+on `approval_requests` narrows by tenant only, so the caller's workspace is
+narrowed here, as `SqlApprovalRepository.list_pending` narrows the inbox: a
+context's count must not show what the inbox itself would refuse
+(platform-runtime/approval-audit-and-workspace/02).
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ class SqlPendingApprovalQuery:
         LIKE's any-one-character wildcard."""
         approvals = tables.approval_requests
         matches = sa.and_(
+            approvals.c.workspace_id == context.workspace_id,
             approvals.c.status == ApprovalStatus.PENDING.value,
             approvals.c.approval_type.startswith(prefix, autoescape=True),
         )

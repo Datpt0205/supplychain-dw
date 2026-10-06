@@ -133,7 +133,7 @@ async def test_uow_persists_approval_audit_outbox_under_rls(
 
     # Read back + decide in a second transaction.
     async with factory(context) as uow:
-        loaded = await uow.approvals.get(request.id)
+        loaded = await uow.approvals.get(request.id, workspace_id=context.workspace_id)
         assert loaded is not None and loaded.status.value == "pending"
         decision = loaded.decide(
             decision_id=uuid.uuid4(),
@@ -146,7 +146,7 @@ async def test_uow_persists_approval_audit_outbox_under_rls(
         await uow.commit()
 
     async with factory(context) as uow:
-        final = await uow.approvals.get(request.id)
+        final = await uow.approvals.get(request.id, workspace_id=context.workspace_id)
         assert final is not None and final.status.value == "approved"
         pending_outbox = await uow.outbox.list_unprocessed()
         assert any(e.aggregate_id == request.id for e in pending_outbox)

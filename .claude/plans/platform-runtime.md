@@ -72,8 +72,17 @@ Mốc 6 (running many customers) is half done:
   context narrows its tables by workspace. Found on the way: offboarding loses
   in-app notifications unexported (`ops-hardening.md` Open).
 - **Approval decisions audited; approvals, runs and audit read by workspace**
-  (`platform-runtime/approval-audit-and-workspace/`, tickets 01–02 open):
-  HITL-11 and the rest of TEN-04. Ticket 01 comes before the first product gate.
+  (`platform-runtime/approval-audit-and-workspace/`): HITL-11 and the rest of
+  TEN-04. Ticket 01 open, and comes before the first product gate. Ticket 02
+  done on `feat/elmich-a-d-s1` (2026-10-05, provisional decisions awaiting
+  QO-2): the repository narrows approval, run and audit reads to the caller's
+  workspace (RLS unchanged, still tenant-only), a decision resumes the run in
+  the run's own workspace, `GET /runs/{id}` checks `runs.read`, the audit
+  route checks `audit.events`, and the keyset indexes carry `workspace_id`
+  (`cbf765d02a12`). Review round 1 (2026-10-06): the account menu's audit
+  link now reads its scope from the nav registry, cross-tenant tests name the
+  victim's workspace so only the tenant boundary refuses, both pages watched
+  in a browser; whether the UoW should own the workspace is for QO-2.
 - **Tickets written for the first product, platform side** (2026-10-03, all
   `ready-for-agent`, product-neutral), each under `platform-runtime/<folder>/`:
   `scope-holder-check` (ask whether a user holds a scope without an

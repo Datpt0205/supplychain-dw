@@ -165,14 +165,15 @@ class RunnerStack:
             ids=Uuid4Generator(),
         )
 
-    def run_context_for_read(self, tenant_id: uuid.UUID) -> RunContext:
-        # `run_store.get()` only reads `run_context.tenant_id` to scope the
-        # query — the rest is unused for a read, same as `ApproveAndResume
-        # Service._run_context_for`'s own lookup context.
+    def run_context_for_read(self, tenant_id: uuid.UUID, workspace_id: uuid.UUID) -> RunContext:
+        # `run_store.get()` reads `run_context.tenant_id` and `workspace_id` to
+        # scope the query (RLS the tenant, the store the workspace) — the rest
+        # is unused for a read, same as `ApproveAndResumeService._run_context_for`'s
+        # own lookup context.
         return RunContext(
             run_id=uuid.uuid4(),
             tenant_id=tenant_id,
-            workspace_id=uuid.uuid4(),
+            workspace_id=workspace_id,
             actor_id=uuid.uuid4(),
             worker_id="unknown",
             worker_version="0.0.0",
@@ -210,12 +211,14 @@ async def test_pause_survives_restart_then_approval_applies_the_transition(
     assert isinstance(result, CaseActionPendingApproval)
     run_id = result.run_id
 
-    record = await stack1.run_store.get(stack1.run_context_for_read(tenant), run_id)
+    record = await stack1.run_store.get(stack1.run_context_for_read(tenant, workspace), run_id)
     assert record.status is RunStatus.WAITING_APPROVAL
     assert record.approval_request_id is not None
 
     async with stack1.uow_factory(requester_context) as uow:
-        approval = await uow.approvals.get(record.approval_request_id)
+        approval = await uow.approvals.get(
+            record.approval_request_id, workspace_id=requester_context.workspace_id
+        )
         assert approval is not None
         assert approval.approval_type == f"{APPROVAL_TYPE_PREFIX}request_deposit"
         assert approval.run_id == run_id
@@ -244,7 +247,7 @@ async def test_pause_survives_restart_then_approval_applies_the_transition(
     )
     assert approved.status is ApprovalStatus.APPROVED
 
-    final = await stack2.run_store.get(stack2.run_context_for_read(tenant), run_id)
+    final = await stack2.run_store.get(stack2.run_context_for_read(tenant, workspace), run_id)
     assert final.status is RunStatus.COMPLETED
 
     applied = await stack2.po_case_repo.get(requester_context, case.id)
@@ -271,7 +274,7 @@ async def test_rejecting_applies_nothing(db_urls: DatabaseUrls) -> None:
         requester_context, po_case_id=case.id, action=CaseAction.REQUEST_DEPOSIT
     )
     assert isinstance(result, CaseActionPendingApproval)
-    record = await stack.run_store.get(stack.run_context_for_read(tenant), result.run_id)
+    record = await stack.run_store.get(stack.run_context_for_read(tenant, workspace), result.run_id)
     assert record.approval_request_id is not None
 
     approver_context = _context(
@@ -288,7 +291,7 @@ async def test_rejecting_applies_nothing(db_urls: DatabaseUrls) -> None:
         authorization=stack.authz,
     )
 
-    final = await stack.run_store.get(stack.run_context_for_read(tenant), result.run_id)
+    final = await stack.run_store.get(stack.run_context_for_read(tenant, workspace), result.run_id)
     assert final.status is RunStatus.COMPLETED
 
     untouched = await stack.po_case_repo.get(requester_context, case.id)
@@ -316,7 +319,7 @@ async def test_strict_prefix_refuses_self_approval(db_urls: DatabaseUrls) -> Non
         requester_context, po_case_id=case.id, action=CaseAction.REQUEST_DEPOSIT
     )
     assert isinstance(result, CaseActionPendingApproval)
-    record = await stack.run_store.get(stack.run_context_for_read(tenant), result.run_id)
+    record = await stack.run_store.get(stack.run_context_for_read(tenant, workspace), result.run_id)
     assert record.approval_request_id is not None
 
     with pytest.raises(ConflictError, match="separation of duties"):
@@ -347,7 +350,7 @@ async def test_strict_prefix_refuses_a_blank_comment(db_urls: DatabaseUrls) -> N
         requester_context, po_case_id=case.id, action=CaseAction.REQUEST_DEPOSIT
     )
     assert isinstance(result, CaseActionPendingApproval)
-    record = await stack.run_store.get(stack.run_context_for_read(tenant), result.run_id)
+    record = await stack.run_store.get(stack.run_context_for_read(tenant, workspace), result.run_id)
     assert record.approval_request_id is not None
 
     approver_context = _context(

@@ -9,7 +9,7 @@ from dw_agent_runtime.adapters.run_store import RunRecord, RunStatus
 from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_agent_runtime.contracts import RunContext
 from dw_kernel.autonomy import AutonomyLevel
-from dw_kernel.errors import ConflictError, PermissionDeniedError
+from dw_kernel.errors import ConflictError, NotFoundError, PermissionDeniedError
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.ports import FixedClock, SequentialIdGenerator
 from dw_platform.application.access_context import AccessContext
@@ -22,15 +22,21 @@ pytestmark = pytest.mark.unit
 NOW = datetime(2026, 8, 10, 9, 0, tzinfo=UTC)
 REQUESTER = uuid.UUID(int=1)
 APPROVER = uuid.UUID(int=2)
+WORKSPACE = uuid.UUID(int=101)
 
 
 @dataclass
 class FakeApprovalRepo:
+    """Honours the port: another workspace's request is not found."""
+
     request: ApprovalRequest
     decisions: list[ApprovalDecision] = field(default_factory=list)
 
-    async def get(self, approval_id: uuid.UUID) -> ApprovalRequest | None:
-        return self.request if approval_id == self.request.id else None
+    async def get(
+        self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID
+    ) -> ApprovalRequest | None:
+        found = approval_id == self.request.id and workspace_id == self.request.workspace_id.value
+        return self.request if found else None
 
     async def save(self, request: ApprovalRequest) -> None: ...
 
@@ -67,7 +73,10 @@ REQUESTER_AUTONOMY: AutonomyLevel = "A3"
 
 @dataclass
 class FakeRunStore:
+    """Honours `SqlWorkerRunStore.get`: a run is read in its own workspace only."""
+
     status: RunStatus = RunStatus.WAITING_APPROVAL
+    workspace_id: uuid.UUID = WORKSPACE
     worker_version: str = "1.0.0"
     actor_scopes: frozenset[str] = REQUESTER_SCOPES
     actor_clearance: str = "confidential"
@@ -75,9 +84,12 @@ class FakeRunStore:
     actor_visible_owners: frozenset[uuid.UUID] | None = REQUESTER_OWNERS
 
     async def get(self, run_context: RunContext, run_id: uuid.UUID) -> RunRecord:
+        if run_context.workspace_id != self.workspace_id:
+            raise NotFoundError("run not found", details={"run_id": str(run_id)})
         return RunRecord(
             id=run_id,
             thread_id=uuid.UUID(int=21),
+            workspace_id=self.workspace_id,
             status=self.status,
             worker_id="sales_chat",
             worker_version=self.worker_version,
@@ -125,7 +137,7 @@ def make_request(approval_type: str, run_id: uuid.UUID | None = None) -> Approva
     return ApprovalRequest(
         id=uuid.UUID(int=10),
         tenant_id=TenantId(uuid.UUID(int=100)),
-        workspace_id=WorkspaceId(uuid.UUID(int=101)),
+        workspace_id=WorkspaceId(WORKSPACE),
         approval_type=approval_type,
         requested_by=UserId(REQUESTER),
         reason="cần duyệt",
@@ -140,6 +152,7 @@ def make_service(
     runner: Any = None,
     repo: FakeApprovalRepo | None = None,
     run_status: RunStatus = RunStatus.WAITING_APPROVAL,
+    run_workspace: uuid.UUID = WORKSPACE,
 ) -> ApproveAndResumeService:
     resolved = repo or FakeApprovalRepo(request=request)
 
@@ -149,7 +162,7 @@ def make_service(
     return ApproveAndResumeService(
         uow_factory=uow_factory,
         runner=cast(Any, runner),
-        run_store=cast(Any, FakeRunStore(status=run_status)),
+        run_store=cast(Any, FakeRunStore(status=run_status, workspace_id=run_workspace)),
         clock=FixedClock(NOW),
         id_generator=SequentialIdGenerator(),
         strict_approval_prefixes=prefixes,
@@ -300,6 +313,52 @@ async def test_the_resumed_run_carries_the_requesters_authority() -> None:
     approver = make_context(APPROVER)
     assert not (resumed.scopes & approver.scopes)
     assert not (resumed.roles & approver.roles)
+    # And the workspace, from the run's row: what the resumed graph reads and
+    # writes is the run's workspace (approval-audit-and-workspace/02).
+    assert resumed.workspace_id == WORKSPACE
+
+
+async def test_another_workspaces_approval_is_not_found_and_nothing_moves() -> None:
+    """RLS narrows approvals by tenant only; the read narrows the workspace, and
+    refuses before any scope check, write or resume."""
+    request = make_request("demo.dispatch", run_id=RUN_ID)
+    repo = FakeApprovalRepo(request=request)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner, repo=repo)
+    elsewhere = AccessContext(
+        tenant_id=uuid.UUID(int=100),
+        workspace_id=uuid.UUID(int=102),
+        principal_id=APPROVER,
+        roles=frozenset({"approver"}),
+        scopes=frozenset({"approvals.decide"}),
+        plan_id="professional",
+    )
+
+    with pytest.raises(NotFoundError, match="approval request not found"):
+        await _decide_as(service, elsewhere, approve=True)
+
+    assert request.status is ApprovalStatus.PENDING
+    assert repo.decisions == []
+    assert runner.asked == []
+    assert runner.resumed == []
+
+
+async def test_a_run_in_another_workspace_than_its_approval_is_not_resumed() -> None:
+    """Fails closed if the two ever disagree: the run is read in the decider's
+    (and so the approval's) workspace, and is not found there."""
+    request = make_request("demo.dispatch", run_id=RUN_ID)
+    repo = FakeApprovalRepo(request=request)
+    runner = FakeRunner(hosted=True)
+    service = make_service(
+        request, frozenset(), runner=runner, repo=repo, run_workspace=uuid.UUID(int=102)
+    )
+
+    with pytest.raises(NotFoundError, match="run not found"):
+        await decide(service, APPROVER, "")
+
+    assert request.status is ApprovalStatus.PENDING
+    assert repo.decisions == []
+    assert runner.resumed == []
 
 
 def context_without_the_right(principal: uuid.UUID) -> AccessContext:

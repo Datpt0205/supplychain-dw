@@ -82,14 +82,19 @@ async def list_pending(
     await container.authorization.require(
         context=context, action="approvals.read", resource_type="approval_request"
     )
+    # The workspace is in the fingerprint as the tenant is: a cursor taken in
+    # one workspace is refused in another rather than answered from its window.
     request = page_request(
         limit=limit,
         cursor=cursor,
-        query=PageQuery(key="approvals.pending", filters={"tenant": context.tenant_id}),
+        query=PageQuery(
+            key="approvals.pending",
+            filters={"tenant": context.tenant_id, "workspace": context.workspace_id},
+        ),
     )
     approval_flow = container.approval_flow
     async with container.uow_factory(context) as uow:
-        page = await uow.approvals.list_pending(request)
+        page = await uow.approvals.list_pending(request, workspace_id=context.workspace_id)
     return page.map_items(lambda p: _view(p, context, approval_flow))
 
 
@@ -106,7 +111,8 @@ async def get_approval(
         resource_id=str(approval_id),
     )
     async with container.uow_factory(context) as uow:
-        request = await uow.approvals.get(approval_id)
+        request = await uow.approvals.get(approval_id, workspace_id=context.workspace_id)
+    # Another workspace's request is the same answer as one that never existed.
     if request is None:
         raise NotFoundError("approval request not found")
     return _view(request, context, container.approval_flow)

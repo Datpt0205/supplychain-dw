@@ -4,11 +4,15 @@ What the page reads (`required_scope`, `requested_by_me`) and that the server
 refuses a decision the page would have locked, called directly over HTTP with
 no page in front of it (ADR 0020). Tenant isolation of the read is the
 database's job, covered against a real one by `dw_agent_runtime`'s
-`test_approval_decider_scope.py`.
+`test_approval_decider_scope.py`; workspace isolation is the repository's,
+covered against a real one by `test_approval_workspace.py` there. Here: the
+routes hand the repository the caller's own workspace, and answer 404 for
+another workspace's request (approval-audit-and-workspace/02).
 """
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -22,6 +26,7 @@ from dw_api.main import create_app
 from dw_api.settings import ApiSettings
 from dw_kernel.errors import ConflictError
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
+from dw_kernel.pagination import CursorPosition, Page, PageQuery, PageRequest, encode_cursor
 from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.identity.dev_token import DevTokenVerifier
 from dw_platform.application.access_context import AccessContext
@@ -35,6 +40,7 @@ pytestmark = pytest.mark.unit
 SECRET = "unit-test-secret-0123456789abcdef"
 TENANT = uuid.uuid4()
 WORKSPACE = uuid.uuid4()
+OTHER_WORKSPACE = uuid.uuid4()
 VIEWER = uuid.uuid4()
 SOMEONE_ELSE = uuid.uuid4()
 BOD_SCOPE = "supply_chain.approve.bod"
@@ -64,14 +70,23 @@ class FakeMembershipLookup:
 
 @dataclass
 class FakeApprovalRepo:
-    """Honours the port: `save` refuses a stale version like the SQL one."""
+    """Honours the port: `save` refuses a stale version like the SQL one, and
+    reads see the asked workspace only, like the SQL ones."""
 
     request: ApprovalRequest
     decisions: list[ApprovalDecision] = field(default_factory=list)
     saved_version: int = 1
+    asked_workspaces: list[uuid.UUID] = field(default_factory=list)
 
-    async def get(self, request_id: uuid.UUID) -> ApprovalRequest | None:
-        return self.request if request_id == self.request.id else None
+    def _mine(self, workspace_id: uuid.UUID) -> bool:
+        self.asked_workspaces.append(workspace_id)
+        return workspace_id == self.request.workspace_id.value
+
+    async def get(
+        self, request_id: uuid.UUID, *, workspace_id: uuid.UUID
+    ) -> ApprovalRequest | None:
+        found = self._mine(workspace_id) and request_id == self.request.id
+        return self.request if found else None
 
     async def save(self, request: ApprovalRequest) -> None:
         if request.version - 1 != self.saved_version:
@@ -84,8 +99,9 @@ class FakeApprovalRepo:
     async def add(self, request: ApprovalRequest) -> None:
         raise NotImplementedError("not exercised by the approvals routes")
 
-    async def list_pending(self, request: Any) -> Any:
-        raise NotImplementedError("not exercised by these tests")
+    async def list_pending(self, request: PageRequest, *, workspace_id: uuid.UUID) -> Page[Any]:
+        pending = self._mine(workspace_id) and self.request.status is ApprovalStatus.PENDING
+        return Page(items=(self.request,) if pending else (), next_cursor=None)
 
 
 @dataclass
@@ -113,11 +129,13 @@ class RunnerThatMustNotRun:
         raise AssertionError("no run to resume")
 
 
-def make_request(*, requested_by: uuid.UUID, required_scope: str | None) -> ApprovalRequest:
+def make_request(
+    *, requested_by: uuid.UUID, required_scope: str | None, workspace: uuid.UUID = WORKSPACE
+) -> ApprovalRequest:
     return ApprovalRequest(
         id=uuid.uuid4(),
         tenant_id=TenantId(TENANT),
-        workspace_id=WorkspaceId(WORKSPACE),
+        workspace_id=WorkspaceId(workspace),
         approval_type="supply_chain.product_action.approve",
         requested_by=UserId(requested_by),
         reason="BGĐ duyệt phát triển sản phẩm",
@@ -153,7 +171,11 @@ def make_container(repo: FakeApprovalRepo, scopes: frozenset[str]) -> ApiContain
 
 
 async def _call(
-    container: ApiContainer, method: str, path: str, body: dict[str, Any] | None = None
+    container: ApiContainer,
+    method: str,
+    path: str,
+    body: dict[str, Any] | None = None,
+    params: dict[str, str] | None = None,
 ) -> httpx.Response:
     token = DevTokenVerifier(SECRET).issue("dev|approver", email="approver@fpt.com")
     headers = {
@@ -166,7 +188,7 @@ async def _call(
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             return await client.request(
-                method, f"/api/v1/approvals{path}", headers=headers, json=body
+                method, f"/api/v1/approvals{path}", headers=headers, json=body, params=params
             )
 
 
@@ -219,3 +241,56 @@ async def test_a_holder_of_the_stamp_decides_over_http() -> None:
     assert response.json()["status"] == "approved"
     assert response.json()["required_scope"] == BOD_SCOPE
     assert len(repo.decisions) == 1
+
+
+async def test_another_workspaces_approval_is_neither_listed_nor_found_nor_decided() -> None:
+    """B in W2 holds `approvals.decide`; the request is W1's. The inbox does not
+    list it, by id it is a 404 (not a 403: "not yours" and "never existed" are
+    one answer), and a decision is refused before anything is recorded."""
+    request = make_request(
+        requested_by=SOMEONE_ELSE, required_scope=None, workspace=OTHER_WORKSPACE
+    )
+    repo = FakeApprovalRepo(request)
+    container = make_container(repo, frozenset({"approvals.read", "approvals.decide"}))
+
+    listed = await _call(container, "GET", "")
+    by_id = await _call(container, "GET", f"/{request.id}")
+    decided = await _call(
+        container, "POST", f"/{request.id}/decisions", {"approve": True, "comment": ""}
+    )
+
+    assert listed.status_code == 200
+    assert listed.json()["items"] == []
+    assert by_id.status_code == 404
+    assert decided.status_code == 404
+    assert repo.decisions == []
+    assert request.status is ApprovalStatus.PENDING
+    # Every read asked for the caller's own workspace, never one from the request.
+    assert set(repo.asked_workspaces) == {WORKSPACE}
+
+
+async def test_the_inbox_lists_the_callers_own_workspace() -> None:
+    request = make_request(requested_by=SOMEONE_ELSE, required_scope=None)
+    container = make_container(FakeApprovalRepo(request), frozenset({"approvals.read"}))
+
+    response = await _call(container, "GET", "")
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [str(request.id)]
+
+
+@pytest.mark.parametrize(("workspace", "status"), [(WORKSPACE, 200), (OTHER_WORKSPACE, 422)])
+async def test_a_cursor_is_bound_to_the_workspace_it_was_issued_in(
+    workspace: uuid.UUID, status: int
+) -> None:
+    """The workspace is in the cursor's fingerprint as the tenant is."""
+    request = make_request(requested_by=SOMEONE_ELSE, required_scope=None)
+    container = make_container(FakeApprovalRepo(request), frozenset({"approvals.read"}))
+    cursor = encode_cursor(
+        CursorPosition(sort_value=datetime.now(UTC), tiebreaker=uuid.uuid4()),
+        PageQuery(key="approvals.pending", filters={"tenant": TENANT, "workspace": workspace}),
+    )
+
+    response = await _call(container, "GET", "", params={"cursor": cursor})
+
+    assert response.status_code == status
