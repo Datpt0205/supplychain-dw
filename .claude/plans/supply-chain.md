@@ -88,15 +88,15 @@ email as a second channel.
 
 ## Slice log
 
-| Slice  | Commit        | What                                                                                                                                                                     |
-| ------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P, ENV | `c2f04dc`     | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                                                                                 |
-| U, Z1  | `51c0ef7`     | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                                                                                  |
-| A      | `dabf5c4`     | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                                                                                     |
-| D      | `51e3400`     | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep.                                                               |
-| S1     | `6dfb1ef`     | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages. |
-| PR-02  | `7b411df`     | Platform: approvals, runs and audit read only the caller's workspace.                                                                                                    |
-| S2     | (this commit) | BGĐ review at step 6: graph-only approve/reject, decider as actor, idempotent start plus a reconcile lane, `sc_bod`.                                                     |
+| Slice  | Commit    | What                                                                                                                                                                     |
+| ------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P, ENV | `c2f04dc` | Port of `dw_supply_chain` onto the current platform; Elmich environment.                                                                                                 |
+| U, Z1  | `51c0ef7` | Per-user login on 3200, `/settings`, Zalo link with a single-use token.                                                                                                  |
+| A      | `dabf5c4` | `required_scope` stamped on an approval, enforced in `decide`, read by `/approvals`.                                                                                     |
+| D      | `51e3400` | `case_documents` (first workspace-narrowed table), own bucket, upload/download, offboarding, orphan sweep.                                                               |
+| S1     | `6dfb1ef` | Product development case, steps 1–5: aggregate, four workspace-narrowed tables, rounds with set-once results, `sc_rnd`, product duty policy, antd list and detail pages. |
+| PR-02  | `7b411df` | Platform: approvals, runs and audit read only the caller's workspace.                                                                                                    |
+| S2     | `446083e` | BGĐ review at step 6: graph-only approve/reject, decider as actor, idempotent start plus a reconcile lane, `sc_bod`.                                                     |
 
 ## Open — named, not fixed, still true after the port
 
