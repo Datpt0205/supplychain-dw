@@ -112,6 +112,7 @@ email as a second channel.
 | Z2     | `a57bcba` | Channel outbox: `platform.channel_deliveries` queued by `deliver_notification` for linked recipients only, `channel_delivery` lane (one tx per send, SKIP LOCKED, link/membership re-checked, 1/2/4/8 min backoff, fail at 5, audit per outcome), title+link only; ADR 0013 amended.                            |
 | Z5     | `9d00e24` | Approve on Zalo after a portal view: receipts + single-use HMAC codes (workspace RLS, principal self-select, lock at 5 wrong tries), `DUYỆT <mã>`/`KHÔNG <mã> <lý do>` first in the router, `decide(channel=, admission=)`, case-version port, `/approvals/[id]`; ADR 0014 amended.                             |
 | S4     | `4500ee0` | Item code, SKUs and sign-off, step 9: UNIQUE per tenant by the database (409 by constraint, race-tested), SKU under its case's item code, sign-off graph (own worker) with ordered stamped steps BGĐ → Kế toán from policy 1.1.0, one ensure + extended lane, `sc_finance` signs, coding card on the case page. |
+| S5     | `3deec0e` | ĐẶT HÀNG and step 10: conditional UPDATE opens one PO case in `order_requested` (race-tested; UNIQUE per product case while QE-12 is open), PIC/Category stamped, `po_case_lines` (workspace RLS), `create_po` command, duty policies 1.3.0/1.1.0 with override migration, end-to-end step 1 → `completed`. |
 
 ## Open — named, not fixed, still true after the port
 
