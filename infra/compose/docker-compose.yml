@@ -275,9 +275,13 @@ services:
       DW_API_CORS_ORIGINS: ${DW_API_CORS_ORIGINS:-[]}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       # Zalo self-link (zalo-channel ticket 01): /api/v1/zalo/* is mounted
-      # only when both the bot token and the link secret are set.
+      # only when both the bot token and the link secret are set. The webhook
+      # (ticket 03) only with ZALO_UPDATES_MODE=webhook and the secret set;
+      # the worker reads the same mode, so one bot has one reader.
       ZALO_BOT_TOKEN: ${ZALO_BOT_TOKEN:-}
       ZALO_WEBHOOK_SECRET: ${ZALO_WEBHOOK_SECRET:-}
+      ZALO_UPDATES_MODE: ${ZALO_UPDATES_MODE:-poll}
+      DW_API_PUBLIC_BASE_URL: ${DW_API_PUBLIC_BASE_URL:-}
       ZALO_LINK_SECRET: ${ZALO_LINK_SECRET:-}
       DW_APPROVAL_CODE_SECRET: ${DW_APPROVAL_CODE_SECRET:-}
       ZALO_BOT_LINK: ${ZALO_BOT_LINK:-}
@@ -462,9 +466,10 @@ services:
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
       DW_PUBLIC_WEB_URL: ${DW_PUBLIC_WEB_URL:-http://localhost:3000}
       # Zalo self-link: the `zalo_link_poll` lane runs only with the token,
-      # the link secret (the api's value) and ZALO_UPDATES_MODE=poll.
+      # the link secret (the api's value) and ZALO_UPDATES_MODE=poll; the
+      # `zalo_webhook_drain` lane with the same two and =webhook. The webhook
+      # secret is the api's alone: nothing here reads it.
       ZALO_BOT_TOKEN: ${ZALO_BOT_TOKEN:-}
-      ZALO_WEBHOOK_SECRET: ${ZALO_WEBHOOK_SECRET:-}
       ZALO_LINK_SECRET: ${ZALO_LINK_SECRET:-}
       DW_APPROVAL_CODE_SECRET: ${DW_APPROVAL_CODE_SECRET:-}
       ZALO_BOT_LINK: ${ZALO_BOT_LINK:-}

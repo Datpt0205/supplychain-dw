@@ -177,16 +177,23 @@ class ZaloBotClient:
         result = data.get("result") or {}
         return str(result.get("message_id", ""))
 
-    async def set_webhook(self, url: str) -> None:
-        """Point the bot at ``url`` so updates are POSTed there instead of polled."""
+    async def set_webhook(self, url: str, *, secret_token: str) -> None:
+        """Point the bot at ``url`` so updates are POSTed there instead of polled.
+
+        Zalo sends ``secret_token`` back in the ``X-Bot-Api-Secret-Token``
+        header of every call, which is how the API tells Zalo from anyone else
+        (ADR 0015 amendment Z3); the URL carries no secret, so none lands in an
+        access log. A failure's text has both the token and the secret scrubbed.
+        """
         async with self._client(15) as client:
-            response = await client.post("/setWebhook", json={"url": url})
+            response = await client.post(
+                "/setWebhook", json={"url": url, "secret_token": secret_token}
+            )
             response.raise_for_status()
             data = response.json()
         if not data.get("ok"):
-            raise RuntimeError(
-                f"zalo setWebhook failed: {self._scrub(str(data.get('description')))}"
-            )
+            description = self._scrub(str(data.get("description"))).replace(secret_token, "***")
+            raise RuntimeError(f"zalo setWebhook failed: {description}")
 
     async def delete_webhook(self) -> None:
         """Remove the webhook so ``getUpdates`` long-polling works again."""

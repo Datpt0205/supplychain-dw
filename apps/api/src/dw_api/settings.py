@@ -270,6 +270,35 @@ class ApiSettings(BaseSettings):
         default="", validation_alias=AliasChoices("DW_API_ZALO_BOT_LINK", "ZALO_BOT_LINK")
     )
 
+    # poll = the worker long-polls getUpdates and the webhook route answers 404;
+    # webhook = Zalo POSTs to /api/v1/zalo/webhook and the worker drains what
+    # the API queued (ADR 0015 amendment Z3). The worker reads the same
+    # variable, so one value decides both processes: one bot, one reader.
+    zalo_updates_mode: Literal["poll", "webhook"] = Field(
+        default="poll",
+        validation_alias=AliasChoices("DW_API_ZALO_UPDATES_MODE", "ZALO_UPDATES_MODE"),
+    )
+    # Sent by Zalo in ``X-Bot-Api-Secret-Token`` on every webhook call (given to
+    # ``setWebhook`` as ``secret_token`` by scripts/zalo_webhook.py). Empty =
+    # no webhook, whatever the mode. At least 32 characters when deployed.
+    zalo_webhook_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DW_API_ZALO_WEBHOOK_SECRET", "ZALO_WEBHOOK_SECRET"),
+    )
+    # The API as the internet reaches it (the api hostname, ADR 0023): the
+    # webhook URL registered with Zalo is built from it. https when deployed.
+    public_base_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("DW_API_PUBLIC_BASE_URL"),
+    )
+
+    @property
+    def zalo_webhook_enabled(self) -> bool:
+        """The webhook exists only in webhook mode and only with a secret to check."""
+        return self.zalo_updates_mode == "webhook" and bool(
+            self.zalo_webhook_secret.get_secret_value()
+        )
+
     @property
     def zalo_link_enabled(self) -> bool:
         """Linking needs both: a token to reply with and a secret to sign with."""
@@ -355,6 +384,20 @@ class ApiSettings(BaseSettings):
                 raise RuntimeError(
                     f"CORS origins must be listed explicitly in the {self.profile} profile"
                 )
+            if self.zalo_updates_mode == "webhook":
+                # Zalo reaches the webhook over the internet; a guessable
+                # secret or a plain-http URL would hand chat traffic to anyone
+                # on the path (ADR 0015).
+                if len(self.zalo_webhook_secret.get_secret_value()) < 32:
+                    raise RuntimeError(
+                        "ZALO_UPDATES_MODE=webhook needs a ZALO_WEBHOOK_SECRET of at least "
+                        f"32 characters in the {self.profile} profile"
+                    )
+                if not self.public_base_url.startswith("https://"):
+                    raise RuntimeError(
+                        "ZALO_UPDATES_MODE=webhook needs DW_API_PUBLIC_BASE_URL to start "
+                        f"with https:// in the {self.profile} profile"
+                    )
         if self.auth_mode == "oidc" and not self.oidc_issuer_url:
             raise RuntimeError("auth_mode=oidc requires DW_API_OIDC_ISSUER_URL")
         if self.langfuse_enabled and not (

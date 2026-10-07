@@ -42,6 +42,7 @@ from dw_api.routes.v1.notifications import router as notifications_router
 from dw_api.routes.v1.platform import router as platform_router
 from dw_api.routes.v1.runs import router as runs_router
 from dw_api.routes.v1.zalo import router as zalo_router
+from dw_api.routes.v1.zalo import webhook_router as zalo_webhook_router
 
 _LOG = logging.getLogger(__name__)
 
@@ -159,6 +160,12 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
     # secret are both configured, so an unconfigured deployment answers 404.
     if container.zalo_linking is not None:
         app.include_router(zalo_router, prefix="/api/v1")
+
+    # Zalo's own door, the hosted way updates arrive (ADR 0015): only in
+    # webhook mode with a secret set. In poll mode the worker reads the bot
+    # and this route does not exist, so the two never both read one bot.
+    if settings.zalo_webhook_enabled and container.zalo_webhook_inbox is not None:
+        app.include_router(zalo_webhook_router, prefix="/api/v1")
 
     # Platform provisioning: mounted only when the provisioner connection is
     # configured, so environments that never provision stay lean.

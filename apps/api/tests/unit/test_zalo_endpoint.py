@@ -369,7 +369,9 @@ def test_the_route_never_builds_an_access_context_from_zalo_data() -> None:
     The import side is import-linter's ("The Zalo settings routes take neither
     approvals nor the access-context factory"). What an import check cannot see
     is the container the route is handed, so this reads the route's syntax tree:
-    the only thing it takes from the container is the link service."""
+    the only things it takes from the container are the link service, the
+    workspace choice and, for the webhook (ticket 03), the inbox it queues to
+    and the settings that hold the webhook's mode and secret."""
     import ast
     from pathlib import Path
 
@@ -383,4 +385,4 @@ def test_the_route_never_builds_an_access_context_from_zalo_data() -> None:
         and isinstance(node.value, ast.Name)
         and node.value.id == "container"
     }
-    assert taken == {"zalo_linking", "channel_preferences"}
+    assert taken == {"zalo_linking", "channel_preferences", "zalo_webhook_inbox", "settings"}

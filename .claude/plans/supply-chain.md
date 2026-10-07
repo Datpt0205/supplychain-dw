@@ -53,7 +53,7 @@ means platform code, an upstream candidate (ADR 0011).
 | Z1    | `zalo-channel/issues/01-zalo-link.md`                                     | yes     | resolved        | P, ENV                              |
 | U     | `personal-settings/issues/01-settings-page-and-login.md`                  | yes     | resolved        | Z1, ENV, web-ui antd-shell 03/05    |
 | Z2    | `zalo-channel/issues/02-channel-delivery.md`                              | yes     | resolved        | Z1                                  |
-| Z3    | `zalo-channel/issues/03-zalo-webhook.md`                                  | yes     | ready-for-agent | Z1                                  |
+| Z3    | `zalo-channel/issues/03-zalo-webhook.md`                                  | yes     | resolved        | Z1                                  |
 | Z4a   | `zalo-channel/issues/04-chat-proposal.md` (steps 1–3, `/settings` select) | yes     | resolved        | Z1, U                               |
 | Z4b   | `zalo-channel/issues/04-chat-proposal.md` (steps 4–7, 9, 10)              | no      | resolved        | Z4a, S1, D                          |
 | Z4p   | `zalo-channel/issues/04b-photos.md` (photos, old step 8)                  | no      | ready-for-human | Z4b; a real photo update as fixture |

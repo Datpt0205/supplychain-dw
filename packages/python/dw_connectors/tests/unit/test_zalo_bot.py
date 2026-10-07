@@ -181,3 +181,35 @@ async def test_the_httpx_request_log_line_does_not_carry_the_token(
 
 def test_repr_does_not_print_the_token() -> None:
     assert TOKEN not in repr(ZaloBotClient(bot_token=TOKEN))
+
+
+async def test_set_webhook_registers_the_url_with_the_secret_token(monkeypatch) -> None:
+    """Zalo sends ``secret_token`` back in ``X-Bot-Api-Secret-Token`` on every
+    webhook call; the URL itself carries no secret (zalo-channel ticket 03)."""
+    seen: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/setWebhook")
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"ok": True, "result": True})
+
+    _patch_client(monkeypatch, handler)
+    await ZaloBotClient(bot_token=TOKEN).set_webhook(
+        "https://api.example.com/api/v1/zalo/webhook", secret_token="s" * 32
+    )
+    assert seen == [
+        {"url": "https://api.example.com/api/v1/zalo/webhook", "secret_token": "s" * 32}
+    ]
+
+
+async def test_set_webhook_failure_names_neither_the_token_nor_the_secret(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": False, "description": f"bad {TOKEN} {'s' * 32}"})
+
+    _patch_client(monkeypatch, handler)
+    with pytest.raises(RuntimeError) as raised:
+        await ZaloBotClient(bot_token=TOKEN).set_webhook(
+            "https://api.example.com/api/v1/zalo/webhook", secret_token="s" * 32
+        )
+    assert TOKEN not in str(raised.value)
+    assert "s" * 32 not in str(raised.value)

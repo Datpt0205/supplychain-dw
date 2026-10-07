@@ -267,6 +267,14 @@ async def test_the_application_may_only_settle_an_inbound_message_and_choose_a_w
             assert await column(chosen, "tenant_id", "UPDATE")
             assert await column(chosen, "workspace_id", "UPDATE")
             assert not await column(chosen, "user_id", "UPDATE")
+
+            # Migration of zalo-channel ticket 03: the API queues a webhook
+            # update, the worker's drain takes (deletes) it; nothing edits one.
+            queued = "channel_inbound_updates"
+            for verb in ("SELECT", "INSERT", "DELETE"):
+                assert await table(queued, verb), verb
+            for verb in ("UPDATE", "TRUNCATE"):
+                assert not await table(queued, verb), verb
     finally:
         await migrator.dispose()
 

@@ -282,6 +282,16 @@ class WorkerSettings(BaseSettings):
         )
 
     @property
+    def zalo_webhook_drain_enabled(self) -> bool:
+        """Drain what the API's webhook queued: webhook mode, never with the
+        poll lane, and with the same token and secret the poll lane needs."""
+        return (
+            self.zalo_updates_mode == "webhook"
+            and bool(self.zalo_bot_token.get_secret_value())
+            and bool(self.zalo_link_secret.get_secret_value())
+        )
+
+    @property
     def zalo_send_enabled(self) -> bool:
         """Send through the bot whenever there is a token to send with, polled
         or webhooked: a webhook host's notifications go out the same way."""
@@ -337,8 +347,10 @@ class WorkerSettings(BaseSettings):
                 f"a vector store is required in the {self.profile} profile - "
                 "the in-memory index is not durable"
             )
-        if self.zalo_poll_enabled and self.model_provider == "mock":
-            # The poll lane reads chat messages with the model; fixtures are
+        if (
+            self.zalo_poll_enabled or self.zalo_webhook_drain_enabled
+        ) and self.model_provider == "mock":
+            # Either Zalo lane reads chat messages with the model; fixtures are
             # not a model.
             raise RuntimeError(
                 f"the mock model provider is forbidden in the {self.profile} profile"

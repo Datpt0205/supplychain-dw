@@ -141,6 +141,19 @@ channel_inbound_messages = sa.Table(
     sa.Column("outcome", sa.Text, nullable=False, server_default="processing"),
 )
 
+# A webhook update the API accepted and the worker has not taken yet (zalo-channel
+# ticket 03). Identity plane like the table above: no tenant, no RLS.
+channel_inbound_updates = sa.Table(
+    "channel_inbound_updates",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("channel", sa.Text, nullable=False),
+    sa.Column("payload", JSONB, nullable=False),
+    sa.Column(
+        "received_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
 plans = sa.Table(
     "plans",
     metadata,

@@ -43,6 +43,7 @@ from dw_agent_runtime.toolsets import ToolsetRegistry
 from dw_api.health import HealthService
 from dw_api.settings import ApiSettings
 from dw_connectors.adapters.zalo_link import ZaloLinking
+from dw_connectors.inbound import InboundUpdateInboxPort
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_knowledge.gateway import KnowledgeGateway
 from dw_knowledge.ingest_jobs import IngestJobStore
@@ -260,6 +261,9 @@ class ApiContainer:
     # The workspace the signed-in user's Zalo commands act in. Wired with
     # ``zalo_linking`` and ``None`` without it, like the routes that read it.
     channel_preferences: ChannelPreferencesPort | None = None
+    # Where the Zalo webhook queues an accepted update for the worker. ``None``
+    # unless ``settings.zalo_webhook_enabled``, and then the route is not mounted.
+    zalo_webhook_inbox: InboundUpdateInboxPort | None = None
     cache: CachePort | None = None
     # Dedicated to the readiness probe — the runtime's own retrieval/memory
     # clients are built (and disposed) deeper inside `build_runtime`, only

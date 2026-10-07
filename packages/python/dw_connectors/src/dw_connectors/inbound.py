@@ -36,7 +36,7 @@ import contextlib
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from dw_connectors.ports import ChatSenderPort
@@ -143,6 +143,17 @@ class ChannelCommandRegistry[ContextT]:
 
     def commands(self) -> list[tuple[str, ChannelCommand[ContextT]]]:
         return list(self._commands)
+
+
+class InboundUpdateInboxPort(Protocol):
+    """Where a webhook leaves an update it accepted, for the worker to handle.
+
+    The API's side of the hand-over (ADR 0015 amendment Z3): it only queues, so
+    the webhook answers at once and every update is handled by the one inbound
+    entry the worker runs for both paths.
+    """
+
+    async def enqueue(self, channel: str, update: dict[str, Any], /) -> None: ...
 
 
 # ---- the router -------------------------------------------------------------

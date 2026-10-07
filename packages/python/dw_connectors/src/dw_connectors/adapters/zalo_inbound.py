@@ -1,8 +1,9 @@
 """The one entry for a Zalo bot update, whichever way it arrived.
 
-The worker's poll lane calls ``ZaloInbound.handle`` for each update today; the
-API webhook (zalo-channel ticket 03) calls the same method with the update it
-was POSTed, unchanged. Both paths therefore split updates one way:
+The worker's poll lane calls ``ZaloInbound.handle`` for each update; in webhook
+mode (zalo-channel ticket 03) the worker's drain lane calls the same method with
+the update the API's webhook queued, unchanged. Both paths therefore split
+updates one way:
 
 - ``/start`` and ``/stop`` (the first word) go to the link flow,
   ``zalo_link.handle_update``, exactly as before Z4;

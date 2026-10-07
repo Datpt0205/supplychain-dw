@@ -66,6 +66,7 @@ from dw_platform.adapters.persistence.channel_deliveries import (
 from dw_platform.adapters.persistence.channel_inbound import (
     SqlChannelInboundLedger,
     SqlChannelInboundRetention,
+    SqlChannelUpdateQueue,
 )
 from dw_platform.adapters.persistence.channel_preferences import SqlChannelPreferences
 from dw_platform.adapters.persistence.membership_lookup import SqlMembershipLookup
@@ -123,6 +124,8 @@ from dw_worker.consumers.supply_chain import (
     register_product_approvals,
 )
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
+from dw_worker.consumers.zalo_webhook import INTERVAL_SECONDS as ZALO_WEBHOOK_INTERVAL_SECONDS
+from dw_worker.consumers.zalo_webhook import build_zalo_webhook_consumer
 from dw_worker.health import beat
 from dw_worker.settings import WorkerSettings
 
@@ -316,9 +319,9 @@ def build_zalo_inbound(
     """The Zalo update entry over this deployment's database: the link flow for
     ``/start``/``/stop``, the inbound router for everything else.
 
-    One construction, so the poll lane here and any test of it run the same
-    wiring; the webhook (Z3) builds the same object in the API and calls
-    ``handle`` with what it was POSTed.
+    One construction, so both lanes here and any test of them run the same
+    wiring: the poll lane feeds it what ``getUpdates`` returns, the webhook
+    drain (Z3) what the API's webhook queued.
     """
     zalo_link = SqlZaloLink(sessions)
     return ZaloInbound(
@@ -391,6 +394,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     # The Zalo self-link poll: only with a database, a bot token, a link secret
     # and ZALO_UPDATES_MODE=poll.
     zalo_poll_consumer: Callable[[], Awaitable[None]] | None = None
+    # The Zalo webhook drain: the same, in webhook mode, never beside the poll.
+    zalo_webhook_consumer: Callable[[], Awaitable[None]] | None = None
     # Notifications out through linked Zalo chats (ADR 0013): a database and a
     # bot token, polled or webhooked alike.
     channel_delivery_consumer: Callable[[], Awaitable[None]] | None = None
@@ -502,7 +507,9 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                 sender=ZaloBotClient(bot_token=settings.zalo_bot_token.get_secret_value()),
                 web_url=settings.public_web_url,
             )
-        if settings.zalo_poll_enabled:
+        # One bot, one reader (ADR 0015): poll mode polls, webhook mode drains
+        # what the API's webhook queued. Both feed the same inbound entry.
+        if settings.zalo_poll_enabled or settings.zalo_webhook_drain_enabled:
             bot = ZaloBotClient(bot_token=settings.zalo_bot_token.get_secret_value())
             commands = build_channel_commands(
                 settings,
@@ -521,9 +528,13 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                 ids=ids,
                 clock=clock,
             )
-            zalo_poll_consumer = build_zalo_poll_consumer(
-                bot, build_zalo_inbound(settings, sessions, bot, clock, commands)
-            )
+            inbound = build_zalo_inbound(settings, sessions, bot, clock, commands)
+            if settings.zalo_poll_enabled:
+                zalo_poll_consumer = build_zalo_poll_consumer(bot, inbound)
+            else:
+                zalo_webhook_consumer = build_zalo_webhook_consumer(
+                    SqlChannelUpdateQueue(sessions), inbound
+                )
         follow_up_consumer = build_follow_up_consumer(
             build_follow_up_sweep(
                 sessions,
@@ -643,6 +654,13 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     if zalo_poll_consumer is not None:
         registry.register("zalo_link_poll", zalo_poll_consumer)
         logger.info("zalo link poll registered")
+    if zalo_webhook_consumer is not None:
+        registry.register(
+            "zalo_webhook_drain",
+            zalo_webhook_consumer,
+            interval_seconds=ZALO_WEBHOOK_INTERVAL_SECONDS,
+        )
+        logger.info("zalo webhook drain registered")
     # In-app notifications out through linked chats. Claims rows with
     # SKIP LOCKED and holds no lease, so it needs no ReapTarget: a row a dead
     # worker held is pending again the moment its transaction ends.

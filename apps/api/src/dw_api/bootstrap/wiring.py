@@ -73,6 +73,7 @@ from dw_platform.adapters.persistence.admin_console_repo import SqlAdminConsoleR
 from dw_platform.adapters.persistence.approval_codes import SqlApprovalCodeStore
 from dw_platform.adapters.persistence.approval_queries import SqlPendingApprovalQuery
 from dw_platform.adapters.persistence.caching_lookup import CachingMembershipLookup
+from dw_platform.adapters.persistence.channel_inbound import SqlChannelUpdateQueue
 from dw_platform.adapters.persistence.channel_preferences import SqlChannelPreferences
 from dw_platform.adapters.persistence.directory import SqlWorkspaceDirectory
 from dw_platform.adapters.persistence.hierarchy_repo import SqlHierarchyRepository
@@ -223,6 +224,10 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
             bot_link=settings.zalo_bot_link,
         )
         container.channel_preferences = SqlChannelPreferences(session_factory)
+    # The hosted way updates arrive (ADR 0015): queued here, handled by the
+    # worker's drain through the same entry the poll lane uses.
+    if settings.zalo_webhook_enabled:
+        container.zalo_webhook_inbox = SqlChannelUpdateQueue(session_factory)
 
     # ---- provisioning ----------------------------------------------------
     # A second engine as the provisioner role: writes across tenants but holds
