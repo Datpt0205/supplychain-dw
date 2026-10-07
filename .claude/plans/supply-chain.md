@@ -109,6 +109,7 @@ email as a second channel.
 | Z4b    | `9852e52` | Chat proposal: `ProductProposalIntent` grounded per message, `proposal_drafts` (workspace RLS, guarded consume in the case's transaction), "Đồng ý" only at the summarised version, ceiling = `propose_scopes`; model in the worker via shared `model_stack` + `DailyAllowance`; eval `supply_chain@1.2.0`. |
 | S3     | `689f841` | BM04 and the supplier's confirmation, steps 7–8: paper on the history row (composite FK, CHECK), bound = when the case reached the step, `sc_supply_lead`, duty policy 1.1.0 with 1.0.0 overrides kept, upload inside the step form.                                                                        |
 | Z2     | `a57bcba` | Channel outbox: `platform.channel_deliveries` queued by `deliver_notification` for linked recipients only, `channel_delivery` lane (one tx per send, SKIP LOCKED, link/membership re-checked, 1/2/4/8 min backoff, fail at 5, audit per outcome), title+link only; ADR 0013 amended.                        |
+| Z5     | `9d00e24` | Approve on Zalo after a portal view: receipts + single-use HMAC codes (workspace RLS, principal self-select, lock at 5 wrong tries), `DUYỆT <mã>`/`KHÔNG <mã> <lý do>` first in the router, `decide(channel=, admission=)`, case-version port, `/approvals/[id]`; ADR 0014 amended.                         |
 
 ## Open — named, not fixed, still true after the port
 
