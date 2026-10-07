@@ -536,8 +536,11 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
         /Chờ người có quyền BGĐ \(supply_chain\.approve\.bod\) duyệt/,
       ),
     ).toBeTruthy();
-    const link = screen.getByRole("link", { name: "Mở trang Duyệt" });
-    expect(link.getAttribute("href")).toBe("/approvals");
+    // The review's own page: it decides on the web or issues a Zalo code.
+    const link = screen.getByRole("link", { name: /Mở yêu cầu duyệt/ });
+    expect(link.getAttribute("href")).toBe(
+      "/approvals/77777777-7777-4777-8777-777777777777",
+    );
     expect(screen.queryByText(/chưa có trên hệ thống/)).toBeNull();
     // The page renders one button per action the server offers, so it cannot
     // be where "no BGĐ decision here" is enforced: the server never offers
@@ -564,7 +567,7 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
       await screen.findByText("Mẫu đã đạt; chưa trình được BGĐ."),
     ).toBeTruthy();
     expect(screen.getByText(/Hệ thống tự trình lại/)).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Mở trang Duyệt" })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Mở yêu cầu duyệt/ })).toBeNull();
   });
 
   it("tells the tester when the review was not raised after a pass", async () => {

@@ -27,6 +27,7 @@ from dw_agent_runtime.adapters.langchain_usage import LangchainUsageMeter
 from dw_agent_runtime.adapters.langgraph_runner import LangGraphWorkflowRunner
 from dw_agent_runtime.adapters.run_events import RunStateListener
 from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
+from dw_agent_runtime.approval_codes import ApprovalViewService
 from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.executor import ToolExecutor
@@ -223,6 +224,9 @@ class ApiContainer:
     run_events: RunStateListener | None = None
     runner: LangGraphWorkflowRunner | None = None
     approval_flow: ApproveAndResumeService | None = None
+    # Opening an approval: the view receipt and, when asked, the code a
+    # decision on Zalo needs (ADR 0014). Wired with `approval_flow`.
+    approval_views: ApprovalViewService | None = None
 
     knowledge_gateway: KnowledgeGateway | None = None
     ingest_job_store: IngestJobStore | None = None

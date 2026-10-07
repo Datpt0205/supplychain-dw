@@ -118,6 +118,11 @@ _PRINCIPAL_ONLY_ON_PURPOSE: dict[tuple[str, str], str] = {
         "sign-in names the workspaces of the caller's own memberships before one "
         "is chosen; SELECT only, through those memberships"
     ),
+    ("approval_decision_codes", "approval_decision_codes_self_select"): (
+        "a decision code is the person's own and the bot reads it from the chat's "
+        "linked person before it knows a tenant (migration dbb8c3359981); SELECT "
+        "only, and every write runs under the tenant and workspace policy"
+    ),
     ("channel_preferences", "channel_preferences_self"): (
         "the workspace a person chose for chat commands is the person's own row, "
         "read by the bot before it knows a tenant (migration 988592a8100f); the FK "

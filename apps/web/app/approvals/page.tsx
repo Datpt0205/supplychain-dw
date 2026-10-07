@@ -20,7 +20,9 @@ import {
   ReloadOutlined,
 } from "@ant-design/icons";
 import type { Approval } from "@dw/contracts";
-import { PageHeader, StatusTag, type StatusTone } from "@dw/ui";
+import Link from "next/link";
+import { PageHeader } from "@dw/ui";
+import { ApprovalStatusTag } from "../../components/approval-status-tag";
 import {
   ToolApprovalPayload,
   approvalTitle,
@@ -31,20 +33,6 @@ import { formatDateTime, formatDateTimeFull, VN_TIME } from "../../lib/dates";
 import { errorMessage } from "../../lib/error-message";
 import { apiClient } from "../../lib/session";
 import { useCachedPages } from "../../lib/use-cached-pages";
-
-const STATUS: Record<Approval["status"], { label: string; tone: StatusTone }> =
-  {
-    pending: { label: "Chờ quyết", tone: "warn" },
-    approved: { label: "Đã duyệt", tone: "ok" },
-    rejected: { label: "Từ chối", tone: "err" },
-    cancelled: { label: "Đã hủy", tone: "gray" },
-  };
-
-function ApprovalStatusTag({ status }: { status: Approval["status"] }) {
-  return (
-    <StatusTag tone={STATUS[status].tone}>{STATUS[status].label}</StatusTag>
-  );
-}
 
 export default function ApprovalsPage() {
   const { hasScope } = useAuth();
@@ -202,7 +190,9 @@ export default function ApprovalsPage() {
               size="small"
               title={
                 <Flex wrap gap="small" align="center">
-                  <span>{approvalTitle(approval.approval_type)}</span>
+                  <Link href={`/approvals/${approval.id}`}>
+                    {approvalTitle(approval.approval_type)}
+                  </Link>
                   <ApprovalStatusTag status={approval.status} />
                 </Flex>
               }

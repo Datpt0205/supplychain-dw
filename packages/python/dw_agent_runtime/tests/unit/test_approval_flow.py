@@ -6,7 +6,11 @@ from typing import Any, cast
 import pytest
 
 from dw_agent_runtime.adapters.run_store import RunRecord, RunStatus
-from dw_agent_runtime.approval_flow import ApproveAndResumeService, DecisionGuard
+from dw_agent_runtime.approval_flow import (
+    CHANNEL_DECIDED_ACTION,
+    ApproveAndResumeService,
+    DecisionGuard,
+)
 from dw_agent_runtime.contracts import RunContext
 from dw_kernel.autonomy import AutonomyLevel
 from dw_kernel.errors import ConflictError, NotFoundError, PermissionDeniedError
@@ -16,6 +20,7 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.application.ports import PlatformUnitOfWork
 from dw_platform.domain.approval import ApprovalDecision, ApprovalRequest, ApprovalStatus
+from dw_platform.domain.audit import AuditEvent
 from dw_platform.domain.outbox import OutboxEvent
 
 pytestmark = pytest.mark.unit
@@ -70,9 +75,18 @@ class FakeOutbox:
 
 
 @dataclass
+class FakeAudit:
+    events: list[AuditEvent] = field(default_factory=list)
+
+    async def append(self, event: AuditEvent) -> None:
+        self.events.append(event)
+
+
+@dataclass
 class FakeUoW:
     approvals: FakeApprovalRepo
     outbox: FakeOutbox = field(default_factory=FakeOutbox)
+    audit: FakeAudit = field(default_factory=FakeAudit)
 
     async def __aenter__(self) -> "FakeUoW":
         return self
@@ -188,12 +202,17 @@ def make_service(
     run_workspace: uuid.UUID = WORKSPACE,
     outbox: FakeOutbox | None = None,
     guards: dict[str, DecisionGuard] | None = None,
+    audit: FakeAudit | None = None,
 ) -> ApproveAndResumeService:
     resolved = repo or FakeApprovalRepo(request=request)
     resolved_outbox = outbox or FakeOutbox()
+    resolved_audit = audit or FakeAudit()
 
     def uow_factory(context: AccessContext) -> PlatformUnitOfWork:
-        return cast(PlatformUnitOfWork, FakeUoW(approvals=resolved, outbox=resolved_outbox))
+        return cast(
+            PlatformUnitOfWork,
+            FakeUoW(approvals=resolved, outbox=resolved_outbox, audit=resolved_audit),
+        )
 
     return ApproveAndResumeService(
         uow_factory=uow_factory,
@@ -841,3 +860,140 @@ async def test_a_guard_for_another_type_is_not_asked() -> None:
     decided = await decide(service, APPROVER, "")
 
     assert decided.status is ApprovalStatus.APPROVED
+
+
+# ---- the channel a decision came from, and what admitted it (ticket Z5) ------
+
+
+@dataclass
+class FakeAdmission:
+    """A `DecisionAdmission` that records when it ran and what it saw."""
+
+    refuse: bool = False
+    seen: list[tuple[int, list[ApprovalDecision]]] = field(default_factory=list)
+    repo: FakeApprovalRepo | None = None
+
+    async def admit(
+        self, uow: PlatformUnitOfWork, request: ApprovalRequest, context: AccessContext
+    ) -> dict[str, object]:
+        decided = [] if self.repo is None else list(self.repo.decisions)
+        self.seen.append((request.version, decided))
+        if self.refuse:
+            raise ConflictError("not admitted")
+        return {"code_id": "c-1", "message_id": "m-1"}
+
+
+async def test_a_decision_records_its_channel_and_the_run_resumes_on_it() -> None:
+    request = make_request("sales_chat.email_send", run_id=RUN_ID)
+    repo = FakeApprovalRepo(request=request)
+    runner = FakeRunner(hosted=True)
+    service = make_service(request, frozenset(), runner=runner, repo=repo)
+
+    await service.decide(
+        approval_id=request.id,
+        approve=True,
+        comment="ok",
+        context=make_context(APPROVER),
+        authorization=ScopeAuthorizationService(),
+        channel="zalo",
+    )
+
+    assert [d.channel for d in repo.decisions] == ["zalo"]
+    assert [c.channel for c in runner.contexts] == ["zalo"]
+
+
+async def test_the_web_is_the_channel_when_none_is_named() -> None:
+    request = make_request("sales_chat.email_send", run_id=RUN_ID)
+    repo = FakeApprovalRepo(request=request)
+    runner = FakeRunner(hosted=True)
+    audit = FakeAudit()
+    service = make_service(request, frozenset(), runner=runner, repo=repo, audit=audit)
+
+    await decide(service, APPROVER, "ok")
+
+    assert [d.channel for d in repo.decisions] == ["web"]
+    assert [c.channel for c in runner.contexts] == ["web"]
+    assert audit.events == []
+
+
+async def test_an_admission_runs_before_anything_is_written_and_its_refusal_writes_nothing() -> (
+    None
+):
+    request = make_request("sales_chat.email_send", run_id=RUN_ID)
+    repo = FakeApprovalRepo(request=request)
+    runner = FakeRunner(hosted=True)
+    audit = FakeAudit()
+    outbox = FakeOutbox()
+    service = make_service(
+        request, frozenset(), runner=runner, repo=repo, audit=audit, outbox=outbox
+    )
+    admission = FakeAdmission(refuse=True, repo=repo)
+
+    with pytest.raises(ConflictError, match="not admitted"):
+        await service.decide(
+            approval_id=request.id,
+            approve=True,
+            comment="ok",
+            context=make_context(APPROVER),
+            authorization=ScopeAuthorizationService(),
+            channel="zalo",
+            admission=admission,
+        )
+
+    # It saw the request undecided (version 1) and no decision written yet.
+    assert admission.seen == [(1, [])]
+    assert repo.decisions == []
+    assert runner.resumed == []
+    assert audit.events == []
+    assert outbox.events == []
+
+
+async def test_an_admission_runs_after_decides_own_checks() -> None:
+    """A requester on a strict type is refused by `decide` itself, before the
+    admission could consume anything."""
+    request = make_request("sales_chat.email_send")
+    service = make_service(request, frozenset({"sales_chat."}))
+    admission = FakeAdmission()
+
+    with pytest.raises(ConflictError, match="separation of duties"):
+        await service.decide(
+            approval_id=request.id,
+            approve=True,
+            comment="ok",
+            context=make_context(REQUESTER),
+            authorization=ScopeAuthorizationService(),
+            admission=admission,
+        )
+
+    assert admission.seen == []
+
+
+async def test_an_admitted_decision_is_audited_with_what_admitted_it() -> None:
+    request = make_request("sales_chat.email_send")
+    repo = FakeApprovalRepo(request=request)
+    audit = FakeAudit()
+    service = make_service(request, frozenset(), repo=repo, audit=audit)
+
+    await service.decide(
+        approval_id=request.id,
+        approve=False,
+        comment="không",
+        context=make_context(APPROVER),
+        authorization=ScopeAuthorizationService(),
+        channel="zalo",
+        admission=FakeAdmission(),
+    )
+
+    (event,) = audit.events
+    (decision,) = repo.decisions
+    assert event.action == CHANNEL_DECIDED_ACTION
+    assert event.resource_id == str(request.id)
+    assert event.actor_id.value == APPROVER
+    assert event.details == {
+        "code_id": "c-1",
+        "message_id": "m-1",
+        "channel": "zalo",
+        "decision_id": str(decision.id),
+        "outcome": "rejected",
+        "approval_type": "sales_chat.email_send",
+    }

@@ -52,9 +52,15 @@ from dw_platform.adapters.persistence.zalo_link_repo import SqlZaloLink
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_supply_chain.adapters.persistence import tables as sc_tables
 from dw_supply_chain.presentation.zalo_proposal import CONFIRM_HINT, no_permission
-from dw_worker.composition import build_model_stack_for
+from dw_worker.composition import REPO_ROOT, build_model_stack_for
+from dw_worker.consumers.supply_chain import build_product_review_runner
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
-from dw_worker.main import build_channel_commands, build_one_call_gateway, build_zalo_inbound
+from dw_worker.main import (
+    build_channel_commands,
+    build_channel_decision_command,
+    build_one_call_gateway,
+    build_zalo_inbound,
+)
 from dw_worker.settings import WorkerSettings
 
 pytestmark = pytest.mark.integration
@@ -150,6 +156,20 @@ class _Lane:
             self.sessions,
             gateway=build_one_call_gateway(
                 stack, self.sessions, allowance=self.allowance, clock=clock
+            ),
+            decisions=build_channel_decision_command(
+                settings,
+                self.sessions,
+                runner=build_product_review_runner(
+                    self.sessions,
+                    configs_dir=REPO_ROOT / "configs",
+                    ids=Uuid4Generator(),
+                    clock=clock,
+                    telemetry=NullTelemetry(),
+                    release_manifest_ref=None,
+                ),
+                ids=Uuid4Generator(),
+                clock=clock,
             ),
             ids=Uuid4Generator(),
             clock=clock,

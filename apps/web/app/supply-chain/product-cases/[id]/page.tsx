@@ -315,8 +315,9 @@ function NextSteps({
 
 /**
  * Step 6 while it waits: who may decide (the scope stamped on the review, as
- * the server returns it; never a list of names) and where, `/approvals`. The
- * case page offers no decision. A case with no review yet says so: the worker
+ * the server returns it; never a list of names) and where: the review's own
+ * page, `/approvals/<id>`, which also issues the code a decision on Zalo needs
+ * (zalo-channel ticket 05). The case page offers no decision. A case with no review yet says so: the worker
  * raises it, nobody has to pass the sample again.
  */
 function BodReviewNotice({ review }: { review: PendingReview | null }) {
@@ -342,7 +343,9 @@ function BodReviewNotice({ review }: { review: PendingReview | null }) {
             {formatDateTimeFull(review.created_at)}. Không duyệt thì hồ sơ bị
             hủy, nhận xét của BGĐ là lý do. Trong lúc chờ, chỉ hủy hồ sơ được.
           </Typography.Text>
-          <Link href="/approvals">Mở trang Duyệt</Link>
+          <Link href={`/approvals/${review.approval_id}`}>
+            Mở yêu cầu duyệt (quyết trên web hoặc lấy mã quyết qua Zalo)
+          </Link>
         </Flex>
       }
     />

@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC
-from typing import Any
+from typing import Any, Protocol
 
 from dw_agent_runtime.adapters.run_store import RunRecord, RunStatus, SqlWorkerRunStore
 from dw_agent_runtime.contracts import RunContext
@@ -33,7 +33,7 @@ from dw_platform.application.authorization import (
     holds_stamped_scope,
     permission_denied,
 )
-from dw_platform.application.ports import PlatformUnitOfWorkFactory
+from dw_platform.application.ports import PlatformUnitOfWork, PlatformUnitOfWorkFactory
 from dw_platform.domain.approval import (
     APPROVALS_DECIDE,
     ApprovalDecision,
@@ -41,6 +41,7 @@ from dw_platform.domain.approval import (
     DecisionOutcome,
     decided_event_type,
 )
+from dw_platform.domain.audit import AuditEvent
 from dw_platform.domain.outbox import OutboxEvent
 
 DecisionGuard = Callable[[ApprovalRequest, AccessContext], None]
@@ -52,6 +53,26 @@ in `decide` (memory: the decider must be cleared for what they are deciding on).
 """
 
 DECIDED_EVENT_SCHEMA = "1.0"
+
+# The audit action of a decision admitted by something outside the approval (a
+# single-use code, ADR 0014). A web decision writes none, as before.
+CHANNEL_DECIDED_ACTION = "approval.channel_decided"
+
+
+class DecisionAdmission(Protocol):
+    """What one decision must also show, beyond who may decide it.
+
+    Not a `DecisionGuard`, which is per approval TYPE and synchronous: this is
+    per DECISION, passed by the caller, and runs inside `decide`'s own unit of
+    work after every check `decide` makes and before anything is written, so
+    what it consumes (a single-use code) is consumed only by a decision that
+    is then written, and restored by the rollback of one that is not. Raises
+    to refuse; returns what the decision's audit event records about it.
+    """
+
+    async def admit(
+        self, uow: PlatformUnitOfWork, request: ApprovalRequest, context: AccessContext
+    ) -> Mapping[str, object]: ...
 
 
 @dataclass
@@ -147,7 +168,14 @@ class ApproveAndResumeService:
         context: AccessContext,
         authorization: ScopeAuthorizationService,
         approved_action_ids: list[str] | None = None,
+        channel: str = "web",
+        admission: DecisionAdmission | None = None,
     ) -> ApprovalRequest:
+        """Decide, then resume the run. `channel` is where the decision came
+        from (`web`, or `zalo` through `ChannelApprovalDecisionService`): it is
+        written on the decision row and is the resumed run's channel.
+        `admission`, when given, must admit this decision inside the same unit
+        of work (see `DecisionAdmission`)."""
         async with self.uow_factory(context) as uow:
             # Narrowed to the caller's workspace by the repository: RLS on
             # approval_requests narrows by tenant only. Another workspace's
@@ -198,6 +226,7 @@ class ApproveAndResumeService:
             if guard is not None:
                 guard(request, context)
             record = await self._resumable_run(context, request)
+            admitted = None if admission is None else await admission.admit(uow, request, context)
 
             decision = request.decide(
                 decision_id=self.id_generator.new_uuid(),
@@ -205,11 +234,14 @@ class ApproveAndResumeService:
                 outcome=DecisionOutcome.APPROVED if approve else DecisionOutcome.REJECTED,
                 decided_at=self.clock.now().astimezone(UTC),
                 comment=comment,
+                channel=channel,
             )
             await uow.approvals.save(request)
             await uow.approvals.add_decision(decision)
             if request.run_id is None:
                 await uow.outbox.add(self._decided_event(request, decision))
+            if admitted is not None:
+                await uow.audit.append(self._admitted_audit(request, decision, admitted))
             await uow.commit()
 
         if record is not None and request.run_id is not None:
@@ -236,7 +268,8 @@ class ApproveAndResumeService:
                     actor_id=record.requested_by,
                     worker_id=record.worker_id,
                     worker_version=record.worker_version,
-                    channel="web",
+                    # Where the decision came from, so the resumed graph knows.
+                    channel=channel,
                     # Authority comes from the run, not from whoever is
                     # approving it. Separation of duties guarantees they are
                     # different people, so reading it from the approver's
@@ -284,6 +317,31 @@ class ApproveAndResumeService:
                 "decided_by": str(decision.decided_by.value),
             },
             actor_id=decision.decided_by.value,
+        )
+
+    def _admitted_audit(
+        self,
+        request: ApprovalRequest,
+        decision: ApprovalDecision,
+        admitted: Mapping[str, object],
+    ) -> AuditEvent:
+        return AuditEvent(
+            id=self.id_generator.new_uuid(),
+            tenant_id=request.tenant_id,
+            workspace_id=request.workspace_id,
+            actor_id=decision.decided_by,
+            action=CHANNEL_DECIDED_ACTION,
+            resource_type="approval_request",
+            resource_id=str(request.id),
+            occurred_at=decision.decided_at,
+            run_id=request.run_id,
+            details={
+                **admitted,
+                "channel": decision.channel,
+                "decision_id": str(decision.id),
+                "outcome": decision.outcome.value,
+                "approval_type": request.approval_type,
+            },
         )
 
     def _run_context_for(self, context: AccessContext, run_id: uuid.UUID) -> RunContext:

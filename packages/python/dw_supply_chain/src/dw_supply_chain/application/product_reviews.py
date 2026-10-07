@@ -42,7 +42,7 @@ from dw_kernel.pagination import MAX_PAGE_SIZE, page_request
 from dw_kernel.ports import IdGenerator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import PolicyOverridePort
-from dw_platform.domain.approval import APPROVALS_DECIDE
+from dw_platform.domain.approval import APPROVALS_DECIDE, approval_link
 from dw_supply_chain.application.follow_up_sweep import sweep_context
 from dw_supply_chain.application.handlers import resolve_product_approvals
 from dw_supply_chain.application.ports import (
@@ -186,7 +186,9 @@ class EnsureBodReview:
                     f"{case.product_name}, vòng mẫu {case.sample_round}: mẫu đã đạt,"
                     " chờ người có quyền BGĐ duyệt."
                 ),
-                link="/approvals",
+                # The review's own page: it opens after sign-in and issues the
+                # code a decision on Zalo needs (zalo-channel ticket 05).
+                link=approval_link(approval.id, workspace),
             )
         except Exception:
             logger.exception(

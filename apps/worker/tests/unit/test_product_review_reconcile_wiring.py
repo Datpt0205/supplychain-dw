@@ -22,7 +22,10 @@ from dw_observability.telemetry import NullTelemetry
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_supply_chain.workflows import advance_product_case_graph as review_graph
 from dw_worker.composition import REPO_ROOT
-from dw_worker.consumers.supply_chain import build_product_review_reconcile
+from dw_worker.consumers.supply_chain import (
+    build_product_review_reconcile,
+    build_product_review_runner,
+)
 from dw_worker.main import release_manifest_ref_for
 from dw_worker.settings import WorkerSettings
 
@@ -62,13 +65,19 @@ def test_the_review_runner_is_configured_as_the_apis_runner_is() -> None:
     LangChain usage to meter."""
     engine = create_async_engine("postgresql+asyncpg://dw:dw@127.0.0.1:1/never")
     sessions = async_sessionmaker(engine, class_=AsyncSession)
+    ids = Uuid7Generator()
     lane = build_product_review_reconcile(
         sessions,
+        runner=build_product_review_runner(
+            sessions,
+            configs_dir=REPO_ROOT / "configs",
+            ids=ids,
+            clock=SystemClock(),
+            telemetry=NullTelemetry(),
+            release_manifest_ref="sha256:pinned",
+        ),
         configs_dir=REPO_ROOT / "configs",
-        ids=Uuid7Generator(),
-        clock=SystemClock(),
-        telemetry=NullTelemetry(),
-        release_manifest_ref="sha256:pinned",
+        ids=ids,
     )
 
     runner = lane.reviews.runner

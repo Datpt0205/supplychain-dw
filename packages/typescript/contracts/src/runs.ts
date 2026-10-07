@@ -31,6 +31,33 @@ export const approvalSchema = z.object({
 });
 export type Approval = z.infer<typeof approvalSchema>;
 
+/**
+ * Opening an approval on the portal (`POST /approvals/{id}/view`, ADR 0014):
+ * the view is recorded, and with `issue_code` a single-use code is issued for
+ * a decision on Zalo. The code is in this response only; `unavailable_reason`
+ * says why none is offered, and the page says it in words.
+ */
+export const approvalViewOutcomeSchema = z.object({
+  viewed_at: z.string(),
+  requires_comment: z.boolean(),
+  code: z.string().nullable(),
+  expires_at: z.string().nullable(),
+  command_approve: z.string().nullable(),
+  command_reject: z.string().nullable(),
+  unavailable_reason: z
+    .enum([
+      "not_pending",
+      "cannot_decide",
+      "requester",
+      "web_only",
+      "not_linked",
+      "comment_required",
+      "channel_off",
+    ])
+    .nullable(),
+});
+export type ApprovalViewOutcome = z.infer<typeof approvalViewOutcomeSchema>;
+
 export const runSchema = z.object({
   id: z.string().uuid(),
   status: z.enum([

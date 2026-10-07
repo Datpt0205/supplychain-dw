@@ -85,7 +85,7 @@ có trạng thái, thử lại, audit, và ngày xóa
       câu lệnh chèn thông báo (CTE `RETURNING`) xếp một dòng gửi cho người nhận vừa được
       chèn thông báo và có `external_identities.provider = 'zalo'` (cột `zalo_id_for` đọc).
       `dw_app`: SELECT, UPDATE chỉ `status, attempts, next_attempt_at, external_message_id,
-      last_error`; không INSERT, không DELETE (một cửa vào là grant, không phải quy ước).
+last_error`; không INSERT, không DELETE (một cửa vào là grant, không phải quy ước).
       `platform.channel_delivery_scopes_due(channel)` và `platform.prune_channel_deliveries()`
       SECURITY DEFINER, EXECUTE cho `dw_app`, thu hồi khỏi PUBLIC.
       Adapter `dw_platform/adapters/persistence/channel_deliveries.py` (`SqlChannelOutbox`,
@@ -109,7 +109,7 @@ có trạng thái, thử lại, audit, và ngày xóa
       Bên gửi thông báo phải giữ tiêu đề ở mức định danh; Elmich trả lời QE-20 thì xem lại.
     - **Q3, người nhận không liên kết.** Theo ticket và ADR 0013 (có liên kết là đồng ý):
       không có dòng nào. Liên kết gỡ trước lúc gửi: `cancelled`, `last_error =
-      recipient_unlinked`, không gọi `send_message`. Thêm (an toàn hơn ticket): lúc gửi kiểm
+recipient_unlinked`, không gọi `send_message`. Thêm (an toàn hơn ticket): lúc gửi kiểm
       lại membership trong workspace và tenant `active`; không còn thì `cancelled`,
       `recipient_not_member`. Không có opt-in riêng mỗi người ngoài liên kết.
     - **Q4, lỗi vĩnh viễn hay tạm thời.** HTTP 400/403/404 hoặc `error_code` 400/403/404
@@ -118,7 +118,7 @@ có trạng thái, thử lại, audit, và ngày xóa
       **Tạm**: suy từ dialect Telegram, chưa đo với Zalo; ticket 07 xác nhận hoặc sửa.
     - **Q5, giãn cách.** 1, 2, 4, 8 phút (giờ của database); lần thứ 5 lỗi thì `failed`
       (`attempts_exhausted`). Audit một dòng cho mỗi kết cục (`channel_delivery.sent |
-      failed | cancelled`, `resource_type = channel_delivery`, actor = người nhận, `details`
+failed | cancelled`, `resource_type = channel_delivery`, actor = người nhận, `details`
       có `actor = channel_delivery_lane`, `chat_id_hash`, `attempts`, lý do), cùng giao dịch;
       thử lại không ghi audit.
     - **Q6, dọn.** Lane riêng `channel_deliveries_retention` trên nhịp retention (mỗi pruner
@@ -136,7 +136,7 @@ có trạng thái, thử lại, audit, và ngày xóa
       offboarding. Worker `test_channel_delivery_db.py` (10): gửi một lần không có thân,
       gỡ liên kết thì `cancelled`, tạm thời rồi thành công (2 lần, 1 `sent`), không tới được
       (1 lần, `failed`), trần (`failed`), hai worker song song không gửi trùng, `SKIP
-      LOCKED` không chờ (timeout 3 giây), tenant khác mang đúng tên của nó, mất membership
+LOCKED` không chờ (timeout 3 giây), tenant khác mang đúng tên của nó, mất membership
       hoặc tenant bị khóa thì `cancelled`; mỗi trường hợp đúng một audit cuối. Unit: consumer
       (8), phân loại của `ZaloBotClient` (7), wiring worker (1 mới).
     - **Mutation** (mỗi cái đỏ, rồi trả lại): bỏ điều kiện liên kết ở cửa vào; bỏ cả

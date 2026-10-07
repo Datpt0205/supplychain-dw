@@ -29,6 +29,18 @@ def decided_event_type(approval_type: str) -> str:
     return f"{approval_type}.decided"
 
 
+def approval_link(approval_id: uuid.UUID, workspace_id: uuid.UUID) -> str:
+    """The portal page of one approval, relative to the web app, for a
+    notification's `link` (and so for the Zalo message Z2 sends from it).
+
+    The workspace rides along so the page can switch to it after sign-in when
+    the viewer's last workspace was another one; the page still checks the
+    viewer belongs to it, and the API still answers only within the active
+    workspace. One function, so every notice links the page the same way.
+    """
+    return f"/approvals/{approval_id}?workspace={workspace_id}"
+
+
 class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
@@ -53,6 +65,8 @@ class ApprovalDecision:
     outcome: DecisionOutcome
     comment: str
     decided_at: datetime
+    # Where the decision was made: `web`, or `zalo` after a portal view (ADR 0014).
+    channel: str = "web"
 
 
 @dataclass(slots=True)
@@ -92,6 +106,7 @@ class ApprovalRequest:
         outcome: DecisionOutcome,
         decided_at: datetime,
         comment: str = "",
+        channel: str = "web",
     ) -> ApprovalDecision:
         """Apply a human decision; returns the immutable decision record."""
         self._require_pending()
@@ -111,6 +126,7 @@ class ApprovalRequest:
             outcome=outcome,
             comment=comment,
             decided_at=decided_at,
+            channel=channel,
         )
 
     def cancel(self) -> None:

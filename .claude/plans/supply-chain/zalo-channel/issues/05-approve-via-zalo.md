@@ -1,6 +1,6 @@
 # 05 — Quyết approval bằng Zalo sau khi xem trên cổng, với mã dùng một lần
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: .claude/plans/supply-chain/zalo-channel/issues/04-chat-proposal.md, .claude/plans/supply-chain/zalo-channel/issues/02-channel-delivery.md, .claude/plans/supply-chain/approval-decider-scope/issues/01-required-scope.md, .claude/plans/supply-chain/stage-1/issues/02-bod-review-step-6.md
 Area: supply-chain
 
@@ -152,3 +152,104 @@ NULL AND revoked_at IS NULL` (một mã mở mỗi người mỗi approval).
   không ghi `approval_decisions` hay gọi `runner.resume` theo đường riêng; nếu không, một
   lệnh `DUYỆT` trên Zalo của người có `approvals.decide` mà thiếu dấu (vd thiếu
   `supply_chain.approve.bod`) sẽ qua mặt luật "chỉ BGĐ quyết".
+- 2026-10-07, **resolved (Z5), theo ADR 0014 và sửa đổi 2026-10-06 (QO-7).** Đạt giao
+  quyết các điểm mở; quyết định tạm, cách đọc an toàn nhất, ghi ở đây và ở sửa đổi
+  2026-10-07 của ADR 0014. Sửa đổi 2026-10-06 thay câu chữ của ticket ở các điểm: mã 6 số,
+  10 phút, sai 5 lần khóa mã, lệnh `DUYỆT <mã>` / `KHÔNG <mã> <lý do>`, nhận xét nhập trên cổng.
+    - **Đã làm.** Migration `dbb8c3359981` (down `4a865a1c97aa`): `approval_view_receipts`
+      (FK `(tenant_id, workspace_id, approval_id)` tới UNIQUE mới trên `approval_requests`,
+      CASCADE), `approval_decision_codes` (FK ghép tới biên nhận `(receipt_id, tenant,
+workspace, approval, user)`, `code_hash` 32 byte, `comment` ≤ 2000, `failed_attempts`
+      0..5, CHECK khóa ở 5, CHECK `revoked_reason`, UNIQUE một phần một mã mở mỗi người mỗi
+      approval), cả hai RLS ENABLE+FORCE hình workspace chuẩn, thêm
+      `approval_decision_codes_self_select` (FOR SELECT theo `app.principal_id`);
+      `approval_decisions.channel` (`web`/`zalo`, mặc định `web`); grant trong migration
+      (`dw_app`: biên nhận SELECT/INSERT; mã SELECT/INSERT + UPDATE 4 cột; không DELETE);
+      `platform.prune_approval_decision_codes()` SECURITY DEFINER, lane
+      `approval_codes_retention` (1 ngày). Nền tảng: `dw_platform.application.approval_codes`
+      (`DecisionCodeKey` HMAC-SHA256, `ApprovalSubjectVersions`, các port),
+      `adapters/persistence/approval_codes.py` (`SqlApprovalCodeStore`,
+      `SqlDecisionCodeLedger` trong UoW, `SqlApprovalCodeRetention`),
+      `dw_agent_runtime.approval_codes` (`ApprovalViewService`, `CodeAdmission`),
+      `dw_agent_runtime.channel_decisions` (văn phạm, `ChannelApprovalDecisionService`,
+      `ChannelDecisionCommand`), `ApproveAndResumeService.decide(channel=, admission=)`,
+      route `POST /api/v1/approvals/{id}/view`, `approval_link`. Supply Chain:
+      `ProductCaseApprovalSubject` (phiên bản = `version` của hồ sơ theo
+      `product_dev_case_id`), thông báo BGĐ dẫn `/approvals/<id>?workspace=<ws>`. Web: trang
+      `/approvals/[id]` (antd), khối BGĐ trên trang hồ sơ dẫn tới đó, thẻ trên `/approvals`
+      dẫn tới trang của nó, `ApprovalStatusTag` dùng chung. Worker: `ApproveAndResumeService`
+      riêng trên runner của graph BGĐ (dùng chung với lane reconcile,
+      `build_product_review_runner`), lệnh quyết đăng ký đầu tiên
+      (`build_channel_decision_command`). `DW_APPROVAL_CODE_SECRET` ở `.env.example`, compose,
+      settings API và worker.
+    - **Q1, nhận xét và cấp mã.** Mở trang ghi biên nhận (không mã). Bấm "Lấy mã" gửi nhận xét
+      với `issue_code`: biên nhận mới + mã mới gắn nhận xét, mã mở cũ bị thu hồi (`reissued`)
+      cùng giao dịch. Loại nghiêm mà nhận xét rỗng: không cấp (`comment_required`).
+      `KHÔNG`: nhận xét cổng + xuống dòng + lý do trong tin.
+    - **Q2, văn phạm.** `DUYỆT <6 số ASCII>` đúng nguyên tin (thừa chữ, sai độ dài, chữ số
+      toàn chiều rộng: câu hướng dẫn); `KHÔNG <6 số> <lý do>`; "không" chỉ là lệnh khi theo sau
+      là số, vì "không" mở nhiều câu thường (Z4b đọc tiếp); "duyệt..." bất kỳ dạng nào không
+      bao giờ tới mô hình; `TỪ CHỐI` bỏ (sửa đổi 2026-10-06).
+    - **Q3, sai 5 lần.** Tin không nêu approval, nên một lần sai tính cho **mọi** mã đang mở
+      của người gửi (mọi tenant, mỗi dòng dưới tenant/workspace của nó); mã tới 5 bị khóa
+      (`revoked_reason = 'locked'`). Thay bảng `approval_code_failures` của ticket (không tạo):
+      bộ đếm nằm trên dòng mã, CHECK 0..5. Lần sai không khớp mã nào của người gửi thì không
+      có tenant để ghi audit: chỉ log (không có chữ số).
+    - **Q4, câu trả lời.** Không khớp (gõ nhầm, đoán, mã người khác, tenant khác) = một câu
+      "Mã không đúng hoặc đã hết hạn." Mã của chính người gửi: hết hạn, đã dùng, đã thay bằng
+      mã mới, bị khóa — mỗi trạng thái một câu (không lộ gì về người khác). Hai mã mở trùng
+      chữ số (cấp mã tránh, nhưng vẫn có thể) thì từ chối như "đã đổi", không đoán.
+    - **Q5, workspace.** Bộ định tuyến Z4a không đổi: vẫn giải workspace đã chọn trước mọi lệnh
+      (nhiều workspace mà chưa chọn thì được nhắc chọn, như Z4a). Lệnh quyết khai trần
+      `{approvals.decide}`, chỉ dùng context đó để lấy người; context quyết dựng lại cho
+      workspace **của mã** với trần `{approvals.decide, required_scope}`, không role.
+    - **Q6, `guard` thành `admission`.** `DecisionGuard` đã là luật theo loại; tham số mới là
+      `DecisionAdmission` theo từng quyết định, chạy sau mọi kiểm của `decide`, trước mọi ghi,
+      trong cùng UoW; từ chối thì lùi. Quyết định được admit ghi audit
+      `approval.channel_decided` cùng giao dịch (`channel`, `approval_version`,
+      `subject_version`, `receipt_id`, `code_id`, `message_id`, `chat_reference`,
+      `decision_id`, `outcome`); quyết trên web không thêm audit (giữ nguyên).
+    - **Q7, worker quyết.** Worker dựng `ApproveAndResumeService` của mình trên runner chứa
+      graph BGĐ; `register_product_approvals` thêm tiền tố nghiêm và port phiên bản như
+      `wiring.py` của API. `memory.` không đăng ký ở worker: không có port phiên bản thì không
+      bao giờ được quyết qua chat. Run của graph mà worker không chứa: `decide` từ chối
+      ("Chưa quyết được qua Zalo"), đóng.
+    - **Q8, khóa.** `DW_APPROVAL_CODE_SECRET` ≥ 16 byte; trống thì cổng không cấp mã
+      (`channel_off`) và bot trả "chưa bật", không gì tới mô hình.
+    - **Q9, liên kết.** `approval_link` (một chủ) = `/approvals/<id>?workspace=<ws>`; trang đổi
+      sang workspace đó nếu người xem là thành viên, không thì "không tìm thấy". Tiêu đề thông
+      báo giữ nguyên (chỉ tiêu đề ra Zalo, QE-20 của Z2). Keycloak `login-required` quay về
+      đúng URL sau đăng nhập.
+    - **Q10, còn lại có chủ ý.** Phiên bản hồ sơ đọc ngoài giao dịch của `decide` (phiên bản
+      approval thì kiểm lại trong giao dịch); hồ sơ đổi giữa hai bước thì graph tự thấy và
+      `superseded`. 320 px: vitest (jsdom, matchMedia điện thoại, lệnh `break-all`) — chưa đo
+      trên trình duyệt thật (viewport Playwright vẫn nợ, ticket W).
+    - **Test.** Unit: dw_agent_runtime `test_channel_decision_grammar.py` 32 (văn phạm, HMAC,
+      registry, lệnh, kiến trúc: chỉ route web và `channel_decisions.py` gọi `.decide(approve=)`),
+      `test_approval_flow.py` +5 (kênh, admission); API `test_approvals_endpoint.py` +6 (route
+      view). Integration: dw_platform `test_approval_codes.py` 18 (RLS principal/tenant/
+      workspace, tiêu mã chỉ chủ và một lần, hai giao dịch đua, hết hạn, khóa ở 5, thu hồi khi
+      cấp lại, dọn, CHECK, FK) + privileges 1 + rls coverage (lý do policy principal);
+      dw_agent_runtime `test_channel_decisions.py` 20 (đường thành công + audit, `KHÔNG`, mã
+      không rời response, mã người khác, tenant khác, approval khác, chưa xem, hết hạn, dùng
+      hai lần, cấp lại, khóa lần thứ 5, approval đổi, hồ sơ đổi, đã quyết trên web, mất scope
+      sau khi xem, người yêu cầu loại không nghiêm, loại nghiêm không nhận xét, lý do không cấp,
+      hai lệnh song song, run tiếp tục với `channel="zalo"`); dw_supply_chain
+      `test_product_bod_review.py` +3 (BGĐ quyết qua Zalo và graph áp dụng, hồ sơ hủy sau khi
+      xem, sign-off bước 9 dùng cùng port); apps/worker `test_zalo_decision_db.py` 3 (qua lane
+      poll và router; khử trùng id; "duyệt hết" không tới mô hình; không khóa thì "chưa bật").
+      Vitest `approval-page.test.tsx` 10.
+    - **Mutation (gỡ, đỏ, khôi phục), 13/13 đỏ:** tiêu mã thành đọc rồi ghi; tiêu mã bỏ
+      `user_id`; HMAC bỏ người; policy principal `USING (true)`; bỏ so phiên bản hồ sơ; bỏ kiểm
+      người yêu cầu ở dịch vụ; sai không bao giờ khóa; bỏ kiểm người yêu cầu ở cổng; admission
+      không được hỏi; run tiếp tục với `"web"`; lệnh quyết đăng ký sau đề xuất; CHECK khóa mở
+      khi NULL (test bắt được lỗi thật lúc viết: `= 'locked'` qua được với NULL, đã sửa thành
+      `IS NOT DISTINCT FROM`); tiêu mã hết hạn. Phòng thủ chồng lớp, mỗi lớp có test riêng: mã
+      người khác bị chặn bởi HMAC theo người, policy principal và `user_id` trong câu tiêu.
+    - **Ứng viên đưa ngược (chưa đưa):** migration `dbb8c3359981`;
+      `dw_platform/application/approval_codes.py`, `adapters/persistence/approval_codes.py`,
+      `uow.py`/`ports.py` (`decision_codes`), `domain/approval.py` (`channel`,
+      `approval_link`), `repositories.py`, `tables.py`; `dw_agent_runtime/approval_codes.py`,
+      `channel_decisions.py`, `approval_flow.py`; route `view`; trang `/approvals/[id]`,
+      `ApprovalStatusTag`, client `getApproval`/`viewApproval`; test platform/runtime/API/web.
+      Không đưa: `ProductCaseApprovalSubject`, `register_product_approvals`, đổi link BGĐ.

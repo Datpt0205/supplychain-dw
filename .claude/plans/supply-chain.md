@@ -55,7 +55,7 @@ means platform code, an upstream candidate (ADR 0011).
 | Z4a   | `zalo-channel/issues/04-chat-proposal.md` (steps 1–3, `/settings` select) | yes     | resolved        | Z1, U                               |
 | Z4b   | `zalo-channel/issues/04-chat-proposal.md` (steps 4–7, 9, 10)              | no      | resolved        | Z4a, S1, D                          |
 | Z4p   | `zalo-channel/issues/04b-photos.md` (photos, old step 8)                  | no      | ready-for-human | Z4b; a real photo update as fixture |
-| Z5    | `zalo-channel/issues/05-approve-via-zalo.md`                              | partly  | ready-for-agent | Z4, Z2, A, S2                       |
+| Z5    | `zalo-channel/issues/05-approve-via-zalo.md`                              | partly  | resolved        | Z4, Z2, A, S2                       |
 | Z6    | `zalo-channel/issues/06-read-only-qa.md`                                  | partly  | ready-for-agent | Z4                                  |
 | ZL    | `zalo-channel/issues/07-live-run.md`                                      | —       | ready-for-human | Z1–Z6, H2                           |
 | A     | `approval-decider-scope/issues/01-required-scope.md`                      | yes     | resolved        | P                                   |
@@ -73,7 +73,7 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** S4 (S3 in); Z5 (Z2 and Z4 in); Z6; Z4p when a real photo update exists.
+**Next:** S4 (S3 in; its sign-off reuses Z5's version port); Z6; Z4p when a real photo update exists.
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 

@@ -297,6 +297,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/approvals/{approval_id}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** View Approval */
+        post: operations["view_approval_api_v1_approvals__approval_id__view_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audit/events": {
         parameters: {
             query?: never;
@@ -1011,6 +1028,25 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** ApprovalViewOutcome */
+        ApprovalViewOutcome: {
+            /** Code */
+            code: string | null;
+            /** Command Approve */
+            command_approve: string | null;
+            /** Command Reject */
+            command_reject: string | null;
+            /** Expires At */
+            expires_at: string | null;
+            /** Requires Comment */
+            requires_comment: boolean;
+            unavailable_reason: components["schemas"]["CodeUnavailable"] | null;
+            /**
+             * Viewed At
+             * Format: date-time
+             */
+            viewed_at: string;
+        };
         /** AssignOrgAdminRequest */
         AssignOrgAdminRequest: {
             /** Email */
@@ -1125,6 +1161,12 @@ export interface components {
             /** Cancelled */
             cancelled: boolean;
         };
+        /**
+         * CodeUnavailable
+         * @description Why the portal offers no code. Each one is a sentence on the page.
+         * @enum {string}
+         */
+        CodeUnavailable: "not_pending" | "cannot_decide" | "requester" | "web_only" | "not_linked" | "comment_required" | "channel_off";
         /** CreateTenantRequest */
         CreateTenantRequest: {
             /** Name */
@@ -1888,6 +1930,19 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** ViewRequest */
+        ViewRequest: {
+            /**
+             * Comment
+             * @default
+             */
+            comment: string;
+            /**
+             * Issue Code
+             * @default false
+             */
+            issue_code: boolean;
+        };
         /** WaiverDecisionBody */
         WaiverDecisionBody: {
             /** Reason */
@@ -2551,6 +2606,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApprovalView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_approval_api_v1_approvals__approval_id__view_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                approval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ViewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalViewOutcome"];
                 };
             };
             /** @description Validation Error */

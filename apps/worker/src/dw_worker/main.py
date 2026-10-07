@@ -29,10 +29,16 @@ from typing import TYPE_CHECKING
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from dw_agent_runtime.adapters.checkpoint_retention import SqlCheckpointRetention
+from dw_agent_runtime.adapters.langgraph_runner import LangGraphWorkflowRunner
 from dw_agent_runtime.adapters.model_stack import ModelStack
 from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
 from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardRetention, SqlSpendGuardStore
 from dw_agent_runtime.allowance import DailyAllowance
+from dw_agent_runtime.approval_flow import ApproveAndResumeService
+from dw_agent_runtime.channel_decisions import (
+    ChannelApprovalDecisionService,
+    ChannelDecisionCommand,
+)
 from dw_agent_runtime.model.run_policy import load_worker_run_policy
 from dw_agent_runtime.ports import ModelGateway, RunAllowancePort
 from dw_agent_runtime.release import UNRELEASED, release_manifest_ref
@@ -49,6 +55,10 @@ from dw_memory.retention import SqlMemoryRetention
 from dw_memory.service import MemoryService
 from dw_observability.otel import build_telemetry
 from dw_observability.telemetry import TelemetryPort
+from dw_platform.adapters.persistence.approval_codes import (
+    SqlApprovalCodeRetention,
+    SqlApprovalCodeStore,
+)
 from dw_platform.adapters.persistence.channel_deliveries import (
     SqlChannelDeliveryRetention,
     SqlChannelOutbox,
@@ -63,11 +73,14 @@ from dw_platform.adapters.persistence.notifications import SqlNotificationRetent
 from dw_platform.adapters.persistence.offboarding import SqlTenantOffboarding
 from dw_platform.adapters.persistence.outbox_drain import SqlOutboxDrain
 from dw_platform.adapters.persistence.partition_maintenance import SqlPartitionMaintenance
+from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
 from dw_platform.adapters.persistence.zalo_link_repo import (
     SqlChannelLinkNonceRetention,
     SqlZaloLink,
 )
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.approval_codes import ApprovalSubjectVersions, DecisionCodeKey
+from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.channel_access import LinkedUserAccess
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_platform.retention_policy import load_retention_policy
@@ -100,8 +113,10 @@ from dw_worker.consumers.supply_chain import (
     build_follow_up_sweep,
     build_product_review_reconcile,
     build_product_review_reconcile_consumer,
+    build_product_review_runner,
     build_proposal_draft_retention,
     build_zalo_proposal_command,
+    register_product_approvals,
 )
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
 from dw_worker.health import beat
@@ -189,25 +204,76 @@ def build_one_call_gateway(
     )
 
 
+def build_channel_decision_command(
+    settings: WorkerSettings,
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    runner: LangGraphWorkflowRunner,
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> ChannelDecisionCommand:
+    """`DUYỆT <mã>` / `KHÔNG <mã> <lý do>` from a linked chat (ADR 0014,
+    zalo-channel ticket 05).
+
+    The decision goes through this process's own `ApproveAndResumeService`,
+    over `runner`: the one that hosts the review graph, so a decided review
+    resumes here from its checkpoint. A context adds its strict prefix and its
+    subject-version port the way it does in the API's `wiring.py`; a type no
+    context answers for is never decided by chat (no version, no decision), so
+    a platform type like `memory.` needs neither here. Without
+    `DW_APPROVAL_CODE_SECRET` the command still answers a decision, with
+    "not enabled", so the words never reach a model.
+    """
+    flow = ApproveAndResumeService(
+        uow_factory=SqlPlatformUnitOfWorkFactory(sessions),
+        runner=runner,
+        run_store=runner.run_store,
+        clock=clock,
+        id_generator=ids,
+    )
+    subjects = ApprovalSubjectVersions()
+    register_product_approvals(flow, subjects, sessions)
+    secret = settings.approval_code_secret.get_secret_value()
+    return ChannelDecisionCommand(
+        ChannelApprovalDecisionService(
+            approval_flow=flow,
+            authorization=ScopeAuthorizationService(),
+            store=SqlApprovalCodeStore(sessions),
+            subjects=subjects,
+            access=LinkedUserAccess(
+                preferences=SqlChannelPreferences(sessions),
+                lookup=SqlMembershipLookup(sessions),
+            ),
+            key=DecisionCodeKey(secret.encode()) if secret else None,
+            clock=clock,
+            ids=ids,
+        )
+    )
+
+
 def build_channel_commands(
     settings: WorkerSettings,
     sessions: async_sessionmaker[AsyncSession],
     *,
     gateway: ModelGateway,
+    decisions: ChannelDecisionCommand,
     ids: IdGenerator,
     clock: UtcClock,
 ) -> ChannelCommandRegistry[AccessContext]:
     """What a linked person can ask for through a chat, in the order it is asked.
 
     The seam a context plugs its chat commands into. Order is policy, not
-    convenience: Z5's decide command first (a reply to a pending decision is
-    never re-read as a new request), then an open conversation, then intent
-    classification. Z4b's proposal is both of the last two today: it continues
-    an open draft or reads a new message as a proposal. Each command declares
+    convenience: the decide command first (`build_channel_decision_command`,
+    ticket 05: a reply to a pending decision is never re-read as a new
+    request), then an open conversation, then intent classification. Z4b's
+    proposal is both of the last two today: it continues an open draft or
+    reads a new message as a proposal. Each command declares
     its own scope ceiling; the router builds its context from the person's
     membership cut to that ceiling.
     """
     commands = ChannelCommandRegistry[AccessContext]()
+    # First: a decision is never read as a proposal, nor shown to a model.
+    commands.register("approval_decision", decisions)
     commands.register(
         "supply_chain.product_proposal",
         build_zalo_proposal_command(
@@ -302,6 +368,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     channel_link_nonces_retention: RetentionPrunePort | None = None
     # Inbound chat message ids: seven days, then gone (INBOUND_MESSAGE_RETENTION).
     channel_inbound_messages_retention: RetentionPrunePort | None = None
+    # Single-use decision codes: a day, then gone (the database's constant).
+    approval_codes_retention: RetentionPrunePort | None = None
     # The Zalo self-link poll: only with a database, a bot token, a link secret
     # and ZALO_UPDATES_MODE=poll.
     zalo_poll_consumer: Callable[[], Awaitable[None]] | None = None
@@ -386,6 +454,17 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         notifications_retention = SqlNotificationRetention(session_factory=sessions)
         channel_link_nonces_retention = SqlChannelLinkNonceRetention(session_factory=sessions)
         channel_inbound_messages_retention = SqlChannelInboundRetention(session_factory=sessions)
+        approval_codes_retention = SqlApprovalCodeRetention(session_factory=sessions)
+        # The runner that hosts BGĐ's review graph: the reconcile lane starts
+        # reviews on it, and a decision sent from Zalo resumes them on it.
+        review_runner = build_product_review_runner(
+            sessions,
+            configs_dir=REPO_ROOT / "configs",
+            ids=ids,
+            clock=clock,
+            telemetry=telemetry,
+            release_manifest_ref=release_manifest_ref_for(settings, REPO_ROOT),
+        )
         proposal_drafts_retention = build_proposal_draft_retention(sessions)
         # Rows are queued whether or not this host sends them, so they are
         # pruned whether or not it does.
@@ -411,6 +490,9 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                     allowance=PlanEntitlementService(DEFAULT_PLANS),
                     clock=clock,
                 ),
+                decisions=build_channel_decision_command(
+                    settings, sessions, runner=review_runner, ids=ids, clock=clock
+                ),
                 ids=ids,
                 clock=clock,
             )
@@ -427,12 +509,7 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         )
         product_review_reconcile = build_product_review_reconcile_consumer(
             build_product_review_reconcile(
-                sessions,
-                configs_dir=REPO_ROOT / "configs",
-                ids=ids,
-                clock=clock,
-                telemetry=telemetry,
-                release_manifest_ref=release_manifest_ref_for(settings, REPO_ROOT),
+                sessions, runner=review_runner, configs_dir=REPO_ROOT / "configs", ids=ids
             )
         )
         if settings.s3_endpoint_url:
@@ -589,6 +666,12 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         registry.register(
             "channel_deliveries_retention",
             build_retention_consumer(channel_deliveries_retention),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
+    if approval_codes_retention is not None:
+        registry.register(
+            "approval_codes_retention",
+            build_retention_consumer(approval_codes_retention),
             interval_seconds=RETENTION_INTERVAL_SECONDS,
         )
     if offboarding_consumer is not None:

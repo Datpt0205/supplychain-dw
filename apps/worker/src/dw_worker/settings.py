@@ -245,6 +245,13 @@ class WorkerSettings(BaseSettings):
         default=SecretStr(""),
         validation_alias=AliasChoices("DW_WORKER_ZALO_LINK_SECRET", "ZALO_LINK_SECRET"),
     )
+    # The key decision codes are hashed under; must equal the API's, which
+    # issued them (ADR 0014, ticket 05). Empty = a decision sent from Zalo is
+    # answered "not enabled" and nothing is decided.
+    approval_code_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DW_WORKER_APPROVAL_CODE_SECRET", "DW_APPROVAL_CODE_SECRET"),
+    )
     # poll = this process long-polls getUpdates (no public URL needed);
     # webhook = Zalo POSTs to the API and nothing here polls. One bot answers
     # one reader: two processes polling the same bot steal each other's updates.

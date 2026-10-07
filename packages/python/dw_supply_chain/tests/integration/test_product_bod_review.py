@@ -38,24 +38,38 @@ from supply_chain_harness import REPO_ROOT, DatabaseUrls
 from dw_agent_runtime.adapters.checkpoint import SqlAlchemyCheckpointSaver
 from dw_agent_runtime.adapters.langgraph_runner import LangGraphWorkflowRunner
 from dw_agent_runtime.adapters.run_store import RunStatus, SqlWorkerRunStore
+from dw_agent_runtime.approval_codes import ApprovalViewService, CodeUnavailable
 from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_agent_runtime.autonomy import AutonomyApprovalPolicy
+from dw_agent_runtime.channel_decisions import (
+    ChannelApprovalDecisionService,
+    ChannelDecisionOutcome,
+    ParsedDecision,
+    Refusal,
+)
 from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.model.budget import RunBudgetLedger
 from dw_agent_runtime.registry import GraphRegistry, WorkerRegistry
 from dw_kernel.errors import ConflictError, NotFoundError
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.ports import SystemClock, Uuid4Generator
+from dw_platform.adapters.persistence import tables as platform_tables
+from dw_platform.adapters.persistence.approval_codes import SqlApprovalCodeStore
 from dw_platform.adapters.persistence.approval_queries import SqlPendingApprovalQuery
+from dw_platform.adapters.persistence.channel_preferences import SqlChannelPreferences
 from dw_platform.adapters.persistence.identity_provisioning import SqlIdentityBootstrap
 from dw_platform.adapters.persistence.membership_admin import SqlMembershipAdminRepository
+from dw_platform.adapters.persistence.membership_lookup import SqlMembershipLookup
 from dw_platform.adapters.persistence.notifications import SqlNotificationRepository
 from dw_platform.adapters.persistence.policy_overrides import SqlPolicyOverrideRepository
 from dw_platform.adapters.persistence.scope_holders import SqlScopeHolders
 from dw_platform.adapters.persistence.tenant_plans import SqlTenantPlans
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
+from dw_platform.adapters.persistence.zalo_link_repo import SqlZaloLink
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.approval_codes import ApprovalSubjectVersions, DecisionCodeKey
 from dw_platform.application.authorization import ScopeAuthorizationService
+from dw_platform.application.channel_access import LinkedUserAccess
 from dw_platform.application.notifications import NotificationService
 from dw_platform.domain.approval import ApprovalRequest, ApprovalStatus
 from dw_platform.domain.audit import AuditEvent
@@ -67,6 +81,7 @@ from dw_supply_chain.adapters.persistence.product_case_repository import (
     SqlProductCaseRepository,
     SqlWorkspacesAwaitingReview,
 )
+from dw_supply_chain.application.approval_subject import ProductCaseApprovalSubject
 from dw_supply_chain.application.ports import (
     NewCaseDocument,
     ProductCaseReviewPort,
@@ -532,7 +547,7 @@ async def test_passing_a_sample_raises_one_review_and_tells_who_may_decide(world
         items = (await inbox.latest(member)).items
         return [n.link for n in items if code in n.title]
 
-    assert await told(bod) == ["/approvals"]
+    assert await told(bod) == [f"/approvals/{approval.id}?workspace={approval.workspace_id.value}"]
     assert await told(approver_only) == []
     assert await told(viewer_bod) == []
     assert await told(tester) == []
@@ -552,7 +567,7 @@ async def test_passing_a_sample_raises_one_review_and_tells_who_may_decide(world
         )
         == 1
     )
-    assert await told(bod) == ["/approvals"]
+    assert await told(bod) == [f"/approvals/{approval.id}?workspace={approval.workspace_id.value}"]
 
 
 # --- deciding ------------------------------------------------------------------------
@@ -1181,3 +1196,194 @@ async def test_a_pending_review_is_shown_to_bgd_and_its_requester_only(world: Wo
     )
     assert await shown(_context(frozenset({"approvals.decide", BOD_SCOPE}))) == (True, True)
     assert await shown(requester) == (True, True)
+
+
+# --- deciding on Zalo after a view (zalo-channel ticket 05, ADR 0014) -------------------
+
+_CODE_KEY = DecisionCodeKey(b"supply-chain-z5-secret-0123456789")
+
+
+@dataclass
+class _Zalo:
+    views: ApprovalViewService
+    service: ChannelApprovalDecisionService
+
+
+def _zalo(world: World) -> _Zalo:
+    """The two halves as the API and the worker compose them: the case's
+    version registered for the product-action prefix, over the stack's own
+    approval flow (strict prefix included)."""
+    sessions = world.stack.sessions
+    subjects = ApprovalSubjectVersions()
+    subjects.register(APPROVAL_TYPE_PREFIX, ProductCaseApprovalSubject(world.stack.cases))
+    store = SqlApprovalCodeStore(sessions)
+    ids, clock = Uuid4Generator(), SystemClock()
+    return _Zalo(
+        views=ApprovalViewService(
+            uow_factory=world.stack.uow_factory,
+            approval_flow=world.stack.decisions,
+            store=store,
+            subjects=subjects,
+            chats=SqlZaloLink(sessions),
+            key=_CODE_KEY,
+            clock=clock,
+            ids=ids,
+        ),
+        service=ChannelApprovalDecisionService(
+            approval_flow=world.stack.decisions,
+            authorization=ScopeAuthorizationService(),
+            store=store,
+            subjects=subjects,
+            access=LinkedUserAccess(
+                preferences=SqlChannelPreferences(sessions),
+                lookup=SqlMembershipLookup(sessions),
+            ),
+            key=_CODE_KEY,
+            clock=clock,
+            ids=ids,
+        ),
+    )
+
+
+async def _linked(world: World, member: AccessContext) -> str:
+    chat = f"chat-{member.principal_id.hex[:12]}"
+    async with world.migrator.begin() as conn:
+        await conn.execute(
+            sa.text(
+                "INSERT INTO platform.external_identities (id, user_id, issuer, subject, provider)"
+                " VALUES (:id, :u, 'zalo', :chat, 'zalo')"
+            ),
+            {"id": uuid.uuid4(), "u": member.principal_id, "chat": chat},
+        )
+    return chat
+
+
+async def _code(zalo: _Zalo, member: AccessContext, approval_id: uuid.UUID, comment: str) -> str:
+    outcome = await zalo.views.view(
+        approval_id=approval_id,
+        context=member,
+        authorization=ScopeAuthorizationService(),
+        comment=comment,
+        issue_code=True,
+    )
+    assert outcome.unavailable is None, outcome.unavailable
+    assert outcome.issued is not None
+    return outcome.issued.code
+
+
+async def _send(zalo: _Zalo, member: AccessContext, chat: str, code: str) -> ChannelDecisionOutcome:
+    return await zalo.service.decide(
+        user_id=member.principal_id,
+        channel="zalo",
+        message_id=uuid.uuid4().hex,
+        chat_id=chat,
+        decision=ParsedDecision(approve=True, code=code, reason=""),
+    )
+
+
+async def test_bgd_approves_on_zalo_after_a_view_and_the_review_applies_it(world: World) -> None:
+    operator, tester = _context(OPERATOR_SCOPES), _rnd()
+    waiting = await _pass(world, operator, tester)
+    approval = await _pending(world, waiting.case_id)
+    assert approval is not None and approval.run_id is not None
+    bod = await _member(world, "sc_bod", "approver")
+    chat = await _linked(world, bod)
+    zalo = _zalo(world)
+
+    code = await _code(zalo, bod, approval.id, "Mẫu đạt, đồng ý.")
+    outcome = await _send(zalo, bod, chat, code)
+
+    assert outcome.decided is True, outcome
+    case = await _case(world, waiting.case_id)
+    history = await world.stack.cases.list_transitions(_context(frozenset()), case.id)
+    assert [t.actor_id for t in history if t.action is ProductAction.BOD_APPROVE] == [
+        bod.principal_id
+    ]
+    run = await world.stack.run_store.get(world.stack.lookup(), approval.run_id)
+    assert run.status is RunStatus.COMPLETED
+    assert (
+        await _count(
+            world,
+            "SELECT count(*) FROM platform.approval_decisions"
+            " WHERE request_id = :a AND channel = 'zalo' AND comment = :c",
+            a=approval.id,
+            c="Mẫu đạt, đồng ý.",
+        )
+        == 1
+    )
+
+
+async def test_a_case_changed_after_the_view_refuses_the_code(world: World) -> None:
+    operator, tester = _context(OPERATOR_SCOPES), _rnd()
+    waiting = await _pass(world, operator, tester)
+    approval = await _pending(world, waiting.case_id)
+    assert approval is not None
+    bod = await _member(world, "sc_bod", "approver")
+    chat = await _linked(world, bod)
+    zalo = _zalo(world)
+    code = await _code(zalo, bod, approval.id, "Đồng ý.")
+    await world.stack.advance.handle(
+        operator,
+        case_id=ProductDevelopmentCaseId(waiting.case_id),
+        action=ProductAction.CANCEL,
+        reason="Dự án dừng",
+    )
+
+    outcome = await _send(zalo, bod, chat, code)
+
+    assert outcome.reason is Refusal.STALE
+    assert (await _pending(world, waiting.case_id)) is not None
+    assert (
+        await _count(
+            world,
+            "SELECT count(*) FROM platform.approval_decisions WHERE request_id = :a",
+            a=approval.id,
+        )
+        == 0
+    )
+
+
+async def test_a_sign_off_at_step_nine_uses_the_same_version_and_checks(world: World) -> None:
+    """S4's sign-off does not exist yet; an approval of its type, written here
+    with the payload key the review uses, is answered by the same port and
+    decided under the same strict prefix."""
+    operator, tester = _context(OPERATOR_SCOPES), _rnd()
+    waiting = await _pass(world, operator, tester)
+    signer = await _member(world, "sc_bod", "approver")
+    chat = await _linked(world, signer)
+    approval_id = uuid.uuid4()
+    async with world.migrator.begin() as conn:
+        await conn.execute(
+            sa.insert(platform_tables.approval_requests).values(
+                id=approval_id,
+                tenant_id=ALPHA,
+                workspace_id=ALPHA_WS,
+                approval_type=f"{APPROVAL_TYPE_PREFIX}signoff",
+                requested_by=operator.principal_id,
+                reason="Ký duyệt hồ sơ",
+                payload={BOD_REVIEW_CASE_KEY: str(waiting.case_id)},
+                required_scope=BOD_SCOPE,
+            )
+        )
+    zalo = _zalo(world)
+
+    unsaid = await zalo.views.view(
+        approval_id=approval_id,
+        context=signer,
+        authorization=ScopeAuthorizationService(),
+        issue_code=True,
+    )
+    assert unsaid.unavailable is CodeUnavailable.COMMENT_REQUIRED
+    code = await _code(zalo, signer, approval_id, "Đã ký.")
+    outcome = await _send(zalo, signer, chat, code)
+
+    assert outcome.decided is True, outcome
+    assert (
+        await _count(
+            world,
+            "SELECT count(*) FROM platform.approval_requests WHERE id = :a AND status = :s",
+            a=approval_id,
+            s="approved",
+        )
+        == 1
+    )

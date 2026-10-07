@@ -23,6 +23,7 @@ import httpx
 import pytest
 from asgi_lifespan import LifespanManager
 
+from dw_agent_runtime.approval_codes import ApprovalViewService
 from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_api.bootstrap import ApiContainer
 from dw_api.health import CheckState, HealthService
@@ -34,6 +35,13 @@ from dw_kernel.pagination import CursorPosition, Page, PageQuery, PageRequest, e
 from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.identity.dev_token import DevTokenVerifier
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.approval_codes import (
+    ApprovalSubjectVersions,
+    DecisionCodeKey,
+    NewDecisionCode,
+    OpenCode,
+    ViewReceipt,
+)
 from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_platform.application.identity import DbAccessContextFactory, MembershipAccess
@@ -417,3 +425,153 @@ async def test_a_cursor_is_bound_to_the_workspace_it_was_issued_in(
     response = await _call(container, "GET", "", params={"cursor": cursor})
 
     assert response.status_code == status
+
+
+# ---- opening an approval: the receipt and the code (zalo-channel ticket 05) ----
+
+_CODE_KEY = DecisionCodeKey(b"api-unit-code-secret-0123456789")
+
+
+@dataclass
+class FakeCodeStore:
+    """Keeps what the route asked to record; issues nothing on its own."""
+
+    views: list[tuple[ViewReceipt, NewDecisionCode | None]] = field(default_factory=list)
+
+    async def record_view(
+        self, context: AccessContext, receipt: ViewReceipt, code: NewDecisionCode | None
+    ) -> None:
+        self.views.append((receipt, code))
+
+    async def open_codes(self, user_id: uuid.UUID) -> list[OpenCode]:
+        return []
+
+    async def codes_of(self, user_id: uuid.UUID) -> Any:
+        raise NotImplementedError("not exercised by the view route")
+
+    async def record_wrong_try(self, user_id: uuid.UUID) -> int:
+        raise NotImplementedError("not exercised by the view route")
+
+    async def coded_approval(self, code: Any) -> Any:
+        raise NotImplementedError("not exercised by the view route")
+
+    async def record_refusal(self, event: Any) -> None:
+        raise NotImplementedError("not exercised by the view route")
+
+
+@dataclass
+class _Chats:
+    linked: bool = True
+
+    async def zalo_id_for(self, user_id: uuid.UUID) -> str | None:
+        return "chat-1" if self.linked else None
+
+
+@dataclass
+class _Versions:
+    async def version_of(self, context: AccessContext, request: ApprovalRequest) -> str | None:
+        return "7"
+
+
+def _with_views(
+    container: ApiContainer, *, linked: bool = True
+) -> tuple[ApiContainer, FakeCodeStore]:
+    store = FakeCodeStore()
+    subjects = ApprovalSubjectVersions()
+    subjects.register("demo.", _Versions())
+    assert container.uow_factory is not None and container.approval_flow is not None
+    container.approval_views = ApprovalViewService(
+        uow_factory=container.uow_factory,
+        approval_flow=container.approval_flow,
+        store=store,
+        subjects=subjects,
+        chats=_Chats(linked),
+        key=_CODE_KEY,
+        clock=SystemClock(),
+        ids=Uuid4Generator(),
+    )
+    return container, store
+
+
+_DECIDER = frozenset({"approvals.read", "approvals.decide", BOARD_SCOPE})
+
+
+async def test_opening_issues_a_code_once_and_stores_only_its_hash() -> None:
+    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOARD_SCOPE)
+    container, store = _with_views(make_container(FakeApprovalRepo(request), _DECIDER))
+
+    response = await _call(
+        container, "POST", f"/{request.id}/view", {"comment": "Đã xem.", "issue_code": True}
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    code = body["code"]
+    assert len(code) == 6 and code.isdigit()
+    assert body["command_approve"] == f"DUYỆT {code}"
+    assert body["command_reject"] == f"KHÔNG {code} <lý do>"
+    assert body["unavailable_reason"] is None
+    ((receipt, issued),) = store.views
+    assert receipt.approval_id == request.id and receipt.user_id == VIEWER
+    assert receipt.approval_version == 1 and receipt.subject_version == "7"
+    assert issued is not None
+    assert issued.comment == "Đã xem."
+    assert issued.code_hash == _CODE_KEY.digest(request.id, VIEWER, code)
+    assert code.encode() not in issued.code_hash
+
+
+async def test_opening_without_asking_records_the_view_and_issues_nothing() -> None:
+    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOARD_SCOPE)
+    container, store = _with_views(make_container(FakeApprovalRepo(request), _DECIDER))
+
+    body = (await _call(container, "POST", f"/{request.id}/view", {})).json()
+
+    assert body["code"] is None and body["unavailable_reason"] is None
+    assert body["requires_comment"] is False
+    ((_, issued),) = store.views
+    assert issued is None
+
+
+@pytest.mark.parametrize(
+    ("requested_by", "linked", "reason"),
+    [(VIEWER, True, "requester"), (SOMEONE_ELSE, False, "not_linked")],
+)
+async def test_the_page_is_told_why_no_code_is_issued(
+    requested_by: uuid.UUID, linked: bool, reason: str
+) -> None:
+    request = make_request(requested_by=requested_by, required_scope=BOARD_SCOPE)
+    container, store = _with_views(
+        make_container(FakeApprovalRepo(request), _DECIDER), linked=linked
+    )
+
+    body = (await _call(container, "POST", f"/{request.id}/view", {"issue_code": True})).json()
+
+    assert body["code"] is None
+    assert body["unavailable_reason"] == reason
+    ((_, issued),) = store.views
+    assert issued is None
+
+
+async def test_a_type_nobody_versions_is_decided_on_the_web_only() -> None:
+    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOARD_SCOPE)
+    request.approval_type = "memory.review"
+    container, store = _with_views(make_container(FakeApprovalRepo(request), _DECIDER))
+
+    body = (await _call(container, "POST", f"/{request.id}/view", {"issue_code": True})).json()
+
+    assert body["unavailable_reason"] == "web_only"
+    ((receipt, issued),) = store.views
+    assert receipt.subject_version is None and issued is None
+
+
+async def test_a_stamped_request_the_caller_may_not_see_is_not_found_and_not_recorded() -> None:
+    request = make_request(requested_by=SOMEONE_ELSE, required_scope=BOARD_SCOPE)
+    container, store = _with_views(
+        make_container(FakeApprovalRepo(request), frozenset({"approvals.read", "approvals.decide"}))
+    )
+
+    response = await _call(container, "POST", f"/{request.id}/view", {"issue_code": True})
+
+    assert response.status_code == 404
+    assert store.views == []

@@ -16,6 +16,7 @@ from dw_kernel.pagination import Page, PageRequest
 from dw_platform.application.access_context import AccessContext
 
 if TYPE_CHECKING:
+    from dw_platform.application.approval_codes import DecisionCodeLedgerPort
     from dw_platform.application.authorization import ApprovalAudience
     from dw_platform.application.directory import IdentityRef, WorkspaceMember
     from dw_platform.domain.approval import ApprovalDecision, ApprovalRequest
@@ -313,6 +314,9 @@ class PlatformUnitOfWork(Protocol):
     audit: AuditRepositoryPort
     feedback: FeedbackRepositoryPort
     outbox: OutboxRepositoryPort
+    # Consuming a single-use decision code in the decision's own transaction
+    # (ADR 0014); only a decision admitted by a code touches it.
+    decision_codes: DecisionCodeLedgerPort
 
     async def __aenter__(self) -> PlatformUnitOfWork: ...
 

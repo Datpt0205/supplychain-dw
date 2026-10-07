@@ -236,6 +236,47 @@ approval_decisions = sa.Table(
     sa.Column("outcome", sa.Text, nullable=False),
     sa.Column("comment", sa.Text, nullable=False, server_default=""),
     sa.Column("decided_at", sa.TIMESTAMP(timezone=True), nullable=False),
+    # `web` or `zalo` (CHECK, migration dbb8c3359981): where the decision came from.
+    sa.Column("channel", sa.Text, nullable=False, server_default="web"),
+)
+
+# A person opened an approval on the portal (zalo-channel ticket 05, ADR 0014):
+# the approval's version and its subject's version at that moment.
+approval_view_receipts = sa.Table(
+    "approval_view_receipts",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("approval_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("user_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("approval_version", sa.Integer, nullable=False),
+    sa.Column("subject_version", sa.Text, nullable=True),
+    sa.Column(
+        "viewed_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+# The single-use code a view issued; only its HMAC is stored.
+approval_decision_codes = sa.Table(
+    "approval_decision_codes",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("approval_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("user_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("receipt_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("code_hash", sa.LargeBinary, nullable=False),
+    sa.Column("comment", sa.Text, nullable=False, server_default=""),
+    sa.Column("failed_attempts", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("expires_at", sa.TIMESTAMP(timezone=True), nullable=False),
+    sa.Column("used_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("revoked_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("revoked_reason", sa.Text, nullable=True),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
 )
 
 audit_events = sa.Table(

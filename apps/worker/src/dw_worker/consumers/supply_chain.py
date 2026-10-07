@@ -14,6 +14,10 @@ hosts the review graph on its own runner, over the same tables, checkpointer
 and plan allowance the API's runner uses; a decision then resumes the run in
 the API, which hosts the same graph.
 
+A decision sent from Zalo (zalo-channel ticket 05) resumes a review on the
+same runner, so `register_product_approvals` gives the worker's approval flow
+what `wiring.py` gives the API's: the strict prefix and the case-version port.
+
 The Zalo proposal command (zalo-channel ticket 04, Z4b) is built here too: the
 chat's "Đồng ý" creates a product case through the same `ProposeProductCase`
 the API's route calls, over the same tables and the same duty policy file.
@@ -35,6 +39,7 @@ from dw_agent_runtime.adapters.checkpoint import SqlAlchemyCheckpointSaver
 from dw_agent_runtime.adapters.langgraph_runner import LangGraphWorkflowRunner
 from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
 from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardStore
+from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_agent_runtime.autonomy import AutonomyApprovalPolicy
 from dw_agent_runtime.model.budget import RunBudgetLedger
 from dw_agent_runtime.model.run_policy import load_worker_run_policy
@@ -49,6 +54,7 @@ from dw_platform.adapters.persistence.scope_holders import SqlScopeHolders
 from dw_platform.adapters.persistence.tenant_plans import SqlTenantPlans
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
 from dw_platform.adapters.persistence.workspace_names import SqlWorkspaceNames
+from dw_platform.application.approval_codes import ApprovalSubjectVersions
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_supply_chain.adapters.persistence.case_document_repository import (
@@ -70,6 +76,7 @@ from dw_supply_chain.adapters.persistence.proposal_draft_repository import (
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
+from dw_supply_chain.application.approval_subject import ProductCaseApprovalSubject
 from dw_supply_chain.application.document_orphan_sweep import SweepOrphanDocuments
 from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
 from dw_supply_chain.application.ports import CaseDocumentObjectListingPort
@@ -129,7 +136,7 @@ def build_document_orphan_sweep(
     )
 
 
-def build_product_review_reconcile(
+def build_product_review_runner(
     sessions: async_sessionmaker[AsyncSession],
     *,
     configs_dir: Path,
@@ -137,11 +144,12 @@ def build_product_review_reconcile(
     clock: UtcClock,
     telemetry: TelemetryPort,
     release_manifest_ref: str | None,
-) -> ReconcileBodReviews:
-    """The reconcile lane and the runner it starts reviews on. The runner is
-    this process's own: the review graph registered once, its worker loaded
-    from the shipped file, the run store's staleness from the shipped run
-    policy, the plan catalogue the API's allowance reads."""
+) -> LangGraphWorkflowRunner:
+    """This process's runner: the review graph registered once, its worker
+    loaded from the shipped file, the run store's staleness from the shipped
+    run policy, the plan catalogue the API's allowance reads. The reconcile
+    lane starts reviews on it and a decision sent from Zalo (ticket 05)
+    resumes them on it."""
     product_cases = SqlProductCaseRepository(sessions)
     graphs = GraphRegistry()
     graphs.register(
@@ -152,7 +160,7 @@ def build_product_review_reconcile(
     workers = WorkerRegistry(graph_registry=graphs)
     workers.load_file(configs_dir / "workers" / ADVANCE_PRODUCT_CASE_WORKER_FILE)
     run_policy = load_worker_run_policy(configs_dir / "policies" / "worker_runs@1.0.0.yaml")
-    runner = LangGraphWorkflowRunner(
+    return LangGraphWorkflowRunner(
         worker_registry=workers,
         graph_registry=graphs,
         checkpoint_saver=SqlAlchemyCheckpointSaver(sessions),
@@ -169,6 +177,18 @@ def build_product_review_reconcile(
         telemetry=telemetry,
         spend_store=SqlSpendGuardStore(session_factory=sessions),
     )
+
+
+def build_product_review_reconcile(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    runner: LangGraphWorkflowRunner,
+    configs_dir: Path,
+    ids: IdGenerator,
+) -> ReconcileBodReviews:
+    """The reconcile lane, starting reviews on `runner`
+    (`build_product_review_runner`)."""
+    product_cases = SqlProductCaseRepository(sessions)
     # Only `raised_by_payload` is asked here, which no audience narrows; the
     # authorization is the query's constructor argument all the same.
     approvals = SqlPendingApprovalQuery(sessions, ScopeAuthorizationService())
@@ -187,6 +207,24 @@ def build_product_review_reconcile(
             ),
             ids=ids,
         ),
+    )
+
+
+def register_product_approvals(
+    flow: ApproveAndResumeService,
+    subjects: ApprovalSubjectVersions,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """What this context adds to the worker's approval flow, as `wiring.py`
+    adds it to the API's: its prefix is strict (the requester cannot decide,
+    a decision needs a comment), and the case's version is the subject a
+    decision on Zalo must still find (ADR 0014)."""
+    flow.strict_approval_prefixes = flow.strict_approval_prefixes | frozenset(
+        {product_review_graph.APPROVAL_TYPE_PREFIX}
+    )
+    subjects.register(
+        product_review_graph.APPROVAL_TYPE_PREFIX,
+        ProductCaseApprovalSubject(SqlProductCaseRepository(sessions)),
     )
 
 

@@ -202,6 +202,7 @@ class SqlApprovalRepository:
                 outcome=decision.outcome.value,
                 comment=decision.comment,
                 decided_at=decision.decided_at,
+                channel=decision.channel,
             )
         )
 

@@ -283,6 +283,85 @@
         "title": "ApprovalView",
         "type": "object"
       },
+      "ApprovalViewOutcome": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "command_approve": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Approve"
+          },
+          "command_reject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Reject"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "requires_comment": {
+            "title": "Requires Comment",
+            "type": "boolean"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodeUnavailable"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "viewed_at": {
+            "format": "date-time",
+            "title": "Viewed At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "viewed_at",
+          "requires_comment",
+          "code",
+          "expires_at",
+          "command_approve",
+          "command_reject",
+          "unavailable_reason"
+        ],
+        "title": "ApprovalViewOutcome",
+        "type": "object"
+      },
       "AssignOrgAdminRequest": {
         "properties": {
           "email": {
@@ -1106,6 +1185,20 @@
         },
         "title": "CloseFollowUpRequest",
         "type": "object"
+      },
+      "CodeUnavailable": {
+        "description": "Why the portal offers no code. Each one is a sentence on the page.",
+        "enum": [
+          "not_pending",
+          "cannot_decide",
+          "requester",
+          "web_only",
+          "not_linked",
+          "comment_required",
+          "channel_off"
+        ],
+        "title": "CodeUnavailable",
+        "type": "string"
       },
       "CreatePOCaseRequest": {
         "additionalProperties": false,
@@ -4731,6 +4824,24 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "ViewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Comment",
+            "type": "string"
+          },
+          "issue_code": {
+            "default": false,
+            "title": "Issue Code",
+            "type": "boolean"
+          }
+        },
+        "title": "ViewRequest",
+        "type": "object"
+      },
       "WaiverDecisionBody": {
         "properties": {
           "reason": {
@@ -5812,6 +5923,59 @@
           }
         },
         "summary": "Decide",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/api/v1/approvals/{approval_id}/view": {
+      "post": {
+        "operationId": "view_approval_api_v1_approvals__approval_id__view_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Approval Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalViewOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "View Approval",
         "tags": [
           "approvals"
         ]

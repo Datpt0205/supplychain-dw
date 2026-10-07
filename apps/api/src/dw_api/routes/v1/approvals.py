@@ -11,9 +11,15 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Query
-from pydantic import BaseModel, ConfigDict
+from fastapi import APIRouter, Query, Response
+from pydantic import BaseModel, ConfigDict, Field
 
+from dw_agent_runtime.approval_codes import (
+    ApprovalViewService,
+    CodeUnavailable,
+    approve_command,
+    reject_command,
+)
 from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_api.dependencies.auth import RequireAccessContext
 from dw_api.dependencies.idempotency import RequireIdempotency
@@ -21,6 +27,7 @@ from dw_api.dependencies.services import RequireContainer
 from dw_kernel.errors import InfrastructureError, NotFoundError
 from dw_kernel.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Page, PageQuery, page_request
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.approval_codes import MAX_COMMENT_LENGTH
 from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest
 
@@ -80,6 +87,31 @@ class DecisionRequest(BaseModel):
     approve: bool
     comment: str = ""
     approved_action_ids: list[str] | None = None
+
+
+class ViewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # The comment a decision taken with the code will carry (ADR 0014,
+    # amendment 2026-10-06): required for a strict type, written here because
+    # the chat carries only the code.
+    comment: str = Field(default="", max_length=MAX_COMMENT_LENGTH)
+    # False: only record that the approval was opened and say whether a code
+    # could be issued. True: also issue one, replacing the viewer's last.
+    issue_code: bool = False
+
+
+class ApprovalViewOutcome(BaseModel):
+    viewed_at: datetime
+    requires_comment: bool
+    # Present once, in this response, and never stored or sent anywhere else.
+    code: str | None
+    expires_at: datetime | None
+    # The exact text to send to the bot.
+    command_approve: str | None
+    command_reject: str | None
+    # Why no code is (or would be) issued; the page says it in words.
+    unavailable_reason: CodeUnavailable | None
 
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
@@ -165,4 +197,41 @@ async def decide(
     )
     return await idempotency.record(
         _view(request, context, container.approval_flow, container.authorization)
+    )
+
+
+# Opening an approval on the portal (ADR 0014, zalo-channel ticket 05). Every
+# call records a view receipt — the approval's version and its subject's, as
+# the viewer saw them — so no `Idempotency-Key`: a second view is a second
+# receipt. With `issue_code`, a single-use code bound to that receipt and to
+# the comment is issued when allowed; it is in this response and nowhere else,
+# so the response is never cached.
+@router.post("/{approval_id}/view", response_model=ApprovalViewOutcome)
+async def view_approval(
+    approval_id: uuid.UUID,
+    body: ViewRequest,
+    response: Response,
+    context: RequireAccessContext,
+    container: RequireContainer,
+) -> ApprovalViewOutcome:
+    views: ApprovalViewService | None = container.approval_views
+    if views is None:
+        raise InfrastructureError("approval flow is not configured")
+    outcome = await views.view(
+        approval_id=approval_id,
+        context=context,
+        authorization=container.authorization,
+        comment=body.comment,
+        issue_code=body.issue_code,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    issued = outcome.issued
+    return ApprovalViewOutcome(
+        viewed_at=outcome.viewed_at,
+        requires_comment=outcome.requires_comment,
+        code=None if issued is None else issued.code,
+        expires_at=None if issued is None else issued.expires_at,
+        command_approve=None if issued is None else approve_command(issued.code),
+        command_reject=None if issued is None else reject_command(issued.code),
+        unavailable_reason=outcome.unavailable,
     )

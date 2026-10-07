@@ -257,6 +257,14 @@ class ApiSettings(BaseSettings):
         default=SecretStr(""),
         validation_alias=AliasChoices("DW_API_ZALO_LINK_SECRET", "ZALO_LINK_SECRET"),
     )
+    # The server key a decision code is hashed under (ADR 0014, ticket 05):
+    # HMAC-SHA256, so whoever reads the codes table cannot recover a code. The
+    # worker holds the same value to check a code sent from Zalo. Empty = no
+    # code is ever issued and approvals are decided on the web only.
+    approval_code_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DW_API_APPROVAL_CODE_SECRET", "DW_APPROVAL_CODE_SECRET"),
+    )
     # Deep link to the bot's chat shown on the settings page; empty = none.
     zalo_bot_link: str = Field(
         default="", validation_alias=AliasChoices("DW_API_ZALO_BOT_LINK", "ZALO_BOT_LINK")

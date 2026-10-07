@@ -302,8 +302,9 @@ async def test_who_may_decide_is_told_and_nobody_else() -> None:
 
     (delivery,) = stack.notifier.delivered
     assert delivery["recipients"] == [BOD]
-    assert delivery["link"] == "/approvals"
     (approval,) = stack.inbox.pending.values()
+    # The review's own page, which opens after sign-in (ticket Z5).
+    assert delivery["link"] == f"/approvals/{approval.id}?workspace={WORKSPACE}"
     assert delivery["source_key"] == f"supply_chain.bod_review:{approval.id}"
     assert {workspace for workspace, _ in stack.holders.asked} == {WORKSPACE}
 

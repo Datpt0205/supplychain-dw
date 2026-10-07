@@ -135,6 +135,9 @@ def test_only_the_platform_lanes_are_wired() -> None:
     through a linked chat, 90 days and never a pending one, the database's
     constant (`platform.prune_channel_deliveries()`). Wired without a bot
     token too: rows are queued for anyone linked whether or not this host sends.
+    `approval_codes_retention` is the eleventh: single-use decision codes
+    (zalo-channel ticket 05) a day old, the database's constant
+    (`platform.prune_approval_decision_codes()`), whether or not this host polls.
 
     `supply_chain_follow_ups` is the first context lane: Supply Chain's sweep
     that turns due reminders, escalations and SLA breaches into follow-ups
@@ -162,6 +165,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "channel_link_nonces_retention",
         "channel_inbound_messages_retention",
         "channel_deliveries_retention",
+        "approval_codes_retention",
         "supply_chain_follow_ups",
         "supply_chain_product_review_reconcile",
         "supply_chain_proposal_drafts_retention",

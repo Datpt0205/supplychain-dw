@@ -271,6 +271,72 @@ async def test_the_application_may_only_settle_an_inbound_message_and_choose_a_w
         await migrator.dispose()
 
 
+async def test_the_application_may_only_record_views_and_spend_or_revoke_codes(
+    db_urls: DatabaseUrls,
+) -> None:
+    """Migration dbb8c3359981. `approval_view_receipts`: `dw_app` reads and
+    inserts, never edits or deletes a receipt. `approval_decision_codes`: reads,
+    inserts, and updates only `used_at`, `revoked_at`, `revoked_reason` and
+    `failed_attempts` — never the hash, the comment, the owner, the approval or
+    the expiry — and deletes nothing; the sweep runs through
+    `prune_approval_decision_codes()`, which it may execute. Asked of the
+    catalog."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+
+            async def table(name: str, verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text("SELECT has_table_privilege('dw_app', :t, :verb)"),
+                        {"t": f"platform.{name}", "verb": verb},
+                    )
+                )
+
+            async def column(name: str, col: str, verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text("SELECT has_column_privilege('dw_app', :t, :col, :verb)"),
+                        {"t": f"platform.{name}", "col": col, "verb": verb},
+                    )
+                )
+
+            receipts = "approval_view_receipts"
+            assert await table(receipts, "SELECT")
+            assert await table(receipts, "INSERT")
+            for verb in ("UPDATE", "DELETE", "TRUNCATE"):
+                assert not await table(receipts, verb), verb
+
+            codes = "approval_decision_codes"
+            assert await table(codes, "SELECT")
+            assert await table(codes, "INSERT")
+            for verb in ("UPDATE", "DELETE", "TRUNCATE"):
+                assert not await table(codes, verb), verb
+            for col in ("used_at", "revoked_at", "revoked_reason", "failed_attempts"):
+                assert await column(codes, col, "UPDATE"), col
+            for col in (
+                "id",
+                "tenant_id",
+                "workspace_id",
+                "approval_id",
+                "user_id",
+                "receipt_id",
+                "code_hash",
+                "comment",
+                "expires_at",
+                "created_at",
+            ):
+                assert not await column(codes, col, "UPDATE"), col
+            assert await conn.scalar(
+                sa.text(
+                    "SELECT has_function_privilege("
+                    "'dw_app', 'platform.prune_approval_decision_codes()', 'EXECUTE')"
+                )
+            )
+    finally:
+        await migrator.dispose()
+
+
 async def test_the_application_may_only_record_a_decision_on_an_approval(
     db_urls: DatabaseUrls,
 ) -> None:
