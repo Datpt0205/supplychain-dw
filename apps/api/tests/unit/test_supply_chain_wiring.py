@@ -164,7 +164,7 @@ def test_bgd_review_is_wired_strict_hosted_and_raised_by_the_step() -> None:
     cannot decide, a comment is required), this process hosts its graph so
     a decision resumes here, and the step command raises it on the same
     runner the approval flow resumes with, under the shipped policy."""
-    from dw_supply_chain.application.product_reviews import EnsureBodReview
+    from dw_supply_chain.application.product_reviews import EnsureProductApproval
     from dw_supply_chain.workflows import advance_product_case_graph as graph
 
     container = build_container(_settings())
@@ -182,7 +182,7 @@ def test_bgd_review_is_wired_strict_hosted_and_raised_by_the_step() -> None:
     )
     advance = container.supply_chain_advance_product_case
     assert advance is not None
-    assert isinstance(advance.reviews, EnsureBodReview)
+    assert isinstance(advance.reviews, EnsureProductApproval)
     assert advance.reviews.runner is container.runner
     assert advance.reviews.platform_default_approvals.bod_review.required_scope == (
         "supply_chain.approve.bod"
@@ -190,3 +190,30 @@ def test_bgd_review_is_wired_strict_hosted_and_raised_by_the_step() -> None:
     get = container.supply_chain_get_product_case
     assert get is not None
     assert get.approvals is advance.reviews.approvals
+
+
+def test_the_signoff_is_wired_strict_and_hosted() -> None:
+    """Step 9 (ticket 04): the sign-off's type is strict under the same
+    prefix, and this process hosts its graph, so a decision on any sign-off
+    step resumes here; its first step is stamped from the shipped policy."""
+    from dw_supply_chain.application.product_reviews import EnsureProductApproval
+    from dw_supply_chain.workflows import product_signoff_graph as graph
+
+    container = build_container(_settings())
+
+    assert container.approval_flow is not None
+    assert container.approval_flow.is_strict(graph.SIGNOFF_APPROVAL_TYPE)
+    assert container.runner is not None
+    assert container.runner.hosts(
+        worker_id=graph.WORKER_ID,
+        worker_version=graph.WORKER_VERSION,
+        graph_version=graph.GRAPH_VERSION,
+    )
+    advance = container.supply_chain_advance_product_case
+    assert advance is not None
+    assert isinstance(advance.reviews, EnsureProductApproval)
+    shipped = advance.reviews.platform_default_approvals.signoff
+    assert [s.required_scope for s in shipped] == [
+        "supply_chain.approve.bod",
+        "supply_chain.approve.accounting",
+    ]

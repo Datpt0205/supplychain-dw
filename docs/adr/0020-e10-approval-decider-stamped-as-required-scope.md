@@ -178,3 +178,20 @@ Mang về từ nền tảng (`96f95ad`, ADR 0004 của nền tảng, mục "Amen
 5. Test cũ `test_platform_admin_without_the_stamp_is_refused_over_http` (mục QO-8) đã
    thay bằng `test_a_stamped_request_is_absent_to_whoever_may_not_decide_it` (404) và
    `test_the_requester_sees_their_stamped_request_but_cannot_approve_it` (403).
+
+## Sửa đổi 2026-10-07 (tạm, lát S4 của giai đoạn 1; Đạt ủy quyền quyết các điểm mở)
+
+1. **Giá trị thứ hai của Elmich:** `supply_chain_product_approvals@1.1.0` thêm `signoff`,
+   danh sách có thứ tự các bước ký (`step`, `label`, `required_scope`); mặc định
+   `bod` (`supply_chain.approve.bod`) rồi `accounting` (`supply_chain.approve.accounting`).
+   Mỗi bước là một approval `supply_chain.product_action.signoff` đóng dấu scope của chính
+   bước đó lúc bước được tạo; danh sách được đọc lúc trình, nên đổi thứ tự chỉ tới hồ sơ
+   trình sau. Override lưu ở 1.0.0 lấy `signoff` của nền tảng.
+2. **`supply_chain.approve.accounting` cấp cho `sc_finance`** (migration `76bd1b5fc546`),
+   không thêm `sc_accounting` (QE-16 còn mở); scope ở phía vận hành của
+   `sod_sc_rules_vs_operations`. Người Kế toán quyết cần thêm `approvals.decide` từ vai duyệt
+   của nền tảng, như BGĐ.
+3. Test âm theo luật của sửa đổi 2026-10-07 (ai được THẤY): người chỉ có dấu Kế toán, người
+   chỉ có `approvals.decide`, `platform_admin` không dấu đều không thấy bước BGĐ (404); BGĐ
+   không thấy bước Kế toán; người trình không tự duyệt. Test ở
+   `dw_supply_chain/tests/integration/test_product_signoff.py`.

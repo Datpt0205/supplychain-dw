@@ -1,4 +1,4 @@
-"""Unit: the product-development case, steps 1-8 (stage-1 tickets 01-03, ADR 0016).
+"""Unit: the product-development case, steps 1-9 (stage-1 tickets 01-04, ADR 0016).
 
 Every legal step, every step refused from the wrong state, a reason where one
 is required, the sample round counting each revision, an interrupt returning
@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from dw_kernel.errors import ConflictError, DomainError
+from dw_kernel.errors import ConflictError, DomainError, NotFoundError
 from dw_kernel.ids import TenantId, WorkspaceId
 from dw_supply_chain.domain.case_document import (
     CaseDocument,
@@ -24,9 +24,12 @@ from dw_supply_chain.domain.case_document import (
 )
 from dw_supply_chain.domain.product_development_case import (
     ACTION_DOCUMENT_TYPE,
+    CODING_ACTIONS,
     DOCUMENT_REQUIRED_ACTIONS,
     GRAPH_ONLY_ACTIONS,
     PRODUCT_REASON_REQUIRED_ACTIONS,
+    ItemCode,
+    ItemCodeIssued,
     ProductAction,
     ProductActionInput,
     ProductDevelopmentCase,
@@ -34,6 +37,10 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevState,
     RoundClosure,
     SampleResult,
+    Sku,
+    SkuAdded,
+    SkuDraft,
+    SkuRemoved,
     apply_product_action,
 )
 
@@ -216,7 +223,16 @@ _FORWARD_FROM: dict[ProductAction, ProductDevState] = {
     ProductAction.BOD_REJECT: ProductDevState.PENDING_BOD_REVIEW,
     ProductAction.COMPLETE_PROFILE: ProductDevState.PROFILE_IN_PROGRESS,
     ProductAction.CONFIRM_WITH_SUPPLIER: ProductDevState.SUPPLIER_CONFIRMATION,
+    ProductAction.ISSUE_ITEM_CODE: ProductDevState.ITEM_CODING,
+    ProductAction.ADD_SKU: ProductDevState.ITEM_CODING,
+    ProductAction.REMOVE_SKU: ProductDevState.ITEM_CODING,
+    ProductAction.SUBMIT_FOR_SIGNOFF: ProductDevState.ITEM_CODING,
+    ProductAction.SIGNOFF_APPROVE: ProductDevState.PENDING_SIGNOFF,
+    ProductAction.SIGNOFF_REJECT: ProductDevState.PENDING_SIGNOFF,
 }
+
+ITEM = ItemCode(id=uuid.uuid4(), code="MH-0001")
+SKU = Sku(id=uuid.uuid4(), sku_code="MH-0001-RED", variant_label="Đỏ 24cm")
 
 
 def _in_state(state: ProductDevState) -> ProductDevelopmentCase:
@@ -226,6 +242,9 @@ def _in_state(state: ProductDevState) -> ProductDevelopmentCase:
     case.sample_round = 1
     case.round_opened_at = OPENED
     case.stage_entered_at = OPENED
+    # Coded, so step 9's guards see what a coded case has.
+    case.item_code = ITEM
+    case.skus = (SKU,)
     if state in {
         ProductDevState.WAITING_EXTERNAL,
         ProductDevState.BLOCKED,
@@ -247,6 +266,14 @@ def _input(case: ProductDevelopmentCase, action: ProductAction) -> ProductAction
         reason="lý do" if action in PRODUCT_REASON_REQUIRED_ACTIONS else None,
         supplier_name="NCC" if action is ProductAction.REQUEST_SAMPLE else None,
         document=_document(case, document_type) if document_type else None,
+        item_code="MH-0002" if action is ProductAction.ISSUE_ITEM_CODE else None,
+        sku=(
+            SkuDraft(sku_code="MH-0001-BLUE", variant_label="Xanh 24cm")
+            if action is ProductAction.ADD_SKU
+            else None
+        ),
+        sku_id=SKU.id if action is ProductAction.REMOVE_SKU else None,
+        new_id=uuid.uuid4(),
     )
 
 
@@ -311,6 +338,8 @@ def test_the_reason_required_set_is_the_tickets() -> None:
         ProductAction.CANCEL,
         # BGĐ's comment is the reason a rejected case was cancelled (QE-08).
         ProductAction.BOD_REJECT,
+        # The signer's comment is why the case went back to item coding.
+        ProductAction.SIGNOFF_REJECT,
     } == PRODUCT_REASON_REQUIRED_ACTIONS
 
 
@@ -357,12 +386,7 @@ def test_a_reason_on_a_step_that_takes_none_is_refused(action: ProductAction) ->
         apply_product_action(
             case,
             action=action,
-            given=ProductActionInput(
-                given.actor_id,
-                reason="ghi chú",
-                supplier_name=given.supplier_name,
-                document=given.document,
-            ),
+            given=replace(given, reason="ghi chú"),
         )
     assert_state(case, state)
 
@@ -436,16 +460,22 @@ def test_an_interrupted_or_cancelled_case_cannot_be_interrupted_again(
 
 
 @pytest.mark.parametrize(
+    "state", [ProductDevState.PENDING_BOD_REVIEW, ProductDevState.PENDING_SIGNOFF]
+)
+@pytest.mark.parametrize(
     "action",
     [ProductAction.WAIT_FOR_EXTERNAL, ProductAction.FLAG_BLOCKED, ProductAction.FLAG_MANUAL_REVIEW],
 )
-def test_a_case_waiting_for_bgd_cannot_be_paused(action: ProductAction) -> None:
-    """While BGĐ decides nothing outside is awaited (lead decision 6): the
-    only step is cancel. Refused here, not only left off the page."""
-    case = _in_state(ProductDevState.PENDING_BOD_REVIEW)
+def test_a_case_waiting_for_an_approval_cannot_be_paused(
+    action: ProductAction, state: ProductDevState
+) -> None:
+    """While BGĐ or the signers decide nothing outside is awaited (lead
+    decision 6): the only step is cancel. Refused here, not only left off the
+    page."""
+    case = _in_state(state)
     with pytest.raises(ConflictError):
         apply_product_action(case, action=action, given=ProductActionInput(PIC, reason="chờ"))
-    assert_state(case, ProductDevState.PENDING_BOD_REVIEW)
+    assert_state(case, state)
     assert_interrupted(case, None)
     assert case.pop_pending_steps() == []
 
@@ -836,8 +866,17 @@ def test_pausing_at_a_step_does_not_move_the_bound_its_paper_counts_from() -> No
         (ProductDevState.REVISION_REQUESTED, {ProductAction.RECEIVE_REVISED_SAMPLE}),
         (ProductDevState.PROFILE_IN_PROGRESS, {ProductAction.COMPLETE_PROFILE}),
         (ProductDevState.SUPPLIER_CONFIRMATION, {ProductAction.CONFIRM_WITH_SUPPLIER}),
-        # Step 9 (item code, SKU, sign-off) is S4's.
-        (ProductDevState.ITEM_CODING, set()),
+        (
+            ProductDevState.ITEM_CODING,
+            {
+                ProductAction.ISSUE_ITEM_CODE,
+                ProductAction.ADD_SKU,
+                ProductAction.REMOVE_SKU,
+                ProductAction.SUBMIT_FOR_SIGNOFF,
+            },
+        ),
+        # ĐẶT HÀNG is ticket 05's.
+        (ProductDevState.READY_TO_ORDER, set()),
     ],
 )
 def test_available_actions_are_the_states_own_steps_plus_the_exceptions(
@@ -852,12 +891,14 @@ def test_available_actions_are_the_states_own_steps_plus_the_exceptions(
     assert _in_state(state).available_actions() == frozenset(forward | exceptions)
 
 
-def test_a_case_waiting_for_bgd_offers_only_cancel() -> None:
-    """BGĐ's two outcomes are the graph's to apply, never a person's button,
-    and nothing outside is awaited while BGĐ decides (lead decision 6)."""
-    assert _in_state(ProductDevState.PENDING_BOD_REVIEW).available_actions() == {
-        ProductAction.CANCEL
-    }
+@pytest.mark.parametrize(
+    "state", [ProductDevState.PENDING_BOD_REVIEW, ProductDevState.PENDING_SIGNOFF]
+)
+def test_a_case_waiting_for_an_approval_offers_only_cancel(state: ProductDevState) -> None:
+    """The approval's outcomes are the graph's to apply, never a person's
+    button, and nothing outside is awaited while it is decided (lead
+    decision 6): no SKU is added or removed while the signers sign."""
+    assert _in_state(state).available_actions() == {ProductAction.CANCEL}
 
 
 @pytest.mark.parametrize("state", list(ProductDevState))
@@ -865,8 +906,13 @@ def test_no_state_offers_a_graph_only_action(state: ProductDevState) -> None:
     assert not _in_state(state).available_actions() & GRAPH_ONLY_ACTIONS
 
 
-def test_the_graph_only_actions_are_bgds_two_outcomes() -> None:
-    assert {ProductAction.BOD_APPROVE, ProductAction.BOD_REJECT} == GRAPH_ONLY_ACTIONS
+def test_the_graph_only_actions_are_bgds_and_the_signoffs_two_outcomes() -> None:
+    assert {
+        ProductAction.BOD_APPROVE,
+        ProductAction.BOD_REJECT,
+        ProductAction.SIGNOFF_APPROVE,
+        ProductAction.SIGNOFF_REJECT,
+    } == GRAPH_ONLY_ACTIONS
 
 
 def test_available_actions_of_a_paused_and_a_cancelled_case() -> None:
@@ -884,3 +930,225 @@ def test_every_available_action_is_one_the_case_accepts(state: ProductDevState) 
     for action in _in_state(state).available_actions():
         case = _in_state(state)
         apply_product_action(case, action=action, given=_input(case, action))
+
+
+# --- step 9: item code, SKUs, sign-off (ticket 04) ------------------------------------
+
+
+def _uncoded() -> ProductDevelopmentCase:
+    """A case that has just reached item coding: no item code, no SKU."""
+    case = _in_state(ProductDevState.ITEM_CODING)
+    case.item_code = None
+    case.skus = ()
+    return case
+
+
+def _coded() -> ProductDevelopmentCase:
+    case = _uncoded()
+    case.issue_item_code(actor_id=PIC, new_id=ITEM.id, code="  MH-0001 ")
+    case.add_sku(actor_id=PIC, new_id=SKU.id, sku=SkuDraft("MH-0001-RED", "Đỏ 24cm"))
+    case.pop_pending_steps()
+    return case
+
+
+def test_issuing_the_item_code_trims_it_and_stays_in_item_coding() -> None:
+    case = _uncoded()
+    version = case.version
+
+    case.issue_item_code(actor_id=PIC, new_id=ITEM.id, code="  MH-0001 ")
+
+    assert case.item_code == ItemCode(ITEM.id, "MH-0001")
+    assert_state(case, ProductDevState.ITEM_CODING)
+    (step,) = case.pop_pending_steps()
+    assert (step.action, step.from_state, step.to_state, step.actor_id) == (
+        ProductAction.ISSUE_ITEM_CODE,
+        ProductDevState.ITEM_CODING,
+        ProductDevState.ITEM_CODING,
+        PIC,
+    )
+    assert step.coding == ItemCodeIssued(ItemCode(ITEM.id, "MH-0001"), replaces=False)
+    assert case.version == version + 1
+
+
+def test_correcting_the_item_code_keeps_its_row_so_its_skus_stay_under_it() -> None:
+    case = _coded()
+    case.issue_item_code(actor_id=PIC, new_id=uuid.uuid4(), code="MH-0009")
+    (step,) = case.pop_pending_steps()
+    assert step.coding == ItemCodeIssued(ItemCode(ITEM.id, "MH-0009"), replaces=True)
+    assert [s.id for s in case.skus] == [SKU.id]
+
+
+@pytest.mark.parametrize("code", ["", "   "])
+def test_a_blank_item_code_is_refused(code: str) -> None:
+    case = _uncoded()
+    with pytest.raises(DomainError, match="item_code"):
+        case.issue_item_code(actor_id=PIC, new_id=ITEM.id, code=code)
+    assert case.item_code is None
+    assert case.pop_pending_steps() == []
+
+
+def test_the_same_item_code_again_is_no_step() -> None:
+    case = _coded()
+    with pytest.raises(DomainError, match="already"):
+        case.issue_item_code(actor_id=PIC, new_id=uuid.uuid4(), code=" MH-0001")
+    assert case.pop_pending_steps() == []
+
+
+def test_a_sku_before_the_item_code_is_refused_by_the_aggregate() -> None:
+    """ADR 0018: SKUs only under an official item code. The database's NOT
+    NULL foreign key says the same for a row written directly."""
+    case = _uncoded()
+    with pytest.raises(ConflictError, match="mã hàng") as refused:
+        case.add_sku(actor_id=PIC, new_id=SKU.id, sku=SkuDraft("MH-0001-RED", "Đỏ"))
+    assert refused.value.details["missing"] == "item_code"
+    assert case.skus == ()
+    assert case.pop_pending_steps() == []
+
+
+def test_a_sku_is_added_under_the_item_code_trimmed() -> None:
+    case = _uncoded()
+    case.issue_item_code(actor_id=PIC, new_id=ITEM.id, code="MH-0001")
+    case.pop_pending_steps()
+
+    case.add_sku(actor_id=PIC, new_id=SKU.id, sku=SkuDraft(" MH-0001-RED ", " Đỏ 24cm ", 120))
+
+    (step,) = case.pop_pending_steps()
+    expected = Sku(SKU.id, "MH-0001-RED", "Đỏ 24cm", 120)
+    assert step.coding == SkuAdded(item_code_id=ITEM.id, sku=expected)
+    assert case.skus == (expected,)
+
+
+@pytest.mark.parametrize(
+    ("draft", "field"),
+    [
+        (SkuDraft("", "Đỏ"), "sku_code"),
+        (SkuDraft("MH-0001-RED", "  "), "variant_label"),
+        (SkuDraft("MH-0001-RED", "Đỏ", 0), "planned_quantity"),
+        (SkuDraft("MH-0001-RED", "Đỏ", -5), "planned_quantity"),
+    ],
+)
+def test_a_sku_with_a_blank_field_or_a_quantity_not_above_zero_is_refused(
+    draft: SkuDraft, field: str
+) -> None:
+    case = _coded()
+    with pytest.raises(DomainError, match=field):
+        case.add_sku(actor_id=PIC, new_id=uuid.uuid4(), sku=draft)
+    assert len(case.skus) == 1
+
+
+def test_removing_a_sku_names_one_of_this_cases() -> None:
+    case = _coded()
+    with pytest.raises(NotFoundError):
+        case.remove_sku(actor_id=PIC, sku_id=uuid.uuid4())
+    assert case.pop_pending_steps() == []
+
+    case.remove_sku(actor_id=PIC, sku_id=SKU.id)
+    (step,) = case.pop_pending_steps()
+    assert step.coding == SkuRemoved(SKU.id)
+    assert case.skus == ()
+
+
+@pytest.mark.parametrize(
+    ("item_code", "skus", "missing"),
+    [
+        (None, (), ["item_code", "sku"]),
+        (ITEM, (), ["sku"]),
+    ],
+)
+def test_submitting_without_an_item_code_or_a_sku_is_refused(
+    item_code: ItemCode | None, skus: tuple[Sku, ...], missing: list[str]
+) -> None:
+    case = _uncoded()
+    case.item_code, case.skus = item_code, skus
+    with pytest.raises(ConflictError) as refused:
+        case.submit_for_signoff(actor_id=PIC)
+    assert refused.value.details["missing"] == ",".join(missing)
+    assert_state(case, ProductDevState.ITEM_CODING)
+    assert case.signoff_round == 0
+    assert case.pop_pending_steps() == []
+
+
+def test_the_submit_option_says_what_is_missing_from_the_same_rule() -> None:
+    def unmet(case: ProductDevelopmentCase) -> tuple[str, ...]:
+        (option,) = [
+            o for o in case.action_options() if o.action is ProductAction.SUBMIT_FOR_SIGNOFF
+        ]
+        return option.unmet
+
+    assert unmet(_uncoded()) == ("item_code", "sku")
+    assert unmet(_coded()) == ()
+    assert all(o.unmet == () for o in _coded().action_options())
+    (add_sku,) = [o for o in _uncoded().action_options() if o.action is ProductAction.ADD_SKU]
+    assert add_sku.unmet == ("item_code",)
+
+
+def test_submitting_opens_a_new_signoff_round() -> None:
+    case = _coded()
+    case.submit_for_signoff(actor_id=PIC)
+    assert_state(case, ProductDevState.PENDING_SIGNOFF)
+    assert case.signoff_round == 1
+
+
+@pytest.mark.parametrize("action", sorted(CODING_ACTIONS))
+@pytest.mark.parametrize("state", [ProductDevState.PENDING_SIGNOFF, ProductDevState.READY_TO_ORDER])
+def test_codes_cannot_change_once_submitted_or_signed(
+    action: ProductAction, state: ProductDevState
+) -> None:
+    case = _in_state(state)
+    with pytest.raises(ConflictError):
+        apply_product_action(case, action=action, given=_input(case, action))
+    assert (case.item_code, case.skus) == (ITEM, (SKU,))
+
+
+def test_every_step_signed_makes_the_case_ready_to_order_as_the_last_signer() -> None:
+    case = _coded()
+    case.submit_for_signoff(actor_id=PIC)
+    signer = uuid.uuid4()
+
+    case.signoff_approve(actor_id=signer)
+
+    assert_state(case, ProductDevState.READY_TO_ORDER)
+    step = case.pop_pending_steps()[-1]
+    assert (step.action, step.actor_id, step.reason) == (
+        ProductAction.SIGNOFF_APPROVE,
+        signer,
+        None,
+    )
+
+
+def test_a_signoff_not_approved_returns_to_item_coding_and_keeps_the_codes() -> None:
+    case = _coded()
+    case.submit_for_signoff(actor_id=PIC)
+    case.pop_pending_steps()
+    accountant = uuid.uuid4()
+
+    case.signoff_reject(actor_id=accountant, reason="Giá vốn chưa khớp")
+
+    assert_state(case, ProductDevState.ITEM_CODING)
+    assert (case.item_code, case.skus) == (ITEM, (SKU,))
+    (step,) = case.pop_pending_steps()
+    assert (step.action, step.actor_id, step.reason, step.coding) == (
+        ProductAction.SIGNOFF_REJECT,
+        accountant,
+        "Giá vốn chưa khớp",
+        None,
+    )
+    # And it may be submitted again, under the next round.
+    case.submit_for_signoff(actor_id=PIC)
+    assert case.signoff_round == 2
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("item_code", "MH-0002"),
+        ("sku", SkuDraft("X", "Y")),
+        ("sku_id", uuid.uuid4()),
+    ],
+)
+def test_a_coding_field_on_a_step_that_takes_none_is_refused(field: str, value: object) -> None:
+    case = _coded()
+    given = replace(ProductActionInput(PIC, new_id=uuid.uuid4()), **{field: value})  # type: ignore[arg-type]
+    with pytest.raises(DomainError, match=field):
+        apply_product_action(case, action=ProductAction.SUBMIT_FOR_SIGNOFF, given=given)
+    assert_state(case, ProductDevState.ITEM_CODING)

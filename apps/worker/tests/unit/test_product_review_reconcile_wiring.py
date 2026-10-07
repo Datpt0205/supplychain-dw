@@ -21,6 +21,7 @@ from dw_kernel.ports import SystemClock, Uuid7Generator
 from dw_observability.telemetry import NullTelemetry
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_supply_chain.workflows import advance_product_case_graph as review_graph
+from dw_supply_chain.workflows import product_signoff_graph as signoff_graph
 from dw_worker.composition import REPO_ROOT
 from dw_worker.consumers.supply_chain import (
     build_product_review_reconcile,
@@ -89,7 +90,9 @@ def test_the_review_runner_is_configured_as_the_apis_runner_is() -> None:
     assert runner.release_manifest_ref == "sha256:pinned"
     shipped = load_worker_run_policy(REPO_ROOT / "configs" / "policies" / "worker_runs@1.0.0.yaml")
     assert runner.run_store.stale_run_after_seconds == shipped.stale_run_after_seconds
-    # The one graph this process hosts, at the version the API registers.
-    runner.graph_registry.resolve(review_graph.WORKER_ID, review_graph.GRAPH_VERSION)
-    worker = runner.worker_registry.resolve(review_graph.WORKER_ID, review_graph.WORKER_VERSION)
-    assert worker.definition.graph_version == review_graph.GRAPH_VERSION
+    # The two graphs this process hosts (BGĐ's review, the step-9 sign-off),
+    # at the versions the API registers.
+    for graph in (review_graph, signoff_graph):
+        runner.graph_registry.resolve(graph.WORKER_ID, graph.GRAPH_VERSION)
+        worker = runner.worker_registry.resolve(graph.WORKER_ID, graph.WORKER_VERSION)
+        assert worker.definition.graph_version == graph.GRAPH_VERSION

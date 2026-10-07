@@ -24,6 +24,8 @@ export const PRODUCT_DEV_STATE_LABEL: Record<ProductDevState, string> = {
   profile_in_progress: "Đang làm BM04",
   supplier_confirmation: "Chờ thống nhất với NCC",
   item_coding: "Đang tạo mã hàng",
+  pending_signoff: "Chờ trình ký",
+  ready_to_order: "Sẵn sàng đặt hàng",
   waiting_external: "Chờ bên ngoài",
   blocked: "Đang bị chặn",
   manual_review: "Cần xem xét thủ công",
@@ -33,8 +35,9 @@ export const PRODUCT_DEV_STATE_LABEL: Record<ProductDevState, string> = {
 /**
  * Each state's step of the 17 (CONTEXT.md's "Bước, ghi chú" column; null for
  * an end or an interruption) and its tone. A step in progress is blue; the
- * wait for BGĐ is its own tone, a decision pending; only an interruption asks
- * for attention. The label always carries the meaning (ui-quality §7).
+ * waits for BGĐ and for the sign-off are their own tone, a decision pending;
+ * signed off is done; only an interruption asks for attention. The label
+ * always carries the meaning (ui-quality §7).
  */
 export const PRODUCT_DEV_STATE_META: Record<
   ProductDevState,
@@ -48,6 +51,8 @@ export const PRODUCT_DEV_STATE_META: Record<
   profile_in_progress: { step: 7, tone: "pri" },
   supplier_confirmation: { step: 8, tone: "pri" },
   item_coding: { step: 9, tone: "pri" },
+  pending_signoff: { step: 9, tone: "geek" },
+  ready_to_order: { step: 9, tone: "ok" },
   waiting_external: { step: null, tone: "gold" },
   blocked: { step: null, tone: "err" },
   manual_review: { step: null, tone: "warn" },
@@ -64,8 +69,9 @@ export function ProductDevStateTag({ state }: { state: ProductDevState }) {
 }
 
 /** What each step's button says: the outcome, in the glossary's words.
- * `bod_approve` and `bod_reject` are never buttons: BGĐ decides at
- * `/approvals`; their labels name the step in a case's history. */
+ * `bod_approve`, `bod_reject`, `signoff_approve` and `signoff_reject` are
+ * never buttons: they are decided at `/approvals`; their labels name the step
+ * in a case's history. */
 export const PRODUCT_ACTION_LABEL: Record<ProductAction, string> = {
   propose: "Đề xuất sản phẩm",
   request_sample: "Yêu cầu mẫu",
@@ -76,6 +82,10 @@ export const PRODUCT_ACTION_LABEL: Record<ProductAction, string> = {
   reject_sample: "Hủy mẫu",
   complete_profile: "Hoàn tất BM04",
   confirm_with_supplier: "Đã thống nhất với NCC",
+  issue_item_code: "Cấp mã hàng",
+  add_sku: "Thêm SKU",
+  remove_sku: "Bỏ SKU",
+  submit_for_signoff: "Trình ký",
   wait_for_external: "Chờ bên ngoài",
   flag_blocked: "Báo bị chặn",
   flag_manual_review: "Cần xem xét thủ công",
@@ -83,7 +93,21 @@ export const PRODUCT_ACTION_LABEL: Record<ProductAction, string> = {
   cancel: "Hủy hồ sơ",
   bod_approve: "BGĐ duyệt mẫu",
   bod_reject: "BGĐ không duyệt",
+  signoff_approve: "Đã ký đủ",
+  signoff_reject: "Không ký",
 };
+
+/** What a step still lacks (`unmet` of its option), in words. */
+export const UNMET_LABEL: Record<string, string> = {
+  item_code: "mã hàng chính thức",
+  sku: "ít nhất một SKU",
+};
+
+/** Why a step the server offers is refused until something is done first. */
+export function unmetLock(unmet: readonly string[]): string {
+  const what = unmet.map((key) => UNMET_LABEL[key] ?? key).join(" và ");
+  return `Cần ${what} trước.`;
+}
 
 /** A sample round's result (Vòng mẫu: Đạt, Cần chỉnh sửa, Hủy). */
 export const SAMPLE_RESULT_LABEL: Record<SampleResult, string> = {

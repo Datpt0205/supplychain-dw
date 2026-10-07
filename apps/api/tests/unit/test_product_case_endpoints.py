@@ -75,6 +75,7 @@ from dw_supply_chain.domain.case_document import (
     DocumentType,
 )
 from dw_supply_chain.domain.product_development_case import (
+    ItemCodeIssued,
     ProductAction,
     ProductCaseTransition,
     ProductDevelopmentCase,
@@ -115,7 +116,7 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
     {
         "schema_version": "1.0",
         "policy_id": PRODUCT_ACTION_DUTIES_POLICY_ID,
-        "policy_version": "1.1.0",
+        "policy_version": "1.2.0",
         "action_duties": {
             "propose": "ordering",
             "request_sample": "ordering",
@@ -131,6 +132,10 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
             "cancel": "ordering",
             "complete_profile": "rnd",
             "confirm_with_supplier": "supply_lead",
+            "issue_item_code": "ordering",
+            "add_sku": "ordering",
+            "remove_sku": "ordering",
+            "submit_for_signoff": "ordering",
         },
     }
 )
@@ -276,6 +281,23 @@ class FakeCases:
             raise ConflictError("product case was modified concurrently")
         if stored.version != case.version - 1:
             raise ConflictError("product case was modified concurrently")
+        for step in case._pending_steps:
+            # The database's UNIQUE (tenant_id, code), refused by its name as
+            # `SqlProductCaseRepository._refusal` does.
+            if isinstance(step.coding, ItemCodeIssued) and any(
+                other.id != case.id
+                and other.tenant_id == case.tenant_id
+                and other.item_code is not None
+                and other.item_code.code == step.coding.item_code.code
+                for other in self.rows.values()
+            ):
+                raise ConflictError(
+                    f"mã hàng {step.coding.item_code.code} đã có trong công ty",
+                    details={
+                        "constraint": "uq_item_codes_tenant_id_code",
+                        "item_code": step.coding.item_code.code,
+                    },
+                )
         self.put(replace(case))
 
     async def list_page(
@@ -418,7 +440,7 @@ class MemoryStore:
 
 @dataclass
 class FakeReviews:
-    """`BodReviewPort`: answers `outcome` and records what it was asked."""
+    """`ProductApprovalPort`: answers `outcome` and records what it was asked."""
 
     outcome: ReviewRaise = ReviewRaise.RAISED
     asked: list[uuid.UUID] = field(default_factory=list)
@@ -694,6 +716,7 @@ async def test_the_detail_offers_each_step_with_what_it_takes_and_its_scope() ->
         "document_type": "sample_evaluation",
         "document_required": True,
         "documents_since": NOW.isoformat().replace("+00:00", "Z"),
+        "unmet": [],
     }
     assert options["cancel"]["documents_since"] is None
     assert options["request_revision"]["reason_required"] is True
@@ -864,6 +887,11 @@ async def test_the_detail_of_a_case_waiting_for_bgd_names_its_review_and_only_ca
         "approval_id": str(review.id),
         "created_at": NOW.isoformat().replace("+00:00", "Z"),
         "required_scope": "supply_chain.approve.bod",
+        # A review is no sign-off: no step, no steps.
+        "step": None,
+        "step_label": None,
+        "step_no": None,
+        "steps": [],
     }
     # Nobody's name, nothing to decide with: the page links to /approvals.
     assert [a["action"] for a in body["actions"]] == ["cancel"]
@@ -1134,6 +1162,7 @@ async def test_the_detail_offers_step_seven_or_eight_with_its_paper_and_scope(
         "document_required": True,
         # Since the case reached the step (BGĐ's approval, or the BM04).
         "documents_since": NOW.isoformat().replace("+00:00", "Z"),
+        "unmet": [],
     }
 
 
@@ -1273,3 +1302,210 @@ async def test_step_seven_or_eight_on_another_tenants_or_workspaces_case_is_404(
     )
     assert response.status_code == 404, response.text
     assert world.cases.rows[case.id.value].state is at
+
+
+# --- step 9: item code, SKUs, sign-off (ticket 04) -------------------------------------
+
+
+def _coding_case(world: World, **owner: uuid.UUID) -> ProductDevelopmentCase:
+    return world.case(testing=True, at=ProductDevState.ITEM_CODING, **owner)
+
+
+async def test_ordering_codes_the_product_and_submits_it_over_http() -> None:
+    world = World()
+    case = _coding_case(world)
+    path = f"/product-cases/{case.id}/transitions"
+
+    responses = await _send(
+        world.container(SC_OPERATOR),
+        [
+            _post(path, {"action": "issue_item_code", "item_code": "  MH-0001 "}),
+            _post(
+                path,
+                {
+                    "action": "add_sku",
+                    "sku": {"sku_code": "MH-0001-RED", "variant_label": "Đỏ 24cm"},
+                },
+            ),
+            _get(f"/product-cases/{case.id}"),
+            _post(path, {"action": "submit_for_signoff"}),
+        ],
+    )
+
+    issued, added, detail, submitted = responses
+    for response in responses:
+        assert response.status_code == 200, response.text
+    assert issued.json()["state"] == "item_coding"
+    body = detail.json()
+    assert body["item_code"]["code"] == "MH-0001"
+    assert [(s["sku_code"], s["variant_label"], s["planned_quantity"]) for s in body["skus"]] == [
+        ("MH-0001-RED", "Đỏ 24cm", None)
+    ]
+    options = {o["action"]: o for o in body["actions"]}
+    assert options["submit_for_signoff"]["unmet"] == []
+    assert options["add_sku"]["required_scope"] == "supply_chain.duty.ordering"
+    assert (submitted.json()["state"], submitted.json()["review"]) == ("pending_signoff", "raised")
+    assert submitted.json()["signoff_round"] == 1
+    assert world.reviews.asked == [case.id.value]
+    assert added.json()["version"] == issued.json()["version"] + 1
+
+
+async def test_the_detail_of_an_uncoded_case_says_what_submitting_lacks() -> None:
+    world = World()
+    case = _coding_case(world)
+    (detail,) = await _send(world.container(SC_OPERATOR), [_get(f"/product-cases/{case.id}")])
+    body = detail.json()
+    assert (body["item_code"], body["skus"]) == (None, [])
+    options = {o["action"]: o for o in body["actions"]}
+    assert options["submit_for_signoff"]["unmet"] == ["item_code", "sku"]
+    assert options["add_sku"]["unmet"] == ["item_code"]
+
+
+async def test_an_item_code_taken_in_the_tenant_is_409_naming_it() -> None:
+    world = World()
+    first, second = _coding_case(world), _coding_case(world)
+    (taken, refused) = await _send(
+        world.container(SC_OPERATOR),
+        [
+            _post(
+                f"/product-cases/{first.id}/transitions",
+                {"action": "issue_item_code", "item_code": "MH-0001"},
+            ),
+            _post(
+                f"/product-cases/{second.id}/transitions",
+                {"action": "issue_item_code", "item_code": "MH-0001"},
+            ),
+        ],
+    )
+    assert taken.status_code == 200, taken.text
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["details"] == {
+        "constraint": "uq_item_codes_tenant_id_code",
+        "item_code": "MH-0001",
+    }
+    assert world.cases.rows[second.id.value].item_code is None
+
+
+async def test_submitting_without_codes_is_409_naming_what_is_missing() -> None:
+    world = World()
+    case = _coding_case(world)
+    (response,) = await _send(
+        world.container(SC_OPERATOR),
+        [_post(f"/product-cases/{case.id}/transitions", {"action": "submit_for_signoff"})],
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["details"]["missing"] == "item_code,sku"
+    assert world.reviews.asked == []
+
+
+@pytest.mark.parametrize("action", ["signoff_approve", "signoff_reject"])
+async def test_the_signoffs_outcomes_from_the_api_are_refused(action: str) -> None:
+    world = World()
+    case = _coding_case(world)
+    world.cases.rows[case.id.value].state = ProductDevState.PENDING_SIGNOFF
+    everything = SC_OPERATOR | {
+        "supply_chain.approve.bod",
+        "supply_chain.approve.accounting",
+        "approvals.decide",
+    }
+    (response,) = await _send(
+        world.container(everything),
+        [_post(f"/product-cases/{case.id}/transitions", {"action": action, "reason": "ký"})],
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "action"]
+    assert world.cases.rows[case.id.value].state is ProductDevState.PENDING_SIGNOFF
+
+
+async def test_coding_without_the_ordering_duty_is_403() -> None:
+    world = World()
+    case = _coding_case(world)
+    (response,) = await _send(
+        world.container(SC_RND | SC_SUPPLY_LEAD),
+        [
+            _post(
+                f"/product-cases/{case.id}/transitions",
+                {"action": "issue_item_code", "item_code": "MH-0001"},
+            )
+        ],
+    )
+    assert response.status_code == 403, response.text
+    assert world.cases.rows[case.id.value].item_code is None
+
+
+@pytest.mark.parametrize(
+    "owner", [(OTHER_TENANT, OTHER_WORKSPACE), (TENANT, OTHER_WORKSPACE)], ids=["tenant", "ws"]
+)
+async def test_coding_another_tenants_or_workspaces_case_is_404(
+    owner: tuple[uuid.UUID, uuid.UUID],
+) -> None:
+    world = World()
+    case = _coding_case(world, tenant=owner[0], workspace=owner[1])
+    (response,) = await _send(
+        world.container(SC_OPERATOR),
+        [
+            _post(
+                f"/product-cases/{case.id}/transitions",
+                {"action": "issue_item_code", "item_code": "MH-0001"},
+            )
+        ],
+    )
+    assert response.status_code == 404, response.text
+    assert world.cases.rows[case.id.value].item_code is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {
+            "action": "add_sku",
+            "sku": {"sku_code": "A", "variant_label": "B", "planned_quantity": 0},
+        },
+        {"action": "add_sku", "sku": {"sku_code": "", "variant_label": "B"}},
+        {"action": "add_sku", "sku": {"sku_code": "A", "variant_label": "B", "pic": "x"}},
+        {"action": "issue_item_code", "item_code": ""},
+    ],
+)
+async def test_a_malformed_code_or_sku_is_422(body: dict[str, object]) -> None:
+    world = World()
+    case = _coding_case(world)
+    (response,) = await _send(
+        world.container(SC_OPERATOR), [_post(f"/product-cases/{case.id}/transitions", body)]
+    )
+    assert response.status_code == 422, response.text
+
+
+async def test_the_detail_of_a_case_waiting_for_signoff_names_its_step_and_the_order() -> None:
+    world = World()
+    case = _coding_case(world)
+    world.cases.rows[case.id.value].state = ProductDevState.PENDING_SIGNOFF
+    signoff = PendingReview(
+        id=uuid.uuid4(),
+        approval_type="supply_chain.product_action.signoff",
+        payload={
+            "product_dev_case_id": str(case.id),
+            "step": "accounting",
+            "step_label": "Kế toán",
+            "step_no": 2,
+            "steps": [{"step": "bod", "label": "BGĐ"}, {"step": "accounting", "label": "Kế toán"}],
+        },
+        created_at=NOW,
+        required_scope="supply_chain.approve.accounting",
+    )
+    world.approvals.pending[(WORKSPACE, str(case.id))] = signoff
+
+    (response,) = await _send(
+        world.container(frozenset({PRODUCT_CASE_READ})), [_get(f"/product-cases/{case.id}")]
+    )
+
+    body = response.json()
+    assert body["pending_review"] == {
+        "approval_id": str(signoff.id),
+        "created_at": NOW.isoformat().replace("+00:00", "Z"),
+        "required_scope": "supply_chain.approve.accounting",
+        "step": "accounting",
+        "step_label": "Kế toán",
+        "step_no": 2,
+        "steps": [{"step": "bod", "label": "BGĐ"}, {"step": "accounting", "label": "Kế toán"}],
+    }
+    assert [a["action"] for a in body["actions"]] == ["cancel"]

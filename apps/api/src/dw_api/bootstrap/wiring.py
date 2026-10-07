@@ -53,6 +53,7 @@ from dw_api.bootstrap.paths import (
     SUPPLY_CHAIN_FOLLOW_UP_POLICY,
     SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES,
     SUPPLY_CHAIN_PRODUCT_APPROVALS,
+    SUPPLY_CHAIN_PRODUCT_SIGNOFF_WORKER,
     SUPPLY_CHAIN_SLA_POLICY,
     WORKER_RUN_POLICY,
 )
@@ -587,11 +588,12 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         ListProductCaseTransitions,
         ProposeProductCase,
     )
-    from dw_supply_chain.application.product_reviews import EnsureBodReview
+    from dw_supply_chain.application.product_reviews import EnsureProductApproval
     from dw_supply_chain.domain.case_document import CaseKind
     from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
     from dw_supply_chain.product_approvals import load_supply_chain_product_approvals
     from dw_supply_chain.workflows import advance_product_case_graph as product_review_graph
+    from dw_supply_chain.workflows import product_signoff_graph
 
     document_repo = SqlCaseDocumentRepository(wiring.seam.session_factory)
     document_storage = MinioCaseDocumentStorage(client=minio, bucket=settings.case_documents_bucket)
@@ -636,6 +638,16 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         ),
     )
     wiring.seam.workers.load_file(SUPPLY_CHAIN_ADVANCE_PRODUCT_CASE_WORKER)
+    # The step-9 sign-off (ticket 04): its own graph and worker, under the same
+    # strict prefix and the same case-version port as the review.
+    wiring.seam.graphs.register(
+        product_signoff_graph.WORKER_ID,
+        product_signoff_graph.GRAPH_VERSION,
+        lambda: product_signoff_graph.build_product_signoff_graph(
+            product_case_repo, wiring.seam.ids, wiring.seam.clock
+        ),
+    )
+    wiring.seam.workers.load_file(SUPPLY_CHAIN_PRODUCT_SIGNOFF_WORKER)
     wiring.approval_flow.strict_approval_prefixes = (
         wiring.approval_flow.strict_approval_prefixes
         | frozenset({product_review_graph.APPROVAL_TYPE_PREFIX})
@@ -647,7 +659,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     )
     # The approval inbox, read through the narrow Protocol the context declares.
     pending_approvals = SqlPendingApprovalQuery(wiring.seam.session_factory, authorization)
-    product_reviews = EnsureBodReview(
+    product_reviews = EnsureProductApproval(
         runner=wiring.runner,
         approvals=pending_approvals,
         holders=SqlScopeHolders(wiring.seam.session_factory),

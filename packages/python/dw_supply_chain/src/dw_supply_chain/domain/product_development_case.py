@@ -1,5 +1,5 @@
 """The product-development case: one proposed product through stage 1 of the
-Elmich process, steps 1-8 so far (stage-1 tickets 01-03, ADR 0016).
+Elmich process, steps 1-9 so far (stage-1 tickets 01-04, ADR 0016).
 
 Same shape as `POCase`: a mutable dataclass whose named methods are the only
 way its state moves, a closed action enum, and one dispatch,
@@ -23,14 +23,21 @@ way its state moves, a closed action enum, and one dispatch,
   that it belongs to the round or the step is decided here, once, and
   `action_options` hands the page the same bound (`documents_since`).
 
-- **Some steps are no person's button.** BGĐ's two outcomes of step 6
-  (`GRAPH_ONLY_ACTIONS`) are applied by the review graph after the approval is
-  decided, with the decider as the actor; `available_actions` never offers
-  them and the step command refuses them.
+- **Some steps are no person's button.** BGĐ's two outcomes of step 6 and
+  the sign-off's two of step 9 (`GRAPH_ONLY_ACTIONS`) are applied by their
+  approval graph after the approval is decided, with the decider as the
+  actor; `available_actions` never offers them and the step command refuses
+  them.
+- **Step 9 codes the product before anyone signs.** In `item_coding` Cung ứng
+  issues the official item code and adds or removes SKUs (`CODING_ACTIONS`,
+  each a step that leaves the case where it is). A SKU needs the item code
+  first; submitting for sign-off needs both (`unmet_for`, the one answer
+  the guard and the page read). Whether a code is taken is the database's
+  answer, never this class's (ADR 0018). A rejected sign-off returns the case
+  to `item_coding` with its codes kept.
 
 The PIC is stamped from the actor at `propose` and nowhere else takes one.
-Step 9 onwards (item code, SKU, sign-off, ĐẶT HÀNG) are later tickets;
-`item_coding` is where this one stops.
+ĐẶT HÀNG (ticket 05) moves on from `ready_to_order`.
 """
 
 from __future__ import annotations
@@ -42,7 +49,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Self
 
-from dw_kernel.errors import ConflictError, DomainError, DWError
+from dw_kernel.errors import ConflictError, DomainError, DWError, NotFoundError
 from dw_kernel.ids import EntityId, TenantId, WorkspaceId
 from dw_supply_chain.domain.case_document import CaseDocument, CaseKind, DocumentType
 
@@ -69,6 +76,12 @@ class ProductDevState(StrEnum):
     SUPPLIER_CONFIRMATION = "supplier_confirmation"
     # The supplier confirmed; the item code and SKUs come next (step 9, S4).
     ITEM_CODING = "item_coding"
+    # Submitted for sign-off (step 9): its approvals are decided in the order
+    # the tenant's policy gives. Only the sign-off graph moves it on; a person
+    # may only cancel.
+    PENDING_SIGNOFF = "pending_signoff"
+    # Every sign-off step approved; ĐẶT HÀNG comes next (ticket 05).
+    READY_TO_ORDER = "ready_to_order"
 
     WAITING_EXTERNAL = "waiting_external"
     BLOCKED = "blocked"
@@ -101,6 +114,11 @@ class ProductAction(StrEnum):
     # Step 8: TP Cung ứng confirms the product agreed with the supplier, on
     # the supplier's email (QE-09: confirmed in the app, no mailbox read).
     CONFIRM_WITH_SUPPLIER = "confirm_with_supplier"
+    # Step 9: Cung ứng codes the product, then submits it for sign-off.
+    ISSUE_ITEM_CODE = "issue_item_code"
+    ADD_SKU = "add_sku"
+    REMOVE_SKU = "remove_sku"
+    SUBMIT_FOR_SIGNOFF = "submit_for_signoff"
     WAIT_FOR_EXTERNAL = "wait_for_external"
     FLAG_BLOCKED = "flag_blocked"
     FLAG_MANUAL_REVIEW = "flag_manual_review"
@@ -109,12 +127,34 @@ class ProductAction(StrEnum):
     # Step 6: BGĐ's decision, applied by the review graph, never by a person.
     BOD_APPROVE = "bod_approve"
     BOD_REJECT = "bod_reject"
+    # Step 9's sign-off outcome, applied by the sign-off graph: every step
+    # approved, or one step not approved.
+    SIGNOFF_APPROVE = "signoff_approve"
+    SIGNOFF_REJECT = "signoff_reject"
 
 
 # The steps only a workflow applies, after an approval is decided. One owner:
 # the step command refuses them, the duty policy may not name them, and no
 # state offers them.
-GRAPH_ONLY_ACTIONS = frozenset({ProductAction.BOD_APPROVE, ProductAction.BOD_REJECT})
+GRAPH_ONLY_ACTIONS = frozenset(
+    {
+        ProductAction.BOD_APPROVE,
+        ProductAction.BOD_REJECT,
+        ProductAction.SIGNOFF_APPROVE,
+        ProductAction.SIGNOFF_REJECT,
+    }
+)
+
+# Step 9's coding: each leaves the case in `item_coding`, and only there.
+CODING_ACTIONS = frozenset(
+    {ProductAction.ISSUE_ITEM_CODE, ProductAction.ADD_SKU, ProductAction.REMOVE_SKU}
+)
+
+# The states where a person may only cancel: an approval is being decided, and
+# a pause there would leave it waiting on a case that is not.
+AWAITING_APPROVAL_STATES = frozenset(
+    {ProductDevState.PENDING_BOD_REVIEW, ProductDevState.PENDING_SIGNOFF}
+)
 
 PRODUCT_REASON_REQUIRED_ACTIONS = frozenset(
     {
@@ -126,6 +166,8 @@ PRODUCT_REASON_REQUIRED_ACTIONS = frozenset(
         ProductAction.CANCEL,
         # BGĐ's comment is why the case was cancelled (QE-08, provisional).
         ProductAction.BOD_REJECT,
+        # The signer's comment is why the case is back in item coding.
+        ProductAction.SIGNOFF_REJECT,
     }
 )
 
@@ -157,6 +199,18 @@ _FORWARD: dict[ProductAction, tuple[ProductDevState, ProductDevState]] = {
     ),
     ProductAction.CONFIRM_WITH_SUPPLIER: (
         ProductDevState.SUPPLIER_CONFIRMATION,
+        ProductDevState.ITEM_CODING,
+    ),
+    ProductAction.SUBMIT_FOR_SIGNOFF: (
+        ProductDevState.ITEM_CODING,
+        ProductDevState.PENDING_SIGNOFF,
+    ),
+    ProductAction.SIGNOFF_APPROVE: (
+        ProductDevState.PENDING_SIGNOFF,
+        ProductDevState.READY_TO_ORDER,
+    ),
+    ProductAction.SIGNOFF_REJECT: (
+        ProductDevState.PENDING_SIGNOFF,
         ProductDevState.ITEM_CODING,
     ),
 }
@@ -206,6 +260,9 @@ class ProductActionOption:
     # The earliest upload the step accepts as its paper; None when it takes
     # none, or when the bound is not known yet (then no paper qualifies).
     documents_since: datetime | None = None
+    # What the case still lacks for this step (`unmet_for`): the step is
+    # offered, and refused until this is empty.
+    unmet: tuple[str, ...] = ()
 
 
 class SampleResult(StrEnum):
@@ -229,6 +286,57 @@ class RoundClosure:
 
 
 @dataclass(frozen=True, slots=True)
+class ItemCode:
+    """The case's official item code (Mã hàng, ADR 0018): unique in the
+    tenant, which only the database can answer."""
+
+    id: uuid.UUID
+    code: str
+
+
+@dataclass(frozen=True, slots=True)
+class Sku:
+    """One sellable variant under the item code, unique in the tenant by
+    `sku_code`. `planned_quantity` is open (QE-11): None, or above zero."""
+
+    id: uuid.UUID
+    sku_code: str
+    variant_label: str
+    planned_quantity: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SkuDraft:
+    """A SKU as a person sends it, before the step gives it an id."""
+
+    sku_code: str
+    variant_label: str
+    planned_quantity: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ItemCodeIssued:
+    """The step issued the item code, or replaced its text (same id)."""
+
+    item_code: ItemCode
+    replaces: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SkuAdded:
+    item_code_id: uuid.UUID
+    sku: Sku
+
+
+@dataclass(frozen=True, slots=True)
+class SkuRemoved:
+    sku_id: uuid.UUID
+
+
+CodingChange = ItemCodeIssued | SkuAdded | SkuRemoved
+
+
+@dataclass(frozen=True, slots=True)
 class ProductCaseStep:
     """One step taken in memory and not yet saved. The repository writes its
     history row, and the round it opens or closes, with the state."""
@@ -244,6 +352,9 @@ class ProductCaseStep:
     # The paper of a step outside the sample rounds (BM04, the supplier's
     # email), written on its history row; a round's paper is on the round.
     document_id: uuid.UUID | None = None
+    # What a coding step (step 9) does to the item code or the SKUs, written
+    # in the same transaction as its history row.
+    coding: CodingChange | None = None
 
 
 def document_refusal(case_id: uuid.UUID, action: ProductAction) -> DWError:
@@ -279,6 +390,15 @@ def _required_text(value: str, name: str) -> str:
     return cleaned
 
 
+def _quantity(value: int | None) -> int | None:
+    if value is not None and value <= 0:
+        raise DomainError(
+            "planned_quantity must be above zero when given",
+            details={"field": "planned_quantity"},
+        )
+    return value
+
+
 def _reason(action: ProductAction, reason: str | None) -> str:
     if reason is None or not reason.strip():
         raise DomainError("this action requires a reason", details={"action": action.value})
@@ -312,6 +432,12 @@ class ProductDevelopmentCase:
     sample_round: int = 0
     round_opened_at: datetime | None = None
     stage_entered_at: datetime | None = None
+    # Step 9: the item code and its SKUs, read back with the case; and how many
+    # times it was submitted for sign-off, which names the sign-off a decision
+    # belongs to (a rejected one is submitted again under the next number).
+    item_code: ItemCode | None = None
+    skus: tuple[Sku, ...] = ()
+    signoff_round: int = 0
     version: int = 1
     created_at: datetime | None = None
     _pending_steps: list[ProductCaseStep] = field(default_factory=list, compare=False, repr=False)
@@ -369,14 +495,15 @@ class ProductDevelopmentCase:
             return frozenset()
         if self.state in PRODUCT_INTERRUPT_STATES:
             return frozenset({ProductAction.RESUME, ProductAction.CANCEL})
-        if self.state is ProductDevState.PENDING_BOD_REVIEW:
+        if self.state in AWAITING_APPROVAL_STATES:
             return frozenset({ProductAction.CANCEL})
         forward = {
             action
             for action, (source, _) in _FORWARD.items()
             if source is self.state and action not in GRAPH_ONLY_ACTIONS
         }
-        return frozenset({*forward, *_INTERRUPTS, ProductAction.CANCEL})
+        coding = CODING_ACTIONS if self.state is ProductDevState.ITEM_CODING else frozenset()
+        return frozenset({*forward, *coding, *_INTERRUPTS, ProductAction.CANCEL})
 
     def action_options(self) -> list[ProductActionOption]:
         """`available_actions`, in declaration order, each with what it takes."""
@@ -389,10 +516,23 @@ class ProductDevelopmentCase:
                 document_type=ACTION_DOCUMENT_TYPE.get(action),
                 document_required=action in DOCUMENT_REQUIRED_ACTIONS,
                 documents_since=self._documents_since(action),
+                unmet=self.unmet_for(action),
             )
             for action in ProductAction
             if action in available
         ]
+
+    def unmet_for(self, action: ProductAction) -> tuple[str, ...]:
+        """What the case lacks for `action` (`item_code`, `sku`), or nothing:
+        a SKU needs the item code, a submission needs both. The one answer the
+        step refuses by and the page locks its control with."""
+        missing: list[str] = []
+        needs_code = {ProductAction.ADD_SKU, ProductAction.SUBMIT_FOR_SIGNOFF}
+        if action in needs_code and self.item_code is None:
+            missing.append("item_code")
+        if action is ProductAction.SUBMIT_FOR_SIGNOFF and not self.skus:
+            missing.append("sku")
+        return tuple(missing)
 
     def _documents_since(self, action: ProductAction) -> datetime | None:
         if action not in ACTION_DOCUMENT_TYPE:
@@ -411,6 +551,7 @@ class ProductDevelopmentCase:
         opens_round: int | None = None,
         closes_round: RoundClosure | None = None,
         document_id: uuid.UUID | None = None,
+        coding: CodingChange | None = None,
     ) -> None:
         self._pending_steps.append(
             ProductCaseStep(
@@ -422,6 +563,7 @@ class ProductDevelopmentCase:
                 opens_round=opens_round,
                 closes_round=closes_round,
                 document_id=document_id,
+                coding=coding,
             )
         )
         self.state = target
@@ -580,16 +722,110 @@ class ProductDevelopmentCase:
             ProductAction.CONFIRM_WITH_SUPPLIER, target, actor_id=actor_id, document_id=document_id
         )
 
+    # -- step 9: item code, SKUs, sign-off ---------------------------------------
+
+    def _expect_coding(self, action: ProductAction) -> None:
+        if self.state is not ProductDevState.ITEM_CODING:
+            raise ConflictError(
+                f"cannot {action.value} from {self.state.value} (expected item_coding)",
+                details={
+                    "case_id": str(self.id),
+                    "current_state": self.state.value,
+                    "expected_state": ProductDevState.ITEM_CODING.value,
+                    "action": action.value,
+                },
+            )
+
+    def issue_item_code(self, *, actor_id: uuid.UUID, new_id: uuid.UUID, code: str) -> None:
+        """Step 9: Cung ứng issues the official item code, or corrects it
+        before the case is submitted (the same row, so its SKUs stay under
+        it). Whether the code is free in the tenant is the database's answer
+        (ADR 0018); no format is checked until Elmich sends its rule (QE-11)."""
+        self._expect_coding(ProductAction.ISSUE_ITEM_CODE)
+        cleaned = _required_text(code, "item_code")
+        current = self.item_code
+        if current is not None and current.code == cleaned:
+            raise DomainError("the case already has this item code", details={"item_code": cleaned})
+        issued = ItemCode(id=current.id if current else new_id, code=cleaned)
+        self._move(
+            ProductAction.ISSUE_ITEM_CODE,
+            self.state,
+            actor_id=actor_id,
+            coding=ItemCodeIssued(item_code=issued, replaces=current is not None),
+        )
+        self.item_code = issued
+
+    def add_sku(self, *, actor_id: uuid.UUID, new_id: uuid.UUID, sku: SkuDraft) -> None:
+        """Step 9: a SKU under the item code, never before it (ADR 0018; the
+        NOT NULL foreign key holds the same rule for a row written directly)."""
+        self._expect_coding(ProductAction.ADD_SKU)
+        missing = self.unmet_for(ProductAction.ADD_SKU)
+        if missing or self.item_code is None:
+            raise ConflictError(
+                "add_sku cần mã hàng chính thức trước",
+                details={"case_id": str(self.id), "missing": ",".join(missing)},
+            )
+        added = Sku(
+            id=new_id,
+            sku_code=_required_text(sku.sku_code, "sku_code"),
+            variant_label=_required_text(sku.variant_label, "variant_label"),
+            planned_quantity=_quantity(sku.planned_quantity),
+        )
+        self._move(
+            ProductAction.ADD_SKU,
+            self.state,
+            actor_id=actor_id,
+            coding=SkuAdded(item_code_id=self.item_code.id, sku=added),
+        )
+        self.skus = (*self.skus, added)
+
+    def remove_sku(self, *, actor_id: uuid.UUID, sku_id: uuid.UUID) -> None:
+        """Step 9: a SKU taken off before the case is submitted."""
+        self._expect_coding(ProductAction.REMOVE_SKU)
+        if sku_id not in {s.id for s in self.skus}:
+            raise NotFoundError("sku not found", details={"sku_id": str(sku_id)})
+        self._move(
+            ProductAction.REMOVE_SKU, self.state, actor_id=actor_id, coding=SkuRemoved(sku_id)
+        )
+        self.skus = tuple(s for s in self.skus if s.id != sku_id)
+
+    def submit_for_signoff(self, *, actor_id: uuid.UUID) -> None:
+        """Step 9: the coded product goes to sign-off, under a new sign-off
+        round. The step command starts the sign-off run once this is saved."""
+        target = self._expect(ProductAction.SUBMIT_FOR_SIGNOFF)
+        missing = self.unmet_for(ProductAction.SUBMIT_FOR_SIGNOFF)
+        if missing:
+            raise ConflictError(
+                "submit_for_signoff cần mã hàng chính thức và ít nhất một SKU",
+                details={"case_id": str(self.id), "missing": ",".join(missing)},
+            )
+        self._move(ProductAction.SUBMIT_FOR_SIGNOFF, target, actor_id=actor_id)
+        self.signoff_round += 1
+
+    def signoff_approve(self, *, actor_id: uuid.UUID) -> None:
+        """Every sign-off step approved: ready to order. `actor_id` decided
+        the last step."""
+        target = self._expect(ProductAction.SIGNOFF_APPROVE)
+        self._move(ProductAction.SIGNOFF_APPROVE, target, actor_id=actor_id)
+
+    def signoff_reject(self, *, actor_id: uuid.UUID, reason: str | None) -> None:
+        """One sign-off step not approved: back to item coding, the signer's
+        comment the reason. The item code and SKUs are kept."""
+        why = _reason(ProductAction.SIGNOFF_REJECT, reason)
+        target = self._expect(ProductAction.SIGNOFF_REJECT)
+        self._move(ProductAction.SIGNOFF_REJECT, target, actor_id=actor_id, reason=why)
+
     # -- interrupts, resume, cancel ----------------------------------------------
 
     def _interrupt(self, action: ProductAction, *, actor_id: uuid.UUID, reason: str | None) -> None:
         why = _reason(action, reason)
-        # Nothing outside is awaited while BGĐ decides (lead decision 6): a
-        # pause there would leave the approval waiting on a case that is not.
+        # Nothing outside is awaited while an approval is decided (lead
+        # decision 6): a pause there would leave the approval waiting on a
+        # case that is not.
         if (
             self.state in PRODUCT_TERMINAL_STATES
             or self.state in PRODUCT_INTERRUPT_STATES
-            or self.state is ProductDevState.PENDING_BOD_REVIEW
+            or self.state in AWAITING_APPROVAL_STATES
         ):
             raise ConflictError(
                 f"cannot {action.value} from {self.state.value}",
@@ -654,6 +890,26 @@ class ProductActionInput:
     # Already fetched by the handler under the caller's RLS; None when the
     # caller named none.
     document: CaseDocument | None = None
+    # Step 9's coding fields: the item code (`issue_item_code`), the SKU
+    # (`add_sku`), the SKU to remove (`remove_sku`).
+    item_code: str | None = None
+    sku: SkuDraft | None = None
+    sku_id: uuid.UUID | None = None
+    # Minted by the step command, never sent by a person: the id of a row the
+    # step creates (the item code, a SKU). Steps that create none ignore it.
+    new_id: uuid.UUID | None = None
+
+
+def _minted(given: ProductActionInput) -> uuid.UUID:
+    if given.new_id is None:
+        raise DomainError("this step creates a row and needs a minted id")
+    return given.new_id
+
+
+def _named_sku(given: ProductActionInput) -> uuid.UUID:
+    if given.sku_id is None:
+        raise DomainError("remove_sku names the SKU to remove", details={"field": "sku_id"})
+    return given.sku_id
 
 
 _STEPS: dict[ProductAction, Callable[[ProductDevelopmentCase, ProductActionInput], None]] = {
@@ -696,6 +952,26 @@ _STEPS: dict[ProductAction, Callable[[ProductDevelopmentCase, ProductActionInput
     ProductAction.CONFIRM_WITH_SUPPLIER: lambda case, given: case.confirm_with_supplier(
         actor_id=given.actor_id, confirmation=given.document
     ),
+    ProductAction.ISSUE_ITEM_CODE: lambda case, given: case.issue_item_code(
+        actor_id=given.actor_id, new_id=_minted(given), code=given.item_code or ""
+    ),
+    ProductAction.ADD_SKU: lambda case, given: case.add_sku(
+        actor_id=given.actor_id,
+        new_id=_minted(given),
+        sku=given.sku or SkuDraft(sku_code="", variant_label=""),
+    ),
+    ProductAction.REMOVE_SKU: lambda case, given: case.remove_sku(
+        actor_id=given.actor_id, sku_id=_named_sku(given)
+    ),
+    ProductAction.SUBMIT_FOR_SIGNOFF: lambda case, given: case.submit_for_signoff(
+        actor_id=given.actor_id
+    ),
+    ProductAction.SIGNOFF_APPROVE: lambda case, given: case.signoff_approve(
+        actor_id=given.actor_id
+    ),
+    ProductAction.SIGNOFF_REJECT: lambda case, given: case.signoff_reject(
+        actor_id=given.actor_id, reason=given.reason
+    ),
 }
 
 
@@ -719,6 +995,13 @@ def apply_product_action(
         raise DomainError("this action takes no reason", details={"action": action.value})
     if given.document is not None and action not in ACTION_DOCUMENT_TYPE:
         raise document_refusal(case.id.value, action)
+    for name, value, takes in (
+        ("item_code", given.item_code, ProductAction.ISSUE_ITEM_CODE),
+        ("sku", given.sku, ProductAction.ADD_SKU),
+        ("sku_id", given.sku_id, ProductAction.REMOVE_SKU),
+    ):
+        if value is not None and action is not takes:
+            raise DomainError(f"only {takes.value} takes {name}", details={"action": action.value})
     _STEPS[action](case, given)
 
 

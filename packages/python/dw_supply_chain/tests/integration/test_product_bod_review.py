@@ -79,7 +79,7 @@ from dw_supply_chain.adapters.persistence.case_document_repository import (
 )
 from dw_supply_chain.adapters.persistence.product_case_repository import (
     SqlProductCaseRepository,
-    SqlWorkspacesAwaitingReview,
+    SqlWorkspacesAwaitingApproval,
 )
 from dw_supply_chain.application.approval_subject import ProductCaseApprovalSubject
 from dw_supply_chain.application.ports import (
@@ -89,7 +89,10 @@ from dw_supply_chain.application.ports import (
     ReviewRequester,
 )
 from dw_supply_chain.application.product_cases import AdvanceProductCase
-from dw_supply_chain.application.product_reviews import EnsureBodReview, ReconcileBodReviews
+from dw_supply_chain.application.product_reviews import (
+    EnsureProductApproval,
+    ReconcileProductApprovals,
+)
 from dw_supply_chain.domain.case_document import (
     CaseDocumentId,
     CaseKind,
@@ -102,7 +105,11 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevelopmentCaseId,
     ProductDevState,
 )
-from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE
+from dw_supply_chain.policy_files import (
+    PRODUCT_ACTION_DUTIES_POLICY_FILE,
+    PRODUCT_APPROVALS_POLICY_FILE,
+    PRODUCT_SIGNOFF_WORKER_FILE,
+)
 from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.product_approvals import (
     PRODUCT_APPROVALS_POLICY_ID,
@@ -117,14 +124,22 @@ from dw_supply_chain.workflows.advance_product_case_graph import (
     WORKER_ID,
     build_advance_product_case_graph,
 )
+from dw_supply_chain.workflows.product_signoff_graph import (
+    GRAPH_VERSION as SIGNOFF_GRAPH_VERSION,
+)
+from dw_supply_chain.workflows.product_signoff_graph import (
+    WORKER_ID as SIGNOFF_WORKER_ID,
+)
+from dw_supply_chain.workflows.product_signoff_graph import build_product_signoff_graph
 
 pytestmark = pytest.mark.integration
 
 STALE_AFTER_SECONDS_LOCAL = 3600
 _CONFIGS = REPO_ROOT / "configs"
 _WORKER_CONFIG = _CONFIGS / "workers" / "supply_chain_advance_product_case.yaml"
+_SIGNOFF_WORKER_CONFIG = _CONFIGS / "workers" / PRODUCT_SIGNOFF_WORKER_FILE
 _DUTIES = _CONFIGS / "policies" / PRODUCT_ACTION_DUTIES_POLICY_FILE
-_APPROVALS = _CONFIGS / "policies" / "supply_chain_product_approvals@1.0.0.yaml"
+_APPROVALS = _CONFIGS / "policies" / PRODUCT_APPROVALS_POLICY_FILE
 # The seeded tenant (`seed_test_env`): active, on a plan, so scope holders and
 # the tenant's plan are real rows.
 ALPHA = uuid.UUID("d6b43d0e-c3c6-5dbc-bc08-150621bd9a5d")
@@ -188,9 +203,9 @@ class _SaveFailsOnce:
 
 class ReviewStack:
     """One process worth of runtime objects, wired as
-    `apps/api/src/dw_api/bootstrap/wiring.py` wires them: the review graph
-    under its worker id, the shipped worker YAML and policies, the strict
-    prefix on the approval flow."""
+    `apps/api/src/dw_api/bootstrap/wiring.py` wires them: the review and
+    sign-off graphs under their worker ids, the shipped worker YAMLs and
+    policies, the strict prefix on the approval flow."""
 
     def __init__(
         self, app_url: str, *, allowance: object | None = None, save_fails_once: bool = False
@@ -209,8 +224,14 @@ class ReviewStack:
             GRAPH_VERSION,
             lambda: build_advance_product_case_graph(graph_repo, ids, clock),
         )
+        graphs.register(
+            SIGNOFF_WORKER_ID,
+            SIGNOFF_GRAPH_VERSION,
+            lambda: build_product_signoff_graph(graph_repo, ids, clock),
+        )
         workers = WorkerRegistry(graph_registry=graphs)
         workers.load_file(_WORKER_CONFIG)
+        workers.load_file(_SIGNOFF_WORKER_CONFIG)
         self.uow_factory = SqlPlatformUnitOfWorkFactory(self.sessions)
         self.run_store = SqlWorkerRunStore(
             self.sessions, stale_run_after_seconds=STALE_AFTER_SECONDS_LOCAL
@@ -236,7 +257,7 @@ class ReviewStack:
             strict_approval_prefixes=frozenset({APPROVAL_TYPE_PREFIX}),
         )
         self.approvals = SqlPendingApprovalQuery(self.sessions, ScopeAuthorizationService())
-        self.reviews = EnsureBodReview(
+        self.reviews = EnsureProductApproval(
             runner=self.runner,
             approvals=self.approvals,
             holders=SqlScopeHolders(self.sessions),
@@ -255,8 +276,8 @@ class ReviewStack:
             ids=ids,
             clock=clock,
         )
-        self.lane = ReconcileBodReviews(
-            workspaces=SqlWorkspacesAwaitingReview(self.sessions),
+        self.lane = ReconcileProductApprovals(
+            workspaces=SqlWorkspacesAwaitingApproval(self.sessions),
             cases=self.cases,
             plans=SqlTenantPlans(self.sessions),
             reviews=self.reviews,
@@ -1094,7 +1115,7 @@ async def test_a_run_that_fails_after_bgd_decided_is_raised_again_and_applied_on
 
 
 async def test_the_cross_tenant_read_is_ids_of_waiting_workspaces_only(world: World) -> None:
-    """`workspaces_awaiting_bod_review()` crosses tenants (SECURITY DEFINER),
+    """`workspaces_awaiting_product_approval()` crosses tenants (SECURITY DEFINER),
     so it returns (tenant, workspace) and nothing else, and only for a case
     actually waiting for BGĐ; every read after it is under that tenant's RLS."""
     operator, tester = _context(OPERATOR_SCOPES), _rnd()
@@ -1103,7 +1124,7 @@ async def test_the_cross_tenant_read_is_ids_of_waiting_workspaces_only(world: Wo
 
     async with world.stack.sessions() as session, session.begin():
         result = await session.execute(
-            sa.text("SELECT * FROM supply_chain.workspaces_awaiting_bod_review()")
+            sa.text("SELECT * FROM supply_chain.workspaces_awaiting_product_approval()")
         )
         columns = list(result.keys())
         pairs = set(result.tuples().all())
@@ -1344,9 +1365,10 @@ async def test_a_case_changed_after_the_view_refuses_the_code(world: World) -> N
 
 
 async def test_a_sign_off_at_step_nine_uses_the_same_version_and_checks(world: World) -> None:
-    """S4's sign-off does not exist yet; an approval of its type, written here
-    with the payload key the review uses, is answered by the same port and
-    decided under the same strict prefix."""
+    """An approval of the sign-off's type, written here with the payload key
+    the review uses, is answered by the same port and decided under the same
+    strict prefix (written before S4 existed; `test_product_signoff.py` runs
+    the real sign-off through Zalo)."""
     operator, tester = _context(OPERATOR_SCOPES), _rnd()
     waiting = await _pass(world, operator, tester)
     signer = await _member(world, "sc_bod", "approver")

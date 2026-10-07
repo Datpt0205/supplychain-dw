@@ -276,7 +276,7 @@ class PendingApprovalsPort(Protocol):
 
 class RaisedApprovalsPort(Protocol):
     """Whether this context already raised an approval: bookkeeping for the
-    code that raises it (`EnsureBodReview`), never shown to a person, so not
+    code that raises it (`EnsureProductApproval`), never shown to a person, so not
     narrowed by who is asking. A worker sweep has no scopes; filtered, it
     would find nothing and raise the review again."""
 
@@ -289,7 +289,8 @@ class RaisedApprovalsPort(Protocol):
 
 
 class ReviewRaise(StrEnum):
-    """What asking for BGĐ's review of a case did."""
+    """What asking for the approval a case waits on (BGĐ's review at step 6,
+    the sign-off at step 9) did."""
 
     # This call raised the approval (and told the people who may decide it).
     RAISED = "raised"
@@ -297,9 +298,10 @@ class ReviewRaise(StrEnum):
     ALREADY_PENDING = "already_pending"
     # No approval exists after the attempt: the run was refused (plan quota,
     # spend ceiling), failed, or is still being raised elsewhere. The case
-    # waits in `pending_bod_review` and the reconcile lane tries again.
+    # waits in `pending_bod_review` or `pending_signoff` and the reconcile lane
+    # tries again.
     NOT_RAISED = "not_raised"
-    # The case is not waiting for BGĐ; nothing to raise.
+    # The case is not waiting for an approval; nothing to raise.
     NOT_WAITING = "not_waiting"
 
 
@@ -326,9 +328,10 @@ class ReviewRequester:
         )
 
 
-class BodReviewPort(Protocol):
-    """Raises BGĐ's review of a case waiting for it, once per sample round
-    (`application.product_reviews.EnsureBodReview`)."""
+class ProductApprovalPort(Protocol):
+    """Raises the approval a case waits on: BGĐ's review once per sample
+    round, the sign-off once per sign-off round
+    (`application.product_reviews.EnsureProductApproval`)."""
 
     async def ensure(
         self, context: AccessContext, case: ProductDevelopmentCase, requester: ReviewRequester
@@ -346,8 +349,9 @@ class ReviewRunStarterPort(Protocol):
 
 
 class ProductCaseReviewPort(Protocol):
-    """What the BGĐ review graph does to a case once the approval is decided:
-    read it, save BGĐ's step, or record that it applied nothing because the
+    """What an approval graph (BGĐ's review, the sign-off) does to a case once
+    a decision is in: read it, save the outcome's step, or record that it
+    applied nothing because the
     case had moved on. `SqlProductCaseRepository` satisfies it."""
 
     async def get(
@@ -377,11 +381,12 @@ class ReviewNotifierPort(Protocol):
     ) -> None: ...
 
 
-class WorkspacesAwaitingReviewPort(Protocol):
+class WorkspacesAwaitingApprovalPort(Protocol):
     """The one cross-tenant read the review reconcile lane needs: which
-    (tenant, workspace) pairs hold a product case waiting for BGĐ. Ids only."""
+    (tenant, workspace) pairs hold a product case waiting for BGĐ's review or
+    for its sign-off. Ids only."""
 
-    async def awaiting_bod_review(self) -> list[tuple[uuid.UUID, uuid.UUID]]: ...
+    async def awaiting_approval(self) -> list[tuple[uuid.UUID, uuid.UUID]]: ...
 
 
 class TenantPlanPort(Protocol):

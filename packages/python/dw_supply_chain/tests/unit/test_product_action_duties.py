@@ -15,7 +15,7 @@ from dw_supply_chain.domain.product_development_case import GRAPH_ONLY_ACTIONS, 
 from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE
 from dw_supply_chain.product_action_duties import (
     PRODUCT_ACTION_DUTIES_POLICY_ID,
-    STEPS_ADDED_AFTER_1_0_0,
+    STEPS_ADDED_AFTER,
     SupplyChainProductActionDuties,
     load_supply_chain_product_action_duties,
 )
@@ -27,7 +27,7 @@ _SHIPPED = _POLICIES / PRODUCT_ACTION_DUTIES_POLICY_FILE
 _PO_SHIPPED = _POLICIES / "supply_chain_action_duties@1.0.0.yaml"
 
 
-def _document(mapping: dict[str, str], *, version: str = "1.1.0") -> dict[str, object]:
+def _document(mapping: dict[str, str], *, version: str = "1.2.0") -> dict[str, object]:
     return {
         "schema_version": "1.0",
         "policy_id": PRODUCT_ACTION_DUTIES_POLICY_ID,
@@ -78,22 +78,38 @@ def _shipped() -> SupplyChainProductActionDuties:
     return load_supply_chain_product_action_duties(_SHIPPED)
 
 
-def test_the_shipped_default_is_1_1_0_with_steps_seven_and_eight() -> None:
-    """Steps 7 and 8 (S3): R&D completes the BM04, TP Cung ứng confirms
-    with the supplier."""
+_STEP_9 = {
+    ProductAction.ISSUE_ITEM_CODE,
+    ProductAction.ADD_SKU,
+    ProductAction.REMOVE_SKU,
+    ProductAction.SUBMIT_FOR_SIGNOFF,
+}
+# What a tenant could have stored at 1.1.0 (S3): S1's steps and steps 7, 8.
+_S3_OVERRIDE = _S1_OVERRIDE | {"complete_profile": "rnd", "confirm_with_supplier": "supply_lead"}
+
+
+def test_the_shipped_default_is_1_2_0_with_steps_seven_eight_and_nine() -> None:
+    """Steps 7 and 8 (S3): R&D completes the BM04, TP Cung ứng confirms with
+    the supplier. Step 9 (S4): Cung ứng codes the product and submits it."""
     policy = _shipped()
-    assert policy.policy_version == "1.1.0"
+    assert policy.policy_version == "1.2.0"
     assert policy.duty_for(ProductAction.COMPLETE_PROFILE) is CaseDuty.RND
     assert policy.duty_for(ProductAction.CONFIRM_WITH_SUPPLIER) is CaseDuty.SUPPLY_LEAD
-    assert set(STEPS_ADDED_AFTER_1_0_0) == {
-        ProductAction.COMPLETE_PROFILE,
-        ProductAction.CONFIRM_WITH_SUPPLIER,
-    }
+    for action in _STEP_9:
+        assert policy.duty_for(action) is CaseDuty.ORDERING, action
+    assert {
+        "1.0.0": {
+            ProductAction.COMPLETE_PROFILE,
+            ProductAction.CONFIRM_WITH_SUPPLIER,
+            *_STEP_9,
+        },
+        "1.1.0": _STEP_9,
+    } == STEPS_ADDED_AFTER
 
 
 def test_a_1_0_0_override_takes_the_platforms_duty_for_steps_it_predates() -> None:
-    """A tenant who wrote its override before steps 7 and 8 existed never
-    decided who takes them: the platform's answer applies to those two, and
+    """A tenant who wrote its override before steps 7, 8 and 9 existed never
+    decided who takes them: the platform's answer applies to those, and
     every step the tenant did decide keeps the tenant's duty."""
     mine = _S1_OVERRIDE | {"cancel": "exceptions", "receive_sample": "ordering"}
     policy = SupplyChainProductActionDuties.from_stored(
@@ -102,16 +118,35 @@ def test_a_1_0_0_override_takes_the_platforms_duty_for_steps_it_predates() -> No
 
     assert policy.duty_for(ProductAction.COMPLETE_PROFILE) is CaseDuty.RND
     assert policy.duty_for(ProductAction.CONFIRM_WITH_SUPPLIER) is CaseDuty.SUPPLY_LEAD
+    assert policy.duty_for(ProductAction.SUBMIT_FOR_SIGNOFF) is CaseDuty.ORDERING
     assert policy.duty_for(ProductAction.CANCEL) is CaseDuty.EXCEPTIONS
     assert policy.duty_for(ProductAction.RECEIVE_SAMPLE) is CaseDuty.ORDERING
 
 
+def test_a_1_1_0_override_takes_the_platforms_duty_for_step_nine_only() -> None:
+    mine = _S3_OVERRIDE | {"confirm_with_supplier": "ordering"}
+    policy = SupplyChainProductActionDuties.from_stored(
+        _document(mine, version="1.1.0"), _shipped()
+    )
+    assert policy.duty_for(ProductAction.CONFIRM_WITH_SUPPLIER) is CaseDuty.ORDERING
+    for action in _STEP_9:
+        assert policy.duty_for(action) is CaseDuty.ORDERING, action
+
+
+def test_a_1_1_0_override_missing_step_eight_is_broken_not_old() -> None:
+    mine = dict(_S3_OVERRIDE)
+    del mine["confirm_with_supplier"]
+    with pytest.raises(ValidationError, match="confirm_with_supplier"):
+        SupplyChainProductActionDuties.from_stored(_document(mine, version="1.1.0"), _shipped())
+
+
 def test_a_1_0_0_override_that_already_names_a_later_step_keeps_its_choice() -> None:
-    mine = _S1_OVERRIDE | {"complete_profile": "ordering"}
+    mine = _S1_OVERRIDE | {"complete_profile": "ordering", "add_sku": "supply_lead"}
     policy = SupplyChainProductActionDuties.from_stored(
         _document(mine, version="1.0.0"), _shipped()
     )
     assert policy.duty_for(ProductAction.COMPLETE_PROFILE) is CaseDuty.ORDERING
+    assert policy.duty_for(ProductAction.ADD_SKU) is CaseDuty.SUPPLY_LEAD
     assert policy.duty_for(ProductAction.CONFIRM_WITH_SUPPLIER) is CaseDuty.SUPPLY_LEAD
 
 
@@ -125,14 +160,14 @@ def test_only_the_steps_a_1_0_0_override_predates_are_filled() -> None:
         SupplyChainProductActionDuties.from_stored(_document(mine, version="1.0.0"), _shipped())
 
 
-def test_an_override_written_at_1_1_0_must_name_steps_seven_and_eight() -> None:
+def test_an_override_written_at_1_2_0_must_name_every_step() -> None:
     """Only a document older than the steps is completed from the platform;
     one that claims the current version and leaves them out is refused, and
     so is a new override sent without them (the PUT body validates whole)."""
-    with pytest.raises(ValidationError, match="complete_profile"):
-        SupplyChainProductActionDuties.from_stored(_document(_S1_OVERRIDE), _shipped())
-    with pytest.raises(ValidationError, match="confirm_with_supplier"):
-        SupplyChainProductActionDuties.model_validate(_document(_S1_OVERRIDE, version="1.0.0"))
+    with pytest.raises(ValidationError, match="submit_for_signoff"):
+        SupplyChainProductActionDuties.from_stored(_document(_S3_OVERRIDE), _shipped())
+    with pytest.raises(ValidationError, match="add_sku"):
+        SupplyChainProductActionDuties.model_validate(_document(_S3_OVERRIDE, version="1.1.0"))
 
 
 @pytest.mark.parametrize("graph_only", sorted(GRAPH_ONLY_ACTIONS))
@@ -158,6 +193,10 @@ def test_a_duty_for_a_step_only_the_graph_takes_is_refused(graph_only: ProductAc
         (ProductAction.REJECT_SAMPLE, CaseDuty.RND),
         (ProductAction.COMPLETE_PROFILE, CaseDuty.RND),
         (ProductAction.CONFIRM_WITH_SUPPLIER, CaseDuty.SUPPLY_LEAD),
+        (ProductAction.ISSUE_ITEM_CODE, CaseDuty.ORDERING),
+        (ProductAction.ADD_SKU, CaseDuty.ORDERING),
+        (ProductAction.REMOVE_SKU, CaseDuty.ORDERING),
+        (ProductAction.SUBMIT_FOR_SIGNOFF, CaseDuty.ORDERING),
     ],
 )
 def test_supply_proposes_and_rnd_tests(action: ProductAction, duty: CaseDuty) -> None:

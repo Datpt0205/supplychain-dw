@@ -591,14 +591,20 @@ export interface components {
          * @description One step. Each step reads the fields it takes and refuses the others:
          *     `supplier_name` for `request_sample`, `document_id` for `pass_sample`,
          *     `request_revision`, `complete_profile`, `confirm_with_supplier` and
-         *     (optionally) `reject_sample`, `reason` where the step needs one.
+         *     (optionally) `reject_sample`, `item_code` for `issue_item_code`, `sku` for
+         *     `add_sku`, `sku_id` for `remove_sku`, `reason` where the step needs one.
          */
         AdvanceProductCaseRequest: {
             action: components["schemas"]["ProductAction"];
             /** Document Id */
             document_id?: string | null;
+            /** Item Code */
+            item_code?: string | null;
             /** Reason */
             reason?: string | null;
+            sku?: components["schemas"]["SkuInput"] | null;
+            /** Sku Id */
+            sku_id?: string | null;
             /** Supplier Name */
             supplier_name?: string | null;
         };
@@ -948,6 +954,19 @@ export interface components {
             milestone: components["schemas"]["CaseState"];
         };
         /**
+         * ItemCodeView
+         * @description The case's official item code (step 9).
+         */
+        ItemCodeView: {
+            /** Code */
+            code: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
          * MissingUpdateStatus
          * @enum {string}
          */
@@ -1018,9 +1037,11 @@ export interface components {
         };
         /**
          * PendingReviewView
-         * @description The BGĐ review a waiting case is held on: which approval, since when,
-         *     and the scope stamped on it, which is who may decide it. Decided at
-         *     `/approvals`, never from the case.
+         * @description The approval a waiting case is held on (BGĐ's review, or the current
+         *     sign-off step): which approval, since when, and the scope stamped on it,
+         *     which is who may decide it. For a sign-off, the step it is, its number,
+         *     and every step of the round in order, all as stamped when the case was
+         *     submitted. Decided at `/approvals`, never from the case.
          */
         PendingReviewView: {
             /**
@@ -1032,6 +1053,14 @@ export interface components {
             created_at: string | null;
             /** Required Scope */
             required_scope: string | null;
+            /** Step */
+            step: string | null;
+            /** Step Label */
+            step_label: string | null;
+            /** Step No */
+            step_no: number | null;
+            /** Steps */
+            steps: components["schemas"]["SignoffStepView"][];
         };
         /** PortfolioSummaryView */
         PortfolioSummaryView: {
@@ -1055,7 +1084,7 @@ export interface components {
          *     PO policy or approval keyed by one of them must not reach this case.
          * @enum {string}
          */
-        ProductAction: "propose" | "request_sample" | "receive_sample" | "pass_sample" | "request_revision" | "receive_revised_sample" | "reject_sample" | "complete_profile" | "confirm_with_supplier" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "resume" | "cancel" | "bod_approve" | "bod_reject";
+        ProductAction: "propose" | "request_sample" | "receive_sample" | "pass_sample" | "request_revision" | "receive_revised_sample" | "reject_sample" | "complete_profile" | "confirm_with_supplier" | "issue_item_code" | "add_sku" | "remove_sku" | "submit_for_signoff" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "resume" | "cancel" | "bod_approve" | "bod_reject" | "signoff_approve" | "signoff_reject";
         /**
          * ProductActionOptionView
          * @description A step the case accepts from its state, what it must carry, and the
@@ -1078,6 +1107,8 @@ export interface components {
             required_scope: string;
             /** Takes Supplier */
             takes_supplier: boolean;
+            /** Unmet */
+            unmet: string[];
         };
         /** ProductCaseDetailView */
         ProductCaseDetailView: {
@@ -1098,6 +1129,7 @@ export interface components {
              */
             id: string;
             interrupted_state: components["schemas"]["ProductDevState"] | null;
+            item_code: components["schemas"]["ItemCodeView"] | null;
             pending_review: components["schemas"]["PendingReviewView"] | null;
             /**
              * Pic User Id
@@ -1112,6 +1144,10 @@ export interface components {
             rounds: components["schemas"]["SampleRoundView"][];
             /** Sample Round */
             sample_round: number;
+            /** Signoff Round */
+            signoff_round: number;
+            /** Skus */
+            skus: components["schemas"]["SkuView"][];
             state: components["schemas"]["ProductDevState"];
             /** Supplier Name */
             supplier_name: string | null;
@@ -1121,8 +1157,9 @@ export interface components {
         /**
          * ProductCaseStepView
          * @description A step taken. `review` is set only for a step that left the case
-         *     waiting for BGĐ: `not_raised` means the step is recorded and the review
-         *     is not raised yet (the worker retries it).
+         *     waiting on an approval (BGĐ's review, the sign-off): `not_raised` means
+         *     the step is recorded and the approval is not raised yet (the worker
+         *     retries it).
          */
         ProductCaseStepView: {
             /** Category */
@@ -1152,6 +1189,8 @@ export interface components {
             review: components["schemas"]["ReviewRaise"] | null;
             /** Sample Round */
             sample_round: number;
+            /** Signoff Round */
+            signoff_round: number;
             state: components["schemas"]["ProductDevState"];
             /** Supplier Name */
             supplier_name: string | null;
@@ -1210,6 +1249,8 @@ export interface components {
             proposal_code: string;
             /** Sample Round */
             sample_round: number;
+            /** Signoff Round */
+            signoff_round: number;
             state: components["schemas"]["ProductDevState"];
             /** Supplier Name */
             supplier_name: string | null;
@@ -1222,7 +1263,7 @@ export interface components {
          *     web, in one table beside the product-case pages.
          * @enum {string}
          */
-        ProductDevState: "proposed" | "sample_requested" | "sample_testing" | "revision_requested" | "pending_bod_review" | "profile_in_progress" | "supplier_confirmation" | "item_coding" | "waiting_external" | "blocked" | "manual_review" | "cancelled";
+        ProductDevState: "proposed" | "sample_requested" | "sample_testing" | "revision_requested" | "pending_bod_review" | "profile_in_progress" | "supplier_confirmation" | "item_coding" | "pending_signoff" | "ready_to_order" | "waiting_external" | "blocked" | "manual_review" | "cancelled";
         /**
          * ProposeProductCaseRequest
          * @description Step 1. JSON only: product images are uploaded after the case exists,
@@ -1238,7 +1279,8 @@ export interface components {
         };
         /**
          * ReviewRaise
-         * @description What asking for BGĐ's review of a case did.
+         * @description What asking for the approval a case waits on (BGĐ's review at step 6,
+         *     the sign-off at step 9) did.
          * @enum {string}
          */
         ReviewRaise: "raised" | "already_pending" | "not_raised" | "not_waiting";
@@ -1316,6 +1358,40 @@ export interface components {
             revision_document_id: string | null;
             /** Round No */
             round_no: number;
+        };
+        /** SignoffStepView */
+        SignoffStepView: {
+            /** Label */
+            label: string;
+            /** Step */
+            step: string;
+        };
+        /**
+         * SkuInput
+         * @description A SKU to add under the item code (step 9). `planned_quantity` is open
+         *     (QE-11): omitted, or above zero.
+         */
+        SkuInput: {
+            /** Planned Quantity */
+            planned_quantity?: number | null;
+            /** Sku Code */
+            sku_code: string;
+            /** Variant Label */
+            variant_label: string;
+        };
+        /** SkuView */
+        SkuView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Planned Quantity */
+            planned_quantity: number | null;
+            /** Sku Code */
+            sku_code: string;
+            /** Variant Label */
+            variant_label: string;
         };
         /** StateSummaryView */
         StateSummaryView: {

@@ -1449,14 +1449,13 @@ async def resolve_product_approvals(
 ) -> SupplyChainProductApprovals:
     """Who may decide each product-case approval for the caller's tenant: its
     own override if it has one, the platform's otherwise. Read only where an
-    approval is raised; deciding reads the stamp the approval carries."""
-    return await _resolve_policy(
-        context,
-        policy_override_repo,
-        policy_id=PRODUCT_APPROVALS_POLICY_ID,
-        schema=SupplyChainProductApprovals,
-        platform_default=platform_default,
-    )
+    approval is raised; deciding reads the stamp the approval carries. One
+    stored before the sign-off existed takes the platform's sign-off
+    (`SupplyChainProductApprovals.from_stored`)."""
+    override = await policy_override_repo.get(context, PRODUCT_APPROVALS_POLICY_ID)
+    if override is None:
+        return platform_default
+    return SupplyChainProductApprovals.from_stored(override, platform_default)
 
 
 @dataclass(frozen=True)

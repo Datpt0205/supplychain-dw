@@ -39,3 +39,25 @@ chính thức". Quyết định:
 
 - Không đồng bộ với ERP. Nếu Elmich có danh mục hàng ở hệ thống khác, đồng bộ là một
   adapter sau port, không đổi ràng buộc này.
+
+## Sửa đổi 2026-10-07 (tạm, lát S4; Đạt ủy quyền quyết các điểm mở)
+
+Làm theo quyết định ở trên, với ba điểm thu hẹp. Chi tiết và test ở Comments của
+`.claude/plans/supply-chain/stage-1/issues/04-item-code-sku-signoff-step-9.md`.
+
+1. **Khóa ngoại:** mã hàng và SKU tham chiếu hồ sơ `ON DELETE CASCADE` (như mọi bảng con
+   của hồ sơ, migration `59e69efdfa37`), SKU tham chiếu mã hàng của CHÍNH hồ sơ bằng FK ghép
+   `(tenant_id, workspace_id, product_dev_case_id, item_code_id)` `ON DELETE NO ACTION`,
+   không phải RESTRICT. Purge offboarding chỉ xóa bảng `dw_app` được DELETE và dựa vào
+   cascade của hồ sơ; RESTRICT sẽ chặn chính cascade đó. NO ACTION kiểm ở cuối câu lệnh, nên
+   mọi lệnh xóa mã hàng còn SKU vẫn bị từ chối. `dw_app` không có DELETE trên `item_codes`
+   (chỉ UPDATE cột `code`, để sửa mã trước khi trình ký), có DELETE trên `skus` (bỏ SKU).
+2. **QE-11 chưa trả lời: chưa có policy định dạng.** Đề xuất "pattern của tenant, mặc định
+   thoáng" không làm: quyết định ở trên đã nói không kiểm định dạng cho tới khi có quy tắc,
+   một regex do tenant đặt cần chặn ReDoS riêng, và policy chưa ai ghi đè là thứ không ai
+   đọc. Mã phân biệt hoa thường (UNIQUE thường). Khi Elmich trả lời QE-11, định dạng (và
+   việc so không phân biệt hoa thường, nếu cần) vào policy của tenant hoặc một index trên
+   biểu thức, bằng migration mới.
+3. Lỗi trùng là 409 nêu mã (`details.item_code` hoặc `details.sku_code`) và tên ràng buộc;
+   trang hiện câu đó tại trường. Hồ sơ bị hủy giữ mã hàng và SKU: mã đã cấp không tái dùng
+   trong tenant.

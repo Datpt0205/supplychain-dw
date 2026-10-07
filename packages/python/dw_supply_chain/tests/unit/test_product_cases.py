@@ -60,7 +60,9 @@ from dw_supply_chain.domain.case_document import (
     DocumentType,
 )
 from dw_supply_chain.domain.product_development_case import (
+    CODING_ACTIONS,
     GRAPH_ONLY_ACTIONS,
+    ItemCodeIssued,
     ProductAction,
     ProductCaseStep,
     ProductCaseTransition,
@@ -68,6 +70,8 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevelopmentCaseId,
     ProductDevState,
     SampleRound,
+    SkuAdded,
+    SkuDraft,
 )
 from dw_supply_chain.domain.product_proposal import DraftClaim
 from dw_supply_chain.product_action_duties import (
@@ -96,7 +100,7 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
     {
         "schema_version": "1.0",
         "policy_id": PRODUCT_ACTION_DUTIES_POLICY_ID,
-        "policy_version": "1.1.0",
+        "policy_version": "1.2.0",
         "action_duties": {
             "propose": "ordering",
             "request_sample": "ordering",
@@ -112,6 +116,10 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
             "cancel": "ordering",
             "complete_profile": "rnd",
             "confirm_with_supplier": "supply_lead",
+            "issue_item_code": "ordering",
+            "add_sku": "ordering",
+            "remove_sku": "ordering",
+            "submit_for_signoff": "ordering",
         },
     }
 )
@@ -299,7 +307,7 @@ class FakePolicies:
 
 @dataclass
 class FakeReviews:
-    """`BodReviewPort`: records each request for BGĐ's review and answers
+    """`ProductApprovalPort`: records each request for BGĐ's review and answers
     with `outcome`, or raises `error` as a refused start would."""
 
     outcome: ReviewRaise = ReviewRaise.RAISED
@@ -1183,3 +1191,189 @@ async def test_the_case_page_shows_no_review_outside_waiting_for_bgd() -> None:
     detail = await stack.get().handle(_context(frozenset({PRODUCT_CASE_READ})), case.id)
 
     assert detail.pending_review is None
+
+
+# --- step 9: item code, SKUs, sign-off (ticket 04) -------------------------------------
+
+SIGNOFF = "supply_chain.product_action.signoff"
+
+
+async def _coding(stack: Stack) -> ProductDevelopmentCase:
+    case = await stack.confirming()
+    email = stack.documents.add(case, DocumentType.SUPPLIER_CONFIRMATION_EMAIL)
+    result = await stack.advance().handle(
+        _context(SC_SUPPLY_LEAD),
+        case_id=case.id,
+        action=ProductAction.CONFIRM_WITH_SUPPLIER,
+        document_id=email.id.value,
+    )
+    assert result.case.state is ProductDevState.ITEM_CODING
+    return result.case
+
+
+async def _coded(stack: Stack) -> ProductDevelopmentCase:
+    case = await _coding(stack)
+    await stack.advance().handle(
+        _context(SC_OPERATOR),
+        case_id=case.id,
+        action=ProductAction.ISSUE_ITEM_CODE,
+        item_code="MH-0001",
+    )
+    result = await stack.advance().handle(
+        _context(SC_OPERATOR),
+        case_id=case.id,
+        action=ProductAction.ADD_SKU,
+        sku=SkuDraft("MH-0001-RED", "Đỏ 24cm", 120),
+    )
+    return result.case
+
+
+async def test_ordering_codes_the_product_with_minted_ids_and_audits_each_step() -> None:
+    stack = Stack()
+    case = await _coded(stack)
+
+    issued, added = stack.cases.steps[-2:]
+    assert isinstance(issued.coding, ItemCodeIssued)
+    assert isinstance(added.coding, SkuAdded)
+    assert issued.coding.item_code.code == "MH-0001"
+    assert added.coding.item_code_id == issued.coding.item_code.id
+    assert added.coding.sku.id != issued.coding.item_code.id
+    named = [a.details.get("item_code") or a.details.get("sku_code") for a in stack.cases.audits]
+    assert named[-2:] == ["MH-0001", "MH-0001-RED"]
+    assert case.state is ProductDevState.ITEM_CODING
+    assert stack.reviews.asked[1:] == []  # coding asks for no approval
+
+
+@pytest.mark.parametrize("action", sorted(CODING_ACTIONS | {ProductAction.SUBMIT_FOR_SIGNOFF}))
+@pytest.mark.parametrize("scopes", [SC_RND, SC_SUPPLY_LEAD, frozenset({PRODUCT_CASE_READ})])
+async def test_step_nine_needs_the_ordering_duty(
+    action: ProductAction, scopes: frozenset[str]
+) -> None:
+    """Refused before the case is read, as every step's duty is."""
+    stack = Stack()
+    case = await _coded(stack)
+    before = len(stack.cases.steps)
+    with pytest.raises(PermissionDeniedError):
+        await stack.advance().handle(
+            _context(scopes),
+            case_id=case.id,
+            action=action,
+            item_code="MH-0002" if action is ProductAction.ISSUE_ITEM_CODE else None,
+        )
+    assert len(stack.cases.steps) == before
+
+
+@pytest.mark.parametrize("action", [ProductAction.SIGNOFF_APPROVE, ProductAction.SIGNOFF_REJECT])
+async def test_the_signoffs_outcome_is_never_a_step_even_for_the_ordering_duty(
+    action: ProductAction,
+) -> None:
+    stack = Stack()
+    case = await _coded(stack)
+    await stack.advance().handle(
+        _context(SC_OPERATOR), case_id=case.id, action=ProductAction.SUBMIT_FOR_SIGNOFF
+    )
+    with pytest.raises(DomainError, match="approval"):
+        await stack.advance().handle(
+            _context(SC_OPERATOR | {"supply_chain.approve.bod", "approvals.decide"}),
+            case_id=case.id,
+            action=action,
+            reason="tự duyệt",
+        )
+    assert stack.cases.rows[case.id.value].state is ProductDevState.PENDING_SIGNOFF
+
+
+async def test_submitting_without_codes_is_a_409_and_asks_for_no_signoff() -> None:
+    stack = Stack()
+    case = await _coding(stack)
+    asked = len(stack.reviews.asked)
+    with pytest.raises(ConflictError) as refused:
+        await stack.advance().handle(
+            _context(SC_OPERATOR), case_id=case.id, action=ProductAction.SUBMIT_FOR_SIGNOFF
+        )
+    assert refused.value.details["missing"] == "item_code,sku"
+    assert len(stack.reviews.asked) == asked
+
+
+async def test_a_sku_before_the_item_code_is_refused() -> None:
+    stack = Stack()
+    case = await _coding(stack)
+    with pytest.raises(ConflictError, match="mã hàng"):
+        await stack.advance().handle(
+            _context(SC_OPERATOR),
+            case_id=case.id,
+            action=ProductAction.ADD_SKU,
+            sku=SkuDraft("MH-0001-RED", "Đỏ"),
+        )
+
+
+async def test_submitting_asks_for_the_signoff_after_the_step_is_saved() -> None:
+    stack = Stack()
+    case = await _coded(stack)
+    operator = _context(SC_OPERATOR)
+
+    result = await stack.advance().handle(
+        operator, case_id=case.id, action=ProductAction.SUBMIT_FOR_SIGNOFF
+    )
+
+    assert result.review is ReviewRaise.RAISED
+    assert result.case.state is ProductDevState.PENDING_SIGNOFF
+    assert result.case.signoff_round == 1
+    _, asked_case, requester = stack.reviews.asked[-1]
+    assert asked_case.state is ProductDevState.PENDING_SIGNOFF
+    assert requester.principal_id == operator.principal_id
+    assert stack.cases.rows[case.id.value].state is ProductDevState.PENDING_SIGNOFF
+
+
+async def test_a_refused_signoff_start_keeps_the_submission() -> None:
+    stack = Stack()
+    case = await _coded(stack)
+    stack.reviews.error = QuotaExceededError("hết lượt chạy")
+
+    result = await stack.advance().handle(
+        _context(SC_OPERATOR), case_id=case.id, action=ProductAction.SUBMIT_FOR_SIGNOFF
+    )
+
+    assert result.review is ReviewRaise.NOT_RAISED
+    assert stack.cases.rows[case.id.value].state is ProductDevState.PENDING_SIGNOFF
+
+
+@pytest.mark.parametrize("other", ["tenant", "workspace"])
+async def test_another_tenant_or_workspace_cannot_code_the_case(other: str) -> None:
+    stack = Stack()
+    case = await _coding(stack)
+    caller = _context(
+        SC_OPERATOR,
+        tenant=OTHER_TENANT if other == "tenant" else TENANT,
+        workspace=OTHER_WORKSPACE,
+    )
+    with pytest.raises(NotFoundError):
+        await stack.advance().handle(
+            caller, case_id=case.id, action=ProductAction.ISSUE_ITEM_CODE, item_code="MH-0001"
+        )
+    assert stack.cases.rows[case.id.value].item_code is None
+
+
+async def test_the_case_page_shows_the_pending_signoff_step() -> None:
+    stack = Stack()
+    case = await _coded(stack)
+    await stack.advance().handle(
+        _context(SC_OPERATOR), case_id=case.id, action=ProductAction.SUBMIT_FOR_SIGNOFF
+    )
+    signoff = PendingReview(
+        id=uuid.uuid4(),
+        approval_type=SIGNOFF,
+        payload={"product_dev_case_id": str(case.id), "step": "bod", "step_no": 1},
+        created_at=NOW,
+        required_scope="supply_chain.approve.bod",
+    )
+    stack.approvals.pending[(WORKSPACE, SIGNOFF, str(case.id))] = signoff
+    # A stale review of the same case is not what a sign-off waits on.
+    stack.approvals.pending[(WORKSPACE, BOD_REVIEW, str(case.id))] = replace(
+        signoff, id=uuid.uuid4(), approval_type=BOD_REVIEW
+    )
+
+    detail = await stack.get().handle(_context(frozenset({PRODUCT_CASE_READ})), case.id)
+
+    assert detail.pending_review is signoff
+    assert detail.case.item_code is not None and detail.case.item_code.code == "MH-0001"
+    assert [s.sku_code for s in detail.case.skus] == ["MH-0001-RED"]

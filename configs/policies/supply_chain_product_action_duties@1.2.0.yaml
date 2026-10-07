@@ -1,10 +1,11 @@
 schema_version: "1.0"
 policy_id: supply_chain_product_action_duties
-policy_version: "1.1.0"
+policy_version: "1.2.0"
 
 # Mỗi bước trên Hồ sơ phát triển sản phẩm (giai đoạn 1, ADR 0016) thuộc về một
 # nhiệm vụ (duty). Người làm bước đó phải có scope supply_chain.duty.<duty>:
-#   ordering   → sc_operator (Cung ứng: đề xuất, lấy mẫu; cũng là người làm bước 10–16).
+#   ordering   → sc_operator (Cung ứng: đề xuất, lấy mẫu, bước 9 tạo mã hàng, SKU và
+#                trình ký; cũng là người làm bước 10–16).
 #                Đề xuất còn cần supply_chain.product_case.write, như mở Hồ sơ PO.
 #   rnd        → sc_rnd (R&D: nhận mẫu, test, yêu cầu chỉnh sửa, đạt, hủy; bước 7
 #                hoàn tất Profile SP BM04)
@@ -27,6 +28,11 @@ policy_version: "1.1.0"
 # 1.1.0 (S3) thêm complete_profile và confirm_with_supplier. Override của công ty
 # lưu ở 1.0.0 (trước khi có hai bước này) vẫn hợp lệ: hai bước đó lấy duty dưới
 # đây, mọi bước khác giữ duty công ty đã chọn.
+#
+# 1.2.0 (S4) thêm bốn bước của bước 9: issue_item_code, add_sku, remove_sku,
+# submit_for_signoff. Override lưu ở 1.0.0 hoặc 1.1.0 lấy duty dưới đây cho các bước
+# thêm sau phiên bản của nó. Kết quả trình ký (signoff_approve, signoff_reject) không
+# có duty: người ký là required_scope của approval (supply_chain_product_approvals).
 action_duties:
   propose: ordering
   request_sample: ordering
@@ -42,3 +48,7 @@ action_duties:
   cancel: ordering
   complete_profile: rnd
   confirm_with_supplier: supply_lead
+  issue_item_code: ordering
+  add_sku: ordering
+  remove_sku: ordering
+  submit_for_signoff: ordering

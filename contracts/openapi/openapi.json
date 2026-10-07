@@ -131,7 +131,7 @@
       },
       "AdvanceProductCaseRequest": {
         "additionalProperties": false,
-        "description": "One step. Each step reads the fields it takes and refuses the others:\n`supplier_name` for `request_sample`, `document_id` for `pass_sample`,\n`request_revision`, `complete_profile`, `confirm_with_supplier` and\n(optionally) `reject_sample`, `reason` where the step needs one.",
+        "description": "One step. Each step reads the fields it takes and refuses the others:\n`supplier_name` for `request_sample`, `document_id` for `pass_sample`,\n`request_revision`, `complete_profile`, `confirm_with_supplier` and\n(optionally) `reject_sample`, `item_code` for `issue_item_code`, `sku` for\n`add_sku`, `sku_id` for `remove_sku`, `reason` where the step needs one.",
         "properties": {
           "action": {
             "$ref": "#/components/schemas/ProductAction"
@@ -148,6 +148,20 @@
             ],
             "title": "Document Id"
           },
+          "item_code": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[^\\x00]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Code"
+          },
           "reason": {
             "anyOf": [
               {
@@ -160,6 +174,28 @@
               }
             ],
             "title": "Reason"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkuInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sku_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Id"
           },
           "supplier_name": {
             "anyOf": [
@@ -2109,6 +2145,26 @@
         "title": "IntegrationView",
         "type": "object"
       },
+      "ItemCodeView": {
+        "description": "The case's official item code (step 9).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code"
+        ],
+        "title": "ItemCodeView",
+        "type": "object"
+      },
       "KnowledgeDocumentView": {
         "properties": {
           "chunk_count": {
@@ -2934,7 +2990,7 @@
         "type": "object"
       },
       "PendingReviewView": {
-        "description": "The BGĐ review a waiting case is held on: which approval, since when,\nand the scope stamped on it, which is who may decide it. Decided at\n`/approvals`, never from the case.",
+        "description": "The approval a waiting case is held on (BGĐ's review, or the current\nsign-off step): which approval, since when, and the scope stamped on it,\nwhich is who may decide it. For a sign-off, the step it is, its number,\nand every step of the round in order, all as stamped when the case was\nsubmitted. Decided at `/approvals`, never from the case.",
         "properties": {
           "approval_id": {
             "format": "uuid",
@@ -2963,12 +3019,56 @@
               }
             ],
             "title": "Required Scope"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "step_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Label"
+          },
+          "step_no": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step No"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/SignoffStepView"
+            },
+            "title": "Steps",
+            "type": "array"
           }
         },
         "required": [
           "approval_id",
           "created_at",
-          "required_scope"
+          "required_scope",
+          "step",
+          "step_label",
+          "step_no",
+          "steps"
         ],
         "title": "PendingReviewView",
         "type": "object"
@@ -3050,13 +3150,19 @@
           "reject_sample",
           "complete_profile",
           "confirm_with_supplier",
+          "issue_item_code",
+          "add_sku",
+          "remove_sku",
+          "submit_for_signoff",
           "wait_for_external",
           "flag_blocked",
           "flag_manual_review",
           "resume",
           "cancel",
           "bod_approve",
-          "bod_reject"
+          "bod_reject",
+          "signoff_approve",
+          "signoff_reject"
         ],
         "title": "ProductAction",
         "type": "string"
@@ -3104,6 +3210,13 @@
           "takes_supplier": {
             "title": "Takes Supplier",
             "type": "boolean"
+          },
+          "unmet": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unmet",
+            "type": "array"
           }
         },
         "required": [
@@ -3113,7 +3226,8 @@
           "takes_supplier",
           "document_type",
           "document_required",
-          "documents_since"
+          "documents_since",
+          "unmet"
         ],
         "title": "ProductActionOptionView",
         "type": "object"
@@ -3163,6 +3277,16 @@
               }
             ]
           },
+          "item_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ItemCodeView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "pending_review": {
             "anyOf": [
               {
@@ -3197,6 +3321,17 @@
             "title": "Sample Round",
             "type": "integer"
           },
+          "signoff_round": {
+            "title": "Signoff Round",
+            "type": "integer"
+          },
+          "skus": {
+            "items": {
+              "$ref": "#/components/schemas/SkuView"
+            },
+            "title": "Skus",
+            "type": "array"
+          },
           "state": {
             "$ref": "#/components/schemas/ProductDevState"
           },
@@ -3226,18 +3361,21 @@
           "state",
           "interrupted_state",
           "sample_round",
+          "signoff_round",
           "created_by",
           "created_at",
           "version",
           "rounds",
           "actions",
-          "pending_review"
+          "pending_review",
+          "item_code",
+          "skus"
         ],
         "title": "ProductCaseDetailView",
         "type": "object"
       },
       "ProductCaseStepView": {
-        "description": "A step taken. `review` is set only for a step that left the case\nwaiting for BGĐ: `not_raised` means the step is recorded and the review\nis not raised yet (the worker retries it).",
+        "description": "A step taken. `review` is set only for a step that left the case\nwaiting on an approval (BGĐ's review, the sign-off): `not_raised` means\nthe step is recorded and the approval is not raised yet (the worker\nretries it).",
         "properties": {
           "category": {
             "title": "Category",
@@ -3302,6 +3440,10 @@
             "title": "Sample Round",
             "type": "integer"
           },
+          "signoff_round": {
+            "title": "Signoff Round",
+            "type": "integer"
+          },
           "state": {
             "$ref": "#/components/schemas/ProductDevState"
           },
@@ -3331,6 +3473,7 @@
           "state",
           "interrupted_state",
           "sample_round",
+          "signoff_round",
           "created_by",
           "created_at",
           "version",
@@ -3459,6 +3602,10 @@
             "title": "Sample Round",
             "type": "integer"
           },
+          "signoff_round": {
+            "title": "Signoff Round",
+            "type": "integer"
+          },
           "state": {
             "$ref": "#/components/schemas/ProductDevState"
           },
@@ -3488,6 +3635,7 @@
           "state",
           "interrupted_state",
           "sample_round",
+          "signoff_round",
           "created_by",
           "created_at",
           "version"
@@ -3506,6 +3654,8 @@
           "profile_in_progress",
           "supplier_confirmation",
           "item_coding",
+          "pending_signoff",
+          "ready_to_order",
           "waiting_external",
           "blocked",
           "manual_review",
@@ -3598,7 +3748,7 @@
         "type": "object"
       },
       "ReviewRaise": {
-        "description": "What asking for BGĐ's review of a case did.",
+        "description": "What asking for the approval a case waits on (BGĐ's review at step 6,\nthe sign-off at step 9) did.",
         "enum": [
           "raised",
           "already_pending",
@@ -3951,6 +4101,99 @@
           "permission_set_keys"
         ],
         "title": "SetPermissionSetsBody",
+        "type": "object"
+      },
+      "SignoffStepView": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "step": {
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step",
+          "label"
+        ],
+        "title": "SignoffStepView",
+        "type": "object"
+      },
+      "SkuInput": {
+        "additionalProperties": false,
+        "description": "A SKU to add under the item code (step 9). `planned_quantity` is open\n(QE-11): omitted, or above zero.",
+        "properties": {
+          "planned_quantity": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 10000000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Quantity"
+          },
+          "sku_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Sku Code",
+            "type": "string"
+          },
+          "variant_label": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Variant Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku_code",
+          "variant_label"
+        ],
+        "title": "SkuInput",
+        "type": "object"
+      },
+      "SkuView": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "planned_quantity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Quantity"
+          },
+          "sku_code": {
+            "title": "Sku Code",
+            "type": "string"
+          },
+          "variant_label": {
+            "title": "Variant Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sku_code",
+          "variant_label",
+          "planned_quantity"
+        ],
+        "title": "SkuView",
         "type": "object"
       },
       "SodRuleView": {

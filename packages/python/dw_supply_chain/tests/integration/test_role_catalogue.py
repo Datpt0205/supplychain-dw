@@ -23,6 +23,7 @@ from supply_chain_harness import REPO_ROOT, DatabaseUrls
 
 from dw_supply_chain.action_duties import CaseDuty
 from dw_supply_chain.application import handlers
+from dw_supply_chain.policy_files import PRODUCT_APPROVALS_POLICY_FILE
 from dw_supply_chain.product_approvals import load_supply_chain_product_approvals
 
 pytestmark = pytest.mark.integration
@@ -37,10 +38,14 @@ _PO_OPERATING_ROLES = (
 )
 _OPERATING_ROLES = (*_PO_OPERATING_ROLES, "sc_rnd", "sc_supply_lead")
 _SC_ROLES = ("sc_viewer", *_OPERATING_ROLES, "sc_bod", "sc_process_admin")
+_APPROVALS = load_supply_chain_product_approvals(
+    REPO_ROOT / "configs" / "policies" / PRODUCT_APPROVALS_POLICY_FILE
+)
 # The scope BGĐ's review is stamped with under the platform policy (step 6).
-_APPROVE_BOD = load_supply_chain_product_approvals(
-    REPO_ROOT / "configs" / "policies" / "supply_chain_product_approvals@1.0.0.yaml"
-).bod_review.required_scope
+_APPROVE_BOD = _APPROVALS.bod_review.required_scope
+# And the sign-off's (step 9): BGĐ's, then Kế toán's.
+_SIGNOFF_SCOPES = {step.required_scope for step in _APPROVALS.signoff}
+_APPROVE_ACCOUNTING = "supply_chain.approve.accounting"
 _OPERATIONS = {
     "supply_chain.po_case.write",
     "supply_chain.supplier_update.write",
@@ -48,6 +53,7 @@ _OPERATIONS = {
     handlers.DOCUMENT_WRITE,
     handlers.PRODUCT_CASE_WRITE,
     _APPROVE_BOD,
+    *_SIGNOFF_SCOPES,
 } | {handlers.duty_scope(duty) for duty in CaseDuty}
 _POLICY_WRITES = {
     "supply_chain.sla_policy.write",
@@ -63,7 +69,8 @@ def _checked_scopes() -> set[str]:
         for value in vars(handlers).values()
         if isinstance(value, str) and re.fullmatch(r"supply_chain\.[a-z_]+\.(read|write)", value)
     }
-    return constants | {handlers.duty_scope(duty) for duty in CaseDuty} | {_APPROVE_BOD}
+    duties = {handlers.duty_scope(duty) for duty in CaseDuty}
+    return constants | duties | {_APPROVE_BOD} | _SIGNOFF_SCOPES
 
 
 @pytest.fixture
@@ -217,6 +224,19 @@ async def test_bgd_holds_exactly_the_viewer_and_the_bgd_review_scope(
     assert catalogue["sc_bod"] == catalogue["sc_viewer"] | {_APPROVE_BOD}
     assert {key for key, scopes in catalogue.items() if _APPROVE_BOD in scopes} == {"sc_bod"}
     assert "approvals.decide" not in catalogue["sc_bod"]
+
+
+async def test_kế_toán_signs_through_sc_finance_and_nobody_else(engine: AsyncEngine) -> None:
+    """Step 9 (ticket 04, QE-16 open): the accounting sign-off's stamp is
+    granted to the existing Kế toán role, not a new `sc_accounting`, and to
+    no other role; BGĐ signs with the scope it reviews samples with."""
+    catalogue = await _catalogue(engine)
+    assert {_APPROVE_BOD, _APPROVE_ACCOUNTING} == _SIGNOFF_SCOPES
+    holders = {key for key, scopes in catalogue.items() if _APPROVE_ACCOUNTING in scopes}
+    assert holders == {"sc_finance"}
+    assert "sc_accounting" not in catalogue
+    assert handlers.duty_scope(CaseDuty.FINANCE) in catalogue["sc_finance"]
+    assert await _violation(engine, "sc_finance", "approver") is None
 
 
 async def test_a_bgd_member_gets_the_decide_right_from_the_platform_ladder(

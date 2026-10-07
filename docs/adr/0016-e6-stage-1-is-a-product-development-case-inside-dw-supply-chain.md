@@ -219,3 +219,29 @@ supply_lead`. Override của tenant lưu ở 1.0.0 vẫn hợp lệ: hai bước
    được như các bước đang chạy khác.
 7. **Downgrade từ chối** khi còn hồ sơ ở hoặc dừng từ hai trạng thái mới, dòng lịch sử
    nêu chúng, hoặc membership giữ `sc_supply_lead`.
+
+## Sửa đổi 2026-10-07 (tạm, lát S4; Đạt ủy quyền quyết các điểm mở)
+
+Các quyết định tạm khi làm lát S4 (ticket 04 giai đoạn 1, bước 9). Chi tiết và test ở
+Comments của `.claude/plans/supply-chain/stage-1/issues/04-item-code-sku-signoff-step-9.md`.
+
+1. **Trạng thái, hành động:** `pending_signoff`, `ready_to_order`; `issue_item_code`,
+   `add_sku`, `remove_sku` (`item_coding` → `item_coding`, mỗi bước một dòng lịch sử, không
+   dời mốc tới bước), `submit_for_signoff`, và hai hành động chỉ graph áp
+   `signoff_approve`, `signoff_reject` (`GRAPH_ONLY_ACTIONS`). Ở `pending_signoff` chỉ hủy
+   (`AWAITING_APPROVAL_STATES`, cùng luật với `pending_bod_review`); `ready_to_order` có
+   bước ngoại lệ và hủy, ĐẶT HÀNG ở ticket 05. `product_dev_cases.signoff_round` đếm số lần
+   trình; nó đặt tên vòng ký mà một quyết định thuộc về.
+2. **QE-10 (tạm):** ký tuần tự theo `supply_chain_product_approvals@1.1.0` `signoff`
+   (mặc định BGĐ rồi Kế toán, cả hai bắt buộc), mỗi bước một approval trong CÙNG một run của
+   graph `supply_chain_product_signoff` (worker riêng, để run BGĐ đang chờ trên graph
+   `supply_chain_advance_product_case` 1.0.0 giữ nguyên). Danh sách đọc lúc trình và đi
+   theo run. Một bước không duyệt → `signoff_reject` → `item_coding`, nhận xét là lý do;
+   mã hàng và SKU giữ nguyên; bước sau không được trình.
+3. **Một hàm ensure:** `EnsureProductApproval` (đổi tên từ `EnsureBodReview`) trình
+   approval mà hồ sơ đang chờ theo trạng thái (bảng `_WAITS`); lane
+   `supply_chain_product_review_reconcile` (`ReconcileProductApprovals`) đi qua cả hai trạng
+   thái chờ qua `supply_chain.workspaces_awaiting_product_approval()` và báo người quyết của
+   mọi approval đang chờ (bước sau của vòng ký được tạo trong run, không ai được báo ở đó).
+4. **Duty 1.2.0:** bốn bước của bước 9 thuộc `ordering`; override lưu ở 1.0.0 hoặc 1.1.0
+   lấy duty nền tảng cho các bước thêm sau phiên bản của nó (`STEPS_ADDED_AFTER`).

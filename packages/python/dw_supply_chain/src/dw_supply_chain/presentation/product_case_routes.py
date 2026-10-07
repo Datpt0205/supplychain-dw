@@ -9,8 +9,13 @@ router. The product documents themselves are served by the documents router
 The propose body has no PIC field and refuses unknown fields
 (`extra="forbid"`), so a body naming a `pic_user_id` is a 422; the command
 behind it has no parameter for one either. A step body naming one of BGĐ's
-outcomes (`GRAPH_ONLY_ACTIONS`) is a 422 too, and the command refuses it again:
-BGĐ decides on the approval, at `/approvals`.
+outcomes, or of the sign-off's (`GRAPH_ONLY_ACTIONS`), is a 422 too, and the
+command refuses it again: they are decided on the approval, at `/approvals`.
+
+Step 9's coding goes through the same step route: `item_code` for
+`issue_item_code`, `sku` for `add_sku`, `sku_id` for `remove_sku`. A code
+already taken in the tenant is a 409 whose `details` name the constraint and
+the code, so the page can show it at the field.
 
 No `from __future__ import annotations`, for the reason `routes.py` gives.
 """
@@ -52,6 +57,7 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevState,
     SampleResult,
     SampleRound,
+    SkuDraft,
 )
 from dw_supply_chain.product_action_duties import SupplyChainProductActionDuties
 
@@ -82,11 +88,23 @@ class ProposeProductCaseRequest(BaseModel):
     category: str = Field(min_length=1, max_length=100, pattern=_NO_NUL)
 
 
+class SkuInput(BaseModel):
+    """A SKU to add under the item code (step 9). `planned_quantity` is open
+    (QE-11): omitted, or above zero."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sku_code: str = Field(min_length=1, max_length=100, pattern=_NO_NUL)
+    variant_label: str = Field(min_length=1, max_length=200, pattern=_NO_NUL)
+    planned_quantity: int | None = Field(default=None, gt=0, le=10_000_000)
+
+
 class AdvanceProductCaseRequest(BaseModel):
     """One step. Each step reads the fields it takes and refuses the others:
     `supplier_name` for `request_sample`, `document_id` for `pass_sample`,
     `request_revision`, `complete_profile`, `confirm_with_supplier` and
-    (optionally) `reject_sample`, `reason` where the step needs one."""
+    (optionally) `reject_sample`, `item_code` for `issue_item_code`, `sku` for
+    `add_sku`, `sku_id` for `remove_sku`, `reason` where the step needs one."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -94,12 +112,15 @@ class AdvanceProductCaseRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=2000, pattern=_NO_NUL)
     supplier_name: str | None = Field(default=None, min_length=1, max_length=200, pattern=_NO_NUL)
     document_id: uuid.UUID | None = None
+    item_code: str | None = Field(default=None, min_length=1, max_length=100, pattern=_NO_NUL)
+    sku: SkuInput | None = None
+    sku_id: uuid.UUID | None = None
 
     @field_validator("action")
     @classmethod
     def _a_step_a_person_takes(cls, action: ProductAction) -> ProductAction:
         if action in GRAPH_ONLY_ACTIONS:
-            raise ValueError(f"{action.value} is BGĐ's decision, taken on its approval")
+            raise ValueError(f"{action.value} is an approval's outcome, decided on the approval")
         return action
 
 
@@ -113,9 +134,24 @@ class ProductCaseView(BaseModel):
     state: ProductDevState
     interrupted_state: ProductDevState | None
     sample_round: int
+    signoff_round: int
     created_by: uuid.UUID
     created_at: datetime | None
     version: int
+
+
+class ItemCodeView(BaseModel):
+    """The case's official item code (step 9)."""
+
+    id: uuid.UUID
+    code: str
+
+
+class SkuView(BaseModel):
+    id: uuid.UUID
+    sku_code: str
+    variant_label: str
+    planned_quantity: int | None
 
 
 class SampleRoundView(BaseModel):
@@ -145,28 +181,45 @@ class ProductActionOptionView(BaseModel):
     document_type: DocumentType | None
     document_required: bool
     documents_since: datetime | None
+    # What the case still lacks for this step (`item_code`, `sku`): offered,
+    # and refused until empty. The domain's own answer, not the page's.
+    unmet: list[str]
+
+
+class SignoffStepView(BaseModel):
+    step: str
+    label: str
 
 
 class PendingReviewView(BaseModel):
-    """The BGĐ review a waiting case is held on: which approval, since when,
-    and the scope stamped on it, which is who may decide it. Decided at
-    `/approvals`, never from the case."""
+    """The approval a waiting case is held on (BGĐ's review, or the current
+    sign-off step): which approval, since when, and the scope stamped on it,
+    which is who may decide it. For a sign-off, the step it is, its number,
+    and every step of the round in order, all as stamped when the case was
+    submitted. Decided at `/approvals`, never from the case."""
 
     approval_id: uuid.UUID
     created_at: datetime | None
     required_scope: str | None
+    step: str | None
+    step_label: str | None
+    step_no: int | None
+    steps: list[SignoffStepView]
 
 
 class ProductCaseDetailView(ProductCaseView):
     rounds: list[SampleRoundView]
     actions: list[ProductActionOptionView]
     pending_review: PendingReviewView | None
+    item_code: ItemCodeView | None
+    skus: list[SkuView]
 
 
 class ProductCaseStepView(ProductCaseView):
     """A step taken. `review` is set only for a step that left the case
-    waiting for BGĐ: `not_raised` means the step is recorded and the review
-    is not raised yet (the worker retries it)."""
+    waiting on an approval (BGĐ's review, the sign-off): `not_raised` means
+    the step is recorded and the approval is not raised yet (the worker
+    retries it)."""
 
     review: ReviewRaise | None
 
@@ -195,6 +248,7 @@ def _fields(case: ProductDevelopmentCase) -> dict[str, object]:
         "state": case.state,
         "interrupted_state": case.interrupted_state,
         "sample_round": case.sample_round,
+        "signoff_round": case.signoff_round,
         "created_by": case.created_by,
         "created_at": case.created_at,
         "version": case.version,
@@ -222,11 +276,26 @@ def _round_view(sample_round: SampleRound) -> SampleRoundView:
 def _pending_review_view(approval: PendingApprovalRecord | None) -> PendingReviewView | None:
     if approval is None:
         return None
+    payload = approval.payload
+    steps = payload.get("steps")
+    step_no = payload.get("step_no")
     return PendingReviewView(
         approval_id=approval.id,
         created_at=approval.created_at,
         required_scope=approval.required_scope,
+        step=_text(payload.get("step")),
+        step_label=_text(payload.get("step_label")),
+        step_no=step_no if isinstance(step_no, int) else None,
+        steps=[
+            SignoffStepView(step=str(s["step"]), label=str(s["label"]))
+            for s in (steps if isinstance(steps, list) else [])
+            if isinstance(s, dict) and "step" in s and "label" in s
+        ],
     )
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) else None
 
 
 def _transition_view(transition: ProductCaseTransition) -> ProductCaseTransitionView:
@@ -310,10 +379,25 @@ def build_product_cases_router(
                         document_type=option.document_type,
                         document_required=option.document_required,
                         documents_since=option.documents_since,
+                        unmet=list(option.unmet),
                     )
                     for option in detail.case.action_options()
                 ],
                 "pending_review": _pending_review_view(detail.pending_review),
+                "item_code": (
+                    ItemCodeView(id=detail.case.item_code.id, code=detail.case.item_code.code)
+                    if detail.case.item_code
+                    else None
+                ),
+                "skus": [
+                    SkuView(
+                        id=s.id,
+                        sku_code=s.sku_code,
+                        variant_label=s.variant_label,
+                        planned_quantity=s.planned_quantity,
+                    )
+                    for s in detail.case.skus
+                ],
             }
         )
 
@@ -331,6 +415,17 @@ def build_product_cases_router(
             reason=body.reason,
             supplier_name=body.supplier_name,
             document_id=body.document_id,
+            item_code=body.item_code,
+            sku=(
+                SkuDraft(
+                    sku_code=body.sku.sku_code,
+                    variant_label=body.sku.variant_label,
+                    planned_quantity=body.sku.planned_quantity,
+                )
+                if body.sku
+                else None
+            ),
+            sku_id=body.sku_id,
         )
         return await idempotency.record(
             ProductCaseStepView.model_validate({**_fields(result.case), "review": result.review})

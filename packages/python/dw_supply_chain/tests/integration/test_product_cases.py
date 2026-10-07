@@ -14,6 +14,7 @@ product cases, rounds and documents in every workspace and nobody else's.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from collections.abc import AsyncIterator
@@ -43,7 +44,9 @@ from dw_supply_chain.adapters.persistence.case_document_repository import (
     SqlCaseDocumentRepository,
 )
 from dw_supply_chain.adapters.persistence.product_case_repository import (
+    ITEM_CODE_CONSTRAINT,
     PROPOSAL_CODE_CONSTRAINT,
+    SKU_CODE_CONSTRAINT,
     SqlProductCaseRepository,
 )
 from dw_supply_chain.application.ports import NewCaseDocument, ProductCaseListFilter
@@ -60,6 +63,7 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevelopmentCaseId,
     ProductDevState,
     SampleResult,
+    SkuDraft,
 )
 
 pytestmark = pytest.mark.integration
@@ -713,6 +717,21 @@ async def test_the_application_holds_exactly_the_grants_each_table_needs(db: _Db
     assert await _granted(db, "product_dev_case_state_transitions") == {"SELECT", "INSERT"}
     assert await _granted(db, "sample_revision_requests") == {"SELECT", "INSERT"}
     assert await _granted(db, "product_sample_rounds") == {"SELECT", "INSERT"}
+    # Step 9: an item code is issued and corrected (its `code` only), never
+    # deleted but by the case's cascade; a SKU is added and removed, never
+    # edited.
+    assert await _granted(db, "item_codes") == {"SELECT", "INSERT"}
+    assert await _granted(db, "skus") == {"SELECT", "INSERT", "DELETE"}
+    async with db.migrator.connect() as conn:
+        updatable = {
+            column
+            for column in ("code", "id", "tenant_id", "workspace_id", "product_dev_case_id")
+            if await conn.scalar(
+                sa.text("SELECT has_column_privilege('dw_app', :t, :c, 'UPDATE')"),
+                {"t": "supply_chain.item_codes", "c": column},
+            )
+        }
+    assert updatable == {"code"}
 
 
 # --- documents of a product case ----------------------------------------------------------
@@ -818,8 +837,9 @@ async def test_offboarding_purges_product_cases_rounds_and_documents_of_one_tena
         evaluation = await _document(db, context, case, DocumentType.SAMPLE_EVALUATION)
         case.pass_sample(actor_id=context.principal_id, evaluation=evaluation)
         await db.cases.save(context, case, audit=_audit(context, case, "pass_sample"))
-        # On to item coding, so history rows hold papers too (NO ACTION FKs).
-        return await _to_item_coding(db, context, case)
+        # On to item coding, so history rows hold papers too (NO ACTION FKs),
+        # and coded: an item code with SKUs (the SKU's NO ACTION FK to it).
+        return await _coded(db, context, await _to_item_coding(db, context, case))
 
     for context in leaving:
         await full_case(context)
@@ -832,12 +852,15 @@ async def test_offboarding_purges_product_cases_rounds_and_documents_of_one_tena
 
     await offboarding.purge_rows(tenant)
 
-    for table in (*TABLES, "case_documents"):
+    assert len(exported[("supply_chain", "skus")]) == 4
+    for table in (*TABLES, "case_documents", "item_codes", "skus"):
         left = await _count(
             db, f"SELECT count(*) FROM supply_chain.{table} WHERE tenant_id = :t", t=tenant
         )
         assert left == 0, table
-    assert (await _reloaded(db, staying, kept)).state is ProductDevState.ITEM_CODING
+    still = await _reloaded(db, staying, kept)
+    assert still.state is ProductDevState.ITEM_CODING
+    assert still.item_code is not None and len(still.skus) == 2
     assert len(await db.cases.list_rounds(staying, kept.id)) == 2
     assert len(await db.documents.list_for_case(staying, CaseKind.PRODUCT, kept.id.value)) == 4
 
@@ -1198,3 +1221,314 @@ async def test_another_tenant_or_workspace_cannot_take_steps_seven_or_eight(
     with pytest.raises(ConflictError):
         await db.cases.save(intruder, case, audit=_audit(intruder, case, "complete_profile"))
     assert (await _reloaded(db, context, case)).state is ProductDevState.PROFILE_IN_PROGRESS
+
+
+# --- step 9: item codes and SKUs (ticket 04, ADR 0018) --------------------------------------
+
+
+async def _coded(
+    db: _Db,
+    context: AccessContext,
+    case: ProductDevelopmentCase,
+    *,
+    code: str | None = None,
+    skus: tuple[str, ...] | None = None,
+) -> ProductDevelopmentCase:
+    """An item code and its SKUs, each saved as its own step."""
+    code = code or f"MH-{uuid.uuid4().hex[:8]}"
+    case.issue_item_code(actor_id=context.principal_id, new_id=uuid.uuid4(), code=code)
+    await db.cases.save(context, case, audit=_audit(context, case, "issue_item_code"))
+    for sku_code in skus if skus is not None else (f"{code}-RED", f"{code}-BLUE"):
+        case.add_sku(
+            actor_id=context.principal_id, new_id=uuid.uuid4(), sku=SkuDraft(sku_code, "Màu", 50)
+        )
+        await db.cases.save(context, case, audit=_audit(context, case, "add_sku"))
+    return await _reloaded(db, context, case)
+
+
+async def _coding(db: _Db, context: AccessContext) -> ProductDevelopmentCase:
+    return await _to_item_coding(db, context, await _profiling_from_scratch(db, context))
+
+
+async def _profiling_from_scratch(db: _Db, context: AccessContext) -> ProductDevelopmentCase:
+    case = await _testing(db, context)
+    evaluation = await _document(db, context, case, DocumentType.SAMPLE_EVALUATION)
+    case.pass_sample(actor_id=context.principal_id, evaluation=evaluation)
+    await db.cases.save(context, case, audit=_audit(context, case, "pass_sample"))
+    return case
+
+
+async def test_step_nine_is_saved_with_its_history_and_read_back(db: _Db) -> None:
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _coded(db, context, await _coding(db, context), code="MH-0001")
+
+    red = next(s for s in case.skus if s.sku_code.endswith("RED"))
+    case.remove_sku(actor_id=context.principal_id, sku_id=red.id)
+    await db.cases.save(context, case, audit=_audit(context, case, "remove_sku"))
+    case = await _reloaded(db, context, case)
+    case.submit_for_signoff(actor_id=context.principal_id)
+    await db.cases.save(context, case, audit=_audit(context, case, "submit_for_signoff"))
+
+    stored = await _reloaded(db, context, case)
+    assert (stored.state, stored.signoff_round) == (ProductDevState.PENDING_SIGNOFF, 1)
+    assert stored.item_code is not None and stored.item_code.code == "MH-0001"
+    assert [(s.sku_code, s.planned_quantity) for s in stored.skus] == [("MH-0001-BLUE", 50)]
+    history = await db.cases.list_transitions(context, case.id)
+    assert [t.action for t in history[-5:]] == [
+        ProductAction.ISSUE_ITEM_CODE,
+        ProductAction.ADD_SKU,
+        ProductAction.ADD_SKU,
+        ProductAction.REMOVE_SKU,
+        ProductAction.SUBMIT_FOR_SIGNOFF,
+    ]
+    page = await db.cases.list_page(
+        context,
+        page_request(limit=50, cursor=None, query=PageQuery(key="t")),
+        ProductCaseListFilter(),
+    )
+    (listed,) = [c for c in page.items if c.id == case.id]
+    assert (listed.item_code, listed.skus) == (stored.item_code, stored.skus)
+
+
+async def test_coding_does_not_move_when_the_case_reached_item_coding(db: _Db) -> None:
+    """Coding steps stay where they are; `stage_entered_at` is when step 8
+    moved the case here, not the latest SKU."""
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _coding(db, context)
+    entered = case.stage_entered_at
+    assert entered is not None
+    assert (await _coded(db, context, case)).stage_entered_at == entered
+
+
+async def test_a_signoff_reject_keeps_the_item_code_and_skus(db: _Db) -> None:
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _coded(db, context, await _coding(db, context))
+    case.submit_for_signoff(actor_id=context.principal_id)
+    await db.cases.save(context, case, audit=_audit(context, case, "submit_for_signoff"))
+    case.signoff_reject(actor_id=uuid.uuid4(), reason="Giá vốn chưa khớp")
+    await db.cases.save(context, case, audit=_audit(context, case, "signoff_reject"))
+
+    stored = await _reloaded(db, context, case)
+    assert stored.state is ProductDevState.ITEM_CODING
+    assert stored.item_code == case.item_code
+    assert stored.skus == case.skus and len(stored.skus) == 2
+
+
+async def test_correcting_the_item_code_keeps_its_row_and_skus(db: _Db) -> None:
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _coded(db, context, await _coding(db, context))
+    before = case.item_code
+    assert before is not None
+    case.issue_item_code(actor_id=context.principal_id, new_id=uuid.uuid4(), code="MH-FIXED-1")
+    await db.cases.save(context, case, audit=_audit(context, case, "issue_item_code"))
+
+    stored = await _reloaded(db, context, case)
+    assert stored.item_code is not None
+    assert (stored.item_code.id, stored.item_code.code) == (before.id, "MH-FIXED-1")
+    assert len(stored.skus) == 2
+
+
+async def _race(db: _Db, steps: list[tuple[AccessContext, ProductDevelopmentCase]]) -> list[object]:
+    """Each save in its own transaction, at once."""
+    return list(
+        await asyncio.gather(
+            *(
+                db.cases.save(context, case, audit=_audit(context, case, "coding"))
+                for context, case in steps
+            ),
+            return_exceptions=True,
+        )
+    )
+
+
+async def test_two_transactions_issuing_one_item_code_at_once_one_is_a_409(db: _Db) -> None:
+    """ADR 0018: SELECT-before-INSERT would let both see the code free. The
+    UNIQUE refuses whichever commits second, by its name, naming the code;
+    the loser's step, history and audit roll back."""
+    tenant = uuid.uuid4()
+    first, second = _context(tenant, uuid.uuid4()), _context(tenant, uuid.uuid4())
+    one, two = await _coding(db, first), await _coding(db, second)
+    for context, case in ((first, one), (second, two)):
+        case.issue_item_code(actor_id=context.principal_id, new_id=uuid.uuid4(), code="MH-RACE")
+
+    results = await _race(db, [(first, one), (second, two)])
+
+    refused = [r for r in results if isinstance(r, ConflictError)]
+    assert len(refused) == 1 and results.count(None) == 1, results
+    assert refused[0].details == {"constraint": ITEM_CODE_CONSTRAINT, "item_code": "MH-RACE"}
+    holders = [
+        c
+        for c, ctx in ((one, first), (two, second))
+        if (await _reloaded(db, ctx, c)).item_code is not None
+    ]
+    assert len(holders) == 1
+    assert (
+        await _count(
+            db, "SELECT count(*) FROM supply_chain.item_codes WHERE tenant_id = :t", t=tenant
+        )
+        == 1
+    )
+
+
+async def test_two_transactions_adding_one_sku_code_at_once_one_is_a_409(db: _Db) -> None:
+    tenant = uuid.uuid4()
+    first, second = _context(tenant, uuid.uuid4()), _context(tenant, uuid.uuid4())
+    one = await _coded(db, first, await _coding(db, first), skus=())
+    two = await _coded(db, second, await _coding(db, second), skus=())
+    for context, case in ((first, one), (second, two)):
+        case.add_sku(
+            actor_id=context.principal_id, new_id=uuid.uuid4(), sku=SkuDraft("SKU-RACE", "Đỏ")
+        )
+
+    results = await _race(db, [(first, one), (second, two)])
+
+    refused = [r for r in results if isinstance(r, ConflictError)]
+    assert len(refused) == 1 and results.count(None) == 1, results
+    assert refused[0].details == {"constraint": SKU_CODE_CONSTRAINT, "sku_code": "SKU-RACE"}
+
+
+async def test_another_tenant_may_use_the_same_item_and_sku_codes(db: _Db) -> None:
+    alpha, beta = _context(uuid.uuid4(), uuid.uuid4()), _context(uuid.uuid4(), uuid.uuid4())
+    await _coded(db, alpha, await _coding(db, alpha), code="MH-SAME", skus=("SKU-SAME",))
+    other = await _coded(db, beta, await _coding(db, beta), code="MH-SAME", skus=("SKU-SAME",))
+    assert other.item_code is not None and other.item_code.code == "MH-SAME"
+    assert [s.sku_code for s in other.skus] == ["SKU-SAME"]
+
+
+async def _insert_sku(
+    db: _Db,
+    context: AccessContext,
+    case: ProductDevelopmentCase,
+    item_code_id: object,
+    *,
+    as_caller: AccessContext | None = None,
+) -> None:
+    """A SKU row naming `context`'s tenant and workspace, written in
+    `as_caller`'s session (the same context unless given)."""
+    scope = TenantScope.from_access_context(as_caller or context)
+    async with tenant_session(db.sessions, scope) as session:
+        await session.execute(
+            sa.text(
+                "INSERT INTO supply_chain.skus (id, tenant_id, workspace_id, product_dev_case_id,"
+                " item_code_id, sku_code, variant_label, added_by) VALUES (gen_random_uuid(),"
+                " :t, :w, :c, :i, :s, 'x', :p)"
+            ),
+            {
+                "t": context.tenant_id,
+                "w": context.workspace_id,
+                "c": case.id.value,
+                "i": item_code_id,
+                "s": f"SKU-{uuid.uuid4().hex[:6]}",
+                "p": (as_caller or context).principal_id,
+            },
+        )
+
+
+async def test_a_sku_written_directly_needs_an_item_code_of_its_own_case(db: _Db) -> None:
+    """Past the aggregate: NOT NULL, and the composite FK to the item code of
+    the SAME case, workspace and tenant."""
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    uncoded = await _coding(db, context)
+    coded = await _coded(db, context, await _coding(db, context))
+    assert coded.item_code is not None
+
+    with pytest.raises(IntegrityError, match=r"not-null|null value"):
+        await _insert_sku(db, context, uncoded, None)
+    with pytest.raises(IntegrityError, match="fk_skus_tenant_id_item_codes"):
+        await _insert_sku(db, context, uncoded, uuid.uuid4())
+    with pytest.raises(IntegrityError, match="fk_skus_tenant_id_item_codes"):
+        await _insert_sku(db, context, uncoded, coded.item_code.id)
+    assert (await _reloaded(db, context, uncoded)).skus == ()
+
+
+@pytest.mark.parametrize(
+    "check",
+    [
+        ("code", "' MH-1'"),
+        ("code", "''"),
+    ],
+)
+async def test_an_item_code_is_stored_trimmed_and_non_blank(
+    db: _Db, check: tuple[str, str]
+) -> None:
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _coding(db, context)
+    with pytest.raises(IntegrityError, match="ck_item_codes_code"):
+        async with tenant_session(db.sessions, TenantScope.from_access_context(context)) as s:
+            await s.execute(
+                sa.text(
+                    "INSERT INTO supply_chain.item_codes (id, tenant_id, workspace_id,"
+                    f" product_dev_case_id, code, issued_by) VALUES (gen_random_uuid(), :t, :w,"
+                    f" :c, {check[1]}, :p)"
+                ),
+                {
+                    "t": context.tenant_id,
+                    "w": context.workspace_id,
+                    "c": case.id.value,
+                    "p": context.principal_id,
+                },
+            )
+
+
+async def test_an_item_code_with_skus_cannot_be_deleted(db: _Db) -> None:
+    """Even by the migrator: NO ACTION refuses it as RESTRICT would. Only the
+    case's own cascade takes both (the offboarding test)."""
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _coded(db, context, await _coding(db, context))
+    assert case.item_code is not None
+    async with db.migrator.begin() as conn:
+        with pytest.raises(IntegrityError, match="fk_skus_tenant_id_item_codes"):
+            await conn.execute(
+                sa.text("DELETE FROM supply_chain.item_codes WHERE id = :i"),
+                {"i": case.item_code.id},
+            )
+
+
+@pytest.mark.parametrize("other", ["tenant", "workspace"])
+async def test_another_tenant_or_workspace_reads_no_item_code_or_sku(db: _Db, other: str) -> None:
+    owner = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _coded(db, owner, await _coding(db, owner))
+    caller = _context(uuid.uuid4() if other == "tenant" else owner.tenant_id, uuid.uuid4())
+
+    async with tenant_session(db.sessions, TenantScope.from_access_context(caller)) as session:
+        for table in ("item_codes", "skus"):
+            seen = await session.scalar(
+                sa.text(
+                    f"SELECT count(*) FROM supply_chain.{table} WHERE product_dev_case_id = :c"
+                ),
+                {"c": case.id.value},
+            )
+            assert seen == 0, table
+    async with db.sessions() as session:
+        for table in ("item_codes", "skus"):
+            assert await session.scalar(sa.text(f"SELECT count(*) FROM supply_chain.{table}")) == 0
+    assert await db.cases.get(caller, case.id) is None
+
+
+@pytest.mark.parametrize("other", ["tenant", "workspace"])
+async def test_another_tenant_or_workspace_cannot_write_or_remove_the_owners_codes(
+    db: _Db, other: str
+) -> None:
+    """Rows naming the OWNER's tenant, workspace, case and item code: the FKs
+    accept them (referential checks do not pass through RLS), so the policy's
+    WITH CHECK refuses them; a raw DELETE or UPDATE by id reaches nothing."""
+    owner = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _coded(db, owner, await _coding(db, owner))
+    assert case.item_code is not None
+    caller = _context(uuid.uuid4() if other == "tenant" else owner.tenant_id, uuid.uuid4())
+
+    with pytest.raises(DBAPIError, match="row-level security"):
+        await _insert_sku(db, owner, case, case.item_code.id, as_caller=caller)
+    async with tenant_session(db.sessions, TenantScope.from_access_context(caller)) as session:
+        removed = await session.execute(
+            sa.text("DELETE FROM supply_chain.skus WHERE product_dev_case_id = :c"),
+            {"c": case.id.value},
+        )
+        renamed = await session.execute(
+            sa.text("UPDATE supply_chain.item_codes SET code = 'MH-STOLEN' WHERE id = :i"),
+            {"i": case.item_code.id},
+        )
+        rowcounts = (removed.rowcount, renamed.rowcount)  # type: ignore[attr-defined]
+    assert rowcounts == (0, 0)
+    stored = await _reloaded(db, owner, case)
+    assert stored.item_code == case.item_code and len(stored.skus) == 2

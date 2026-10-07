@@ -1,5 +1,7 @@
-"""Unit: raising BGĐ's review (step 6) once per sample round, and the
-reconcile lane that raises the ones a start missed (stage-1 ticket 02).
+"""Unit: raising BGĐ's review (step 6) once per sample round and the
+sign-off (step 9) once per sign-off round, and the reconcile lane that raises
+the ones a start missed and tells the signers of later steps (stage-1 tickets
+02 and 04).
 
 The runner is faked the way the real one behaves at its edges: a second start
 on an unfinished thread is a `ConflictError` naming the thread
@@ -33,11 +35,14 @@ from dw_supply_chain.application.ports import (
     ReviewRequester,
 )
 from dw_supply_chain.application.product_reviews import (
-    EnsureBodReview,
-    ReconcileBodReviews,
+    EnsureProductApproval,
+    ReconcileProductApprovals,
     bod_review_thread_id,
+    signoff_thread_id,
 )
 from dw_supply_chain.domain.product_development_case import (
+    AWAITING_APPROVAL_STATES,
+    ItemCode,
     ProductAction,
     ProductCaseTransition,
     ProductDevelopmentCase,
@@ -49,6 +54,7 @@ from dw_supply_chain.product_approvals import (
     PRODUCT_APPROVALS_POLICY_ID,
     SupplyChainProductApprovals,
 )
+from dw_supply_chain.workflows import product_signoff_graph
 from dw_supply_chain.workflows.advance_product_case_graph import (
     BOD_REVIEW_APPROVAL_TYPE,
     WORKER_ID,
@@ -59,15 +65,22 @@ pytestmark = pytest.mark.unit
 
 TENANT, WORKSPACE = uuid.uuid4(), uuid.uuid4()
 TESTER, BOD, BOD_WITHOUT_DECIDE, APPROVER_ONLY = (uuid.uuid4() for _ in range(4))
+ACCOUNTANT = uuid.uuid4()
 NOW = datetime(2026, 10, 6, 9, 0, tzinfo=UTC)
 BOD_SCOPE = "supply_chain.approve.bod"
+ACCOUNTING_SCOPE = "supply_chain.approve.accounting"
+SIGNOFF_STEPS = [
+    {"step": "bod", "label": "BGĐ", "required_scope": BOD_SCOPE},
+    {"step": "accounting", "label": "Kế toán", "required_scope": ACCOUNTING_SCOPE},
+]
 
 PLATFORM_APPROVALS = SupplyChainProductApprovals.model_validate(
     {
         "schema_version": "1.0",
         "policy_id": PRODUCT_APPROVALS_POLICY_ID,
-        "policy_version": "1.0.0",
+        "policy_version": "1.1.0",
         "bod_review": {"required_scope": BOD_SCOPE},
+        "signoff": SIGNOFF_STEPS,
     }
 )
 
@@ -83,15 +96,17 @@ class Approval:
 
 @dataclass
 class FakeInbox:
-    """The approval inbox: pending reviews per (workspace, case id)."""
+    """The approval inbox: the pending approval per (workspace, case id), of
+    the type it was raised as."""
 
     pending: dict[tuple[uuid.UUID, str], Approval] = field(default_factory=dict)
 
     async def raised_by_payload(
         self, context: AccessContext, *, approval_type: str, key: str, value: str
     ) -> PendingApprovalRecord | None:
-        assert (approval_type, key) == (BOD_REVIEW_APPROVAL_TYPE, "product_dev_case_id")
-        return self.pending.get((context.workspace_id, value))
+        assert key == "product_dev_case_id"
+        found = self.pending.get((context.workspace_id, value))
+        return found if found is not None and found.approval_type == approval_type else None
 
 
 @dataclass
@@ -124,15 +139,34 @@ class FakeRunner:
             return run_context.run_id  # the run ended failed; the thread is free
         self.active_threads.add(run_context.thread_id)
         self.inbox.pending[(run_context.workspace_id, input_payload["product_dev_case_id"])] = (
-            Approval(
-                id=uuid.uuid4(),
-                approval_type=BOD_REVIEW_APPROVAL_TYPE,
-                payload=input_payload,
-                created_at=NOW,
-                required_scope=input_payload["required_scope"],
-            )
+            _first_pause(run_context.worker_id, input_payload)
         )
         return run_context.run_id
+
+
+def _first_pause(worker_id: str, run_input: dict[str, Any]) -> Approval:
+    """The approval a graph's first pause writes, as the real graphs do."""
+    if worker_id == product_signoff_graph.WORKER_ID:
+        first = run_input["steps"][0]
+        return Approval(
+            id=uuid.uuid4(),
+            approval_type=product_signoff_graph.SIGNOFF_APPROVAL_TYPE,
+            payload={
+                **run_input,
+                "step": first["step"],
+                "step_label": first["label"],
+                "step_no": 1,
+            },
+            created_at=NOW,
+            required_scope=first["required_scope"],
+        )
+    return Approval(
+        id=uuid.uuid4(),
+        approval_type=BOD_REVIEW_APPROVAL_TYPE,
+        payload=run_input,
+        created_at=NOW,
+        required_scope=run_input["required_scope"],
+    )
 
 
 @dataclass
@@ -226,7 +260,8 @@ class Stack:
         default_factory=lambda: FakeHolders(
             {
                 BOD_SCOPE: [BOD, BOD_WITHOUT_DECIDE, TESTER],
-                "approvals.decide": [BOD, APPROVER_ONLY, TESTER],
+                ACCOUNTING_SCOPE: [ACCOUNTANT, TESTER],
+                "approvals.decide": [BOD, APPROVER_ONLY, TESTER, ACCOUNTANT],
             }
         )
     )
@@ -241,8 +276,8 @@ class Stack:
         assert self.runner is not None
         return self.runner
 
-    def reviews(self) -> EnsureBodReview:
-        return EnsureBodReview(
+    def reviews(self) -> EnsureProductApproval:
+        return EnsureProductApproval(
             runner=self.run,
             approvals=self.inbox,
             holders=self.holders,
@@ -398,9 +433,9 @@ async def test_a_failed_notification_does_not_unraise_the_review() -> None:
 
 @pytest.mark.parametrize(
     "state",
-    [s for s in ProductDevState if s is not ProductDevState.PENDING_BOD_REVIEW],
+    [s for s in ProductDevState if s not in AWAITING_APPROVAL_STATES],
 )
-async def test_a_case_not_waiting_for_bgd_raises_nothing(state: ProductDevState) -> None:
+async def test_a_case_not_waiting_on_an_approval_raises_nothing(state: ProductDevState) -> None:
     stack = Stack()
     context = _context()
     outcome = await stack.reviews().ensure(context, _waiting(state=state), _requester(context))
@@ -465,7 +500,7 @@ class FakeCaseList:
 class FakeWorkspaces:
     pairs: list[tuple[uuid.UUID, uuid.UUID]]
 
-    async def awaiting_bod_review(self) -> list[tuple[uuid.UUID, uuid.UUID]]:
+    async def awaiting_approval(self) -> list[tuple[uuid.UUID, uuid.UUID]]:
         return self.pairs
 
 
@@ -478,11 +513,13 @@ class FakePlans:
 
 
 def _entered(case: ProductDevelopmentCase, actor: uuid.UUID) -> list[ProductCaseTransition]:
+    """The step that left the case where it waits."""
+    signoff = case.state is ProductDevState.PENDING_SIGNOFF
     return [
         ProductCaseTransition(
-            action=ProductAction.PASS_SAMPLE,
-            from_state=ProductDevState.SAMPLE_TESTING,
-            to_state=ProductDevState.PENDING_BOD_REVIEW,
+            action=ProductAction.SUBMIT_FOR_SIGNOFF if signoff else ProductAction.PASS_SAMPLE,
+            from_state=ProductDevState.ITEM_CODING if signoff else ProductDevState.SAMPLE_TESTING,
+            to_state=case.state,
             reason=None,
             actor_id=actor,
             occurred_at=NOW,
@@ -497,8 +534,8 @@ def _lane(
     *,
     batch: int = 20,
     plans: dict[uuid.UUID, str] | None = None,
-) -> ReconcileBodReviews:
-    return ReconcileBodReviews(
+) -> ReconcileProductApprovals:
+    return ReconcileProductApprovals(
         workspaces=FakeWorkspaces(pairs),
         cases=cases,
         plans=FakePlans(plans if plans is not None else {TENANT: "basic"}),
@@ -535,6 +572,10 @@ async def test_the_lane_leaves_a_case_whose_review_is_pending_alone() -> None:
 
     assert outcome.attempted == 0
     assert stack.run.started == []
+    # It is told again under the same key, which the inbox delivers once.
+    assert {d["source_key"] for d in stack.notifier.delivered} == {
+        f"supply_chain.bod_review:{approval.id}" for approval in stack.inbox.pending.values()
+    }
 
 
 async def test_the_lane_starts_at_most_a_batch_per_tick() -> None:
@@ -656,3 +697,134 @@ async def test_a_stuck_tenant_with_two_waiting_workspaces_still_costs_one_failed
     assert tenants.count(TENANT) == 1
     assert tenants.count(OTHER_TENANT) == 1
     assert (OTHER_WORKSPACE, str(later.id)) in stack.inbox.pending
+
+
+# --- the step-9 sign-off (ticket 04) -----------------------------------------------------
+
+
+def _submitted(**overrides: object) -> ProductDevelopmentCase:
+    return _waiting(
+        **{
+            "state": ProductDevState.PENDING_SIGNOFF,
+            "item_code": ItemCode(uuid.uuid4(), "MH-0001"),
+            "signoff_round": 3,
+            **overrides,
+        }
+    )
+
+
+async def test_submitting_starts_the_signoff_run_with_the_tenants_order_stamped() -> None:
+    stack = Stack()
+    case = _submitted()
+    context = _context()
+
+    outcome = await stack.reviews().ensure(context, case, _requester(context))
+
+    assert outcome is ReviewRaise.RAISED
+    ((run, payload),) = stack.run.started
+    assert run.thread_id == signoff_thread_id(case.id.value, 3)
+    assert (run.worker_id, run.worker_version) == (
+        product_signoff_graph.WORKER_ID,
+        product_signoff_graph.WORKER_VERSION,
+    )
+    assert run.actor_id == TESTER
+    assert payload == {
+        "product_dev_case_id": str(case.id),
+        "proposal_code": "DX-2026-001",
+        "product_name": "Nồi inox 3 đáy 24cm",
+        "item_code": "MH-0001",
+        "signoff_round": 3,
+        "steps": SIGNOFF_STEPS,
+        "step_index": 0,
+    }
+
+
+async def test_the_first_signers_are_told_and_nobody_else() -> None:
+    """The first step is BGĐ's: holders of its stamp and of the decide right,
+    less the requester. Kế toán is not told until its own step is raised."""
+    stack = Stack()
+    context = _context()
+
+    await stack.reviews().ensure(context, _submitted(), _requester(context))
+
+    (delivery,) = stack.notifier.delivered
+    (approval,) = stack.inbox.pending.values()
+    assert delivery["recipients"] == [BOD]
+    assert delivery["source_key"] == f"supply_chain.signoff:{approval.id}"
+    assert delivery["link"] == f"/approvals/{approval.id}?workspace={WORKSPACE}"
+
+
+async def test_a_tenant_order_reaches_the_next_submission() -> None:
+    stack = Stack()
+    reordered = [SIGNOFF_STEPS[1], SIGNOFF_STEPS[0]]
+    stack.policies.stored[PRODUCT_APPROVALS_POLICY_ID] = {
+        **PLATFORM_APPROVALS.model_dump(mode="json"),
+        "signoff": reordered,
+    }
+    context = _context()
+
+    await stack.reviews().ensure(context, _submitted(), _requester(context))
+
+    assert stack.run.started[0][1]["steps"] == reordered
+    (delivery,) = stack.notifier.delivered
+    assert delivery["recipients"] == [ACCOUNTANT]
+
+
+async def test_each_signoff_round_has_its_own_thread_apart_from_the_reviews() -> None:
+    case_id = uuid.uuid4()
+    assert signoff_thread_id(case_id, 1) != signoff_thread_id(case_id, 2)
+    assert signoff_thread_id(case_id, 1) != bod_review_thread_id(case_id, 1)
+
+
+async def test_a_case_waiting_for_signoff_without_an_item_code_is_not_signed() -> None:
+    """Fail closed: the domain never submits one, so a row saying otherwise
+    gets no run rather than a sign-off naming no code."""
+    stack = Stack()
+    context = _context()
+    with pytest.raises(ConflictError, match="item code"):
+        await stack.reviews().ensure(context, _submitted(item_code=None), _requester(context))
+    assert stack.run.started == []
+
+
+async def test_the_lane_raises_a_missing_signoff_as_the_submitter() -> None:
+    stack = Stack()
+    case = _submitted()
+    cases = FakeCaseList([case], history={case.id.value: _entered(case, TESTER)})
+
+    outcome = await _lane(stack, cases, [(TENANT, WORKSPACE)]).run()
+
+    assert (outcome.attempted, outcome.raised) == (1, 1)
+    ((run, _),) = stack.run.started
+    assert (run.worker_id, run.actor_id) == (product_signoff_graph.WORKER_ID, TESTER)
+
+
+async def test_the_lane_tells_the_signers_of_a_later_step_raised_inside_the_run() -> None:
+    """BGĐ signed; the run raised Kế toán's step on that decision, where
+    nobody is told. The lane tells Kế toán, once per approval, and starts
+    nothing."""
+    stack = Stack()
+    case = _submitted()
+    later = Approval(
+        id=uuid.uuid4(),
+        approval_type=product_signoff_graph.SIGNOFF_APPROVAL_TYPE,
+        payload={
+            "product_dev_case_id": str(case.id),
+            "item_code": "MH-0001",
+            "step": "accounting",
+            "step_label": "Kế toán",
+            "step_no": 2,
+            "steps": [{"step": "bod", "label": "BGĐ"}, {"step": "accounting", "label": "Kế toán"}],
+        },
+        created_at=NOW,
+        required_scope=ACCOUNTING_SCOPE,
+    )
+    stack.inbox.pending[(WORKSPACE, str(case.id))] = later
+    cases = FakeCaseList([case], history={case.id.value: _entered(case, TESTER)})
+
+    outcome = await _lane(stack, cases, [(TENANT, WORKSPACE)]).run()
+
+    assert outcome.attempted == 0
+    assert stack.run.started == []
+    (delivery,) = stack.notifier.delivered
+    assert delivery["recipients"] == [ACCOUNTANT]
+    assert delivery["source_key"] == f"supply_chain.signoff:{later.id}"

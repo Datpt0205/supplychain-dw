@@ -382,7 +382,7 @@ export type CaseDocument = z.infer<typeof caseDocumentSchema>;
 
 // ---- product-development cases (stage 1, ADR 0016) ---------------------------
 
-/** The API's `ProductDevState`: the states stage-1 tickets 01-03 reach. */
+/** The API's `ProductDevState`: the states stage-1 tickets 01-04 reach. */
 export const productDevStateSchema = z.enum([
   "proposed",
   "sample_requested",
@@ -392,6 +392,9 @@ export const productDevStateSchema = z.enum([
   "profile_in_progress",
   "supplier_confirmation",
   "item_coding",
+  // Step 9: submitted for sign-off; every sign-off step approved.
+  "pending_signoff",
+  "ready_to_order",
   "waiting_external",
   "blocked",
   "manual_review",
@@ -411,6 +414,11 @@ export const productActionSchema = z.enum([
   // Steps 7-8: R&D completes the BM04; TP Cung ứng confirms with the supplier.
   "complete_profile",
   "confirm_with_supplier",
+  // Step 9: Cung ứng codes the product, then submits it for sign-off.
+  "issue_item_code",
+  "add_sku",
+  "remove_sku",
+  "submit_for_signoff",
   "wait_for_external",
   "flag_blocked",
   "flag_manual_review",
@@ -420,6 +428,10 @@ export const productActionSchema = z.enum([
   // In a case's history, never among the steps a page offers.
   "bod_approve",
   "bod_reject",
+  // Step 9's sign-off outcome, applied by the sign-off graph; never a step a
+  // page offers.
+  "signoff_approve",
+  "signoff_reject",
 ]);
 export type ProductAction = z.infer<typeof productActionSchema>;
 
@@ -441,11 +453,25 @@ export const productCaseSchema = z.object({
   state: productDevStateSchema,
   interrupted_state: productDevStateSchema.nullable(),
   sample_round: z.number().int(),
+  signoff_round: z.number().int(),
   created_by: z.string(),
   created_at: z.string().nullable(),
   version: z.number().int(),
 });
 export type ProductCase = z.infer<typeof productCaseSchema>;
+
+/** Mirrors `ItemCodeView`: the case's official item code (step 9). */
+export const itemCodeSchema = z.object({ id: z.string(), code: z.string() });
+export type ItemCode = z.infer<typeof itemCodeSchema>;
+
+/** Mirrors `SkuView`: one SKU under the item code. */
+export const skuSchema = z.object({
+  id: z.string(),
+  sku_code: z.string(),
+  variant_label: z.string(),
+  planned_quantity: z.number().int().nullable(),
+});
+export type Sku = z.infer<typeof skuSchema>;
 
 export const sampleRoundSchema = z.object({
   round_no: z.number().int(),
@@ -472,29 +498,49 @@ export const productActionOptionSchema = z.object({
   document_required: z.boolean(),
   /** The earliest upload the step takes as its paper; null: none qualifies. */
   documents_since: z.string().nullable(),
+  /** What the case still lacks for this step (`item_code`, `sku`): the
+   * server refuses it until this is empty. */
+  unmet: z.array(z.string()),
 });
 export type ProductActionOption = z.infer<typeof productActionOptionSchema>;
 
-/** Mirrors `PendingReviewView`: the BGĐ review a waiting case is held on,
- * and the scope stamped on it, which is who may decide it at `/approvals`. */
+/** One step of a sign-off round, as stamped when the case was submitted. */
+export const signoffStepSchema = z.object({
+  step: z.string(),
+  label: z.string(),
+});
+export type SignoffStep = z.infer<typeof signoffStepSchema>;
+
+/** Mirrors `PendingReviewView`: the approval a waiting case is held on (BGĐ's
+ * review, or the current sign-off step) and the scope stamped on it, which is
+ * who may decide it at `/approvals`. For a sign-off, its step, number and the
+ * round's steps in order; null and empty for a review. */
 export const pendingReviewSchema = z.object({
   approval_id: z.string(),
   created_at: z.string().nullable(),
   required_scope: z.string().nullable(),
+  step: z.string().nullable(),
+  step_label: z.string().nullable(),
+  step_no: z.number().int().nullable(),
+  steps: z.array(signoffStepSchema),
 });
 export type PendingReview = z.infer<typeof pendingReviewSchema>;
 
 /** Mirrors `ProductCaseDetailView`: the case, its sample rounds, its steps,
- * and while it waits for BGĐ the review it waits on (null when none is
- * raised yet). */
+ * while it waits for BGĐ or its sign-off the approval it waits on (null when
+ * none is raised yet, or the viewer may not see it), and its item code and
+ * SKUs. */
 export const productCaseDetailSchema = productCaseSchema.extend({
   rounds: z.array(sampleRoundSchema),
   actions: z.array(productActionOptionSchema),
   pending_review: pendingReviewSchema.nullable(),
+  item_code: itemCodeSchema.nullable(),
+  skus: z.array(skuSchema),
 });
 export type ProductCaseDetail = z.infer<typeof productCaseDetailSchema>;
 
-/** Mirrors `ReviewRaise`: what asking for BGĐ's review did. */
+/** Mirrors `ReviewRaise`: what asking for the approval a step left the case
+ * waiting on (BGĐ's review, the sign-off) did. */
 export const reviewRaiseSchema = z.enum([
   "raised",
   "already_pending",
@@ -557,4 +603,10 @@ export interface ProductCaseStepInput {
   reason?: string;
   supplierName?: string;
   documentId?: string;
+  /** `issue_item_code` */
+  itemCode?: string;
+  /** `add_sku` */
+  sku?: { skuCode: string; variantLabel: string; plannedQuantity?: number };
+  /** `remove_sku` */
+  skuId?: string;
 }

@@ -22,13 +22,17 @@ What each command decides, and where:
   caller cannot read is the same refusal as one never named.
 - **The record:** the state, the history row, the round and the audit event
   are one transaction in the repository.
-- **BGĐ's review (step 6):** a step that leaves the case in
-  `pending_bod_review` (`pass_sample`, or `resume` back into it) asks
-  `BodReviewPort.ensure` for the review AFTER the step is saved, in its own
-  transaction. A refused or failed start does not undo the step: the answer
-  says the review is not raised yet, and the worker's reconcile lane raises
-  it. BGĐ's two outcomes (`GRAPH_ONLY_ACTIONS`) are refused here, before
-  anything is read: only the review graph applies them.
+- **The approvals (step 6, step 9):** a step that leaves the case waiting
+  on one (`pass_sample` into `pending_bod_review`, `submit_for_signoff` into
+  `pending_signoff`) asks `ProductApprovalPort.ensure` for it AFTER the step
+  is saved, in its own transaction. A refused or failed start does not undo
+  the step: the answer says the approval is not raised yet, and the worker's
+  reconcile lane raises it. The approvals' outcomes (`GRAPH_ONLY_ACTIONS`)
+  are refused here, before anything is read: only their graphs apply them.
+- **Step 9's codes:** the item code and SKU a person sends are handed to the
+  domain as they came; the ids of the rows a step creates are minted here.
+  Whether a code is taken in the tenant is the database's answer, a 409
+  naming the code (ADR 0018).
 """
 
 from __future__ import annotations
@@ -51,9 +55,9 @@ from dw_supply_chain.application.handlers import (
     resolve_product_action_duties,
 )
 from dw_supply_chain.application.ports import (
-    BodReviewPort,
     PendingApprovalRecord,
     PendingApprovalsPort,
+    ProductApprovalPort,
     ProductCaseListFilter,
     ProductCaseRepositoryPort,
     ReviewRaise,
@@ -63,25 +67,24 @@ from dw_supply_chain.application.product_case_audit import (
     PRODUCT_CASE_RESOURCE,
     product_case_audit,
 )
+from dw_supply_chain.application.product_reviews import AWAITED_APPROVAL_TYPE
 from dw_supply_chain.domain.case_document import CaseDocument, CaseDocumentId
 from dw_supply_chain.domain.product_development_case import (
+    AWAITING_APPROVAL_STATES,
     GRAPH_ONLY_ACTIONS,
     ProductAction,
     ProductActionInput,
     ProductCaseTransition,
     ProductDevelopmentCase,
     ProductDevelopmentCaseId,
-    ProductDevState,
     SampleRound,
+    SkuDraft,
     apply_product_action,
     document_refusal,
 )
 from dw_supply_chain.domain.product_proposal import DraftClaim, ProposalOrigin
 from dw_supply_chain.product_action_duties import SupplyChainProductActionDuties
-from dw_supply_chain.workflows.advance_product_case_graph import (
-    BOD_REVIEW_APPROVAL_TYPE,
-    BOD_REVIEW_CASE_KEY,
-)
+from dw_supply_chain.workflows.advance_product_case_graph import BOD_REVIEW_CASE_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +102,11 @@ class ProductDocumentLookupPort(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class ProductCaseDetail:
-    """A case, its sample rounds, the tenant's step-to-duty mapping the case
-    page shows who may take each step from (the same mapping
-    `AdvanceProductCase` authorizes against, resolved by the same function),
-    and, while it waits for BGĐ, the review approval it waits on."""
+    """A case (with its item code and SKUs), its sample rounds, the tenant's
+    step-to-duty mapping the case page shows who may take each step from (the
+    same mapping `AdvanceProductCase` authorizes against, resolved by the same
+    function), and, while it waits for BGĐ or for its sign-off, the approval
+    it waits on."""
 
     case: ProductDevelopmentCase
     rounds: list[SampleRound]
@@ -112,8 +116,9 @@ class ProductCaseDetail:
 
 @dataclass(frozen=True, slots=True)
 class ProductStepResult:
-    """A step taken, and for a step that left the case waiting for BGĐ, what
-    asking for the review did (None for every other step)."""
+    """A step taken, and for a step that left the case waiting on an approval
+    (BGĐ's review, the sign-off), what asking for it did (None for every
+    other step)."""
 
     case: ProductDevelopmentCase
     review: ReviewRaise | None = None
@@ -204,10 +209,12 @@ class ProposeProductCase:
 
 @dataclass(frozen=True)
 class GetProductCase:
-    """The case page. While the case waits for BGĐ it carries the review
-    approval it waits on, read from the approval inbox in the caller's
-    workspace: its id, when it was raised, and the scope stamped on it, which
-    is who may decide. Nobody's name, and no way to decide from here."""
+    """The case page. While the case waits for BGĐ or for its sign-off it
+    carries the approval it waits on, read from the approval inbox in the
+    caller's workspace and narrowed to who may see it: its id, when it was
+    raised, the scope stamped on it (who may decide) and, for a sign-off, its
+    step and the steps of the round. Nobody's name, and no way to decide from
+    here."""
 
     repo: ProductCaseRepositoryPort
     authz: AuthorizationPort
@@ -234,11 +241,11 @@ class GetProductCase:
             pending_review=(
                 await self.approvals.pending_by_payload(
                     context,
-                    approval_type=BOD_REVIEW_APPROVAL_TYPE,
+                    approval_type=AWAITED_APPROVAL_TYPE[case.state],
                     key=BOD_REVIEW_CASE_KEY,
                     value=str(case.id),
                 )
-                if case.state is ProductDevState.PENDING_BOD_REVIEW
+                if case.state in AWAITING_APPROVAL_STATES
                 else None
             ),
         )
@@ -295,15 +302,15 @@ class AdvanceProductCase:
 
     A graph-only action is refused first, then the duty is checked, both
     before the case or any document is read, so a caller without the duty
-    learns nothing about either. A step that leaves the case waiting for BGĐ
-    then asks for the review (module docstring)."""
+    learns nothing about either. A step that leaves the case waiting on an
+    approval then asks for it (module docstring)."""
 
     repo: ProductCaseRepositoryPort
     documents: ProductDocumentLookupPort
     authz: AuthorizationPort
     policy_override_repo: PolicyOverridePort
     platform_default_duties: SupplyChainProductActionDuties
-    reviews: BodReviewPort
+    reviews: ProductApprovalPort
     ids: IdGenerator
     clock: UtcClock
 
@@ -316,10 +323,13 @@ class AdvanceProductCase:
         reason: str | None = None,
         supplier_name: str | None = None,
         document_id: uuid.UUID | None = None,
+        item_code: str | None = None,
+        sku: SkuDraft | None = None,
+        sku_id: uuid.UUID | None = None,
     ) -> ProductStepResult:
         if action in GRAPH_ONLY_ACTIONS:
             raise DomainError(
-                "BGĐ's decision is taken on its approval, not as a step on the case",
+                "an approval's outcome is decided on the approval, not as a step on the case",
                 details={"action": action.value},
             )
         duties = await resolve_product_action_duties(
@@ -346,6 +356,10 @@ class AdvanceProductCase:
                 reason=reason,
                 supplier_name=supplier_name,
                 document=document,
+                item_code=item_code,
+                sku=sku,
+                sku_id=sku_id,
+                new_id=self.ids.new_uuid(),
             ),
         )
         await self.repo.save(
@@ -362,10 +376,11 @@ class AdvanceProductCase:
                     "to_state": case.state.value,
                     "sample_round": case.sample_round,
                     **({"document_id": str(document.id)} if document else {}),
+                    **_coding_details(case, action, sku_id),
                 },
             ),
         )
-        if case.state is not ProductDevState.PENDING_BOD_REVIEW:
+        if case.state not in AWAITING_APPROVAL_STATES:
             return ProductStepResult(case=case)
         return ProductStepResult(case=case, review=await self._ensure_review(context, case))
 
@@ -374,12 +389,26 @@ class AdvanceProductCase:
     ) -> ReviewRaise:
         """The step is saved whatever happens here. Broad on purpose: a quota
         refusal, a spend ceiling or a failed start must not turn a recorded
-        step into an error; the reconcile lane raises the review later."""
+        step into an error; the reconcile lane raises the approval later."""
         try:
             return await self.reviews.ensure(context, case, ReviewRequester.from_context(context))
         except Exception:
             logger.exception(
-                "BGĐ review not raised after the step; the reconcile lane retries",
+                "approval not raised after the step; the reconcile lane retries",
                 extra={"case_id": str(case.id)},
             )
             return ReviewRaise.NOT_RAISED
+
+
+def _coding_details(
+    case: ProductDevelopmentCase, action: ProductAction, sku_id: uuid.UUID | None
+) -> dict[str, object]:
+    """What a step-9 coding step's audit event names: the code it issued, the
+    SKU it added or removed."""
+    if action is ProductAction.ISSUE_ITEM_CODE and case.item_code is not None:
+        return {"item_code": case.item_code.code}
+    if action is ProductAction.ADD_SKU and case.skus:
+        return {"sku_code": case.skus[-1].sku_code}
+    if action is ProductAction.REMOVE_SKU and sku_id is not None:
+        return {"sku_id": str(sku_id)}
+    return {}

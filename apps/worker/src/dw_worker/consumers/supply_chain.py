@@ -1,5 +1,5 @@
 """Supply Chain's lanes: the follow-up sweep, the case-document orphan sweep,
-and the BGĐ review reconcile.
+and the product approval reconcile (BGĐ's review, the step-9 sign-off).
 
 The sweep (`dw_supply_chain.application.follow_up_sweep`) opens follow-ups for
 due reminders, escalations and SLA breaches, resolves the ones whose signal is
@@ -7,12 +7,13 @@ gone, and notifies the people who must act. It is idempotent end to end, so
 this lane only has to call it; a failed tick is finished by the next one.
 
 The reconcile (`dw_supply_chain.application.product_reviews.
-ReconcileBodReviews`) raises BGĐ's review for a product case waiting in
-`pending_bod_review` with none: a start the step command could not make, or a
-case that got there before the review existed. It starts runs, so this process
-hosts the review graph on its own runner, over the same tables, checkpointer
-and plan allowance the API's runner uses; a decision then resumes the run in
-the API, which hosts the same graph.
+ReconcileProductApprovals`) raises the approval a product case waits on with
+none: BGĐ's review in `pending_bod_review`, the step-9 sign-off in
+`pending_signoff` (a start the step command could not make, or a case that got
+there before the approval existed), and tells the signers of a sign-off's
+later steps. It starts runs, so this process hosts both graphs on its own
+runner, over the same tables, checkpointer and plan allowance the API's runner
+uses; a decision then resumes the run in the API, which hosts the same graphs.
 
 A decision sent from Zalo (zalo-channel ticket 05) resumes a review on the
 same runner, so `register_product_approvals` gives the worker's approval flow
@@ -67,7 +68,7 @@ from dw_supply_chain.adapters.persistence.follow_up_repository import (
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
 from dw_supply_chain.adapters.persistence.product_case_repository import (
     SqlProductCaseRepository,
-    SqlWorkspacesAwaitingReview,
+    SqlWorkspacesAwaitingApproval,
 )
 from dw_supply_chain.adapters.persistence.proposal_draft_repository import (
     SqlProposalDraftRepository,
@@ -81,13 +82,17 @@ from dw_supply_chain.application.document_orphan_sweep import SweepOrphanDocumen
 from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
 from dw_supply_chain.application.ports import CaseDocumentObjectListingPort
 from dw_supply_chain.application.product_cases import ProposeProductCase
-from dw_supply_chain.application.product_reviews import EnsureBodReview, ReconcileBodReviews
+from dw_supply_chain.application.product_reviews import (
+    EnsureProductApproval,
+    ReconcileProductApprovals,
+)
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
 from dw_supply_chain.policy_files import (
     ADVANCE_PRODUCT_CASE_WORKER_FILE,
     FOLLOW_UP_POLICY_FILE,
     PRODUCT_ACTION_DUTIES_POLICY_FILE,
     PRODUCT_APPROVALS_POLICY_FILE,
+    PRODUCT_SIGNOFF_WORKER_FILE,
     SLA_POLICY_FILE,
 )
 from dw_supply_chain.presentation.zalo_proposal import ZaloProposalCommand
@@ -95,6 +100,7 @@ from dw_supply_chain.product_action_duties import load_supply_chain_product_acti
 from dw_supply_chain.product_approvals import load_supply_chain_product_approvals
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
 from dw_supply_chain.workflows import advance_product_case_graph as product_review_graph
+from dw_supply_chain.workflows import product_signoff_graph
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +151,8 @@ def build_product_review_runner(
     telemetry: TelemetryPort,
     release_manifest_ref: str | None,
 ) -> LangGraphWorkflowRunner:
-    """This process's runner: the review graph registered once, its worker
-    loaded from the shipped file, the run store's staleness from the shipped
+    """This process's runner: the review and sign-off graphs registered once,
+    their workers loaded from the shipped files, the run store's staleness from the shipped
     run policy, the plan catalogue the API's allowance reads. The reconcile
     lane starts reviews on it and a decision sent from Zalo (ticket 05)
     resumes them on it."""
@@ -157,8 +163,14 @@ def build_product_review_runner(
         product_review_graph.GRAPH_VERSION,
         lambda: product_review_graph.build_advance_product_case_graph(product_cases, ids, clock),
     )
+    graphs.register(
+        product_signoff_graph.WORKER_ID,
+        product_signoff_graph.GRAPH_VERSION,
+        lambda: product_signoff_graph.build_product_signoff_graph(product_cases, ids, clock),
+    )
     workers = WorkerRegistry(graph_registry=graphs)
     workers.load_file(configs_dir / "workers" / ADVANCE_PRODUCT_CASE_WORKER_FILE)
+    workers.load_file(configs_dir / "workers" / PRODUCT_SIGNOFF_WORKER_FILE)
     run_policy = load_worker_run_policy(configs_dir / "policies" / "worker_runs@1.0.0.yaml")
     return LangGraphWorkflowRunner(
         worker_registry=workers,
@@ -185,18 +197,18 @@ def build_product_review_reconcile(
     runner: LangGraphWorkflowRunner,
     configs_dir: Path,
     ids: IdGenerator,
-) -> ReconcileBodReviews:
+) -> ReconcileProductApprovals:
     """The reconcile lane, starting reviews on `runner`
     (`build_product_review_runner`)."""
     product_cases = SqlProductCaseRepository(sessions)
     # Only `raised_by_payload` is asked here, which no audience narrows; the
     # authorization is the query's constructor argument all the same.
     approvals = SqlPendingApprovalQuery(sessions, ScopeAuthorizationService())
-    return ReconcileBodReviews(
-        workspaces=SqlWorkspacesAwaitingReview(sessions),
+    return ReconcileProductApprovals(
+        workspaces=SqlWorkspacesAwaitingApproval(sessions),
         cases=product_cases,
         plans=SqlTenantPlans(sessions),
-        reviews=EnsureBodReview(
+        reviews=EnsureProductApproval(
             runner=runner,
             approvals=approvals,
             holders=SqlScopeHolders(sessions),
@@ -269,13 +281,13 @@ def build_proposal_draft_retention(
 
 
 def build_product_review_reconcile_consumer(
-    lane: ReconcileBodReviews,
+    lane: ReconcileProductApprovals,
 ) -> Callable[[], Awaitable[None]]:
     async def consume() -> None:
         outcome = await lane.run()
         if outcome.attempted or outcome.failed:
             logger.info(
-                "BGĐ review reconcile: attempted=%d raised=%d failed=%d",
+                "product approval reconcile: attempted=%d raised=%d failed=%d",
                 outcome.attempted,
                 outcome.raised,
                 outcome.failed,

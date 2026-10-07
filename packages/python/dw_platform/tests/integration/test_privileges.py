@@ -479,3 +479,46 @@ async def test_the_application_may_only_change_a_proposal_drafts_own_state(
                 assert not await column(name, "UPDATE"), name
     finally:
         await migrator.dispose()
+
+
+async def test_the_application_issues_item_codes_and_adds_or_removes_skus_only(
+    db_urls: DatabaseUrls,
+) -> None:
+    """`supply_chain.item_codes` and `supply_chain.skus` (migration
+    76bd1b5fc546, step 9): an item code is issued (INSERT) and corrected
+    (`code` only), never deleted but by its case's cascade; a SKU is added and
+    removed, never edited. Asked of the catalog, so a later blanket GRANT
+    goes red."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+
+            async def table(name: str, verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text("SELECT has_table_privilege('dw_app', :t, :verb)"),
+                        {"t": f"supply_chain.{name}", "verb": verb},
+                    )
+                )
+
+            async def column(name: str, verb: str) -> bool:
+                return bool(
+                    await conn.scalar(
+                        sa.text("SELECT has_column_privilege('dw_app', :t, :col, :verb)"),
+                        {"t": "supply_chain.item_codes", "col": name, "verb": verb},
+                    )
+                )
+
+            for verb in ("SELECT", "INSERT"):
+                assert await table("item_codes", verb), verb
+            for verb in ("UPDATE", "DELETE", "TRUNCATE"):
+                assert not await table("item_codes", verb), verb
+            assert await column("code", "UPDATE")
+            for name in ("id", "tenant_id", "workspace_id", "product_dev_case_id", "issued_by"):
+                assert not await column(name, "UPDATE"), name
+            for verb in ("SELECT", "INSERT", "DELETE"):
+                assert await table("skus", verb), verb
+            for verb in ("UPDATE", "TRUNCATE"):
+                assert not await table("skus", verb), verb
+    finally:
+        await migrator.dispose()

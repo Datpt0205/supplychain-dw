@@ -150,6 +150,8 @@ product_dev_cases = sa.Table(
     sa.Column("state", sa.Text, nullable=False, server_default="proposed"),
     sa.Column("interrupted_state", sa.Text, nullable=True),
     sa.Column("sample_round", sa.Integer, nullable=False, server_default="0"),
+    # How many times the case was submitted for sign-off (76bd1b5fc546).
+    sa.Column("signoff_round", sa.Integer, nullable=False, server_default="0"),
     sa.Column("version", sa.Integer, nullable=False, server_default="1"),
     sa.Column("created_by", UUID(as_uuid=True), nullable=False),
     sa.Column(
@@ -210,6 +212,42 @@ sample_revision_requests = sa.Table(
     sa.Column("sent_by", UUID(as_uuid=True), nullable=False),
     sa.Column(
         "sent_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+# Step 9 (76bd1b5fc546): a case's official item code, unique per tenant, and
+# its SKUs, each unique per tenant and under the case's own item code.
+item_codes = sa.Table(
+    "item_codes",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("code", sa.Text, nullable=False),
+    sa.Column("issued_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "issued_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+    sa.Column(
+        "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+skus = sa.Table(
+    "skus",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("item_code_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("sku_code", sa.Text, nullable=False),
+    sa.Column("variant_label", sa.Text, nullable=False),
+    sa.Column("planned_quantity", sa.Integer, nullable=True),
+    sa.Column("added_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "added_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )
 

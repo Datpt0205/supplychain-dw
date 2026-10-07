@@ -19,8 +19,8 @@ This repo is the Elmich product: bounded context
 ## Where it stands (2026-10-05)
 
 - **Steps 10–17 (PO case)** are on `main` (slice P, `c2f04dc`).
-- **Steps 1–8 are built** (S1 steps 1–5, S2 step 6, S3 steps 7–8); step 9 and
-  the hand-off are ticketed (S4–S7). Approvals carry `required_scope` (A); cases carry
+- **Steps 1–9 are built** (S1 steps 1–5, S2 step 6, S3 steps 7–8, S4 step 9); the
+  hand-off is ticketed (S5–S7). Approvals carry `required_scope` (A); cases carry
   documents (D).
 - **Channels:** in-app inbox only. The Zalo pieces on `main` are built and
   tested but wired into nothing; the API client calls `/api/v1/zalo/*` routes
@@ -64,7 +64,7 @@ means platform code, an upstream candidate (ADR 0011).
 | S1    | `stage-1/issues/01-product-case-steps-1-5.md`                             | no      | resolved        | P, D                                |
 | S2    | `stage-1/issues/02-bod-review-step-6.md`                                  | no      | resolved        | S1, A                               |
 | S3    | `stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`           | no      | resolved        | S2                                  |
-| S4    | `stage-1/issues/04-item-code-sku-signoff-step-9.md`                       | no      | ready-for-agent | S3                                  |
+| S4    | `stage-1/issues/04-item-code-sku-signoff-step-9.md`                       | no      | resolved        | S3                                  |
 | S5    | `stage-1/issues/05-place-order-hand-off.md`                               | no      | ready-for-agent | S4                                  |
 | S6    | `stage-1/issues/06-sla-by-category-and-pic-routing.md`                    | no      | ready-for-agent | S5                                  |
 | S7    | `stage-1/issues/07-stage-1-evals.md`                                      | no      | ready-for-agent | S6                                  |
@@ -73,7 +73,7 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** S4 (S3 in; its sign-off reuses Z5's version port); Z6; Z4p when a real photo update exists.
+**Next:** S5 (S4 in: a case reaches `ready_to_order`); Z6; Z4p when a real photo update exists.
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 
@@ -216,10 +216,14 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
   hộp thư?
 - **QE-10** Trình ký bước 9: BGĐ và Kế toán ký tuần tự (ai trước) hay song song? Cả
   hai bắt buộc? Không duyệt thì về đâu?
+  (Tạm ở S4: tuần tự BGĐ rồi Kế toán, cả hai bắt buộc, không duyệt thì về Đang tạo mã
+  hàng giữ mã; thứ tự là policy `supply_chain_product_approvals` của tenant.)
 - **QE-11** Định dạng mã hàng và mã SKU; không trùng trong cả công ty hay từng
   workspace; có đối chiếu với ERP hoặc danh mục hàng không, hệ thống nào cấp mã
   chính thức; một mã hàng có nhiều SKU (màu, cỡ) không; "chốt số lượng SKU" là số
   biến thể hay số lượng đặt mỗi SKU?
+  (Tạm ở S4: không kiểm định dạng; không trùng theo tenant, phân biệt hoa thường; SKU là
+  biến thể dưới mã hàng; `planned_quantity` tùy chọn; không ERP.)
 - **QE-12** Một sản phẩm sinh mấy PO? Một PO gộp SKU của nhiều sản phẩm được không?
   Hàng đặt lại có bỏ qua giai đoạn 1 không, Hàng mới thì sao?
 - **QE-13** Danh sách Category; SLA từng bước theo Category; chọn Category ở bước 1;

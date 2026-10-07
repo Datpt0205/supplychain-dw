@@ -1319,6 +1319,15 @@ export class ApiClient {
         ? input.supplierName.trim()
         : null,
       document_id: input.documentId ?? null,
+      item_code: input.itemCode?.trim() ? input.itemCode.trim() : null,
+      sku: input.sku
+        ? {
+            sku_code: input.sku.skuCode.trim(),
+            variant_label: input.sku.variantLabel.trim(),
+            planned_quantity: input.sku.plannedQuantity ?? null,
+          }
+        : null,
+      sku_id: input.skuId ?? null,
     };
     return this.request(
       "POST",

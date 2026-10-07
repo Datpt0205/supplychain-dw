@@ -15,6 +15,7 @@ import {
   Modal,
   Select,
   Skeleton,
+  Steps,
   Table,
   Timeline,
   Tooltip,
@@ -45,6 +46,11 @@ import {
   CaseSummary,
   type SummaryCell,
 } from "../../../../components/supply-chain/case-summary";
+import {
+  CODING_ACTIONS,
+  ItemCodingCard,
+  showsCoding,
+} from "../../../../components/supply-chain/item-coding-card";
 import { supplyChainCrumbs } from "../../../../components/supply-chain/crumbs";
 import {
   PRODUCT_ACTION_LABEL,
@@ -53,6 +59,7 @@ import {
   ProductDevStateTag,
   SampleResultTag,
   dutyLock,
+  unmetLock,
 } from "../../../../components/supply-chain/product-case-labels";
 import { useAuth } from "../../../../lib/auth/auth-context";
 import {
@@ -212,6 +219,10 @@ function CaseView({
           onPaperUploaded={() => setStepUploads((tick) => tick + 1)}
         />
 
+        {showsCoding(detail) && (
+          <ItemCodingCard detail={detail} onStep={onStep} />
+        )}
+
         <RoundsCard rounds={detail.rounds} who={who} />
         <HistoryCard caseId={detail.id} tick={historyTick} who={who} />
         <CaseDocumentsCard
@@ -226,8 +237,10 @@ function CaseView({
   );
 }
 
-/** The steps the case accepts now. A step whose duty the viewer lacks is
- * locked, with the reason beside it as well as in its tooltip. */
+/** The steps the case accepts now, less step 9's coding (its own card). A
+ * step whose duty the viewer lacks, or that the case is not ready for (the
+ * server's `unmet`), is locked, with the reason beside it as well as in its
+ * tooltip. */
 function NextSteps({
   detail,
   onStep,
@@ -242,13 +255,18 @@ function NextSteps({
   const { hasScope } = useAuth();
   const online = useOnline();
   const [open, setOpen] = useState<ProductActionOption | null>(null);
+  const steps = detail.actions.filter(
+    (option) => !CODING_ACTIONS.includes(option.action),
+  );
 
   const lockOf = (option: ProductActionOption): string | null =>
     !hasScope(option.required_scope)
       ? dutyLock(option.required_scope)
-      : !online
-        ? OFFLINE
-        : null;
+      : option.unmet.length > 0
+        ? unmetLock(option.unmet)
+        : !online
+          ? OFFLINE
+          : null;
 
   return (
     <Card title="Bước tiếp theo">
@@ -256,13 +274,24 @@ function NextSteps({
         {detail.state === "pending_bod_review" && (
           <BodReviewNotice review={detail.pending_review} />
         )}
-        {detail.actions.length === 0 ? (
+        {detail.state === "pending_signoff" && (
+          <SignoffNotice review={detail.pending_review} />
+        )}
+        {detail.state === "ready_to_order" && (
+          <Alert
+            type="success"
+            showIcon
+            title="Đã ký đủ; hồ sơ sẵn sàng đặt hàng."
+            description="Mã hàng và SKU đã chốt. Bước ĐẶT HÀNG tạo Hồ sơ PO."
+          />
+        )}
+        {steps.length === 0 ? (
           <Typography.Text>
             Hồ sơ đã kết thúc; không còn bước nào.
           </Typography.Text>
         ) : (
           <Flex wrap gap="small">
-            {detail.actions.map((option) => {
+            {steps.map((option) => {
               const lock = lockOf(option);
               const button = (
                 <Button
@@ -288,7 +317,7 @@ function NextSteps({
             })}
           </Flex>
         )}
-        {detail.actions
+        {steps
           .filter((option) => lockOf(option) !== null)
           .map((option) => (
             <Typography.Text key={`lock-${option.action}`}>
@@ -345,6 +374,62 @@ function BodReviewNotice({ review }: { review: PendingReview | null }) {
           </Typography.Text>
           <Link href={`/approvals/${review.approval_id}`}>
             Mở yêu cầu duyệt (quyết trên web hoặc lấy mã quyết qua Zalo)
+          </Link>
+        </Flex>
+      }
+    />
+  );
+}
+
+/**
+ * Step 9 while it waits: the sign-off's steps in the order the case was
+ * submitted under, which are signed and which is waiting, who may sign it
+ * (the scope stamped on it, never names) and where: the step's own page, which
+ * also issues the code a decision on Zalo needs. The approval is shown only to
+ * its signers and its requester, so "no approval" may also mean this viewer
+ * may not see it; the words say both.
+ */
+function SignoffNotice({ review }: { review: PendingReview | null }) {
+  if (!review || review.step_no === null) {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        title="Đã trình ký; chưa thấy yêu cầu ký."
+        description="Yêu cầu ký chỉ hiện với người ký và người trình. Nếu bạn là một trong hai: yêu cầu chưa tạo được (ví dụ gói đã hết lượt chạy trong ngày), hệ thống tự trình lại sau ít phút; không cần trình lại. Trong lúc chờ ký, chỉ hủy hồ sơ được."
+      />
+    );
+  }
+  const current = review.step_no - 1;
+  return (
+    <Alert
+      type="info"
+      showIcon
+      title={`Hồ sơ chờ ký: bước ${review.step_no}/${review.steps.length}, ${review.step_label ?? ""}.`}
+      description={
+        <Flex vertical gap="small">
+          <Steps
+            size="small"
+            current={current}
+            items={review.steps.map((step, index) => ({
+              title: step.label,
+              description:
+                index < current
+                  ? "Đã ký"
+                  : index === current
+                    ? "Đang chờ ký"
+                    : "Chưa tới",
+            }))}
+          />
+          <Typography.Text>
+            Chờ người có quyền {review.step_label} (
+            {review.required_scope ?? "—"}) ký, từ{" "}
+            {formatDateTimeFull(review.created_at)}. Một bước không ký thì hồ sơ
+            về {PRODUCT_DEV_STATE_LABEL.item_coding}, nhận xét là lý do; mã hàng
+            và SKU giữ nguyên. Trong lúc chờ ký, chỉ hủy hồ sơ được.
+          </Typography.Text>
+          <Link href={`/approvals/${review.approval_id}`}>
+            Mở yêu cầu ký (quyết trên web hoặc lấy mã quyết qua Zalo)
           </Link>
         </Flex>
       }
@@ -455,10 +540,14 @@ function StepModal({
         key,
       );
       if (step.review === "not_raised") {
-        // Recorded; the review is not. The case page says so too, and the
+        // Recorded; the approval is not. The case page says so too, and the
         // worker raises it: nothing for this person to redo.
+        const what =
+          option.action === "submit_for_signoff"
+            ? "Chưa tạo được yêu cầu ký"
+            : "Chưa trình được BGĐ";
         void message.warning(
-          `Đã ghi: ${label}. Chưa trình được BGĐ; hệ thống sẽ tự trình lại.`,
+          `Đã ghi: ${label}. ${what}; hệ thống sẽ tự trình lại.`,
         );
       } else {
         void message.success(`Đã ghi: ${label}.`);

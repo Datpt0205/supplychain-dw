@@ -12,11 +12,14 @@ One transaction per command: the case row, one history row per pending step
 the revision request a step records, and the audit event.
 
 Read back with the case: when its current round opened, and when it reached
-its current state (`stage_entered_at`, from the history; a resume does not
-count), the two bounds the domain checks a step's paper against.
+its current state (`stage_entered_at`, from the history; a resume and a
+step that stays where it is do not count), the two bounds the domain checks a
+step's paper against; and its item code and SKUs (step 9), so every case
+handed out, listed or fetched, carries what its guards read.
 
 A refusal from the database comes back as a `ConflictError` by the
-constraint's name, never by parsing its message.
+constraint's name, never by parsing its message: a code already taken in the
+tenant names the code (ADR 0018), whichever of two racing writers lost.
 """
 
 from __future__ import annotations
@@ -40,6 +43,8 @@ from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence import tables
 from dw_supply_chain.application.ports import ProductCaseListFilter
 from dw_supply_chain.domain.product_development_case import (
+    ItemCode,
+    ItemCodeIssued,
     ProductAction,
     ProductCaseStep,
     ProductCaseTransition,
@@ -48,6 +53,9 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevState,
     SampleResult,
     SampleRound,
+    Sku,
+    SkuAdded,
+    SkuRemoved,
     document_refusal,
 )
 from dw_supply_chain.domain.product_proposal import DraftClaim, ProposalDraftChangedError
@@ -56,8 +64,14 @@ _c = tables.product_dev_cases
 _t = tables.product_dev_case_state_transitions
 _r = tables.product_sample_rounds
 _q = tables.sample_revision_requests
+_i = tables.item_codes
+_s = tables.skus
 
 PROPOSAL_CODE_CONSTRAINT = "uq_product_dev_cases_tenant_id_proposal_code"
+# Step 9 (ADR 0018): the database's answer to "is this code free in the tenant".
+ITEM_CODE_CONSTRAINT = "uq_item_codes_tenant_id_code"
+SKU_CODE_CONSTRAINT = "uq_skus_tenant_id_sku_code"
+_ONE_ITEM_CODE_CONSTRAINT = "uq_item_codes_tenant_id_product_dev_case_id"
 # The database's own refusal of a step's paper, should one reach it past the
 # domain's check. The refusal names the step that was being written (a
 # `reject_sample` evaluation meets the same constraints as a `pass_sample` one).
@@ -113,6 +127,7 @@ def _in_scope(table: sa.Table, context: AccessContext) -> tuple[sa.ColumnElement
 def _case(row: Row[tuple[object, ...]]) -> ProductDevelopmentCase:
     m = row._mapping
     interrupted = m[_c.c.interrupted_state]
+    item_code_id = m.get("item_code_id")
     return ProductDevelopmentCase(
         id=ProductDevelopmentCaseId(m[_c.c.id]),
         tenant_id=TenantId(m[_c.c.tenant_id]),
@@ -128,6 +143,10 @@ def _case(row: Row[tuple[object, ...]]) -> ProductDevelopmentCase:
         sample_round=m[_c.c.sample_round],
         round_opened_at=m.get("round_opened_at"),
         stage_entered_at=m.get("stage_entered_at"),
+        item_code=(
+            None if item_code_id is None else ItemCode(id=item_code_id, code=m["item_code"])
+        ),
+        signoff_round=m[_c.c.signoff_round],
         version=m[_c.c.version],
         created_at=m[_c.c.created_at],
     )
@@ -136,8 +155,8 @@ def _case(row: Row[tuple[object, ...]]) -> ProductDevelopmentCase:
 def _stage_entered_at() -> sa.ScalarSelect[object]:
     """When the case reached its current state by a step: its latest history
     row into that state that is not a resume (a resume returns to a step
-    already reached). Served by the history's (tenant, case, occurred_at)
-    index."""
+    already reached) nor a step that stayed where it was (step 9's coding).
+    Served by the history's (tenant, case, occurred_at) index."""
     return (
         sa.select(sa.func.max(_t.c.occurred_at))
         .where(
@@ -145,6 +164,7 @@ def _stage_entered_at() -> sa.ScalarSelect[object]:
             _t.c.product_dev_case_id == _c.c.id,
             _t.c.to_state == _c.c.state,
             _t.c.action != ProductAction.RESUME.value,
+            _t.c.from_state.is_distinct_from(_t.c.to_state),
         )
         .scalar_subquery()
     )
@@ -152,11 +172,14 @@ def _stage_entered_at() -> sa.ScalarSelect[object]:
 
 def _with_current_round() -> sa.Select[tuple[object, ...]]:
     """The case with its current round's opening time and when it reached its
-    current state: what the domain compares a document's upload time against."""
+    current state, what the domain compares a document's upload time
+    against, and its item code (one per case, by its UNIQUE)."""
     return sa.select(
         _c,
         _r.c.opened_at.label("round_opened_at"),
         _stage_entered_at().label("stage_entered_at"),
+        _i.c.id.label("item_code_id"),
+        _i.c.code.label("item_code"),
     ).select_from(
         _c.outerjoin(
             _r,
@@ -165,8 +188,41 @@ def _with_current_round() -> sa.Select[tuple[object, ...]]:
                 _r.c.product_dev_case_id == _c.c.id,
                 _r.c.round_no == _c.c.sample_round,
             ),
+        ).outerjoin(
+            _i,
+            sa.and_(_i.c.tenant_id == _c.c.tenant_id, _i.c.product_dev_case_id == _c.c.id),
         )
     )
+
+
+async def _with_skus(
+    session: AsyncSession, context: AccessContext, cases: list[ProductDevelopmentCase]
+) -> list[ProductDevelopmentCase]:
+    """Each case with its SKUs, oldest first, in one read for the lot."""
+    if not cases:
+        return cases
+    rows = (
+        await session.execute(
+            sa.select(_s)
+            .where(
+                *_in_scope(_s, context), _s.c.product_dev_case_id.in_([c.id.value for c in cases])
+            )
+            .order_by(_s.c.added_at.asc(), _s.c.id.asc())
+        )
+    ).all()
+    by_case: dict[uuid.UUID, list[Sku]] = {}
+    for row in rows:
+        by_case.setdefault(row.product_dev_case_id, []).append(
+            Sku(
+                id=row.id,
+                sku_code=row.sku_code,
+                variant_label=row.variant_label,
+                planned_quantity=row.planned_quantity,
+            )
+        )
+    for case in cases:
+        case.skus = tuple(by_case.get(case.id.value, ()))
+    return cases
 
 
 def _position(case: ProductDevelopmentCase) -> CursorPosition:
@@ -216,6 +272,8 @@ class SqlProductCaseRepository:
                 document_id=step.document_id,
             )
         )
+        if step.coding is not None:
+            await self._write_coding(session, context, case, step)
         if step.opens_round is not None:
             await session.execute(
                 sa.insert(_r).values(
@@ -259,6 +317,59 @@ class SqlProductCaseRepository:
                 )
             )
 
+    async def _write_coding(
+        self,
+        session: AsyncSession,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        step: ProductCaseStep,
+    ) -> None:
+        """Step 9's change to the item code or the SKUs. Uniqueness is the
+        database's: a taken code fails here and `_refusal` names it."""
+        change = step.coding
+        scope = {"tenant_id": context.tenant_id, "workspace_id": context.workspace_id}
+        if isinstance(change, ItemCodeIssued):
+            item = change.item_code
+            if change.replaces:
+                await session.execute(
+                    sa.update(_i)
+                    .where(*_in_scope(_i, context), _i.c.id == item.id)
+                    .values(code=item.code)
+                )
+            else:
+                await session.execute(
+                    sa.insert(_i).values(
+                        id=item.id,
+                        **scope,
+                        product_dev_case_id=case.id.value,
+                        code=item.code,
+                        issued_by=step.actor_id,
+                    )
+                )
+        elif isinstance(change, SkuAdded):
+            sku = change.sku
+            await session.execute(
+                sa.insert(_s).values(
+                    id=sku.id,
+                    **scope,
+                    product_dev_case_id=case.id.value,
+                    item_code_id=change.item_code_id,
+                    sku_code=sku.sku_code,
+                    variant_label=sku.variant_label,
+                    planned_quantity=sku.planned_quantity,
+                    added_by=step.actor_id,
+                )
+            )
+        elif isinstance(change, SkuRemoved):
+            removed = await session.execute(
+                sa.delete(_s).where(*_in_scope(_s, context), _s.c.id == change.sku_id)
+            )
+            assert isinstance(removed, CursorResult)
+            if removed.rowcount != 1:
+                raise ConflictError(
+                    "this SKU is already removed", details={"sku_id": str(change.sku_id)}
+                )
+
     def _refusal(
         self, exc: IntegrityError, case: ProductDevelopmentCase, steps: list[ProductCaseStep]
     ) -> DWError | None:
@@ -267,6 +378,21 @@ class SqlProductCaseRepository:
             return ConflictError(
                 "mã đề xuất này đã có trong tenant",
                 details={"constraint": name, "proposal_code": case.proposal_code},
+            )
+        coding = steps[-1].coding if steps else None
+        if name == ITEM_CODE_CONSTRAINT and isinstance(coding, ItemCodeIssued):
+            return ConflictError(
+                f"mã hàng {coding.item_code.code} đã có trong công ty",
+                details={"constraint": name, "item_code": coding.item_code.code},
+            )
+        if name == SKU_CODE_CONSTRAINT and isinstance(coding, SkuAdded):
+            return ConflictError(
+                f"mã SKU {coding.sku.sku_code} đã có trong công ty",
+                details={"constraint": name, "sku_code": coding.sku.sku_code},
+            )
+        if name == _ONE_ITEM_CODE_CONSTRAINT:
+            return ConflictError(
+                "hồ sơ này đã có mã hàng", details={"constraint": name, "case_id": str(case.id)}
             )
         if name in _DOCUMENT_CONSTRAINTS and steps:
             # A command takes one step; the last is the one whose paper it was.
@@ -332,7 +458,10 @@ class SqlProductCaseRepository:
                     _with_current_round().where(*_in_scope(_c, context), _c.c.id == case_id.value)
                 )
             ).first()
-        return None if row is None else _case(row)
+            if row is None:
+                return None
+            (case,) = await _with_skus(session, context, [_case(row)])
+        return case
 
     async def case_workspace(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
         async with tenant_session(
@@ -368,6 +497,7 @@ class SqlProductCaseRepository:
                             case.interrupted_state.value if case.interrupted_state else None
                         ),
                         sample_round=case.sample_round,
+                        signoff_round=case.signoff_round,
                         version=case.version,
                     )
                 )
@@ -413,7 +543,8 @@ class SqlProductCaseRepository:
                     )
                 )
             ).all()
-        return build_page([_case(row) for row in rows], request=request, position_of=_position)
+            cases = await _with_skus(session, context, [_case(row) for row in rows])
+        return build_page(cases, request=request, position_of=_position)
 
     async def list_transitions(
         self, context: AccessContext, case_id: ProductDevelopmentCaseId
@@ -481,21 +612,22 @@ class SqlProductCaseRepository:
 
 
 @dataclass(frozen=True)
-class SqlWorkspacesAwaitingReview:
-    """Implements `WorkspacesAwaitingReviewPort` through
-    `supply_chain.workspaces_awaiting_bod_review()`, the one SECURITY DEFINER
-    read that crosses tenants for the reconcile lane. Ids only; every read
+class SqlWorkspacesAwaitingApproval:
+    """Implements `WorkspacesAwaitingApprovalPort` through
+    `supply_chain.workspaces_awaiting_product_approval()`, the one SECURITY
+    DEFINER read that crosses tenants for the reconcile lane: workspaces with
+    a case waiting for BGĐ's review or for its sign-off. Ids only; every read
     after it runs under that tenant's and workspace's RLS."""
 
     session_factory: async_sessionmaker[AsyncSession]
 
-    async def awaiting_bod_review(self) -> list[tuple[uuid.UUID, uuid.UUID]]:
+    async def awaiting_approval(self) -> list[tuple[uuid.UUID, uuid.UUID]]:
         async with self.session_factory() as session, session.begin():
             rows = (
                 await session.execute(
                     sa.text(
                         "SELECT tenant_id, workspace_id"
-                        " FROM supply_chain.workspaces_awaiting_bod_review()"
+                        " FROM supply_chain.workspaces_awaiting_product_approval()"
                     )
                 )
             ).all()

@@ -89,6 +89,7 @@ function productCase(overrides: Partial<ProductCase> = {}): ProductCase {
     state: "proposed",
     interrupted_state: null,
     sample_round: 0,
+    signoff_round: 0,
     created_by: ME,
     created_at: "2026-10-05T02:00:00Z",
     version: 1,
@@ -108,6 +109,7 @@ function option(
     document_type: null,
     document_required: false,
     documents_since: null,
+    unmet: [],
     ...overrides,
   };
 }
@@ -151,6 +153,8 @@ function detail(overrides: Partial<ProductCaseDetail> = {}): ProductCaseDetail {
     ],
     actions: TESTING_ACTIONS,
     pending_review: null,
+    item_code: null,
+    skus: [],
     ...overrides,
   };
 }
@@ -523,6 +527,10 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
           approval_id: "77777777-7777-4777-8777-777777777777",
           created_at: "2026-10-06T02:00:00Z",
           required_scope: "supply_chain.approve.bod",
+          step: null,
+          step_label: null,
+          step_no: null,
+          steps: [],
         },
       }),
     );
@@ -798,6 +806,263 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
     expect(
       await within(dialog).findByText(
         /Chưa có Profile SP \(BM04\) nào cho bước này/,
+      ),
+    ).toBeTruthy();
+  });
+});
+
+describe("Hồ sơ phát triển sản phẩm: mã hàng, SKU, trình ký (bước 9)", () => {
+  const CODING_ACTIONS: ProductActionOption[] = [
+    option("issue_item_code", { required_scope: ORDERING }),
+    option("add_sku", { required_scope: ORDERING, unmet: ["item_code"] }),
+    option("remove_sku", { required_scope: ORDERING }),
+    option("submit_for_signoff", {
+      required_scope: ORDERING,
+      unmet: ["item_code", "sku"],
+    }),
+    option("cancel", { required_scope: ORDERING, reason_required: true }),
+  ];
+  const ITEM = { id: "55555555-5555-4555-8555-555555555555", code: "MH-0001" };
+  const SKU = {
+    id: "66666666-6666-4666-8666-666666666666",
+    sku_code: "MH-0001-RED",
+    variant_label: "Đỏ 24cm",
+    planned_quantity: 300,
+  };
+
+  function coding(overrides: Partial<ProductCaseDetail> = {}) {
+    return detail({
+      state: "item_coding",
+      actions: CODING_ACTIONS,
+      ...overrides,
+    });
+  }
+
+  it("issues the item code and locks SKUs and submitting until it exists, with the reason", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(coding());
+    takeProductCaseStep.mockResolvedValue({
+      ...productCase({ state: "item_coding" }),
+      review: null,
+    });
+    renderDetail();
+
+    expect(await screen.findByText("Chưa có mã hàng.")).toBeTruthy();
+    // The server's `unmet`, in words, beside the locked controls.
+    expect(
+      screen.getByText("Thêm SKU: Cần mã hàng chính thức trước."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Trình ký: Cần mã hàng chính thức và ít nhất một SKU trước.",
+      ),
+    ).toBeTruthy();
+    const submit = screen.getByRole("button", { name: "Trình ký" });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    // The coding steps are the card's, not buttons in the step list.
+    expect(screen.queryByRole("button", { name: "Bỏ SKU" })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Mã hàng"), {
+      target: { value: "MH-0001" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cấp mã hàng" }));
+
+    await waitFor(() => expect(takeProductCaseStep).toHaveBeenCalled());
+    const [caseId, input, key] = takeProductCaseStep.mock.calls[0]!;
+    expect(caseId).toBe(CASE_ID);
+    expect(input).toEqual({ action: "issue_item_code", itemCode: "MH-0001" });
+    expect(typeof key).toBe("string");
+  });
+
+  it("shows a code taken in the company at its field", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(coding());
+    takeProductCaseStep.mockRejectedValue(
+      new ApiError(409, {
+        code: "conflict",
+        message: "mã hàng MH-0001 đã có trong công ty",
+        details: {
+          constraint: "uq_item_codes_tenant_id_code",
+          item_code: "MH-0001",
+        },
+      }),
+    );
+    renderDetail();
+
+    fireEvent.change(await screen.findByLabelText("Mã hàng"), {
+      target: { value: "MH-0001" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cấp mã hàng" }));
+
+    expect(
+      await screen.findByText("mã hàng MH-0001 đã có trong công ty"),
+    ).toBeTruthy();
+    // At the field, not as a page-level alert.
+    expect(screen.queryByRole("alert", { name: /đã có/ })).toBeNull();
+  });
+
+  it("adds a SKU under the item code and removes one after a confirmation", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(
+      coding({
+        item_code: ITEM,
+        skus: [SKU],
+        actions: CODING_ACTIONS.map((o) =>
+          o.action === "add_sku" || o.action === "submit_for_signoff"
+            ? { ...o, unmet: [] }
+            : o,
+        ),
+      }),
+    );
+    takeProductCaseStep.mockResolvedValue({
+      ...productCase({ state: "item_coding" }),
+      review: null,
+    });
+    renderDetail();
+
+    expect(await screen.findByText("MH-0001-RED")).toBeTruthy();
+    expect(screen.getByText("Đỏ 24cm")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Mã SKU"), {
+      target: { value: "MH-0001-BLUE" },
+    });
+    fireEvent.change(screen.getByLabelText("Biến thể"), {
+      target: { value: "Xanh 24cm" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Thêm SKU" }));
+    await waitFor(() =>
+      expect(takeProductCaseStep.mock.calls[0]![1]).toEqual({
+        action: "add_sku",
+        sku: { skuCode: "MH-0001-BLUE", variantLabel: "Xanh 24cm" },
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Bỏ" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getAllByText("Bỏ SKU MH-0001-RED?").length,
+    ).toBeGreaterThan(0);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Bỏ SKU" }));
+    await waitFor(() =>
+      expect(takeProductCaseStep.mock.calls[1]![1]).toEqual({
+        action: "remove_sku",
+        skuId: SKU.id,
+      }),
+    );
+    // A coded case may be submitted.
+    expect(
+      (screen.getByRole("button", { name: "Trình ký" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it("locks coding for a role without the ordering duty, with the duty named", async () => {
+    scopes = new Set([RND]);
+    getProductCase.mockResolvedValue(coding({ item_code: ITEM, skus: [SKU] }));
+    renderDetail();
+
+    expect(
+      await screen.findByText(/Cấp mã hàng|Sửa mã hàng/, {
+        selector: "span",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Mã hàng mới")).toBeNull();
+    expect(
+      screen.getAllByText(/Bước này cần nhiệm vụ Cung ứng/).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("while waiting for sign-off shows the order, the step waiting and its link, and locks the codes", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(
+      detail({
+        state: "pending_signoff",
+        signoff_round: 1,
+        item_code: ITEM,
+        skus: [SKU],
+        actions: [
+          option("cancel", { required_scope: ORDERING, reason_required: true }),
+        ],
+        pending_review: {
+          approval_id: "88888888-8888-4888-8888-888888888888",
+          created_at: "2026-10-07T02:00:00Z",
+          required_scope: "supply_chain.approve.accounting",
+          step: "accounting",
+          step_label: "Kế toán",
+          step_no: 2,
+          steps: [
+            { step: "bod", label: "BGĐ" },
+            { step: "accounting", label: "Kế toán" },
+          ],
+        },
+      }),
+    );
+    renderDetail();
+
+    expect(
+      await screen.findByText("Hồ sơ chờ ký: bước 2/2, Kế toán."),
+    ).toBeTruthy();
+    expect(screen.getByText("Đã ký")).toBeTruthy();
+    expect(screen.getByText("Đang chờ ký")).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Chờ người có quyền Kế toán \(supply_chain\.approve\.accounting\)/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Mở yêu cầu ký/ }).getAttribute("href"),
+    ).toBe("/approvals/88888888-8888-4888-8888-888888888888");
+    expect(
+      screen.getByText(
+        "Thêm SKU: Hồ sơ đang chờ ký; mã hàng và SKU khóa tới khi có kết quả ký.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Mã SKU")).toBeNull();
+    expect(screen.getByRole("button", { name: "Hủy hồ sơ" })).toBeTruthy();
+  });
+
+  it("says the sign-off request is not visible or not raised yet, honestly", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(
+      detail({
+        state: "pending_signoff",
+        item_code: ITEM,
+        skus: [SKU],
+        actions: [
+          option("cancel", { required_scope: ORDERING, reason_required: true }),
+        ],
+        pending_review: null,
+      }),
+    );
+    renderDetail();
+
+    expect(
+      await screen.findByText("Đã trình ký; chưa thấy yêu cầu ký."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Mở yêu cầu ký/ })).toBeNull();
+  });
+
+  it("tells who submitted when the sign-off was not raised", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(
+      coding({
+        item_code: ITEM,
+        skus: [SKU],
+        actions: CODING_ACTIONS.map((o) => ({ ...o, unmet: [] })),
+      }),
+    );
+    takeProductCaseStep.mockResolvedValue({
+      ...productCase({ state: "pending_signoff" }),
+      review: "not_raised",
+    });
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Trình ký" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Trình ký" }));
+
+    expect(
+      await screen.findByText(
+        "Đã ghi: Trình ký. Chưa tạo được yêu cầu ký; hệ thống sẽ tự trình lại.",
       ),
     ).toBeTruthy();
   });
