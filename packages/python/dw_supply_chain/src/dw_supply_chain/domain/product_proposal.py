@@ -24,17 +24,22 @@ the draft in the same transaction, guarded on that version (`DraftClaim`), so a
 second "Đồng ý" — or one that crossed a change — creates nothing.
 
 Supplier is not collected here: ADR 0016 amendment 3 stamps it at
-`request_sample`, step 2. Category is grounded free text: no Category list exists
-until S6 (ADR 0019), and none is derived from existing cases.
+`request_sample`, step 2. Category is grounded, then resolved against the
+tenant's own Category list (stage-1 ticket 06, ADR 0019) by `resolve_category`:
+the person's words must be one Category's key or label, case and accents
+ignored, and exactly one. No match, or more than one, is asked again with the
+tenant's own options; nothing is chosen for the person, and the model never sees
+the list.
 """
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
+from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -136,6 +141,28 @@ def ground(intent: ProductProposalIntent, message: str) -> GroundedProposal:
         else:
             dropped.append(field)
     return GroundedProposal(kind=intent.kind, values=values, dropped=tuple(dropped))
+
+
+class CategoryOption(Protocol):
+    """One Category of the tenant's list, as `sla_policy.ProductCategory` is."""
+
+    @property
+    def key(self) -> str: ...
+
+    @property
+    def label(self) -> str: ...
+
+
+def resolve_category[OptionT: CategoryOption](
+    text: str, options: Sequence[OptionT]
+) -> list[OptionT]:
+    """The tenant's Categories whose key or label IS the person's words, case,
+    accents and spacing ignored ("chao", "CHẢO" find "Chảo"). Resolved only
+    when exactly one matches; the caller asks again otherwise. A match against
+    the tenant's own list, not a synonym table: "chảo chống dính" is not
+    "Chảo"."""
+    wanted = fold(text)
+    return [o for o in options if wanted in (fold(o.key), fold(o.label))]
 
 
 # Whole-message replies, compared in folded form (case, accents and spacing

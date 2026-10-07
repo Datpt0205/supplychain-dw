@@ -1,5 +1,6 @@
 """Unit: ProposeProductCase / GetProductCase / ListProductCases /
-ListProductCaseTransitions / AdvanceProductCase (stage-1 tickets 01-03).
+ListProductCaseTransitions / AdvanceProductCase (stage-1 tickets 01-03), and
+the Category, the case's SLA and `ReassignProductCasePic` (ticket 06).
 
 Fakes stand in for the case records, the document records and the policy
 store; each honours its port the way the database does (tenant AND workspace
@@ -54,6 +55,7 @@ from dw_supply_chain.application.product_cases import (
     ListProductCaseTransitions,
     PlaceOrder,
     ProposeProductCase,
+    ReassignProductCasePic,
 )
 from dw_supply_chain.domain.case_document import (
     CaseDocument,
@@ -77,13 +79,20 @@ from dw_supply_chain.domain.product_development_case import (
     SkuDraft,
 )
 from dw_supply_chain.domain.product_proposal import DraftClaim
+from dw_supply_chain.domain.sla_evaluation import SLAEvaluationStatus
+from dw_supply_chain.policy_files import SLA_POLICY_FILE
 from dw_supply_chain.product_action_duties import (
     PRODUCT_ACTION_DUTIES_POLICY_ID,
     SupplyChainProductActionDuties,
 )
+from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
 
 pytestmark = pytest.mark.unit
 
+# The shipped platform default: categories `noi`, `chao`; bm04 2 days.
+SLA = load_supply_chain_sla_policy(
+    Path(__file__).resolve().parents[5] / "configs" / "policies" / SLA_POLICY_FILE
+)
 TENANT, WORKSPACE, OTHER_TENANT, OTHER_WORKSPACE = (uuid.uuid4() for _ in range(4))
 NOW = datetime(2026, 10, 5, 9, 0, tzinfo=UTC)
 
@@ -156,6 +165,8 @@ class FakeCases:
     audits: list[AuditEvent] = field(default_factory=list)
     open_rounds: dict[uuid.UUID, int] = field(default_factory=dict)
     po_cases: dict[uuid.UUID, POCase] = field(default_factory=dict)
+    # When each case last moved (its latest history row), as the SQL reads it.
+    moved_at: dict[uuid.UUID, datetime] = field(default_factory=dict)
 
     def _visible(self, context: AccessContext, case: ProductDevelopmentCase) -> bool:
         return (case.tenant_id.value, case.workspace_id.value) == (
@@ -192,6 +203,7 @@ class FakeCases:
         self._drain(case)
         self.audits.append(audit)
         self.rows[case.id.value] = replace(case, _pending_steps=[])
+        self.moved_at[case.id.value] = case.created_at
 
     async def get(
         self, context: AccessContext, case_id: ProductDevelopmentCaseId
@@ -219,6 +231,8 @@ class FakeCases:
         entered = (
             NOW if last and last[-1].action is not ProductAction.RESUME else case.stage_entered_at
         )
+        if last:
+            self.moved_at[case.id.value] = NOW
         self.rows[case.id.value] = replace(
             case, _pending_steps=[], round_opened_at=opened, stage_entered_at=entered
         )
@@ -270,6 +284,15 @@ class FakeCases:
         self.rows[case.id.value] = replace(case, _pending_steps=[])
         po_case.created_at = NOW
         self.po_cases[po_case.id.value] = po_case
+
+    async def state_entered_at(
+        self, context: AccessContext, case_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, datetime]:
+        return {
+            i: self.moved_at[i]
+            for i in case_ids
+            if i in self.moved_at and self._visible(context, self.rows[i])
+        }
 
     async def po_case_of(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
         return next(
@@ -409,13 +432,20 @@ class Stack:
             authz=ScopeAuthorizationService(),
             policy_override_repo=self.policies,
             platform_default_duties=DUTIES,
+            platform_default_sla_policy=SLA,
             ids=Uuid4Generator(),
             clock=FixedClock(NOW),
         )
 
-    def get(self) -> GetProductCase:
+    def get(self, now: datetime = NOW) -> GetProductCase:
         return GetProductCase(
-            self.cases, ScopeAuthorizationService(), self.policies, DUTIES, self.approvals
+            self.cases,
+            ScopeAuthorizationService(),
+            self.policies,
+            DUTIES,
+            SLA,
+            self.approvals,
+            FixedClock(now),
         )
 
     def advance(self) -> AdvanceProductCase:
@@ -432,7 +462,7 @@ class Stack:
 
     async def proposed(self, *, code: str = "DX-001") -> ProductDevelopmentCase:
         return await self.propose().handle(
-            _context(SC_OPERATOR), proposal_code=code, product_name="Nồi 24cm", category="Nồi"
+            _context(SC_OPERATOR), proposal_code=code, product_name="Nồi 24cm", category="noi"
         )
 
     async def testing(self) -> ProductDevelopmentCase:
@@ -492,7 +522,7 @@ async def test_the_proposer_is_the_pic_and_the_proposal_is_audited() -> None:
         _context(SC_OPERATOR, principal=proposer),
         proposal_code="DX-001",
         product_name="Nồi 24cm",
-        category="Nồi",
+        category="noi",
     )
 
     assert case.pic_user_id == proposer
@@ -525,7 +555,7 @@ async def test_rnd_cannot_propose() -> None:
         await (
             Stack()
             .propose()
-            .handle(_context(SC_RND), proposal_code="DX-1", product_name="Nồi", category="Nồi")
+            .handle(_context(SC_RND), proposal_code="DX-1", product_name="Nồi", category="noi")
         )
 
 
@@ -547,7 +577,7 @@ async def test_proposing_needs_the_product_case_write_and_the_proposing_duty(
     stack = Stack()
     with pytest.raises(PermissionDeniedError):
         await stack.propose().handle(
-            _context(scopes), proposal_code="DX-1", product_name="Nồi", category="Nồi"
+            _context(scopes), proposal_code="DX-1", product_name="Nồi", category="noi"
         )
     assert stack.cases.rows == {}
 
@@ -930,9 +960,7 @@ async def test_another_tenants_or_workspaces_case_is_not_found(
     caller = _context(everything, tenant=tenant, workspace=workspace)
 
     with pytest.raises(NotFoundError):
-        await GetProductCase(
-            stack.cases, ScopeAuthorizationService(), stack.policies, DUTIES, stack.approvals
-        ).handle(caller, case.id)
+        await stack.get().handle(caller, case.id)
     with pytest.raises(NotFoundError):
         await ListProductCaseTransitions(stack.cases, ScopeAuthorizationService()).handle(
             caller, case.id
@@ -989,7 +1017,7 @@ async def test_reading_needs_the_read_scope(read: str) -> None:
     with pytest.raises(PermissionDeniedError):
         if read == "get":
             await GetProductCase(
-                stack.cases, authz, stack.policies, DUTIES, stack.approvals
+                stack.cases, authz, stack.policies, DUTIES, SLA, stack.approvals, FixedClock(NOW)
             ).handle(caller, case.id)
         elif read == "list":
             await ListProductCases(stack.cases, authz).handle(
@@ -1021,7 +1049,7 @@ async def test_the_pic_filter_narrows_and_everyone_with_read_sees_every_case() -
             _context(SC_OPERATOR, principal=principal),
             proposal_code=code,
             product_name="Nồi",
-            category="Nồi",
+            category="noi",
         )
     listing = ListProductCases(stack.cases, ScopeAuthorizationService())
     reader = _context(frozenset({PRODUCT_CASE_READ}))
@@ -1645,3 +1673,219 @@ async def test_an_ordered_case_shows_its_po_case() -> None:
 
     assert detail.po_case_id == placed.po_case.id.value
     assert detail.case.available_actions() == frozenset()
+
+
+# ---- the Category (ticket 06, ADR 0019) -----------------------------------------
+
+
+async def test_propose_stamps_a_category_of_the_tenants_list_as_its_key() -> None:
+    stack = Stack()
+    case = await stack.propose().handle(
+        _context(SC_OPERATOR), proposal_code="DX-1", product_name="Chảo 28", category="chao"
+    )
+    assert stack.cases.rows[case.id.value].category == "chao"
+
+
+@pytest.mark.parametrize("category", ["Chảo", "ấm", "CHAO", "noi "])
+async def test_propose_refuses_a_category_not_in_the_tenants_list(category: str) -> None:
+    """Exactly a key of the list (a trailing space aside, as every field is
+    trimmed): the web form sends a key; the chat resolves words to one first."""
+    stack = Stack()
+    if category.strip() == "noi":
+        case = await stack.propose().handle(
+            _context(SC_OPERATOR), proposal_code="DX-1", product_name="Nồi", category=category
+        )
+        assert case.category == "noi"
+        return
+    with pytest.raises(DomainError, match="Category") as refused:
+        await stack.propose().handle(
+            _context(SC_OPERATOR), proposal_code="DX-1", product_name="X", category=category
+        )
+    assert refused.value.details == {"field": "category", "category": category}
+    assert stack.cases.rows == {}
+
+
+async def test_the_category_list_is_the_callers_tenants_never_another() -> None:
+    """Tenant B's own list has `bep_tu`; tenant A's (the platform's) does not.
+    A proposes with it and is refused; B is not."""
+    stack = Stack()
+    stack.policies.stored[(OTHER_TENANT, "supply_chain_sla")] = {
+        **SLA.model_dump(mode="json"),
+        "categories": [{"key": "bep_tu", "label": "Bếp từ"}],
+        "by_category": {},
+    }
+    with pytest.raises(DomainError):
+        await stack.propose().handle(
+            _context(SC_OPERATOR), proposal_code="DX-1", product_name="Bếp", category="bep_tu"
+        )
+    case = await stack.propose().handle(
+        _context(SC_OPERATOR, tenant=OTHER_TENANT, workspace=OTHER_WORKSPACE),
+        proposal_code="DX-1",
+        product_name="Bếp",
+        category="bep_tu",
+    )
+    assert case.category == "bep_tu"
+    assert [c.key for c in await stack.propose().categories(_context(SC_OPERATOR))] == [
+        "noi",
+        "chao",
+    ]
+
+
+async def test_propose_checks_the_category_after_who_may() -> None:
+    """A caller who may not propose learns nothing about the list."""
+    stack = Stack()
+    with pytest.raises(PermissionDeniedError):
+        await stack.propose().handle(
+            _context(SC_RND), proposal_code="DX-1", product_name="X", category="not-a-category"
+        )
+
+
+# ---- the case's SLA (ticket 06) -------------------------------------------------
+
+
+async def test_the_case_page_carries_its_steps_sla_under_its_category() -> None:
+    stack = Stack()
+    case = await stack.profiling()
+    # bm04 is 2 days in the shipped default; the case reached it at NOW.
+
+    on_time = await stack.get(NOW + timedelta(days=1)).handle(_context(SC_OPERATOR), case.id)
+    late = await stack.get(NOW + timedelta(days=3)).handle(_context(SC_OPERATOR), case.id)
+
+    assert (on_time.sla.milestone, on_time.sla.status) == ("bm04", SLAEvaluationStatus.ON_TRACK)
+    assert (late.sla.status, late.sla.age_days, late.sla.threshold_days) == (
+        SLAEvaluationStatus.BREACHED,
+        3,
+        2,
+    )
+
+
+async def test_a_proposed_case_has_no_milestone() -> None:
+    stack = Stack()
+    case = await stack.proposed()
+    detail = await stack.get(NOW + timedelta(days=30)).handle(_context(SC_OPERATOR), case.id)
+    assert detail.sla.status is SLAEvaluationStatus.NOT_APPLICABLE
+
+
+# ---- reassign_pic (ticket 06) ---------------------------------------------------
+
+
+@dataclass
+class FakeMembers:
+    """`WorkspaceMembersPort`: who belongs to which workspace."""
+
+    of: dict[uuid.UUID, set[uuid.UUID]] = field(default_factory=dict)
+
+    async def members(
+        self, context: AccessContext, workspace_id: uuid.UUID, user_ids: frozenset[uuid.UUID]
+    ) -> frozenset[uuid.UUID]:
+        return frozenset(user_ids & self.of.get(workspace_id, set()))
+
+
+def _reassign(stack: Stack, members: FakeMembers) -> ReassignProductCasePic:
+    return ReassignProductCasePic(
+        repo=stack.cases,
+        members=members,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=FixedClock(NOW),
+    )
+
+
+async def test_tp_cung_ung_hands_the_case_to_a_member_with_a_reason_and_it_is_audited() -> None:
+    stack = Stack()
+    case = await stack.proposed()
+    new_pic, lead = uuid.uuid4(), uuid.uuid4()
+
+    changed = await _reassign(stack, FakeMembers({WORKSPACE: {new_pic}})).handle(
+        _context(SC_SUPPLY_LEAD, principal=lead),
+        case_id=case.id,
+        new_pic=new_pic,
+        reason="Chị Hà nghỉ phép",
+    )
+
+    assert changed.pic_user_id == new_pic
+    assert stack.cases.rows[case.id.value].pic_user_id == new_pic
+    assert stack.cases.rows[case.id.value].state is ProductDevState.PROPOSED
+    audit = stack.cases.audits[-1]
+    assert (audit.action, audit.actor_id.value) == ("supply_chain.product_case.reassign_pic", lead)
+    assert audit.details == {
+        "from_pic_user_id": str(case.pic_user_id),
+        "to_pic_user_id": str(new_pic),
+        "reason": "Chị Hà nghỉ phép",
+    }
+
+
+async def test_reassigning_needs_the_supply_lead_duty() -> None:
+    stack = Stack()
+    case = await stack.proposed()
+    new_pic = uuid.uuid4()
+    with pytest.raises(PermissionDeniedError):
+        await _reassign(stack, FakeMembers({WORKSPACE: {new_pic}})).handle(
+            _context(SC_OPERATOR), case_id=case.id, new_pic=new_pic, reason="x"
+        )
+    assert stack.cases.rows[case.id.value].pic_user_id == case.pic_user_id
+
+
+@pytest.mark.parametrize("reason", [None, "", "   "])
+async def test_reassigning_needs_a_reason(reason: str | None) -> None:
+    stack = Stack()
+    case = await stack.proposed()
+    new_pic = uuid.uuid4()
+    with pytest.raises(DomainError, match="reason"):
+        await _reassign(stack, FakeMembers({WORKSPACE: {new_pic}})).handle(
+            _context(SC_SUPPLY_LEAD), case_id=case.id, new_pic=new_pic, reason=reason
+        )
+
+
+async def test_the_new_pic_must_be_a_member_of_the_cases_workspace() -> None:
+    """A member of another workspace of the same tenant is not one."""
+    stack = Stack()
+    case = await stack.proposed()
+    elsewhere = uuid.uuid4()
+    with pytest.raises(DomainError, match="member"):
+        await _reassign(stack, FakeMembers({OTHER_WORKSPACE: {elsewhere}})).handle(
+            _context(SC_SUPPLY_LEAD), case_id=case.id, new_pic=elsewhere, reason="x"
+        )
+    assert stack.cases.rows[case.id.value].pic_user_id == case.pic_user_id
+
+
+@pytest.mark.parametrize(
+    ("tenant", "workspace"), [(OTHER_TENANT, WORKSPACE), (TENANT, OTHER_WORKSPACE)]
+)
+async def test_another_tenant_or_workspace_cannot_reassign_the_case(
+    tenant: uuid.UUID, workspace: uuid.UUID
+) -> None:
+    stack = Stack(cases=LeakyCases())
+    case = await stack.proposed()
+    new_pic = uuid.uuid4()
+    with pytest.raises(NotFoundError):
+        await _reassign(stack, FakeMembers({workspace: {new_pic}})).handle(
+            _context(SC_SUPPLY_LEAD, tenant=tenant, workspace=workspace),
+            case_id=case.id,
+            new_pic=new_pic,
+            reason="x",
+        )
+    assert stack.cases.rows[case.id.value].pic_user_id == case.pic_user_id
+
+
+async def test_an_ordered_case_refuses_reassign_its_pic_lives_on_the_po_case() -> None:
+    stack = Stack()
+    case = await _ready_to_order(stack)
+    placed = await _place_order(stack).handle(_context(SC_OPERATOR), case_id=case.id)
+    new_pic = uuid.uuid4()
+
+    with pytest.raises(ConflictError, match="ordered"):
+        await _reassign(stack, FakeMembers({WORKSPACE: {new_pic}})).handle(
+            _context(SC_SUPPLY_LEAD), case_id=case.id, new_pic=new_pic, reason="x"
+        )
+    assert stack.cases.rows[case.id.value].pic_user_id == case.pic_user_id
+    assert stack.cases.po_cases[placed.po_case.id.value].pic_user_id == case.pic_user_id
+
+
+async def test_reassigning_to_the_pic_it_has_is_refused() -> None:
+    stack = Stack()
+    case = await stack.proposed()
+    with pytest.raises(DomainError, match="already"):
+        await _reassign(stack, FakeMembers({WORKSPACE: {case.pic_user_id}})).handle(
+            _context(SC_SUPPLY_LEAD), case_id=case.id, new_pic=case.pic_user_id, reason="x"
+        )

@@ -5,5 +5,15 @@
     "proposal_code": "CH-28",
     "product_name": "chao chong dinh 28cm",
     "category": "Chao"
-  }
+  },
+  "categories": [
+    {
+      "key": "noi",
+      "label": "Nồi"
+    },
+    {
+      "key": "chao",
+      "label": "Chảo"
+    }
+  ]
 }

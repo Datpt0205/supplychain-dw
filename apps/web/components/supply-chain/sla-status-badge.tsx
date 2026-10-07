@@ -11,8 +11,14 @@ export const MILESTONE_LABEL: Record<string, string> = {
   port_arrival: "về cảng",
   payment: "thanh toán",
   warehouse_receipt: "nhập kho",
+  // Stage 1 (ADR 0019, ticket 06).
+  sample_collection: "lấy mẫu",
+  sample_testing: "test mẫu",
+  bod_review: "BGĐ duyệt mẫu",
   bm04: "BM04",
   supplier_confirmation: "thống nhất với NCC",
+  item_coding: "tạo mã hàng",
+  signoff: "trình ký",
 };
 
 export function milestoneLabel(milestone: string | null | undefined): string {

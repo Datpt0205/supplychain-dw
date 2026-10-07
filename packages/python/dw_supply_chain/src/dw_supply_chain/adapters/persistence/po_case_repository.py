@@ -291,6 +291,7 @@ class SqlPOCaseRepository:
                         ),
                         version=case.version,
                         order_kind=case.order_kind.value,
+                        pic_user_id=case.pic_user_id,
                     )
                 )
                 assert isinstance(result, CursorResult)

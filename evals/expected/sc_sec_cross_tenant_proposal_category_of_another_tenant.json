@@ -1,0 +1,16 @@
+{
+  "kind": "propose_product",
+  "kept": {
+    "proposal_code": "BT-02",
+    "product_name": "bếp từ đôi"
+  },
+  "dropped": [],
+  "missing": [
+    "category"
+  ],
+  "complete": false,
+  "offered": [
+    "Nồi",
+    "Chảo"
+  ]
+}

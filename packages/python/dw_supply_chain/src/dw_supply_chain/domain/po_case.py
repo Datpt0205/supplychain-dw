@@ -358,6 +358,29 @@ class POCase:
         self.interrupted_state = None
         self.version += 1
 
+    # -- the PIC ---------------------------------------------------------------
+
+    def reassign_pic(self, *, new_pic: uuid.UUID, reason: str | None) -> uuid.UUID | None:
+        """Hands the case to another PIC (stage-1 ticket 06), with a reason.
+        Not a state transition: the state stays, no history row is written,
+        the audit event says who changed it and why. A product case's PIC is
+        its own, so this never reaches back to the case ĐẶT HÀNG opened this
+        one from. Refused on a finished case, and to the PIC it already has.
+        Returns the PIC it had."""
+        if reason is None or not reason.strip():
+            raise DomainError("reassign_pic requires a reason", details={"field": "reason"})
+        if self.state in TERMINAL_STATES:
+            raise ConflictError(
+                f"cannot reassign the PIC of a case in {self.state.value}",
+                details={"case_id": str(self.id), "current_state": self.state.value},
+            )
+        if new_pic == self.pic_user_id:
+            raise DomainError("this person is already the PIC", details={"field": "pic_user_id"})
+        previous = self.pic_user_id
+        self.pic_user_id = new_pic
+        self.version += 1
+        return previous
+
     # -- terminal escape hatch ----------------------------------------------
 
     def cancel(self, reason: str) -> None:

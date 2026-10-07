@@ -3,9 +3,10 @@
   "kept": {
     "proposal_code": "CH-28",
     "product_name": "chao chong dinh 28cm",
-    "category": "Chao"
+    "category": "chao"
   },
   "dropped": [],
   "missing": [],
-  "complete": true
+  "complete": true,
+  "offered": []
 }

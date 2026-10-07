@@ -24,7 +24,13 @@ from dw_supply_chain.domain.case_document import (
     DocumentType,
 )
 from dw_supply_chain.domain.delay_impact import DelayImpactAnalysis
-from dw_supply_chain.domain.follow_up import FollowUpDue, FollowUpKind, FollowUpStatus
+from dw_supply_chain.domain.follow_up import (
+    FollowUpDue,
+    FollowUpKey,
+    FollowUpKind,
+    FollowUpStatus,
+    follow_up_key,
+)
 from dw_supply_chain.domain.po_case import (
     TERMINAL_STATES,
     CaseState,
@@ -404,28 +410,35 @@ class TenantPlanPort(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class FollowUpDraft:
-    """A follow-up about to open: what is due, with its id and the recipient
-    scopes stamped from the tenant's policy at this moment."""
+    """A follow-up about to open: what is due, with its id, the recipient
+    scopes stamped from the tenant's policy at this moment, and the PIC
+    stamped beside them when the policy routes the kind to `pic` and the PIC
+    is a member of the case's workspace now (None otherwise)."""
 
     id: uuid.UUID
     due: FollowUpDue
     recipient_scopes: frozenset[str]
+    recipient_user_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class FollowUpRecord:
     id: uuid.UUID
-    po_case_id: uuid.UUID
+    case_kind: CaseKind
+    case_id: uuid.UUID
     workspace_id: uuid.UUID
-    # None while the case awaits its PO (ADR 0017).
-    po_reference: str | None
-    supplier_name: str
+    # The PO reference (None while the case awaits its PO, ADR 0017), or a
+    # product case's proposal code.
+    reference: str | None
+    # None for a product case before its sample is requested.
+    supplier_name: str | None
     kind: FollowUpKind
     episode: str
     milestone: str | None
     days: int
     limit_days: int | None
     recipient_scopes: frozenset[str]
+    recipient_user_id: uuid.UUID | None
     status: FollowUpStatus
     opened_at: datetime
     notified_at: datetime | None
@@ -434,8 +447,13 @@ class FollowUpRecord:
     close_note: str | None
 
     @property
-    def key(self) -> tuple[str, FollowUpKind, str]:
-        return (str(self.po_case_id), self.kind, self.episode)
+    def key(self) -> FollowUpKey:
+        return follow_up_key(self.case_kind, self.case_id, self.kind, self.episode)
+
+    def handed_to(self, principal_id: uuid.UUID, scopes: frozenset[str]) -> bool:
+        """Whether a caller is one of those it was handed to: a holder of a
+        stamped scope, or the stamped PIC. Who may close it, and whose it is."""
+        return bool(self.recipient_scopes & scopes) or principal_id == self.recipient_user_id
 
 
 class FollowUpRepositoryPort(Protocol):
@@ -445,7 +463,7 @@ class FollowUpRepositoryPort(Protocol):
         ...
 
     async def list_open(self, context: AccessContext) -> list[FollowUpRecord]:
-        """The tenant's open follow-ups, newest first."""
+        """The open follow-ups of the context's workspace, newest first."""
         ...
 
     async def resolve(self, context: AccessContext, follow_up_ids: Sequence[uuid.UUID]) -> None:
@@ -471,11 +489,12 @@ class FollowUpRepositoryPort(Protocol):
         ...
 
 
-class TenantsWithCasesPort(Protocol):
-    """The one cross-tenant read the follow-up sweep needs: which tenants to
-    visit, as (tenant_id, a workspace_id of theirs). Ids only."""
+class WorkspacesWithCasesPort(Protocol):
+    """The one cross-tenant read the follow-up sweep needs: which workspaces
+    to visit, as (tenant_id, workspace_id), every workspace holding a PO case
+    or a product case. Ids only."""
 
-    async def tenants(self) -> list[tuple[uuid.UUID, uuid.UUID]]: ...
+    async def workspaces(self) -> list[tuple[uuid.UUID, uuid.UUID]]: ...
 
 
 class ScopeHoldersPort(Protocol):
@@ -485,6 +504,31 @@ class ScopeHoldersPort(Protocol):
     async def holding(
         self, context: AccessContext, workspace_id: uuid.UUID, scopes: frozenset[str]
     ) -> list[uuid.UUID]: ...
+
+
+class WorkspaceMembersPort(Protocol):
+    """Which of `user_ids` are members of a workspace of an active tenant now:
+    a PIC is told about a case, and handed one, only while they are.
+    Declared here, satisfied by `dw_platform`."""
+
+    async def members(
+        self, context: AccessContext, workspace_id: uuid.UUID, user_ids: frozenset[uuid.UUID]
+    ) -> frozenset[uuid.UUID]: ...
+
+
+class ActiveProductCasesPort(Protocol):
+    """What the follow-up sweep reads of product cases: those of the context's
+    workspace not yet ordered or cancelled, and when each last moved."""
+
+    async def list_active(self, context: AccessContext) -> list[ProductDevelopmentCase]: ...
+
+    async def state_entered_at(
+        self, context: AccessContext, case_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, datetime]:
+        """When each case made its latest transition (into the state it is in
+        now, a resume included): where its SLA clock starts, as a PO case's
+        does (`POCaseRepositoryPort.bulk_current_state_entered_at`)."""
+        ...
 
 
 class FollowUpNotifierPort(Protocol):
@@ -677,6 +721,13 @@ class ProductCaseRepositoryPort(Protocol):
 
     async def po_case_of(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
         """The PO case ĐẶT HÀNG opened from the case, or None."""
+        ...
+
+    async def state_entered_at(
+        self, context: AccessContext, case_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, datetime]:
+        """When each case made its latest transition: its SLA clock's start
+        (`ActiveProductCasesPort.state_entered_at`, the same answer)."""
         ...
 
 

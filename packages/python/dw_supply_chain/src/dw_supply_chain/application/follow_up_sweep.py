@@ -1,16 +1,21 @@
 """The follow-up sweep: turn due signals into handed-out work, and tell people.
 
-Run by the worker on a cadence. For every tenant with cases it:
+Run by the worker on a cadence. For every workspace with cases it:
 
-1. assesses the active cases with `assess_active_cases`, the one assessment
-   the Attention Queue, the Control Tower and the daily brief share, under
-   the tenant's own SLA policy and supplier-update cadence;
+1. assesses the workspace's active PO cases with `assess_active_cases`, the
+   one assessment the Attention Queue, the Control Tower and the daily brief
+   share, and its active product-development cases with `evaluate_product_sla`
+   (stage-1 ticket 06), under the tenant's own SLA policy, each case under its
+   stamped Category;
 2. opens a follow-up for each due signal whose episode has none yet, stamped
-   with the recipient scopes the tenant's follow-up policy names now;
+   with the recipient scopes the tenant's follow-up policy names now and,
+   where the policy routes the kind to `pic`, the case's PIC if they are a
+   member of the case's workspace now;
 3. resolves the open follow-ups whose signal is gone (an update arrived, the
    case moved on, a reminder became an escalation);
-4. notifies the members of the case's workspace who hold a stamped scope,
-   once per follow-up, and records that it did.
+4. notifies the members of the case's workspace who hold a stamped scope, and
+   the stamped PIC if still a member, once per follow-up, and records that it
+   did.
 
 Every step is idempotent, so a sweep that dies half way is finished by the
 next one: an episode opens once (the database's unique key), a delivery is
@@ -18,9 +23,13 @@ once per recipient (the inbox's), and "notified" is recorded only after the
 delivery. A follow-up nobody holds a scope for stays unnotified, and is
 delivered the first sweep after someone does.
 
+Per workspace, not per tenant: product cases and follow-ups are narrowed by
+workspace in the database, so one workspace's sweep reads nothing of another,
+and a failure in one leaves the others swept.
+
 This is a system process, not a caller: it acts under a context with no
-roles and no scopes, bound to one tenant at a time, and reads nothing across
-tenants except which tenants to visit.
+roles and no scopes, bound to one tenant and workspace at a time, and reads
+nothing across tenants except which workspaces to visit.
 """
 
 from __future__ import annotations
@@ -32,17 +41,33 @@ from dataclasses import dataclass
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import PolicyOverridePort
-from dw_supply_chain.application.handlers import assess_active_cases, resolve_follow_up_policy
+from dw_supply_chain.application.handlers import (
+    assess_active_cases,
+    po_case_link,
+    product_case_link,
+    resolve_follow_up_policy,
+    resolve_sla_policy,
+)
 from dw_supply_chain.application.ports import (
+    ActiveProductCasesPort,
     FollowUpDraft,
     FollowUpNotifierPort,
+    FollowUpRecord,
     FollowUpRepositoryPort,
     POCaseRepositoryPort,
     ScopeHoldersPort,
     SupplierUpdateRepositoryPort,
-    TenantsWithCasesPort,
+    WorkspaceMembersPort,
+    WorkspacesWithCasesPort,
 )
-from dw_supply_chain.domain.follow_up import follow_up_message, follow_ups_due
+from dw_supply_chain.domain.case_document import CaseKind
+from dw_supply_chain.domain.follow_up import (
+    FollowUpDue,
+    follow_up_message,
+    follow_ups_due,
+    product_follow_ups_due,
+)
+from dw_supply_chain.domain.sla_evaluation import evaluate_product_sla
 from dw_supply_chain.follow_up_policy import SupplyChainFollowUpPolicy
 from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
 
@@ -64,49 +89,60 @@ def sweep_context(tenant_id: uuid.UUID, workspace_id: uuid.UUID) -> AccessContex
     )
 
 
+def _case_link(record: FollowUpRecord) -> str:
+    if record.case_kind is CaseKind.PRODUCT:
+        return product_case_link(record.case_id)
+    return po_case_link(record.case_id)
+
+
 @dataclass(frozen=True, slots=True)
 class SweepOutcome:
     opened: int = 0
     resolved: int = 0
     notified: int = 0
-    failed_tenants: int = 0
+    failed_workspaces: int = 0
 
     def __add__(self, other: SweepOutcome) -> SweepOutcome:
         return SweepOutcome(
             opened=self.opened + other.opened,
             resolved=self.resolved + other.resolved,
             notified=self.notified + other.notified,
-            failed_tenants=self.failed_tenants + other.failed_tenants,
+            failed_workspaces=self.failed_workspaces + other.failed_workspaces,
         )
 
 
 @dataclass(frozen=True)
 class SweepFollowUps:
-    tenants: TenantsWithCasesPort
+    workspaces: WorkspacesWithCasesPort
     po_case_repo: POCaseRepositoryPort
+    product_case_repo: ActiveProductCasesPort
     supplier_update_repo: SupplierUpdateRepositoryPort
     policy_override_repo: PolicyOverridePort
     platform_default_sla_policy: SupplyChainSLAPolicy
     platform_default_follow_up_policy: SupplyChainFollowUpPolicy
     follow_up_repo: FollowUpRepositoryPort
     holders: ScopeHoldersPort
+    members: WorkspaceMembersPort
     notifier: FollowUpNotifierPort
     ids: IdGenerator
     clock: UtcClock
 
     async def run(self) -> SweepOutcome:
         total = SweepOutcome()
-        for tenant_id, workspace_id in await self.tenants.tenants():
+        for tenant_id, workspace_id in await self.workspaces.workspaces():
             try:
-                total += await self.sweep_tenant(sweep_context(tenant_id, workspace_id))
+                total += await self.sweep_workspace(sweep_context(tenant_id, workspace_id))
             except Exception:
-                # Broad on purpose: one tenant's bad data must not stop every
-                # other tenant's reminders. The next sweep retries it.
-                logger.exception("follow-up sweep failed for tenant %s", tenant_id)
-                total += SweepOutcome(failed_tenants=1)
+                # Broad on purpose: one workspace's bad data must not stop
+                # every other one's reminders. The next sweep retries it.
+                logger.exception(
+                    "follow-up sweep failed for tenant %s workspace %s", tenant_id, workspace_id
+                )
+                total += SweepOutcome(failed_workspaces=1)
         return total
 
-    async def sweep_tenant(self, context: AccessContext) -> SweepOutcome:
+    async def _due(self, context: AccessContext) -> list[FollowUpDue]:
+        """Every signal due in the context's workspace, PO and product cases."""
         healths = await assess_active_cases(
             context,
             po_case_repo=self.po_case_repo,
@@ -115,21 +151,65 @@ class SweepFollowUps:
             platform_default_policy=self.platform_default_sla_policy,
             clock=self.clock,
         )
-        due = [item for health in healths for item in follow_ups_due(health)]
+        due = [
+            item
+            for health in healths
+            # PO cases are read tenant-wide; each workspace's sweep takes its own.
+            if health.case.workspace_id.value == context.workspace_id
+            for item in follow_ups_due(health)
+        ]
+        products = await self.product_case_repo.list_active(context)
+        if products:
+            entered = await self.product_case_repo.state_entered_at(
+                context, [case.id.value for case in products]
+            )
+            policy = await resolve_sla_policy(
+                context, self.policy_override_repo, self.platform_default_sla_policy
+            )
+            now = self.clock.now()
+            for case in products:
+                assert case.created_at is not None  # read back from a row
+                sla = evaluate_product_sla(
+                    state=case.state,
+                    category=case.category,
+                    entered_current_state_at=entered.get(case.id.value, case.created_at),
+                    now=now,
+                    policy=policy,
+                )
+                due.extend(product_follow_ups_due(case, sla))
+        return due
+
+    async def sweep_workspace(self, context: AccessContext) -> SweepOutcome:
+        due = await self._due(context)
         policy = await resolve_follow_up_policy(
             context, self.policy_override_repo, self.platform_default_follow_up_policy
         )
 
         already_open = await self.follow_up_repo.list_open(context)
         open_keys = {record.key for record in already_open}
+        new = [item for item in due if item.key not in open_keys]
+        # Whom a `pic` recipient may be: PICs still in the workspace, now.
+        present = await self.members.members(
+            context,
+            context.workspace_id,
+            frozenset(
+                item.subject.pic_user_id
+                for item in new
+                if item.subject.pic_user_id is not None and policy.routes_to_pic(item.kind)
+            ),
+        )
         drafts = [
             FollowUpDraft(
                 id=self.ids.new_uuid(),
                 due=item,
                 recipient_scopes=policy.recipient_scopes(item.kind),
+                recipient_user_id=(
+                    item.subject.pic_user_id
+                    if policy.routes_to_pic(item.kind) and item.subject.pic_user_id in present
+                    else None
+                ),
             )
-            for item in due
-            if item.key not in open_keys
+            for item in new
         ]
         opened = await self.follow_up_repo.open(context, drafts)
 
@@ -141,29 +221,35 @@ class SweepFollowUps:
         for record in await self.follow_up_repo.list_open(context):
             if record.notified_at is not None:
                 continue
-            case_context = sweep_context(context.tenant_id, record.workspace_id)
-            recipients = await self.holders.holding(
-                case_context, record.workspace_id, record.recipient_scopes
+            recipients = set(
+                await self.holders.holding(context, record.workspace_id, record.recipient_scopes)
             )
+            if record.recipient_user_id is not None:
+                # Stamped when it opened; told only while still a member
+                # (the channel lane checks again before anything leaves).
+                recipients |= await self.members.members(
+                    context, record.workspace_id, frozenset({record.recipient_user_id})
+                )
             if not recipients:
                 # Nobody holds a scope it was handed to yet; it stays listed
                 # and unnotified, and is delivered once somebody does.
                 continue
             message = follow_up_message(
                 kind=record.kind,
-                po_reference=record.po_reference,
+                case_kind=record.case_kind,
+                reference=record.reference,
                 supplier_name=record.supplier_name,
                 days=record.days,
                 limit_days=record.limit_days,
                 milestone=record.milestone,
             )
             await self.notifier.deliver(
-                case_context,
-                recipients=recipients,
+                context,
+                recipients=sorted(recipients),
                 source_key=f"supply_chain.follow_up:{record.id}",
                 title=message.title,
                 body=message.body,
-                link=f"/supply-chain/po-cases/{record.po_case_id}",
+                link=_case_link(record),
             )
             await self.follow_up_repo.mark_notified(context, record.id)
             notified += 1

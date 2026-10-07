@@ -7,7 +7,15 @@ import {
   within,
 } from "@testing-library/react";
 import { App } from "antd";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 // antd's Table, Select and Modal render slowly under jsdom on Windows; the
 // default 5 s budget measured too tight for a whole page.
@@ -53,6 +61,7 @@ const takeProductCaseStep = vi.fn();
 const listProductCaseDocuments = vi.fn();
 const uploadProductCaseDocument = vi.fn();
 const placeProductOrder = vi.fn();
+const listProductCategories = vi.fn();
 vi.mock("../../../lib/session", () => ({
   apiClient: () => ({
     listProductCases,
@@ -64,6 +73,7 @@ vi.mock("../../../lib/session", () => ({
     listProductCaseDocuments,
     uploadProductCaseDocument,
     placeProductOrder,
+    listProductCategories,
   }),
 }));
 
@@ -85,7 +95,8 @@ function productCase(overrides: Partial<ProductCase> = {}): ProductCase {
     id: CASE_ID,
     proposal_code: "DX-2026-001",
     product_name: "Nồi inox 3 đáy 24cm",
-    category: "Nồi",
+    // A key of the tenant's list; shown by its label.
+    category: "noi",
     supplier_name: null,
     pic_user_id: ME,
     state: "proposed",
@@ -158,6 +169,13 @@ function detail(overrides: Partial<ProductCaseDetail> = {}): ProductCaseDetail {
     item_code: null,
     skus: [],
     po_case_id: null,
+    sla: {
+      status: "not_applicable",
+      milestone: null,
+      entered_current_state_at: ROUND_OPENED,
+      age_days: 0,
+      threshold_days: null,
+    },
     ...overrides,
   };
 }
@@ -214,13 +232,24 @@ afterEach(() => {
     listProductCaseDocuments,
     uploadProductCaseDocument,
     placeProductOrder,
+    listProductCategories,
     push,
   ]) {
     mock.mockReset();
   }
 });
 
+const CATEGORIES = [
+  { key: "noi", label: "Nồi" },
+  { key: "chao", label: "Chảo" },
+];
+
+beforeEach(() => {
+  listProductCategories.mockResolvedValue(CATEGORIES);
+});
+
 function renderList() {
+  listProductCategories.mockResolvedValue(CATEGORIES);
   getProductActionDuties.mockResolvedValue({
     schema_version: "1.0",
     policy_id: "supply_chain_product_action_duties",
@@ -235,6 +264,7 @@ function renderList() {
 }
 
 function renderDetail() {
+  listProductCategories.mockResolvedValue(CATEGORIES);
   listProductCaseTransitions.mockResolvedValue([]);
   listProductCaseDocuments.mockResolvedValue([]);
   return render(
@@ -366,9 +396,9 @@ describe("Hồ sơ phát triển sản phẩm: danh sách", () => {
     fireEvent.change(within(dialog).getByLabelText("Tên sản phẩm"), {
       target: { value: "Nồi inox" },
     });
-    fireEvent.change(within(dialog).getByLabelText("Category"), {
-      target: { value: "Nồi" },
-    });
+    // The tenant's own list, by label; the key is what is sent.
+    fireEvent.mouseDown(within(dialog).getByRole("combobox"));
+    fireEvent.click(await screen.findByTitle("Chảo"));
     fireEvent.click(within(dialog).getByRole("button", { name: "Đề xuất" }));
 
     await waitFor(() => expect(proposeProductCase).toHaveBeenCalledTimes(1));
@@ -376,7 +406,7 @@ describe("Hồ sơ phát triển sản phẩm: danh sách", () => {
     expect(input).toEqual({
       proposalCode: "DX-2026-001",
       productName: "Nồi inox",
-      category: "Nồi",
+      category: "chao",
     });
     expect(typeof key).toBe("string");
     await waitFor(() =>
@@ -1207,5 +1237,83 @@ describe("Hồ sơ phát triển sản phẩm: ĐẶT HÀNG", () => {
     expect(
       screen.getByText("Thêm SKU: Đã đặt hàng; mã hàng và SKU đã chốt."),
     ).toBeTruthy();
+  });
+});
+
+describe("Category và SLA (ticket 06)", () => {
+  it("shows a case's Category by the tenant's label, a stamp from before the list as it is", async () => {
+    listProductCases.mockResolvedValue({
+      items: [
+        productCase(),
+        productCase({
+          id: "22222222-2222-4222-8222-222222222222",
+          proposal_code: "DX-OLD",
+          category: "Nồi cũ",
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderList();
+
+    expect(await screen.findByText("Nồi")).toBeTruthy();
+    expect(screen.getByText("Nồi cũ")).toBeTruthy();
+    expect(screen.queryByText("noi")).toBeNull();
+  });
+
+  it("never offers an empty Category list to submit past", async () => {
+    scopes = new Set([ORDERING, PRODUCT_CASE_WRITE]);
+    listProductCases.mockResolvedValue({ items: [], next_cursor: null });
+    renderList();
+    listProductCategories.mockReset();
+    listProductCategories.mockRejectedValue(new Error("mạng"));
+
+    const header = () =>
+      screen.getAllByRole("button", {
+        name: /Đề xuất sản phẩm/,
+      })[0] as HTMLButtonElement;
+    await waitFor(() => expect(header().disabled).toBe(false));
+    fireEvent.click(header());
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Mã đề xuất"), {
+      target: { value: "DX-2026-002" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Tên sản phẩm"), {
+      target: { value: "Chảo" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Đề xuất" }));
+
+    expect(await within(dialog).findByText("Chọn Category")).toBeTruthy();
+    expect(proposeProductCase).not.toHaveBeenCalled();
+  });
+
+  it("draws the case's SLA badge and the milestone it measures", async () => {
+    getProductCase.mockResolvedValue(
+      detail({
+        state: "profile_in_progress",
+        actions: [],
+        sla: {
+          status: "breached",
+          milestone: "bm04",
+          entered_current_state_at: "2026-10-02T02:00:00Z",
+          age_days: 3,
+          threshold_days: 2,
+        },
+      }),
+    );
+    renderDetail();
+
+    expect(
+      await screen.findByText("Mốc BM04 · 3 ngày / hạn 2 ngày"),
+    ).toBeTruthy();
+    expect(screen.getAllByText("Trễ SLA").length).toBeGreaterThan(0);
+    expect(await screen.findByText(/Category Nồi/)).toBeTruthy();
+  });
+
+  it("says when the case's step has no SLA", async () => {
+    getProductCase.mockResolvedValue(detail());
+    renderDetail();
+
+    expect(await screen.findByText("Bước này không có mốc SLA")).toBeTruthy();
+    expect(screen.queryByText("Trễ SLA")).toBeNull();
   });
 });

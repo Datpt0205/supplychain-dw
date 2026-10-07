@@ -23,8 +23,9 @@ import FollowUpsPage from "../follow-ups/page";
 function followUp(overrides: Partial<FollowUp>): FollowUp {
   return {
     id: "f-1",
-    po_case_id: "c-1",
-    po_reference: "PO-2026-007",
+    case_kind: "po",
+    case_id: "c-1",
+    reference: "PO-2026-007",
     supplier_name: "Kangaroo",
     kind: "update_reminder",
     milestone: null,
@@ -49,7 +50,7 @@ describe("Việc cần làm", () => {
       followUp({}),
       followUp({
         id: "f-2",
-        po_reference: "PO-2026-008",
+        reference: "PO-2026-008",
         kind: "sla_breach",
         milestone: "deposit",
         days: 3,
@@ -87,7 +88,7 @@ describe("Việc cần làm", () => {
   });
 
   it("names a case without its PO number in words", async () => {
-    listFollowUps.mockResolvedValue([followUp({ po_reference: null })]);
+    listFollowUps.mockResolvedValue([followUp({ reference: null })]);
     render(<FollowUpsPage />);
 
     expect(
@@ -97,6 +98,32 @@ describe("Việc cần làm", () => {
     ).toBe("/supply-chain/po-cases/c-1");
     expect(
       screen.getByRole("textbox", { name: "Ghi chú cho Chưa có số PO" }),
+    ).toBeTruthy();
+  });
+
+  it("links a product case's follow-up to its page, by its code", async () => {
+    listFollowUps.mockResolvedValue([
+      followUp({
+        case_kind: "product",
+        case_id: "p-1",
+        reference: "DX-7",
+        supplier_name: null,
+        kind: "sla_breach",
+        milestone: "bm04",
+        days: 5,
+        limit_days: 4,
+      }),
+    ]);
+    render(<FollowUpsPage />);
+
+    expect(
+      (await screen.findByRole("link", { name: "DX-7" })).getAttribute("href"),
+    ).toBe("/supply-chain/product-cases/p-1");
+    expect(screen.getByText("5 ngày ở bước BM04, hạn 4 ngày")).toBeTruthy();
+    expect(
+      screen.getByRole("textbox", {
+        name: "Ghi chú cho Hồ sơ phát triển DX-7",
+      }),
     ).toBeTruthy();
   });
 

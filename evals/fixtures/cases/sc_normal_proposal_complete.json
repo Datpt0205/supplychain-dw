@@ -6,5 +6,15 @@
     "product_name": "chảo chống dính 28cm",
     "category": "Chảo"
   },
-  "workspace": "Cung ứng HN"
+  "workspace": "Cung ứng HN",
+  "categories": [
+    {
+      "key": "noi",
+      "label": "Nồi"
+    },
+    {
+      "key": "chao",
+      "label": "Chảo"
+    }
+  ]
 }

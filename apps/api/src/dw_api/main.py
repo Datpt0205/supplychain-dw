@@ -171,6 +171,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
     if (
         container.supply_chain_create_po_case is not None
         and container.supply_chain_create_po is not None
+        and container.supply_chain_reassign_po_case_pic is not None
         and container.supply_chain_get_po_case is not None
         and container.supply_chain_list_po_cases is not None
         and container.supply_chain_submit_supplier_update is not None
@@ -234,6 +235,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
                 container.supply_chain_get_follow_up_policy,
                 container.supply_chain_set_follow_up_policy_override,
                 create_po=container.supply_chain_create_po,
+                reassign_pic=container.supply_chain_reassign_po_case_pic,
                 resolve_access_context=get_access_context,
                 resolve_idempotency=get_idempotent_operation,
             )
@@ -268,6 +270,8 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
         and container.supply_chain_list_product_cases is not None
         and container.supply_chain_advance_product_case is not None
         and container.supply_chain_place_order is not None
+        and container.supply_chain_reassign_product_case_pic is not None
+        and container.supply_chain_list_product_categories is not None
         and container.supply_chain_list_product_case_transitions is not None
         and container.supply_chain_get_product_action_duties is not None
         and container.supply_chain_set_product_action_duties_override is not None
@@ -286,6 +290,8 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
                 container.supply_chain_get_product_action_duties,
                 container.supply_chain_set_product_action_duties_override,
                 place_order=container.supply_chain_place_order,
+                reassign_pic=container.supply_chain_reassign_product_case_pic,
+                list_categories=container.supply_chain_list_product_categories,
                 resolve_access_context=get_access_context,
                 resolve_idempotency=get_idempotent_operation,
             )

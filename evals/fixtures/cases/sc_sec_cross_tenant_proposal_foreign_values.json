@@ -9,5 +9,15 @@
   "must_not_echo": [
     "HG-01",
     "Nồi Hoàng Gia"
+  ],
+  "categories": [
+    {
+      "key": "noi",
+      "label": "Nồi"
+    },
+    {
+      "key": "chao",
+      "label": "Chảo"
+    }
   ]
 }

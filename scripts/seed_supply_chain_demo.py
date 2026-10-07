@@ -3,6 +3,7 @@
 Usage (reads `.env`; `make` exports it, a plain shell needs `set -a; source .env`):
     uv run python scripts/seed_supply_chain_demo.py seed
     uv run python scripts/seed_supply_chain_demo.py supplier-update PO-DEMO-001
+    uv run python scripts/seed_supply_chain_demo.py elmich-sla
 
 `seed` is idempotent:
 - the platform demo roster (tenants, workspaces, users, memberships, plans),
@@ -33,6 +34,16 @@ Usage (reads `.env`; `make` exports it, a plain shell needs `set -a; source .env
 `supplier-update <PO>` records a supplier update on that case now, as An, so
 the next sweep resolves its follow-up.
 
+`elmich-sla` writes Elmich's own SLA numbers and Category list
+(`scripts/elmich_sla_override.yaml`, provisional: every number pending
+QE-04/QE-05, the list pending QE-13) as tenant Alpha's override, the tenant
+that stands for Elmich on its own database (QO-1), as Bình. It goes through
+`SetSLAPolicyOverride`, the handler behind `PUT /sla-policy`: the same schema,
+the same `supply_chain.sla_policy.write` check, the same audit event; not a
+migration, since one customer's numbers are that tenant's data. Not part of
+`seed`: pending numbers raise no SLA signal, and the demo's PO-DEMO-003 shows
+one. Run it again after editing the file; a later `PUT` replaces it whole.
+
 Refuses to run unless DW_API_PROFILE is explicitly `local` (unset is refused):
 it writes through the migrator role and backdates rows, which no deployed
 database should ever see.
@@ -45,18 +56,24 @@ import json
 import os
 import sys
 import uuid
+from pathlib import Path
 
 import sqlalchemy as sa
+import yaml
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from dw_kernel.ids import TenantId, WorkspaceId
+from dw_kernel.ports import SystemClock, Uuid4Generator
+from dw_platform.adapters.persistence.policy_overrides import SqlPolicyOverrideRepository
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.testing.seed_env import seed_test_env
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
+from dw_supply_chain.application.handlers import SLA_POLICY_WRITE, SetSLAPolicyOverride
 from dw_supply_chain.domain.po_case import POCase, POCaseId
 from dw_supply_chain.domain.supplier_update import (
     SupplierEventType,
@@ -64,6 +81,11 @@ from dw_supply_chain.domain.supplier_update import (
     SupplierUpdateExtraction,
     SupplierUpdateId,
 )
+from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
+
+ELMICH_SLA = Path(__file__).resolve().parent / "elmich_sla_override.yaml"
+# Bình, `sc_process_admin`: the persona who sets the SLA.
+PROCESS_OWNER = "dev|binh.tran"
 
 ALPHA = uuid.UUID("d6b43d0e-c3c6-5dbc-bc08-150621bd9a5d")
 ALPHA_WS = uuid.UUID("64764894-718d-5558-ba17-9a2949214063")
@@ -256,6 +278,26 @@ async def supplier_update(migrator: AsyncEngine, app: AsyncEngine, reference: st
     print(f"{reference}: supplier update recorded; the next sweep resolves its follow-up")
 
 
+async def elmich_sla(migrator: AsyncEngine, app: AsyncEngine) -> None:
+    policy = SupplyChainSLAPolicy.model_validate(
+        yaml.safe_load(ELMICH_SLA.read_text(encoding="utf-8"))
+    )
+    owner = _context(await _user_id(migrator, PROCESS_OWNER)).model_copy(
+        update={"roles": frozenset({"sc_process_admin"}), "scopes": frozenset({SLA_POLICY_WRITE})}
+    )
+    await SetSLAPolicyOverride(
+        policy_override_repo=SqlPolicyOverrideRepository(async_sessionmaker(app)),
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=SystemClock(),
+    ).handle(owner, policy)
+    print(
+        "elmich SLA override written for tenant Alpha: "
+        + ", ".join(c.label for c in policy.categories)
+        + f"; {len(policy.default)} milestones, all pending business confirmation"
+    )
+
+
 async def main(argv: list[str]) -> None:
     migrator_url, app_url = _urls()
     migrator = create_async_engine(migrator_url, poolclass=NullPool)
@@ -265,6 +307,8 @@ async def main(argv: list[str]) -> None:
             await seed(migrator, app, migrator_url)
         elif argv[:1] == ["supplier-update"] and len(argv) == 2:
             await supplier_update(migrator, app, argv[1])
+        elif argv == ["elmich-sla"]:
+            await elmich_sla(migrator, app)
         else:
             sys.exit(__doc__)
     finally:

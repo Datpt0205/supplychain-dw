@@ -36,6 +36,7 @@ from dw_supply_chain.domain.supplier_update import (
     SupplierUpdateId,
 )
 from dw_supply_chain.sla_policy import (
+    ProductCategory,
     SLAConfirmationStatus,
     SLAMilestone,
     SupplierUpdateCadence,
@@ -115,10 +116,13 @@ def _handler(sessions: async_sessionmaker[AsyncSession], *, now: datetime) -> Ge
         supplier_update_repo=SqlSupplierUpdateRepository(sessions),
         policy_override_repo=_NoOverrides(),
         platform_default_policy=SupplyChainSLAPolicy(
-            schema_version="1.0",
+            schema_version="2.0",
             policy_id="supply_chain_sla",
-            policy_version="1.0.0",
-            sla={"deposit": SLAMilestone(duration="2d", status=SLAConfirmationStatus.CONFIRMED)},
+            policy_version="2.0.0",
+            categories=(ProductCategory(key="noi", label="Nồi"),),
+            default={
+                "deposit": SLAMilestone(duration="2d", status=SLAConfirmationStatus.CONFIRMED)
+            },
             supplier_update=SupplierUpdateCadence(reminder_after="5d", escalation_after="10d"),
         ),
         authz=ScopeAuthorizationService(),

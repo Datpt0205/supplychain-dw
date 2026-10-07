@@ -31,6 +31,10 @@ import {
 import { stepLabel } from "../../../components/supply-chain/case-state-badge";
 import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
 import {
+  categoryLabel,
+  useProductCategories,
+} from "../../../components/supply-chain/product-categories";
+import {
   PRODUCT_DEV_STATE_LABEL,
   PRODUCT_DEV_STATE_META,
   ProductDevStateTag,
@@ -301,6 +305,7 @@ function ProposeModal({
   const [form] = Form.useForm<ProposeValues>();
   const { message } = App.useApp();
   const router = useRouter();
+  const categories = useProductCategories();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invalid, setInvalid] = useState(0);
@@ -385,14 +390,37 @@ function ProposeModal({
         <Form.Item
           name="category"
           label="Category"
-          extra="Ngành hàng của sản phẩm; danh sách chọn có từ S6 (ADR 0019)."
-          rules={[
-            { required: true, whitespace: true, message: "Nhập Category" },
-            { max: 100, message: "Category tối đa 100 ký tự" },
-          ]}
+          extra="Ngành hàng của sản phẩm, trong danh sách của công ty. SLA từng bước theo Category này."
+          rules={[{ required: true, message: "Chọn Category" }]}
         >
-          <Input />
+          <Select<string>
+            placeholder="Chọn Category"
+            loading={categories.loading}
+            options={(categories.data ?? []).map((category) => ({
+              value: category.key,
+              label: category.label,
+            }))}
+            notFoundContent={
+              categories.loading
+                ? "Đang tải danh sách Category…"
+                : "Công ty chưa có Category nào"
+            }
+            virtual={false}
+          />
         </Form.Item>
+        {categories.error != null && (
+          // Nothing to choose from is never an empty list to submit past.
+          <Alert
+            type="error"
+            showIcon
+            title={`Chưa tải được danh sách Category: ${errorMessage(categories.error)}`}
+            action={
+              <Button size="small" onClick={categories.reload}>
+                Thử lại
+              </Button>
+            }
+          />
+        )}
         {error && <Alert type="error" showIcon title={error} />}
       </Form>
     </Modal>
@@ -414,6 +442,7 @@ function ProductCaseResults({
 }) {
   const members = useWorkspaceMembers();
   const { principalId } = useAuth();
+  const categories = useProductCategories().data;
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [query, setQuery] = useState("");
 
@@ -486,7 +515,11 @@ function ProductCaseResults({
         </Flex>
       ),
     },
-    { title: "Category", dataIndex: "category" },
+    {
+      title: "Category",
+      dataIndex: "category",
+      render: (value: string) => categoryLabel(categories, value),
+    },
     {
       title: "NCC",
       dataIndex: "supplier_name",
@@ -529,7 +562,11 @@ function ProductCaseResults({
   const ready = list.kind === "ready";
   const items = ready ? list.items : [];
   const shown = items.filter((item) =>
-    matches(query, [item.proposal_code, item.product_name, item.category]),
+    matches(query, [
+      item.proposal_code,
+      item.product_name,
+      categoryLabel(categories, item.category),
+    ]),
   );
   return (
     <Flex vertical gap="small">

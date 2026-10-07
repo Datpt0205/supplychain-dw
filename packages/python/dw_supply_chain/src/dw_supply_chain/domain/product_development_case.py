@@ -42,7 +42,8 @@ way its state moves, a closed action enum, and one dispatch,
   and SKUs. It is a command of its own (`PlaceOrder`), never a plain step:
   the two rows are written in one transaction.
 
-The PIC is stamped from the actor at `propose` and nowhere else takes one.
+The PIC is stamped from the actor at `propose` and nowhere else takes one;
+`reassign_pic` (ticket 06), with a reason, is the one way it changes after.
 """
 
 from __future__ import annotations
@@ -871,6 +872,29 @@ class ProductDevelopmentCase:
                 for sku in self.skus
             ),
         )
+
+    # -- the PIC -------------------------------------------------------------------
+
+    def reassign_pic(self, *, new_pic: uuid.UUID, reason: str | None) -> uuid.UUID:
+        """Hands the case to another PIC (stage-1 ticket 06), with a reason; the
+        one way the PIC changes after `propose`. Not a step: the state stays and
+        no history row is written; the audit event records who and why. Refused
+        once the case is ordered or cancelled: after ĐẶT HÀNG the PIC lives on
+        the PO case, and changing it is changing it there. Returns the PIC it
+        had."""
+        if reason is None or not reason.strip():
+            raise DomainError("reassign_pic requires a reason", details={"field": "reason"})
+        if self.state in PRODUCT_TERMINAL_STATES:
+            raise ConflictError(
+                f"cannot reassign the PIC of a case in {self.state.value}",
+                details={"case_id": str(self.id), "current_state": self.state.value},
+            )
+        if new_pic == self.pic_user_id:
+            raise DomainError("this person is already the PIC", details={"field": "pic_user_id"})
+        previous = self.pic_user_id
+        self.pic_user_id = new_pic
+        self.version += 1
+        return previous
 
     # -- interrupts, resume, cancel ----------------------------------------------
 

@@ -37,7 +37,21 @@ function what(item: FollowUp): string {
   if (item.kind === "sla_breach") {
     return `${item.days} ngày ở bước ${milestoneLabel(item.milestone)}, hạn ${item.limit_days} ngày`;
   }
-  return `${item.supplier_name} im lặng ${item.days} ngày`;
+  return `${item.supplier_name ?? "NCC"} im lặng ${item.days} ngày`;
+}
+
+/** Where a follow-up's case lives: a PO case, or a product case (ticket 06). */
+function caseHref(item: FollowUp): string {
+  return item.case_kind === "product"
+    ? `/supply-chain/product-cases/${item.case_id}`
+    : `/supply-chain/po-cases/${item.case_id}`;
+}
+
+/** The case named by its identifier: the PO number, or the proposal code. */
+function caseName(item: FollowUp): string {
+  return item.case_kind === "product"
+    ? `Hồ sơ phát triển ${item.reference ?? ""}`
+    : poReferenceLabel(item.reference);
 }
 
 /**
@@ -90,7 +104,7 @@ export default function FollowUpsPage() {
                 <Typography.Text strong>Không có việc nào</Typography.Text>
                 <Typography.Text>
                   {showAll
-                    ? "Không Hồ sơ PO nào đang cần nhắc, leo thang hay trễ SLA."
+                    ? "Không hồ sơ nào đang cần nhắc, leo thang hay trễ SLA."
                     : "Không có việc nào giao cho bạn."}
                 </Typography.Text>
               </Flex>
@@ -142,8 +156,12 @@ function FollowUpCard({
           <StatusTag tone={KIND[item.kind].tone}>
             {KIND[item.kind].label}
           </StatusTag>
-          <Link href={`/supply-chain/po-cases/${item.po_case_id}`}>
-            <PoReferenceText reference={item.po_reference} />
+          <Link href={caseHref(item)}>
+            {item.case_kind === "product" ? (
+              <Typography.Text code>{item.reference}</Typography.Text>
+            ) : (
+              <PoReferenceText reference={item.reference} />
+            )}
           </Link>
           <Typography.Text>{what(item)}</Typography.Text>
         </Flex>
@@ -158,7 +176,7 @@ function FollowUpCard({
               onChange={(e) => setNote(e.target.value)}
               placeholder="Ví dụ: đã gọi NCC, hẹn gửi lịch xuất hàng"
               className="max-w-sm"
-              aria-label={`Ghi chú cho ${poReferenceLabel(item.po_reference)}`}
+              aria-label={`Ghi chú cho ${caseName(item)}`}
             />
             <Button
               type="primary"

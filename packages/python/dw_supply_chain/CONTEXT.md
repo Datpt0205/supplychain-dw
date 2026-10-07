@@ -91,15 +91,19 @@ Một SKU và số lượng trong Hồ sơ PO.
 
 **Category** (ngành hàng) (từ S1, S6):
 Nhóm sản phẩm của tenant, chọn ở bước 1, đóng dấu lên hồ sơ và chép sang Hồ sơ PO. SLA
-của các bước không có số cụ thể đọc theo Category (ADR 0019). Danh sách là dữ liệu của
-tenant (còn mở, QE-13).
+của các bước không có số cụ thể đọc theo Category (ADR 0019). Danh sách (khóa, nhãn) là
+dữ liệu của tenant trong policy SLA (`categories`); `propose` và Hồ sơ PO mở tay chỉ nhận
+một khóa có trong danh sách. Hồ sơ mở trước S6 giữ chữ tự do đã đóng dấu, đánh giá theo
+`default`. Danh sách của Elmich còn mở (QE-13).
 _Avoid_: "cate", "danh mục" (danh mục là danh sách tài liệu ở process.md mục 2).
 
 ### Người và quyền
 
 **PIC** (Người phụ trách, `pic_user_id`):
 Người tạo hồ sơ ở bước 1, đóng dấu lúc tạo và theo hồ sơ suốt 17 bước, chép sang Hồ sơ
-PO lúc ĐẶT HÀNG. Không bao giờ suy lại; đổi bằng hành động Đổi PIC có lý do và audit.
+PO lúc ĐẶT HÀNG. Không bao giờ suy lại; đổi bằng **Đổi PIC** (`reassign_pic`, từ S6):
+duty `supply_lead`, bắt buộc lý do, audit, người mới phải là thành viên workspace của
+hồ sơ; hồ sơ phát triển đã ĐẶT HÀNG hoặc hủy không đổi được (PIC sống ở Hồ sơ PO).
 Thay cách phân PIC theo Category trước đây.
 _Avoid_: "owner", "người tạo" khi muốn nói PIC sau khi đã đổi.
 
@@ -133,8 +137,9 @@ Duyệt mẫu ở bước 6 và ký ở bước 9, qua approval có `required_sc
 `supply_chain.approve.bod`. Không có duty.
 
 **TP Cung ứng** (Trưởng phòng Cung ứng):
-Xác nhận SP đã thống nhất với NCC ở bước 8 (duty `supply_lead`), nhận báo cáo mẫu hằng
-ngày ở bước 3, đổi PIC.
+Xác nhận SP đã thống nhất với NCC ở bước 8 (duty `supply_lead`), đổi PIC (từ S6), nhận
+leo thang và trễ SLA cùng PIC (scope `supply_chain.duty.supply_lead` trong policy
+follow-up 1.1.0, QE-18 tạm). Báo cáo mẫu hằng ngày ở bước 3 còn mở (QE-19).
 
 **Người quyết** (`required_scope`) (từ A):
 Scope đóng dấu lên một approval lúc tạo; chỉ người giữ nó (cùng `approvals.decide`)
@@ -170,17 +175,22 @@ _Avoid_: "evidence" khi nói chứng từ (evidence là trích dẫn nguyên vă
 NCC).
 
 **Mốc SLA** (milestone):
-Thời hạn của một trạng thái, đo từ lúc hồ sơ vào trạng thái đó. Có trong policy
-`supply_chain_sla@1.2.0`: `deposit`, `port_arrival`, `payment`, `warehouse_receipt`
-(đọc bởi `sla_evaluation.py`) và `bm04`, `supplier_confirmation` (có trong policy,
-chưa trạng thái nào đọc, gắn ở S6). Thêm ở S6: `sample_collection` (`sample_requested`)
-và `sample_testing` (`sample_testing`). Mốc chưa xác nhận không bật cảnh báo.
+Thời hạn của một trạng thái, đo từ lần chuyển gần nhất vào trạng thái đó (tiếp tục sau
+tạm dừng tính lại; đang tạm dừng thì không áp dụng, QE-14). Policy
+`supply_chain_sla@2.0.0`, gắn trong `sla_evaluation.py`: Hồ sơ PO `deposit`,
+`port_arrival`, `payment`, `warehouse_receipt`; hồ sơ phát triển `sample_collection`
+(`sample_requested`), `sample_testing`, `bod_review` (`pending_bod_review`), `bm04`
+(`profile_in_progress`), `supplier_confirmation`, `item_coding`, `signoff`
+(`pending_signoff`). Số theo Category của hồ sơ (`by_category`), không có thì `default`.
+Mốc chưa xác nhận không bật cảnh báo.
 Cùng policy có khối `supplier_update` (nhắc sau 1d, leo thang sau 2d NCC im lặng): đó
 là nhịp cập nhật NCC, không phải mốc SLA.
 
-**Follow-up**:
-Một việc nhắc do worker mở khi đến hạn nhắc, cần leo thang hoặc vi phạm SLA; đóng khi
-tín hiệu hết. Người nhận đóng dấu lúc mở (theo scope, và PIC).
+**Follow-up** (Việc cần làm):
+Một việc nhắc do worker mở khi đến hạn nhắc, cần leo thang hoặc vi phạm SLA, trên Hồ sơ
+PO hoặc (từ S6) hồ sơ phát triển; đóng khi tín hiệu hết. Người nhận đóng dấu lúc mở:
+các scope của policy `supply_chain_follow_ups`, và PIC của hồ sơ nếu policy gọi `pic` và
+PIC còn là thành viên workspace của hồ sơ. Chỉ thấy trong workspace của hồ sơ.
 
 **Cập nhật NCC** (`SupplierUpdate`):
 Tin của NCC mà mô hình đọc thành loại sự kiện, kèm trích dẫn nguyên văn; tin thiếu trích

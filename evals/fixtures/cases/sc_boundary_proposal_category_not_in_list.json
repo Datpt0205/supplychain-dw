@@ -1,0 +1,35 @@
+{
+  "message": "đề xuất SP ấm siêu tốc 1.8L, mã AM-18, nhóm Ấm",
+  "model_answer": {
+    "kind": "propose_product",
+    "proposal_code": "AM-18",
+    "product_name": "ấm siêu tốc 1.8L",
+    "category": "Ấm"
+  },
+  "categories": [
+    {
+      "key": "noi",
+      "label": "Nồi"
+    },
+    {
+      "key": "chao",
+      "label": "Chảo"
+    },
+    {
+      "key": "am_dun",
+      "label": "Ấm đun"
+    },
+    {
+      "key": "dao_keo",
+      "label": "Dao kéo"
+    },
+    {
+      "key": "hop",
+      "label": "Hộp bảo quản"
+    },
+    {
+      "key": "binh",
+      "label": "Bình giữ nhiệt"
+    }
+  ]
+}

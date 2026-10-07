@@ -11,5 +11,6 @@
     "proposal_code",
     "category"
   ],
-  "complete": false
+  "complete": false,
+  "offered": []
 }

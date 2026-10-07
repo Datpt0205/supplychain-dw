@@ -11,6 +11,7 @@ import pytest
 
 from dw_kernel.ids import TenantId, WorkspaceId
 from dw_supply_chain.domain.brief_summary import BriefSummaryDraft, ground_summary
+from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.daily_brief import BriefSignal, compose_brief
 from dw_supply_chain.domain.delay_impact import impacted_milestones
 from dw_supply_chain.domain.follow_up import FollowUpKind, follow_up_message
@@ -34,7 +35,7 @@ pytestmark = pytest.mark.unit
 
 _NOW = datetime(2026, 10, 7, 8, tzinfo=UTC)
 _SLA = load_supply_chain_sla_policy(
-    Path(__file__).resolve().parents[5] / "configs" / "policies" / "supply_chain_sla@1.2.0.yaml"
+    Path(__file__).resolve().parents[5] / "configs" / "policies" / "supply_chain_sla@2.0.0.yaml"
 )
 
 
@@ -46,7 +47,7 @@ def _awaiting(*, days: int = 30) -> POCase:
         supplier_name="NCC Minh Long",
         product_dev_case_id=uuid.uuid4(),
         pic_user_id=uuid.uuid4(),
-        category="Nồi",
+        category="noi",
         lines=(POCaseLine(sku_id=uuid.uuid4(), quantity=10),),
     )
     case.created_at = _NOW - timedelta(days=days)
@@ -58,7 +59,11 @@ def _health(case: POCase) -> CaseHealth:
     return CaseHealth(
         case=case,
         sla=evaluate_sla(
-            state=case.state, entered_current_state_at=case.created_at, now=_NOW, policy=_SLA
+            state=case.state,
+            category=case.category,
+            entered_current_state_at=case.created_at,
+            now=_NOW,
+            policy=_SLA,
         ),
         missing_update=missing_update_status(
             state=case.state,
@@ -87,6 +92,7 @@ def test_a_case_awaiting_its_po_has_no_sla_yet() -> None:
     """Its own milestone waits for Elmich (QE-01)."""
     evaluation = evaluate_sla(
         state=CaseState.ORDER_REQUESTED,
+        category="noi",
         entered_current_state_at=_NOW - timedelta(days=60),
         now=_NOW,
         policy=_SLA,
@@ -149,7 +155,8 @@ def test_a_case_awaiting_its_po_has_no_milestone_ahead_to_delay() -> None:
 def test_a_message_about_a_case_without_a_reference_says_so_and_invents_none() -> None:
     message = follow_up_message(
         kind=FollowUpKind.UPDATE_REMINDER,
-        po_reference=None,
+        case_kind=CaseKind.PO,
+        reference=None,
         supplier_name="NCC Minh Long",
         days=3,
         limit_days=None,

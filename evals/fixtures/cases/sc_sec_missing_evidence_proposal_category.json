@@ -8,5 +8,15 @@
   },
   "must_not_echo": [
     "Chảo"
+  ],
+  "categories": [
+    {
+      "key": "noi",
+      "label": "Nồi"
+    },
+    {
+      "key": "chao",
+      "label": "Chảo"
+    }
   ]
 }

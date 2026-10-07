@@ -61,3 +61,31 @@ class SqlScopeHolders:
                 if held & scopes:
                     holders.append(member.user_id)
         return holders
+
+    async def members(
+        self, context: AccessContext, workspace_id: uuid.UUID, user_ids: frozenset[uuid.UUID]
+    ) -> frozenset[uuid.UUID]:
+        """Which of `user_ids` hold a membership of the workspace, in an
+        active tenant, now: a named person (a case's PIC) is told only while
+        they still belong where the case is."""
+        if not user_ids:
+            return frozenset()
+        scope = TenantScope(tenant_id=context.tenant_id, workspace_id=workspace_id)
+        async with tenant_session(self.session_factory, scope) as session:
+            found = (
+                await session.scalars(
+                    sa.select(tables.memberships.c.user_id)
+                    .select_from(
+                        tables.memberships.join(
+                            tables.tenants, tables.tenants.c.id == tables.memberships.c.tenant_id
+                        )
+                    )
+                    .where(
+                        tables.memberships.c.tenant_id == context.tenant_id,
+                        tables.memberships.c.workspace_id == workspace_id,
+                        tables.memberships.c.user_id.in_(sorted(user_ids)),
+                        tables.tenants.c.status == "active",
+                    )
+                )
+            ).all()
+        return frozenset(found)

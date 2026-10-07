@@ -351,32 +351,6 @@ export const dailyBriefSummarySchema = z.object({
 });
 export type DailyBriefSummary = z.infer<typeof dailyBriefSummarySchema>;
 
-/** An open follow-up: the work a reminder, an escalation or an SLA breach
- * handed to a person. `mine`: the caller holds a scope it was handed to, so
- * the caller is expected to act and may close it. Mirrors
- * `FollowUpItemView`. */
-export const followUpKindSchema = z.enum([
-  "update_reminder",
-  "update_escalation",
-  "sla_breach",
-]);
-export type FollowUpKind = z.infer<typeof followUpKindSchema>;
-
-export const followUpSchema = z.object({
-  id: z.string(),
-  po_case_id: z.string(),
-  po_reference: z.string().nullable(),
-  supplier_name: z.string(),
-  kind: followUpKindSchema,
-  milestone: z.string().nullable(),
-  days: z.number().int(),
-  limit_days: z.number().int().nullable(),
-  opened_at: z.string(),
-  notified_at: z.string().nullable(),
-  mine: z.boolean(),
-});
-export type FollowUp = z.infer<typeof followUpSchema>;
-
 // ---- case documents (ADR 0021) --------------------------------------------
 
 /** ADR 0021's fourteen document types; the API's `DocumentType`. */
@@ -401,6 +375,35 @@ export type DocumentType = z.infer<typeof documentTypeSchema>;
 /** Which kind of case a document belongs to; the API's `CaseKind`. */
 export const caseKindSchema = z.enum(["po", "product"]);
 export type CaseKind = z.infer<typeof caseKindSchema>;
+
+/** An open follow-up: the work a reminder, an escalation or an SLA breach
+ * handed to a person. `mine`: it was handed to the caller (a scope they hold,
+ * or they are its stamped PIC), so the caller is expected to act and may close
+ * it. `case_kind` says which page `case_id` opens; `reference` is the PO
+ * reference (null while the case awaits its PO) or a product case's proposal
+ * code. Mirrors `FollowUpItemView`. */
+export const followUpKindSchema = z.enum([
+  "update_reminder",
+  "update_escalation",
+  "sla_breach",
+]);
+export type FollowUpKind = z.infer<typeof followUpKindSchema>;
+
+export const followUpSchema = z.object({
+  id: z.string(),
+  case_kind: caseKindSchema,
+  case_id: z.string(),
+  reference: z.string().nullable(),
+  supplier_name: z.string().nullable(),
+  kind: followUpKindSchema,
+  milestone: z.string().nullable(),
+  days: z.number().int(),
+  limit_days: z.number().int().nullable(),
+  opened_at: z.string(),
+  notified_at: z.string().nullable(),
+  mine: z.boolean(),
+});
+export type FollowUp = z.infer<typeof followUpSchema>;
 
 /** Mirrors `CaseDocumentView`. The object key never leaves the server. */
 export const caseDocumentSchema = z.object({
@@ -484,7 +487,17 @@ export const sampleResultSchema = z.enum([
 ]);
 export type SampleResult = z.infer<typeof sampleResultSchema>;
 
-/** Mirrors `ProductCaseView`. */
+/** Mirrors `ProductCategoryView`: one Category of the tenant's list. `key`
+ * is what a case is stamped with; `label` is what a person reads. A case
+ * opened before the list existed carries free text that is no key. */
+export const productCategorySchema = z.object({
+  key: z.string(),
+  label: z.string(),
+});
+export type ProductCategory = z.infer<typeof productCategorySchema>;
+
+/** Mirrors `ProductCaseView`. `category` is a key of the tenant's list
+ * (`productCategorySchema`). */
 export const productCaseSchema = z.object({
   id: z.string(),
   proposal_code: z.string(),
@@ -573,6 +586,8 @@ export type PendingReview = z.infer<typeof pendingReviewSchema>;
  * none is raised yet, or the viewer may not see it), and its item code and
  * SKUs. */
 export const productCaseDetailSchema = productCaseSchema.extend({
+  /** The current step's SLA under the case's Category (ticket 06). */
+  sla: slaEvaluationSchema,
   rounds: z.array(sampleRoundSchema),
   actions: z.array(productActionOptionSchema),
   pending_review: pendingReviewSchema.nullable(),

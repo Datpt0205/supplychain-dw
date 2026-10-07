@@ -336,6 +336,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         ListFollowUps,
         ListPOCases,
         ListSupplierUpdates,
+        ReassignPOCasePic,
         SetActionDutiesOverride,
         SetApprovalMatrixOverride,
         SetBriefPolicyOverride,
@@ -378,7 +379,20 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         )
     )
     container.supply_chain_create_po_case = CreatePOCase(
-        repo=po_case_repo, authz=authorization, ids=wiring.seam.ids
+        repo=po_case_repo,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        policy_override_repo=policy_override_repo,
+        platform_default_sla_policy=platform_default_sla_policy,
+    )
+    # Who is a member of a workspace now: a new PIC must be (ticket 06).
+    scope_holders = SqlScopeHolders(wiring.seam.session_factory)
+    container.supply_chain_reassign_po_case_pic = ReassignPOCasePic(
+        repo=po_case_repo,
+        members=scope_holders,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
     )
     container.supply_chain_create_po = CreatePO(
         repo=po_case_repo,
@@ -590,6 +604,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     )
     from dw_supply_chain.application.handlers import (
         GetProductActionDuties,
+        ListProductCategories,
         SetProductActionDutiesOverride,
     )
     from dw_supply_chain.application.product_cases import (
@@ -599,6 +614,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         ListProductCaseTransitions,
         PlaceOrder,
         ProposeProductCase,
+        ReassignProductCasePic,
     )
     from dw_supply_chain.application.product_reviews import EnsureProductApproval
     from dw_supply_chain.domain.case_document import CaseKind
@@ -687,6 +703,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         authz=authorization,
         policy_override_repo=policy_override_repo,
         platform_default_duties=platform_default_product_duties,
+        platform_default_sla_policy=platform_default_sla_policy,
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
     )
@@ -695,7 +712,21 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         authz=authorization,
         policy_override_repo=policy_override_repo,
         platform_default_duties=platform_default_product_duties,
+        platform_default_sla_policy=platform_default_sla_policy,
         approvals=pending_approvals,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_reassign_product_case_pic = ReassignProductCasePic(
+        repo=product_case_repo,
+        members=scope_holders,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_list_product_categories = ListProductCategories(
+        policy_override_repo=policy_override_repo,
+        platform_default_sla_policy=platform_default_sla_policy,
+        authz=authorization,
     )
     container.supply_chain_list_product_cases = ListProductCases(
         repo=product_case_repo, authz=authorization

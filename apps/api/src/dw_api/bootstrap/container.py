@@ -100,7 +100,9 @@ from dw_supply_chain.application.handlers import (
     ListDelayImpactAnalyses,
     ListFollowUps,
     ListPOCases,
+    ListProductCategories,
     ListSupplierUpdates,
+    ReassignPOCasePic,
     SetActionDutiesOverride,
     SetApprovalMatrixOverride,
     SetBriefPolicyOverride,
@@ -117,6 +119,7 @@ from dw_supply_chain.application.product_cases import (
     ListProductCaseTransitions,
     PlaceOrder,
     ProposeProductCase,
+    ReassignProductCasePic,
 )
 
 
@@ -181,6 +184,8 @@ class ApiContainer:
     supply_chain_create_po_case: CreatePOCase | None = None
     # Step 10 on a case ĐẶT HÀNG opened (ticket 05).
     supply_chain_create_po: CreatePO | None = None
+    # Handing a case to another PIC (stage-1 ticket 06).
+    supply_chain_reassign_po_case_pic: ReassignPOCasePic | None = None
     supply_chain_get_po_case: GetPOCase | None = None
     supply_chain_list_po_cases: ListPOCases | None = None
     supply_chain_submit_supplier_update: SubmitSupplierUpdate | None = None
@@ -221,6 +226,8 @@ class ApiContainer:
     supply_chain_list_product_cases: ListProductCases | None = None
     supply_chain_advance_product_case: AdvanceProductCase | None = None
     supply_chain_place_order: PlaceOrder | None = None
+    supply_chain_reassign_product_case_pic: ReassignProductCasePic | None = None
+    supply_chain_list_product_categories: ListProductCategories | None = None
     supply_chain_list_product_case_transitions: ListProductCaseTransitions | None = None
     supply_chain_get_product_action_duties: GetProductActionDuties | None = None
     supply_chain_set_product_action_duties_override: SetProductActionDutiesOverride | None = None

@@ -95,8 +95,9 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevState,
     SkuDraft,
 )
-from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE
+from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE, SLA_POLICY_FILE
 from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
+from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
 
 pytestmark = pytest.mark.integration
 
@@ -105,6 +106,7 @@ _PRODUCT_DUTIES = load_supply_chain_product_action_duties(
     _POLICIES / PRODUCT_ACTION_DUTIES_POLICY_FILE
 )
 _PO_DUTIES = load_supply_chain_action_duties(_POLICIES / "supply_chain_action_duties@1.1.0.yaml")
+_SLA = load_supply_chain_sla_policy(_POLICIES / SLA_POLICY_FILE)
 _MATRIX = load_supply_chain_approval_matrix(_POLICIES / "supply_chain_approval_matrix@1.0.0.yaml")
 _MIGRATION = (
     REPO_ROOT
@@ -525,6 +527,8 @@ async def test_create_po_sets_the_reference_and_a_taken_one_is_a_409_naming_it(d
         repo=SqlPOCaseRepository(db.sessions),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        policy_override_repo=SqlPolicyOverrideRepository(db.sessions),
+        platform_default_sla_policy=_SLA,
     ).handle(owner, po_reference=taken, supplier_name="NCC cũ", order_kind=OrderKind.REORDER)
     case = await _ready(db, owner)
     placed = await _place_order(db.sessions).handle(owner, case_id=case.id)
@@ -689,6 +693,7 @@ async def test_one_product_from_step_one_to_its_po_case_completed(world: World) 
         authz=ScopeAuthorizationService(),
         policy_override_repo=stack.policies,
         platform_default_duties=_PRODUCT_DUTIES,
+        platform_default_sla_policy=_SLA,
         ids=Uuid4Generator(),
         clock=SystemClock(),
     )
@@ -696,7 +701,7 @@ async def test_one_product_from_step_one_to_its_po_case_completed(world: World) 
         _with(operator, *OPERATOR_SCOPES),
         proposal_code=f"DX-{uuid.uuid4().hex[:8]}",
         product_name="Nồi inox 5 đáy 20cm",
-        category="Nồi",
+        category="noi",
     )
     target = case.id
     step = stack.advance.handle
@@ -790,7 +795,7 @@ async def test_one_product_from_step_one_to_its_po_case_completed(world: World) 
     assert (done.product_dev_case_id, done.pic_user_id, done.category) == (
         target.value,
         operator.principal_id,
-        "Nồi",
+        "noi",
     )
     assert (await stack.cases.get(operator, target)).state is ProductDevState.ORDERED  # type: ignore[union-attr]
     assert (

@@ -50,6 +50,7 @@ from dw_supply_chain.application.handlers import (
     ListFollowUps,
     ListPOCases,
     ListSupplierUpdates,
+    ReassignPOCasePic,
     SetActionDutiesOverride,
     SetApprovalMatrixOverride,
     SetBriefPolicyOverride,
@@ -62,6 +63,7 @@ from dw_supply_chain.application.ports import POCaseListFilter
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.brief_policy import SupplyChainBriefPolicy
 from dw_supply_chain.domain.brief_summary import BriefSummary, BriefSummaryStatus
+from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.case_query import CaseQueryKind, CaseQueryOutcome, GroundedField
 from dw_supply_chain.domain.daily_brief import BriefEntry, BriefGroup, BriefSignal, DailyBrief
 from dw_supply_chain.domain.delay_impact import DelayImpactAnalysis
@@ -129,13 +131,26 @@ _SUPPLIER_NAME_MAX_LENGTH = 200
 
 class CreatePOCaseRequest(BaseModel):
     """A case opened without stage 1 (a reorder, ADR 0017). No PIC field: the
-    caller is the PIC, and an unknown field is a 422."""
+    caller is the PIC, and an unknown field is a 422. `category`, optional, is
+    a key of the tenant's Category list (`GET /product-categories`); a key not
+    in it is refused."""
 
     model_config = ConfigDict(extra="forbid")
 
     po_reference: str = Field(min_length=1, max_length=200)
     supplier_name: str = Field(min_length=1, max_length=_SUPPLIER_NAME_MAX_LENGTH, pattern=_NO_NUL)
     order_kind: OrderKind
+    category: str | None = Field(default=None, min_length=1, max_length=100, pattern=_NO_NUL)
+
+
+class ReassignPicRequest(BaseModel):
+    """Hands a case to another PIC (ticket 06): who, and why. The new PIC
+    must be a member of the case's workspace; the reason is required."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pic_user_id: uuid.UUID
+    reason: str = Field(min_length=1, max_length=2000, pattern=_NO_NUL)
 
 
 class POCaseView(BaseModel):
@@ -372,7 +387,7 @@ class SLAEvaluationView(BaseModel):
     threshold_days: int | None
 
 
-def _sla_evaluation_view(evaluation: SLAEvaluation) -> SLAEvaluationView:
+def sla_evaluation_view(evaluation: SLAEvaluation) -> SLAEvaluationView:
     return SLAEvaluationView(
         status=evaluation.status,
         milestone=evaluation.milestone,
@@ -393,7 +408,7 @@ class AttentionItemView(BaseModel):
 def _attention_item_view(item: AttentionItem) -> AttentionItemView:
     return AttentionItemView(
         case=_view(item.case),
-        sla=_sla_evaluation_view(item.sla) if item.sla is not None else None,
+        sla=sla_evaluation_view(item.sla) if item.sla is not None else None,
         missing_update=_missing_update_view(item.missing_update)
         if item.missing_update is not None
         else None,
@@ -673,13 +688,17 @@ def _ai_work_response_view(answer: CaseQueryAnswer) -> AIWorkResponseView:
 
 
 class FollowUpItemView(BaseModel):
-    """An open follow-up. `mine`: the caller holds a scope it was handed to,
-    so the caller is expected to act, and may close it."""
+    """An open follow-up. `mine`: it was handed to the caller (a stamped scope
+    they hold, or they are its stamped PIC), so the caller is expected to act,
+    and may close it. `case_kind` says which page `case_id` opens; `reference`
+    is the PO reference (null while the case awaits its PO) or the product
+    case's proposal code."""
 
     id: uuid.UUID
-    po_case_id: uuid.UUID
-    po_reference: str | None
-    supplier_name: str
+    case_kind: CaseKind
+    case_id: uuid.UUID
+    reference: str | None
+    supplier_name: str | None
     kind: FollowUpKind
     milestone: str | None
     days: int
@@ -697,8 +716,9 @@ def _follow_up_view(item: FollowUpView) -> FollowUpItemView:
     record = item.record
     return FollowUpItemView(
         id=record.id,
-        po_case_id=record.po_case_id,
-        po_reference=record.po_reference,
+        case_kind=record.case_kind,
+        case_id=record.case_id,
+        reference=record.reference,
         supplier_name=record.supplier_name,
         kind=record.kind,
         milestone=record.milestone,
@@ -741,6 +761,7 @@ def build_router(
     set_follow_up_policy_override: SetFollowUpPolicyOverride,
     *,
     create_po: CreatePO,
+    reassign_pic: ReassignPOCasePic,
     resolve_access_context: AccessContextResolver,
     resolve_idempotency: IdempotencyResolver,
 ) -> APIRouter:
@@ -767,6 +788,20 @@ def build_router(
             po_reference=body.po_reference,
             supplier_name=body.supplier_name,
             order_kind=body.order_kind,
+            category=body.category,
+        )
+        return await idempotency.record(_view(case))
+
+    @router.post("/po-cases/{case_id}/pic", response_model=POCaseView)
+    async def reassign_po_case_pic(
+        case_id: uuid.UUID,
+        body: ReassignPicRequest,
+        context: require_access_context,
+        idempotency: require_idempotency,
+    ) -> POCaseView:
+        """Hands the case to another PIC (TP Cung ứng's duty, ticket 06)."""
+        case = await reassign_pic.handle(
+            context, po_case_id=POCaseId(case_id), new_pic=body.pic_user_id, reason=body.reason
         )
         return await idempotency.record(_view(case))
 
@@ -1010,7 +1045,7 @@ def build_router(
         case_id: uuid.UUID, context: require_access_context
     ) -> SLAEvaluationView:
         evaluation = await get_sla_evaluation.handle(context, POCaseId(case_id))
-        return _sla_evaluation_view(evaluation)
+        return sla_evaluation_view(evaluation)
 
     @router.get("/sla-policy", response_model=SupplyChainSLAPolicy)
     async def get_sla_policy_route(context: require_access_context) -> SupplyChainSLAPolicy:

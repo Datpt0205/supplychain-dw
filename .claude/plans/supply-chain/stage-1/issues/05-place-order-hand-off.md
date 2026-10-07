@@ -101,7 +101,7 @@ bước 10 đặt số PO và loại đơn; từ đó bước 11–17 chạy nh�
   đổi 2026-10-07, lát S5"). Mỗi điểm ghi chỗ nó nằm trong code và test giữ nó.
     1. **QE-12 (tạm): một hồ sơ phát triển, một Hồ sơ PO.** Câu cập nhật có điều kiện của
        ADR 0017 (`SqlProductCaseRepository.place_order`: `WHERE id AND version = :v AND
-       state = 'ready_to_order'`, cùng tenant/workspace) là thứ bảo đảm; **lệch chữ ADR**
+state = 'ready_to_order'`, cùng tenant/workspace) là thứ bảo đảm; **lệch chữ ADR**
        ("không UNIQUE"): thêm UNIQUE `uq_po_cases_tenant_id_workspace_id_product_dev_case_id`
        làm câu trả lời thứ hai của database (như ADR 0018), cũng là index của FK. Elmich trả
        lời "nhiều" thì bỏ ràng buộc bằng migration mới và đổi máy trạng thái. Hàng đặt lại
@@ -187,7 +187,7 @@ bước 10 đặt số PO và loại đơn; từ đó bước 11–17 chạy nh�
     13. Không ghi sự kiện outbox (chưa có consumer, failure-modes #1).
 - 2026-10-07 (lát S5) **Mutation** (`mutate.py` tạm, mỗi lần sửa một guard, chạy test của
   nó, khôi phục; không áp được thì báo, không tính là bắt được): 20/20 đỏ. M1 bỏ `AND
-  version = :v AND state = 'ready_to_order'` khỏi câu cập nhật: đỏ
+version = :v AND state = 'ready_to_order'` khỏi câu cập nhật: đỏ
   `test_an_order_on_a_case_cancelled_meanwhile_opens_nothing` (PO mở trên hồ sơ đã hủy) và
   `test_two_clicks_at_once_open_one_po_case` (người thua bị UNIQUE từ chối thay vì câu cập
   nhật); M4 PlaceOrder bỏ kiểm duty; M5 PIC lấy từ người bấm; M7 migration dữ liệu không
@@ -217,7 +217,7 @@ bước 10 đặt số PO và loại đơn; từ đó bước 11–17 chạy nh�
   tsc 4 gói); `make test-unit` 2620 passed, 3 skipped; `make test-architecture` (import-linter
   9 kept, declared-dependency 12 gói, `verify_invariants.py` ok); `make test-contract` 5
   passed; `make eval-smoke` platform 4/4, supply_chain 30/30 (dataset không đổi); `make
-  release-manifest-check` OK `sha256:d56990955b94…` (history thêm `manifest-d56990955b94.json`);
+release-manifest-check` OK `sha256:d56990955b94…` (history thêm `manifest-d56990955b94.json`);
   `make test-hooks` 76 passed; integration (Postgres thật của repo này): `dw_supply_chain`
   274, `dw_platform` 257, `dw_agent_runtime` 92, `apps/worker` 44, tất cả passed; vitest toàn
   bộ `@dw/web` 336 passed (32 file, 21 ca mới); `make generate-contracts` sinh lại

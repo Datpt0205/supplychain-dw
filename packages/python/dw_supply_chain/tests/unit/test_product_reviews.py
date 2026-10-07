@@ -501,6 +501,11 @@ class FakeCaseList:
     async def po_case_of(self, *args: object, **kwargs: object) -> None:
         raise NotImplementedError("not read by the lane")
 
+    async def state_entered_at(
+        self, context: AccessContext, case_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, datetime]:
+        raise NotImplementedError("not read by the lane")
+
 
 @dataclass
 class FakeWorkspaces:

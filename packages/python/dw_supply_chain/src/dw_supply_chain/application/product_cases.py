@@ -15,7 +15,13 @@ What each command decides, and where:
   workspace's case is not found, never forbidden.
 - **The PIC:** `ProposeProductCase` takes no PIC at all. The domain stamps
   the actor, so no caller (the route, the Zalo channel of Z4, a tool) can
-  name one.
+  name one. `ReassignProductCasePic` (ticket 06) is the one way it changes:
+  TP Cung ứng's duty, a reason, a new PIC who is a member of the workspace,
+  and never once the case is ordered or cancelled.
+- **The Category (ticket 06, ADR 0019):** `propose` takes a key of the
+  tenant's list (`require_category`) and stamps it; the list is the tenant's
+  SLA policy's. The case page carries the SLA of the case's current step under
+  that Category.
 - **The paper:** a step that takes a document gets the one the caller named,
   read under the caller's RLS; whether it is this round's is the domain's
   rule (`ProductDevelopmentCase._round_document`). A named document the
@@ -59,11 +65,15 @@ from dw_supply_chain.action_duties import SupplyChainActionDuties
 from dw_supply_chain.application.handlers import (
     PRODUCT_CASE_READ,
     PRODUCT_CASE_WRITE,
+    REASSIGN_PIC_DUTY,
     duty_scope,
     notify_duty_holders,
     po_case_link,
+    require_category,
+    require_member,
     resolve_action_duties,
     resolve_product_action_duties,
+    resolve_sla_policy,
 )
 from dw_supply_chain.application.ports import (
     PendingApprovalRecord,
@@ -75,6 +85,7 @@ from dw_supply_chain.application.ports import (
     ReviewRaise,
     ReviewRequester,
     ScopeHoldersPort,
+    WorkspaceMembersPort,
 )
 from dw_supply_chain.application.product_case_audit import (
     PRODUCT_CASE_RESOURCE,
@@ -99,7 +110,9 @@ from dw_supply_chain.domain.product_development_case import (
     document_refusal,
 )
 from dw_supply_chain.domain.product_proposal import DraftClaim, ProposalOrigin
+from dw_supply_chain.domain.sla_evaluation import SLAEvaluation, evaluate_product_sla
 from dw_supply_chain.product_action_duties import SupplyChainProductActionDuties
+from dw_supply_chain.sla_policy import ProductCategory, SupplyChainSLAPolicy
 from dw_supply_chain.workflows.advance_product_case_graph import BOD_REVIEW_CASE_KEY
 
 logger = logging.getLogger(__name__)
@@ -122,11 +135,14 @@ class ProductCaseDetail:
     step-to-duty mapping the case page shows who may take each step from (the
     same mapping `AdvanceProductCase` authorizes against, resolved by the same
     function), and, while it waits for BGĐ or for its sign-off, the approval
-    it waits on; once ordered, the PO case ĐẶT HÀNG opened."""
+    it waits on; once ordered, the PO case ĐẶT HÀNG opened. `sla`: the
+    current step's SLA under the case's Category (not_applicable where no
+    milestone measures the state)."""
 
     case: ProductDevelopmentCase
     rounds: list[SampleRound]
     duties: SupplyChainProductActionDuties
+    sla: SLAEvaluation
     pending_review: PendingApprovalRecord | None = None
     po_case_id: uuid.UUID | None = None
 
@@ -175,8 +191,17 @@ class ProposeProductCase:
     authz: AuthorizationPort
     policy_override_repo: PolicyOverridePort
     platform_default_duties: SupplyChainProductActionDuties
+    platform_default_sla_policy: SupplyChainSLAPolicy
     ids: IdGenerator
     clock: UtcClock
+
+    async def categories(self, context: AccessContext) -> tuple[ProductCategory, ...]:
+        """The caller's tenant's Category list: what `handle` accepts, and what
+        a chat proposal resolves a person's words against."""
+        policy = await resolve_sla_policy(
+            context, self.policy_override_repo, self.platform_default_sla_policy
+        )
+        return policy.categories
 
     async def propose_scopes(self, context: AccessContext) -> frozenset[str]:
         """Every scope proposing needs in the caller's tenant: the write, and
@@ -202,6 +227,12 @@ class ProposeProductCase:
         )
         for scope in sorted(await self.propose_scopes(context)):
             await self.authz.require(context=context, action=scope, resource_type=_RESOURCE)
+        category = require_category(
+            await resolve_sla_policy(
+                context, self.policy_override_repo, self.platform_default_sla_policy
+            ),
+            category,
+        )
         case = ProductDevelopmentCase.propose(
             id=ProductDevelopmentCaseId(self.ids.new_uuid()),
             tenant_id=TenantId(context.tenant_id),
@@ -241,7 +272,9 @@ class GetProductCase:
     authz: AuthorizationPort
     policy_override_repo: PolicyOverridePort
     platform_default_duties: SupplyChainProductActionDuties
+    platform_default_sla_policy: SupplyChainSLAPolicy
     approvals: PendingApprovalsPort
+    clock: UtcClock
 
     async def handle(
         self, context: AccessContext, case_id: ProductDevelopmentCaseId
@@ -253,11 +286,22 @@ class GetProductCase:
             resource_id=str(case_id),
         )
         case = await _case_in_workspace(self.repo, context, case_id)
+        assert case.created_at is not None  # read back from a row
+        entered = await self.repo.state_entered_at(context, [case.id.value])
         return ProductCaseDetail(
             case=case,
             rounds=await self.repo.list_rounds(context, case.id),
             duties=await resolve_product_action_duties(
                 context, self.policy_override_repo, self.platform_default_duties
+            ),
+            sla=evaluate_product_sla(
+                state=case.state,
+                category=case.category,
+                entered_current_state_at=entered.get(case.id.value, case.created_at),
+                now=self.clock.now(),
+                policy=await resolve_sla_policy(
+                    context, self.policy_override_repo, self.platform_default_sla_policy
+                ),
             ),
             pending_review=(
                 await self.approvals.pending_by_payload(
@@ -526,6 +570,57 @@ class PlaceOrder:
             link=po_case_link(po_case.id.value),
         )
         return OrderPlaced(case=case, po_case=po_case)
+
+
+@dataclass(frozen=True)
+class ReassignProductCasePic:
+    """Hands a product case to another PIC, with a reason (ticket 06). The duty
+    is checked before the case is read; another tenant's or workspace's case
+    is not found; the new PIC must be a member of the workspace; an ordered or
+    cancelled case refuses (its PIC lives on the PO case from ĐẶT HÀNG on).
+    The change and its audit event are one transaction, optimistic on the
+    version read. Follow-ups already open keep the PIC they were stamped with."""
+
+    repo: ProductCaseRepositoryPort
+    members: WorkspaceMembersPort
+    authz: AuthorizationPort
+    ids: IdGenerator
+    clock: UtcClock
+
+    async def handle(
+        self,
+        context: AccessContext,
+        *,
+        case_id: ProductDevelopmentCaseId,
+        new_pic: uuid.UUID,
+        reason: str | None,
+    ) -> ProductDevelopmentCase:
+        await self.authz.require(
+            context=context,
+            action=duty_scope(REASSIGN_PIC_DUTY),
+            resource_type=_RESOURCE,
+            resource_id=str(case_id),
+        )
+        case = await _case_in_workspace(self.repo, context, case_id)
+        await require_member(self.members, context, new_pic)
+        previous = case.reassign_pic(new_pic=new_pic, reason=reason)
+        await self.repo.save(
+            context,
+            case,
+            audit=product_case_audit(
+                context,
+                self.ids,
+                self.clock,
+                case,
+                "reassign_pic",
+                {
+                    "from_pic_user_id": str(previous),
+                    "to_pic_user_id": str(new_pic),
+                    "reason": (reason or "").strip(),
+                },
+            ),
+        )
+        return case
 
 
 def _coding_details(

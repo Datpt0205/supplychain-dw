@@ -45,9 +45,12 @@ from dw_platform.domain.audit import AuditEvent
 from dw_platform.testing.seed_env import seed_test_env
 from dw_supply_chain.adapters.persistence.follow_up_repository import (
     SqlFollowUpRepository,
-    SqlTenantsWithCases,
+    SqlWorkspacesWithCases,
 )
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
+from dw_supply_chain.adapters.persistence.product_case_repository import (
+    SqlProductCaseRepository,
+)
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
@@ -90,8 +93,9 @@ class _Stack:
 
     def sweep(self) -> SweepFollowUps:
         return SweepFollowUps(
-            tenants=SqlTenantsWithCases(self.sessions),
+            workspaces=SqlWorkspacesWithCases(self.sessions),
             po_case_repo=SqlPOCaseRepository(self.sessions),
+            product_case_repo=SqlProductCaseRepository(self.sessions),
             supplier_update_repo=SqlSupplierUpdateRepository(self.sessions),
             policy_override_repo=SqlPolicyOverrideRepository(self.sessions),
             platform_default_sla_policy=load_supply_chain_sla_policy(POLICIES / SLA_POLICY_FILE),
@@ -100,6 +104,7 @@ class _Stack:
             ),
             follow_up_repo=SqlFollowUpRepository(self.sessions),
             holders=SqlScopeHolders(self.sessions),
+            members=SqlScopeHolders(self.sessions),
             notifier=SqlNotificationRepository(self.sessions),
             ids=Uuid4Generator(),
             clock=SystemClock(),
@@ -213,8 +218,8 @@ async def test_a_quiet_case_reaches_its_coordinator_once_and_resolves_when_the_s
     case = await _quiet_case(stack, operator)
     sweep = stack.sweep()
 
-    await sweep.sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
-    await sweep.sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
+    await sweep.sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
+    await sweep.sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
 
     assert await _follow_ups_of(stack, case) == [("update_reminder", "open", [RECORDS])]
     inbox = NotificationService(SqlNotificationRepository(stack.sessions))
@@ -244,7 +249,7 @@ async def test_a_quiet_case_reaches_its_coordinator_once_and_resolves_when_the_s
             requires_confirmation=False,
         ),
     )
-    await sweep.sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
+    await sweep.sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
 
     assert await _follow_ups_of(stack, case) == [("update_reminder", "resolved", [RECORDS])]
 
@@ -252,16 +257,16 @@ async def test_a_quiet_case_reaches_its_coordinator_once_and_resolves_when_the_s
 async def test_another_tenant_sees_and_sweeps_none_of_it(stack: _Stack) -> None:
     operator = await _member(stack, "sc_operator")
     case = await _quiet_case(stack, operator)
-    await stack.sweep().sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
+    await stack.sweep().sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
     beta = await _member(stack, "sc_operator", BETA, BETA_WS)
 
     listed = await ListFollowUps(
         SqlFollowUpRepository(stack.sessions), ScopeAuthorizationService()
     ).handle(beta)
-    assert [v for v in listed if v.record.po_case_id == case.id.value] == []
+    assert [v for v in listed if v.record.case_id == case.id.value] == []
 
     # Beta's own sweep resolves nothing of Alpha's.
-    await stack.sweep().sweep_tenant(sweep_context(BETA, BETA_WS))
+    await stack.sweep().sweep_workspace(sweep_context(BETA, BETA_WS))
     assert await _follow_ups_of(stack, case) == [("update_reminder", "open", [RECORDS])]
 
 
@@ -271,8 +276,8 @@ async def test_the_cross_tenant_read_is_ids_only_and_unscoped_reads_nothing(
     operator = await _member(stack, "sc_operator")
     await _quiet_case(stack, operator)
 
-    tenants = await SqlTenantsWithCases(stack.sessions).tenants()
-    assert ALPHA in {tenant for tenant, _ in tenants}
+    workspaces = await SqlWorkspacesWithCases(stack.sessions).workspaces()
+    assert (ALPHA, ALPHA_WS) in workspaces
 
     async with stack.sessions() as session, session.begin():
         visible = await session.scalar(sa.text("SELECT count(*) FROM supply_chain.follow_ups"))
@@ -284,9 +289,9 @@ async def test_a_coordinator_closes_it_with_an_audit_row_and_it_cannot_be_delete
 ) -> None:
     operator = await _member(stack, "sc_operator")
     case = await _quiet_case(stack, operator)
-    await stack.sweep().sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
+    await stack.sweep().sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
     repo = SqlFollowUpRepository(stack.sessions)
-    (open_one,) = [r for r in await repo.list_open(operator) if r.po_case_id == case.id.value]
+    (open_one,) = [r for r in await repo.list_open(operator) if r.case_id == case.id.value]
 
     await CloseFollowUp(repo, ScopeAuthorizationService(), Uuid4Generator(), SystemClock()).handle(
         operator, open_one.id, "đã gọi NCC"
@@ -309,7 +314,7 @@ async def test_a_coordinator_closes_it_with_an_audit_row_and_it_cannot_be_delete
         )
     assert audited == 1
     # A closed episode does not reopen.
-    await stack.sweep().sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
+    await stack.sweep().sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
     assert [k for k, s, _ in await _follow_ups_of(stack, case)] == [FollowUpKind.UPDATE_REMINDER]
 
     with pytest.raises(ProgrammingError, match="permission denied"):

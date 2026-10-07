@@ -5,5 +5,15 @@
     "proposal_code": "CH-2",
     "product_name": "chảo chống dính 28cm",
     "category": "Chảo"
-  }
+  },
+  "categories": [
+    {
+      "key": "noi",
+      "label": "Nồi"
+    },
+    {
+      "key": "chao",
+      "label": "Chảo"
+    }
+  ]
 }

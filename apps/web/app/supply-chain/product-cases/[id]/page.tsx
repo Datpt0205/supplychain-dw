@@ -57,6 +57,15 @@ import {
 } from "../../../../components/supply-chain/item-coding-card";
 import { supplyChainCrumbs } from "../../../../components/supply-chain/crumbs";
 import {
+  categoryLabel,
+  useProductCategories,
+} from "../../../../components/supply-chain/product-categories";
+import {
+  SlaStatusTag,
+  milestoneLabel,
+  slaStatusLabel,
+} from "../../../../components/supply-chain/sla-status-badge";
+import {
   PRODUCT_ACTION_LABEL,
   PRODUCT_DEV_STATE_LABEL,
   PRODUCT_DEV_STATE_META,
@@ -166,6 +175,7 @@ function CaseView({
 }) {
   const { hasScope, principalId } = useAuth();
   const members = useWorkspaceMembers();
+  const categories = useProductCategories().data;
   const [documentsTick, setDocumentsTick] = useState(0);
   // A paper uploaded from a step's form: the documents card lists it too.
   const [stepUploads, setStepUploads] = useState(0);
@@ -197,6 +207,17 @@ function CaseView({
       sub: detail.supplier_name ? undefined : "Chọn khi yêu cầu mẫu (bước 2)",
     },
     { key: "pic", label: "PIC", value: who(detail.pic_user_id) },
+    {
+      // The current step's SLA under the case's Category (ticket 06).
+      key: "sla",
+      label: "SLA",
+      value: slaStatusLabel(detail.sla.status),
+      sub:
+        detail.sla.status === "not_applicable"
+          ? "Bước này không có mốc SLA"
+          : `Mốc ${milestoneLabel(detail.sla.milestone)} · ${detail.sla.age_days} ngày${detail.sla.threshold_days !== null ? ` / hạn ${detail.sla.threshold_days} ngày` : ""}`,
+      tone: detail.sla.status === "breached" ? "err" : undefined,
+    },
   ];
 
   return (
@@ -210,8 +231,15 @@ function CaseView({
           </Typography.Text>
         }
         title={detail.product_name}
-        tags={<ProductDevStateTag state={detail.state} />}
-        description={`Category ${detail.category} · tạo lúc ${formatDateTimeFull(detail.created_at)}`}
+        tags={
+          <>
+            <ProductDevStateTag state={detail.state} />
+            {detail.sla.status !== "not_applicable" && (
+              <SlaStatusTag status={detail.sla.status} />
+            )}
+          </>
+        }
+        description={`Category ${categoryLabel(categories, detail.category)} · tạo lúc ${formatDateTimeFull(detail.created_at)}`}
       />
       <Flex vertical gap="middle">
         <CaseSummary label="Tóm tắt hồ sơ" cells={cells} />
@@ -397,6 +425,7 @@ function PlaceOrder({
   onStep: () => void;
 }) {
   const { message, modal } = App.useApp();
+  const categoryList = useProductCategories().data;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const key = useRef<string | null>(null);
@@ -426,7 +455,7 @@ function PlaceOrder({
   const confirm = () => {
     modal.confirm({
       title: `ĐẶT HÀNG cho ${detail.proposal_code}?`,
-      content: `Hồ sơ phát triển "${detail.product_name}" kết thúc ở ${PRODUCT_DEV_STATE_LABEL.ordered}. Một Hồ sơ PO mở ở ${CASE_STATE_LABEL.order_requested}, chưa có số PO, mang PIC, Category ${detail.category}, NCC và ${detail.skus.length} SKU; Cung ứng tạo PO ở bước 10. Không hoàn tác được.`,
+      content: `Hồ sơ phát triển "${detail.product_name}" kết thúc ở ${PRODUCT_DEV_STATE_LABEL.ordered}. Một Hồ sơ PO mở ở ${CASE_STATE_LABEL.order_requested}, chưa có số PO, mang PIC, Category ${categoryLabel(categoryList, detail.category)}, NCC và ${detail.skus.length} SKU; Cung ứng tạo PO ở bước 10. Không hoàn tác được.`,
       okText: label,
       cancelText: "Chưa đặt",
       autoFocusButton: "cancel",

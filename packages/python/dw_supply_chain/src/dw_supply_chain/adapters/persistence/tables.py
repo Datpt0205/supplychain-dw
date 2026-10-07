@@ -121,13 +121,17 @@ follow_ups = sa.Table(
     sa.Column("id", UUID(as_uuid=True), primary_key=True),
     sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
     sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
-    sa.Column("po_case_id", UUID(as_uuid=True), sa.ForeignKey("po_cases.id"), nullable=False),
+    # Exactly one of the two is set (`ck_follow_ups_one_case`).
+    sa.Column("po_case_id", UUID(as_uuid=True), sa.ForeignKey("po_cases.id"), nullable=True),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=True),
     sa.Column("kind", sa.Text, nullable=False),
     sa.Column("episode", sa.Text, nullable=False),
     sa.Column("milestone", sa.Text, nullable=True),
     sa.Column("days", sa.Integer, nullable=False),
     sa.Column("limit_days", sa.Integer, nullable=True),
     sa.Column("recipient_scopes", JSONB, nullable=False),
+    # The PIC stamped when it opened, if the policy routed its kind to `pic`.
+    sa.Column("recipient_user_id", UUID(as_uuid=True), nullable=True),
     sa.Column("status", sa.Text, nullable=False, server_default="open"),
     sa.Column(
         "opened_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")

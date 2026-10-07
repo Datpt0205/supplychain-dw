@@ -41,6 +41,7 @@ from dw_supply_chain.application.handlers import (
     AnswerCaseQuery,
     CaseActionApplied,
     CaseActionPendingApproval,
+    CloseFollowUp,
     CreatePO,
     CreatePOCase,
     GetActionDuties,
@@ -56,8 +57,11 @@ from dw_supply_chain.application.handlers import (
     GetSLAPolicy,
     ListCaseTransitions,
     ListDelayImpactAnalyses,
+    ListFollowUps,
     ListPOCases,
+    ListProductCategories,
     ListSupplierUpdates,
+    ReassignPOCasePic,
     SetActionDutiesOverride,
     SetApprovalMatrixOverride,
     SetBriefPolicyOverride,
@@ -67,10 +71,15 @@ from dw_supply_chain.application.handlers import (
     SummarizeDailyBrief,
     duty_scope,
 )
-from dw_supply_chain.application.ports import PO_REFERENCE_PADDING, POCaseListFilter
+from dw_supply_chain.application.ports import (
+    PO_REFERENCE_PADDING,
+    FollowUpRecord,
+    POCaseListFilter,
+)
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.brief_policy import SupplyChainBriefPolicy
 from dw_supply_chain.domain.brief_summary import BriefSummaryDraft, BriefSummaryStatus
+from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.case_query import CaseQueryOutcome, GroundedField
 from dw_supply_chain.domain.daily_brief import BriefSignal
 from dw_supply_chain.domain.delay_impact import (
@@ -78,6 +87,7 @@ from dw_supply_chain.domain.delay_impact import (
     DelayImpactExtraction,
     MitigationOption,
 )
+from dw_supply_chain.domain.follow_up import FollowUpKind, FollowUpStatus
 from dw_supply_chain.domain.missing_update import MissingUpdateStatus
 from dw_supply_chain.domain.po_case import (
     TERMINAL_STATES,
@@ -99,6 +109,7 @@ from dw_supply_chain.domain.supplier_update import (
 from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE
 from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.sla_policy import (
+    ProductCategory,
     SLAConfirmationStatus,
     SLAMilestone,
     SupplierUpdateCadence,
@@ -277,7 +288,11 @@ async def test_create_opens_a_case_with_tenant_and_workspace_from_context() -> N
     repo = FakePOCaseRepository()
     case_id = uuid.uuid4()
     handler = CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(case_id)
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(case_id),
     )
 
     case = await handler.handle(
@@ -293,7 +308,11 @@ async def test_create_opens_a_case_with_tenant_and_workspace_from_context() -> N
 async def test_create_refuses_without_the_write_scope() -> None:
     repo = FakePOCaseRepository()
     handler = CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
     )
     context = _context(scopes=frozenset({"supply_chain.po_case.read"}))
 
@@ -311,7 +330,11 @@ async def test_get_returns_the_case_it_was_created_with() -> None:
     repo = FakePOCaseRepository()
     context = _context()
     created = await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
     ).handle(
         context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
@@ -344,13 +367,21 @@ async def test_list_returns_cases_newest_first() -> None:
     repo = FakePOCaseRepository()
     context = _context()
     older = await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
     ).handle(
         context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
     older.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     newer = await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
     ).handle(
         context, po_reference="PO-0002", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
@@ -375,11 +406,19 @@ async def test_list_only_returns_the_callers_tenant() -> None:
         plan_id="professional",
     )
     case = await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
     ).handle(mine, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER)
     case.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
     ).handle(
         other,
         po_reference="PO-9999",
@@ -569,7 +608,11 @@ def _extraction(**overrides: object) -> SupplierUpdateExtraction:
 
 async def _seeded_case(repo: FakePOCaseRepository, context: AccessContext) -> POCase:
     case = await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=Uuid4Generator()
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
     ).handle(
         context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
@@ -766,7 +809,11 @@ async def _seeded_case_with_delay_update(
     delay_days: int | None = 7,
 ) -> tuple[POCase, SupplierUpdate]:
     case = await CreatePOCase(
-        repo=po_case_repo, authz=ScopeAuthorizationService(), ids=Uuid4Generator()
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=po_case_repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
     ).handle(
         context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
@@ -837,7 +884,11 @@ async def test_analyze_refuses_when_the_update_belongs_to_a_different_case() -> 
     context = _context(scopes=_BOTH_SCOPES | _SUPPLIER_UPDATE_SCOPES | _DELAY_IMPACT_SCOPES)
     _, update = await _seeded_case_with_delay_update(po_case_repo, supplier_update_repo, context)
     other_case = await CreatePOCase(
-        repo=po_case_repo, authz=ScopeAuthorizationService(), ids=Uuid4Generator()
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=po_case_repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
     ).handle(
         context, po_reference="PO-0002", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
@@ -1361,12 +1412,19 @@ class FakePolicyOverrideRepository:
         self.audit_events.append(audit)
 
 
-def _sla_policy(**milestones: SLAMilestone) -> SupplyChainSLAPolicy:
+def _sla_policy(
+    *, by_category: dict[str, dict[str, SLAMilestone]] | None = None, **milestones: SLAMilestone
+) -> SupplyChainSLAPolicy:
     return SupplyChainSLAPolicy(
-        schema_version="1.0",
+        schema_version="2.0",
         policy_id="supply_chain_sla",
-        policy_version="1.0.0",
-        sla=milestones,
+        policy_version="2.0.0",
+        categories=(
+            ProductCategory(key="noi", label="Nồi"),
+            ProductCategory(key="chao", label="Chảo"),
+        ),
+        default=milestones,
+        by_category=by_category or {},
         supplier_update=SupplierUpdateCadence(reminder_after="5d", escalation_after="10d"),
     )
 
@@ -1818,7 +1876,7 @@ async def test_get_sla_policy_returns_the_platform_default_when_no_override_exis
     context = _context(scopes=frozenset({"supply_chain.sla_policy.read"}))
 
     policy = await handler.handle(context)
-    assert policy.sla["deposit"].duration_days == 10
+    assert policy.default["deposit"].duration_days == 10
 
 
 async def test_get_sla_policy_returns_the_tenants_own_override_when_set() -> None:
@@ -1835,7 +1893,7 @@ async def test_get_sla_policy_returns_the_tenants_own_override_when_set() -> Non
         authz=ScopeAuthorizationService(),
     )
     policy = await handler.handle(context)
-    assert policy.sla["deposit"].duration_days == 3
+    assert policy.default["deposit"].duration_days == 3
 
 
 async def test_get_sla_policy_refuses_without_the_read_scope() -> None:
@@ -1862,7 +1920,7 @@ async def test_set_sla_policy_override_persists_it_for_the_callers_own_tenant() 
     await handler.handle(context, submitted)
 
     stored = policy_override_repo.by_tenant_and_policy[(TENANT, "supply_chain_sla")]
-    assert SupplyChainSLAPolicy.model_validate(stored).sla["deposit"].duration_days == 7
+    assert SupplyChainSLAPolicy.model_validate(stored).default["deposit"].duration_days == 7
 
     (audit,) = policy_override_repo.audit_events
     assert audit.tenant_id.value == TENANT
@@ -1908,7 +1966,7 @@ async def test_a_written_override_is_immediately_visible_to_get_sla_policy() -> 
     await set_handler.handle(context, _sla_policy(deposit=_confirmed_milestone(9)))
     policy = await get_handler.handle(context)
 
-    assert policy.sla["deposit"].duration_days == 9
+    assert policy.default["deposit"].duration_days == 9
 
 
 # -- GetApprovalMatrix / SetApprovalMatrixOverride ---------------------------
@@ -3026,7 +3084,11 @@ async def test_create_po_case_stamps_its_caller_as_pic_and_takes_the_kind() -> N
     caller = _context(scopes=frozenset({"supply_chain.po_case.write"}))
 
     case = await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=Uuid4Generator()
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
     ).handle(caller, po_reference="PO-R-1", supplier_name="NCC", order_kind=OrderKind.REORDER)
 
     assert (case.pic_user_id, case.order_kind, case.state) == (
@@ -3060,3 +3122,332 @@ def test_no_po_case_read_joins_the_product_case() -> None:
     source = inspect.getsource(po_case_repository)
     assert "product_dev_cases" not in source
     assert "pic_user_id=row.pic_user_id" in source
+
+
+# -- the Category on a PO case opened by hand (stage-1 ticket 06) -------------
+
+
+def _create_handler(repo: FakePOCaseRepository) -> CreatePOCase:
+    return CreatePOCase(
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+    )
+
+
+async def test_a_po_case_opened_by_hand_takes_an_optional_category_of_the_list() -> None:
+    repo = FakePOCaseRepository()
+    handler = _create_handler(repo)
+
+    with_one = await handler.handle(
+        _context(),
+        po_reference="PO-1",
+        supplier_name="K",
+        order_kind=OrderKind.REORDER,
+        category="chao",
+    )
+    without = await handler.handle(
+        _context(), po_reference="PO-2", supplier_name="K", order_kind=OrderKind.REORDER
+    )
+
+    assert (with_one.category, without.category) == ("chao", None)
+
+
+async def test_a_po_case_opened_by_hand_refuses_a_category_not_in_the_list() -> None:
+    repo = FakePOCaseRepository()
+    with pytest.raises(DomainError, match="Category"):
+        await _create_handler(repo).handle(
+            _context(),
+            po_reference="PO-1",
+            supplier_name="K",
+            order_kind=OrderKind.REORDER,
+            category="Nồi",
+        )
+    assert repo.by_id == {}
+
+
+async def test_a_po_cases_sla_follows_its_category() -> None:
+    """Ticket 06: Category A uses A's number, one without uses `default`."""
+    po_case_repo = FakePOCaseRepository()
+    context = _context(scopes=frozenset({"supply_chain.po_case.read"}))
+    policy = _sla_policy(
+        by_category={"chao": {"deposit": _confirmed_milestone(2)}},
+        deposit=_confirmed_milestone(10),
+    )
+    statuses = {}
+    for category in ("chao", "noi", None):
+        case = POCase(
+            id=POCaseId(uuid.uuid4()),
+            tenant_id=TenantId(TENANT),
+            workspace_id=WorkspaceId(WORKSPACE),
+            po_reference=f"PO-{category}",
+            supplier_name="K",
+            state=CaseState.WAITING_DEPOSIT,
+            created_at=_NOW - timedelta(days=30),
+            category=category,
+        )
+        await po_case_repo.add(context, case)
+        po_case_repo.current_state_entered_at[case.id.value] = _NOW - timedelta(days=3)
+        evaluation = await GetSLAEvaluation(
+            po_case_repo=po_case_repo,
+            policy_override_repo=FakePolicyOverrideRepository(),
+            platform_default_policy=policy,
+            authz=ScopeAuthorizationService(),
+            clock=FixedClock(_NOW),
+        ).handle(context, case.id)
+        statuses[category] = (evaluation.threshold_days, evaluation.status)
+
+    assert statuses == {
+        "chao": (2, SLAEvaluationStatus.BREACHED),
+        "noi": (10, SLAEvaluationStatus.ON_TRACK),
+        None: (10, SLAEvaluationStatus.ON_TRACK),
+    }
+
+
+async def test_an_override_of_tenant_b_does_not_change_tenant_as_sla() -> None:
+    po_case_repo = FakePOCaseRepository()
+    overrides = FakePolicyOverrideRepository()
+    other = AccessContext(
+        tenant_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        principal_id=uuid.uuid4(),
+        roles=frozenset(),
+        scopes=frozenset({"supply_chain.sla_policy.write"}),
+        plan_id="professional",
+    )
+    await overrides.put(
+        other,
+        "supply_chain_sla",
+        _sla_policy(deposit=_confirmed_milestone(1)).model_dump(mode="json"),
+        audit=_audit_event(other),
+    )
+    context = _context(scopes=frozenset({"supply_chain.po_case.read"}))
+    case = POCase(
+        id=POCaseId(uuid.uuid4()),
+        tenant_id=TenantId(TENANT),
+        workspace_id=WorkspaceId(WORKSPACE),
+        po_reference="PO-A",
+        supplier_name="K",
+        state=CaseState.WAITING_DEPOSIT,
+        created_at=_NOW - timedelta(days=30),
+    )
+    await po_case_repo.add(context, case)
+    po_case_repo.current_state_entered_at[case.id.value] = _NOW - timedelta(days=3)
+
+    evaluation = await GetSLAEvaluation(
+        po_case_repo=po_case_repo,
+        policy_override_repo=overrides,
+        platform_default_policy=_sla_policy(deposit=_confirmed_milestone(10)),
+        authz=ScopeAuthorizationService(),
+        clock=FixedClock(_NOW),
+    ).handle(context, case.id)
+
+    assert (evaluation.threshold_days, evaluation.status) == (10, SLAEvaluationStatus.ON_TRACK)
+
+
+async def test_the_category_list_is_read_with_the_product_case_read_scope() -> None:
+    handler = ListProductCategories(
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        authz=ScopeAuthorizationService(),
+    )
+    listed = await handler.handle(_context(scopes=frozenset({"supply_chain.product_case.read"})))
+    assert [(c.key, c.label) for c in listed] == [("noi", "Nồi"), ("chao", "Chảo")]
+    with pytest.raises(PermissionDeniedError):
+        await handler.handle(_context(scopes=frozenset({"supply_chain.po_case.read"})))
+
+
+# -- reassign_pic on a PO case (stage-1 ticket 06) ----------------------------
+
+_SUPPLY_LEAD = duty_scope(CaseDuty.SUPPLY_LEAD)
+
+
+@dataclass
+class _Members:
+    of: dict[uuid.UUID, set[uuid.UUID]] = field(default_factory=dict)
+
+    async def members(
+        self, context: AccessContext, workspace_id: uuid.UUID, user_ids: frozenset[uuid.UUID]
+    ) -> frozenset[uuid.UUID]:
+        return frozenset(user_ids & self.of.get(workspace_id, set()))
+
+
+async def _po_case_with_pic(
+    repo: FakePOCaseRepository, pic: uuid.UUID, state: CaseState = CaseState.PRODUCTION
+) -> POCase:
+    case = POCase(
+        id=POCaseId(uuid.uuid4()),
+        tenant_id=TenantId(TENANT),
+        workspace_id=WorkspaceId(WORKSPACE),
+        po_reference="PO-PIC",
+        supplier_name="K",
+        state=state,
+        created_at=_NOW,
+        pic_user_id=pic,
+    )
+    await repo.add(_context(), case)
+    return case
+
+
+def _reassign(repo: FakePOCaseRepository, members: _Members) -> ReassignPOCasePic:
+    return ReassignPOCasePic(
+        repo=repo,
+        members=members,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=FixedClock(_NOW),
+    )
+
+
+async def test_tp_cung_ung_reassigns_a_po_cases_pic_with_a_reason_and_an_audit() -> None:
+    repo = FakePOCaseRepository()
+    old, new = uuid.uuid4(), uuid.uuid4()
+    case = await _po_case_with_pic(repo, old)
+
+    changed = await _reassign(repo, _Members({WORKSPACE: {new}})).handle(
+        _context(scopes=frozenset({_SUPPLY_LEAD})),
+        po_case_id=case.id,
+        new_pic=new,
+        reason="Anh Tuấn chuyển bộ phận",
+    )
+
+    assert changed.pic_user_id == new == repo.by_id[case.id.value].pic_user_id
+    (audit,) = repo.audits
+    assert audit.action == "supply_chain.po_case.reassign_pic"
+    assert audit.details == {
+        "from_pic_user_id": str(old),
+        "to_pic_user_id": str(new),
+        "reason": "Anh Tuấn chuyển bộ phận",
+    }
+
+
+async def test_reassigning_a_po_case_needs_the_duty_a_reason_and_a_member() -> None:
+    repo = FakePOCaseRepository()
+    old, new, outsider = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    case = await _po_case_with_pic(repo, old)
+    handler = _reassign(repo, _Members({WORKSPACE: {new}}))
+
+    with pytest.raises(PermissionDeniedError):
+        await handler.handle(
+            _context(scopes=frozenset({"supply_chain.duty.ordering"})),
+            po_case_id=case.id,
+            new_pic=new,
+            reason="x",
+        )
+    with pytest.raises(DomainError, match="reason"):
+        await handler.handle(
+            _context(scopes=frozenset({_SUPPLY_LEAD})), po_case_id=case.id, new_pic=new, reason=" "
+        )
+    with pytest.raises(DomainError, match="member"):
+        await handler.handle(
+            _context(scopes=frozenset({_SUPPLY_LEAD})),
+            po_case_id=case.id,
+            new_pic=outsider,
+            reason="x",
+        )
+    assert repo.by_id[case.id.value].pic_user_id == old
+    assert repo.audits == []
+
+
+async def test_a_finished_po_case_keeps_its_pic() -> None:
+    repo = FakePOCaseRepository()
+    old, new = uuid.uuid4(), uuid.uuid4()
+    case = await _po_case_with_pic(repo, old, state=CaseState.COMPLETED)
+    with pytest.raises(ConflictError):
+        await _reassign(repo, _Members({WORKSPACE: {new}})).handle(
+            _context(scopes=frozenset({_SUPPLY_LEAD})), po_case_id=case.id, new_pic=new, reason="x"
+        )
+    assert repo.by_id[case.id.value].pic_user_id == old
+
+
+# -- follow-ups handed to the stamped PIC (stage-1 ticket 06) ------------------
+
+
+@dataclass
+class _FollowUps:
+    rows: dict[uuid.UUID, FollowUpRecord] = field(default_factory=dict)
+    audits: list[AuditEvent] = field(default_factory=list)
+
+    async def list_open(self, context: AccessContext) -> list[FollowUpRecord]:
+        return [r for r in self.rows.values() if r.workspace_id == context.workspace_id]
+
+    async def get(self, context: AccessContext, follow_up_id: uuid.UUID) -> FollowUpRecord | None:
+        row = self.rows.get(follow_up_id)
+        return row if row is not None and row.workspace_id == context.workspace_id else None
+
+    async def close_done(
+        self,
+        context: AccessContext,
+        follow_up_id: uuid.UUID,
+        *,
+        note: str | None,
+        audit: AuditEvent,
+    ) -> bool:
+        row = self.rows[follow_up_id]
+        if row.status is not FollowUpStatus.OPEN:
+            return False
+        self.rows[follow_up_id] = replace(row, status=FollowUpStatus.DONE)
+        self.audits.append(audit)
+        return True
+
+    async def open(self, context: AccessContext, drafts: object) -> int:
+        raise NotImplementedError("not exercised by the read and close handlers")
+
+    async def resolve(self, context: AccessContext, follow_up_ids: object) -> None:
+        raise NotImplementedError("not exercised by the read and close handlers")
+
+    async def mark_notified(self, context: AccessContext, follow_up_id: uuid.UUID) -> None:
+        raise NotImplementedError("not exercised by the read and close handlers")
+
+
+def _follow_up(pic: uuid.UUID | None) -> FollowUpRecord:
+    return FollowUpRecord(
+        id=uuid.uuid4(),
+        case_kind=CaseKind.PRODUCT,
+        case_id=uuid.uuid4(),
+        workspace_id=WORKSPACE,
+        reference="DX-1",
+        supplier_name=None,
+        kind=FollowUpKind.SLA_BREACH,
+        episode="bm04@x",
+        milestone="bm04",
+        days=5,
+        limit_days=4,
+        recipient_scopes=frozenset({"supply_chain.sla_policy.write"}),
+        recipient_user_id=pic,
+        status=FollowUpStatus.OPEN,
+        opened_at=_NOW,
+        notified_at=None,
+        closed_at=None,
+        closed_by=None,
+        close_note=None,
+    )
+
+
+async def test_the_stamped_pic_sees_the_follow_up_as_theirs_and_may_close_it() -> None:
+    pic = uuid.uuid4()
+    repo = _FollowUps()
+    row = _follow_up(pic)
+    repo.rows[row.id] = row
+    pic_context = _context(scopes=frozenset({"supply_chain.po_case.read"})).model_copy(
+        update={"principal_id": pic}
+    )
+    other = _context(scopes=frozenset({"supply_chain.po_case.read"}))
+
+    (mine,) = await ListFollowUps(repo, ScopeAuthorizationService()).handle(pic_context)
+    (not_mine,) = await ListFollowUps(repo, ScopeAuthorizationService()).handle(other)
+    assert (mine.mine, not_mine.mine) == (True, False)
+
+    close = CloseFollowUp(repo, ScopeAuthorizationService(), Uuid4Generator(), FixedClock(_NOW))
+    with pytest.raises(PermissionDeniedError):
+        await close.handle(other, row.id, None)
+    await close.handle(pic_context, row.id, "đã gọi NCC")
+    assert repo.rows[row.id].status is FollowUpStatus.DONE
+    (audit,) = repo.audits
+    assert audit.details == {
+        "case_kind": "product",
+        "case_id": str(row.case_id),
+        "kind": "sla_breach",
+    }

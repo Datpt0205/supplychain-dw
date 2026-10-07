@@ -3,9 +3,10 @@
   "kept": {
     "proposal_code": "CH-28",
     "product_name": "chảo chống dính 28cm",
-    "category": "Chảo"
+    "category": "chao"
   },
   "dropped": [],
   "missing": [],
-  "complete": true
+  "complete": true,
+  "offered": []
 }

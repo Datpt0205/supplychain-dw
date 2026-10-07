@@ -63,7 +63,7 @@ from dw_supply_chain.adapters.persistence.case_document_repository import (
 )
 from dw_supply_chain.adapters.persistence.follow_up_repository import (
     SqlFollowUpRepository,
-    SqlTenantsWithCases,
+    SqlWorkspacesWithCases,
 )
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
 from dw_supply_chain.adapters.persistence.product_case_repository import (
@@ -113,8 +113,9 @@ def build_follow_up_sweep(
     clock: UtcClock,
 ) -> SweepFollowUps:
     return SweepFollowUps(
-        tenants=SqlTenantsWithCases(sessions),
+        workspaces=SqlWorkspacesWithCases(sessions),
         po_case_repo=SqlPOCaseRepository(sessions),
+        product_case_repo=SqlProductCaseRepository(sessions),
         supplier_update_repo=SqlSupplierUpdateRepository(sessions),
         policy_override_repo=SqlPolicyOverrideRepository(sessions),
         platform_default_sla_policy=load_supply_chain_sla_policy(policies_dir / SLA_POLICY_FILE),
@@ -123,6 +124,7 @@ def build_follow_up_sweep(
         ),
         follow_up_repo=SqlFollowUpRepository(sessions),
         holders=SqlScopeHolders(sessions),
+        members=SqlScopeHolders(sessions),
         notifier=SqlNotificationRepository(sessions),
         ids=ids,
         clock=clock,
@@ -260,6 +262,11 @@ def build_zalo_proposal_command(
             platform_default_duties=load_supply_chain_product_action_duties(
                 configs_dir / "policies" / PRODUCT_ACTION_DUTIES_POLICY_FILE
             ),
+            # The Category list a chat proposal is resolved against and
+            # `propose` checks (ticket 06): the same file the API loads.
+            platform_default_sla_policy=load_supply_chain_sla_policy(
+                configs_dir / "policies" / SLA_POLICY_FILE
+            ),
             ids=ids,
             clock=clock,
         ),
@@ -299,13 +306,13 @@ def build_product_review_reconcile_consumer(
 def build_follow_up_consumer(sweep: SweepFollowUps) -> Callable[[], Awaitable[None]]:
     async def consume() -> None:
         outcome = await sweep.run()
-        if outcome.opened or outcome.resolved or outcome.notified or outcome.failed_tenants:
+        if outcome.opened or outcome.resolved or outcome.notified or outcome.failed_workspaces:
             logger.info(
-                "follow-up sweep: opened=%d resolved=%d notified=%d failed_tenants=%d",
+                "follow-up sweep: opened=%d resolved=%d notified=%d failed_workspaces=%d",
                 outcome.opened,
                 outcome.resolved,
                 outcome.notified,
-                outcome.failed_tenants,
+                outcome.failed_workspaces,
             )
 
     return consume

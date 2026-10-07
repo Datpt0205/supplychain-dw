@@ -34,6 +34,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
 import sqlalchemy as sa
 from sqlalchemy.engine import CursorResult, Row
@@ -53,6 +54,7 @@ from dw_supply_chain.adapters.persistence.po_case_repository import insert_po_ca
 from dw_supply_chain.application.ports import ProductCaseListFilter
 from dw_supply_chain.domain.po_case import POCase
 from dw_supply_chain.domain.product_development_case import (
+    PRODUCT_TERMINAL_STATES,
     ItemCode,
     ItemCodeIssued,
     ProductAction,
@@ -511,6 +513,7 @@ class SqlProductCaseRepository:
                         ),
                         sample_round=case.sample_round,
                         signoff_round=case.signoff_round,
+                        pic_user_id=case.pic_user_id,
                         version=case.version,
                     )
                 )
@@ -620,6 +623,41 @@ class SqlProductCaseRepository:
             ).all()
             cases = await _with_skus(session, context, [_case(row) for row in rows])
         return build_page(cases, request=request, position_of=_position)
+
+    async def list_active(self, context: AccessContext) -> list[ProductDevelopmentCase]:
+        """The workspace's cases not yet ordered or cancelled, oldest first:
+        what the follow-up sweep evaluates."""
+        terminal = [state.value for state in PRODUCT_TERMINAL_STATES]
+        async with tenant_session(
+            self.session_factory, TenantScope.from_access_context(context)
+        ) as session:
+            rows = (
+                await session.execute(
+                    _with_current_round()
+                    .where(*_in_scope(_c, context), _c.c.state.notin_(terminal))
+                    .order_by(_c.c.created_at.asc(), _c.c.id.asc())
+                )
+            ).all()
+            return await _with_skus(session, context, [_case(row) for row in rows])
+
+    async def state_entered_at(
+        self, context: AccessContext, case_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, datetime]:
+        """Each case's latest history row, served by the history's (tenant,
+        case, occurred_at) index; the SLA clock's start, as the PO case's is."""
+        if not case_ids:
+            return {}
+        async with tenant_session(
+            self.session_factory, TenantScope.from_access_context(context)
+        ) as session:
+            rows = (
+                await session.execute(
+                    sa.select(_t.c.product_dev_case_id, sa.func.max(_t.c.occurred_at).label("at"))
+                    .where(*_in_scope(_t, context), _t.c.product_dev_case_id.in_(list(case_ids)))
+                    .group_by(_t.c.product_dev_case_id)
+                )
+            ).all()
+        return {row.product_dev_case_id: row.at for row in rows}
 
     async def list_transitions(
         self, context: AccessContext, case_id: ProductDevelopmentCaseId

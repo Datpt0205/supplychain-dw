@@ -19,7 +19,7 @@ import pytest
 from asgi_lifespan import LifespanManager
 
 from dw_api.bootstrap import ApiContainer
-from dw_api.bootstrap.paths import SUPPLY_CHAIN_ACTION_DUTIES
+from dw_api.bootstrap.paths import SUPPLY_CHAIN_ACTION_DUTIES, SUPPLY_CHAIN_SLA_POLICY
 from dw_api.health import CheckState, HealthService
 from dw_api.main import create_app
 from dw_api.settings import ApiSettings
@@ -52,6 +52,7 @@ from dw_supply_chain.application.handlers import (
     PRODUCT_CASE_READ,
     PRODUCT_CASE_WRITE,
     GetProductActionDuties,
+    ListProductCategories,
     SetProductActionDutiesOverride,
     duty_scope,
 )
@@ -69,6 +70,7 @@ from dw_supply_chain.application.product_cases import (
     ListProductCaseTransitions,
     PlaceOrder,
     ProposeProductCase,
+    ReassignProductCasePic,
 )
 from dw_supply_chain.domain.case_document import (
     CaseDocument,
@@ -94,6 +96,7 @@ from dw_supply_chain.product_action_duties import (
     PRODUCT_ACTION_DUTIES_POLICY_ID,
     SupplyChainProductActionDuties,
 )
+from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
 
 pytestmark = pytest.mark.unit
 
@@ -167,6 +170,22 @@ class FakeMembershipLookup:
             plan_id="professional",
             feature_flags=frozenset(),
         )
+
+
+# The shipped platform default: Categories `noi`, `chao`; bm04 2 days.
+SLA = load_supply_chain_sla_policy(SUPPLY_CHAIN_SLA_POLICY)
+
+
+@dataclass
+class FakeMembers:
+    """`WorkspaceMembersPort`: who belongs to which workspace."""
+
+    of: dict[uuid.UUID, set[uuid.UUID]] = field(default_factory=dict)
+
+    async def members(
+        self, context: AccessContext, workspace_id: uuid.UUID, user_ids: frozenset[uuid.UUID]
+    ) -> frozenset[uuid.UUID]:
+        return frozenset(user_ids & self.of.get(workspace_id, set()))
 
 
 @dataclass
@@ -360,6 +379,15 @@ class FakeCases:
         self.put(replace(case))
         self.po_cases[po_case.id.value] = po_case
         self.audits.extend(audits)
+
+    async def state_entered_at(
+        self, context: AccessContext, case_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, datetime]:
+        return {
+            i: max(t.occurred_at for t in self.history[i])
+            for i in case_ids
+            if self.history.get(i) and self._visible(context, self.rows[i])
+        }
 
     async def po_case_of(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
         return next(
@@ -564,6 +592,7 @@ class World:
     policies: FakePolicies = field(default_factory=FakePolicies)
     store: MemoryStore = field(default_factory=MemoryStore)
     principal: uuid.UUID = field(default_factory=uuid.uuid4)
+    members: FakeMembers = field(default_factory=lambda: FakeMembers())
 
     def container(self, scopes: frozenset[str], *, mount: bool = True) -> ApiContainer:
         async def ok_probe() -> CheckState:
@@ -609,7 +638,7 @@ class World:
                 "clock": FixedClock(NOW),
             }
             container.supply_chain_propose_product_case = ProposeProductCase(
-                repo=self.cases, **common
+                repo=self.cases, platform_default_sla_policy=SLA, **common
             )
             container.supply_chain_advance_product_case = AdvanceProductCase(
                 repo=self.cases, documents=self.documents, reviews=self.reviews, **common
@@ -628,7 +657,21 @@ class World:
                 authz=authz,
                 policy_override_repo=self.policies,
                 platform_default_duties=DUTIES,
+                platform_default_sla_policy=SLA,
                 approvals=self.approvals,
+                clock=FixedClock(NOW),
+            )
+            container.supply_chain_reassign_product_case_pic = ReassignProductCasePic(
+                repo=self.cases,
+                members=self.members,
+                authz=authz,
+                ids=Uuid4Generator(),
+                clock=FixedClock(NOW),
+            )
+            container.supply_chain_list_product_categories = ListProductCategories(
+                policy_override_repo=self.policies,
+                platform_default_sla_policy=SLA,
+                authz=authz,
             )
             container.supply_chain_list_product_cases = ListProductCases(
                 repo=self.cases, authz=authz
@@ -753,7 +796,7 @@ def _upload(case_id: uuid.UUID) -> tuple[str, str, dict[str, object]]:
     )
 
 
-_PROPOSAL = {"proposal_code": "DX-2026-001", "product_name": "Nồi 24cm", "category": "Nồi"}
+_PROPOSAL = {"proposal_code": "DX-2026-001", "product_name": "Nồi 24cm", "category": "noi"}
 
 
 # --- propose and the PIC ------------------------------------------------------------
@@ -1715,3 +1758,106 @@ async def test_the_step_route_refuses_place_order() -> None:
 
     assert response.status_code == 422
     assert world.cases.po_cases == {}
+
+
+# --- the Category, the SLA badge and reassign_pic (ticket 06) --------------------
+
+
+async def test_the_category_list_is_the_tenants_in_its_order() -> None:
+    world = World()
+    (response,) = await _send(world.container(SC_OPERATOR), [_get("/product-categories")])
+    assert response.status_code == 200, response.text
+    assert response.json() == [{"key": "noi", "label": "Nồi"}, {"key": "chao", "label": "Chảo"}]
+
+
+async def test_proposing_with_a_category_not_in_the_list_is_422_naming_it() -> None:
+    world = World()
+    (response,) = await _send(
+        world.container(SC_OPERATOR),
+        [_post("/product-cases", {**_PROPOSAL, "category": "Ấm"})],
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["details"] == {"field": "category", "category": "Ấm"}
+    assert world.cases.rows == {}
+
+
+async def test_the_detail_carries_the_sla_of_the_cases_step() -> None:
+    world = World()
+    case = world.case(at=ProductDevState.PROFILE_IN_PROGRESS)
+    world.cases.history[case.id.value][-1] = replace(
+        world.cases.history[case.id.value][-1], occurred_at=NOW - timedelta(days=3)
+    )
+
+    (response,) = await _send(world.container(SC_RND), [_get(f"/product-cases/{case.id}")])
+
+    assert response.status_code == 200, response.text
+    sla = response.json()["sla"]
+    assert (sla["milestone"], sla["status"], sla["age_days"], sla["threshold_days"]) == (
+        "bm04",
+        "breached",
+        3,
+        2,
+    )
+
+
+def _reassign(case_id: uuid.UUID, body: dict[str, object]) -> tuple[str, str, dict[str, object]]:
+    return _post(f"/product-cases/{case_id}/pic", body)
+
+
+async def test_tp_cung_ung_reassigns_the_pic_over_http() -> None:
+    world = World()
+    case = world.case()
+    new_pic = uuid.uuid4()
+    world.members.of[WORKSPACE] = {new_pic}
+
+    (response,) = await _send(
+        world.container(SC_SUPPLY_LEAD),
+        [_reassign(case.id.value, {"pic_user_id": str(new_pic), "reason": "Nghỉ phép"})],
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["pic_user_id"] == str(new_pic)
+    assert world.cases.rows[case.id.value].pic_user_id == new_pic
+
+
+@pytest.mark.parametrize(
+    ("scopes", "body", "status"),
+    [
+        ("operator", {"reason": "x"}, 403),
+        ("lead", {}, 422),
+        ("lead", {"reason": ""}, 422),
+        ("lead", {"reason": "x", "tenant_id": str(uuid.uuid4())}, 422),
+    ],
+)
+async def test_reassigning_without_the_duty_or_a_reason_changes_nothing(
+    scopes: str, body: dict[str, object], status: int
+) -> None:
+    world = World()
+    case = world.case()
+    new_pic = uuid.uuid4()
+    world.members.of[WORKSPACE] = {new_pic}
+
+    (response,) = await _send(
+        world.container(SC_OPERATOR if scopes == "operator" else SC_SUPPLY_LEAD),
+        [_reassign(case.id.value, {"pic_user_id": str(new_pic), **body})],
+    )
+
+    assert response.status_code == status, response.text
+    assert world.cases.rows[case.id.value].pic_user_id == case.pic_user_id
+
+
+async def test_reassigning_an_ordered_case_is_409() -> None:
+    world = World()
+    case = _ready(world)
+    (placed,) = await _send(world.container(SC_OPERATOR), [_order(case.id.value)])
+    assert placed.status_code == 200, placed.text
+    new_pic = uuid.uuid4()
+    world.members.of[WORKSPACE] = {new_pic}
+
+    (response,) = await _send(
+        world.container(SC_SUPPLY_LEAD),
+        [_reassign(case.id.value, {"pic_user_id": str(new_pic), "reason": "x"})],
+    )
+
+    assert response.status_code == 409, response.text
+    assert world.cases.rows[case.id.value].pic_user_id == case.pic_user_id

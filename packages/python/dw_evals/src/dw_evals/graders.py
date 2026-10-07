@@ -369,7 +369,7 @@ def grade_brief_summary(
     return GradeResult.ok(**actual)
 
 
-_PRODUCT_PROPOSAL_KEYS = frozenset({"kind", "kept", "dropped", "missing", "complete"})
+_PRODUCT_PROPOSAL_KEYS = frozenset({"kind", "kept", "dropped", "missing", "complete", "offered"})
 
 
 def grade_product_proposal_intent(
@@ -380,13 +380,17 @@ def grade_product_proposal_intent(
     An answer naming a PIC, a tenant or anything else the schema lacks is
     refused outright; a value the message does not contain is dropped and its
     field asked again; and the reply never carries a value the person did not
-    send (`must_not_echo`: names that exist only in another tenant)."""
+    send (`must_not_echo`: names that exist only in another tenant). The
+    Category is resolved against the case's tenant list (`categories`, as the
+    tenant's SLA policy lists them): kept as its key, or asked again with the
+    tenant's own names (`offered`)."""
     from dw_supply_chain.domain.product_proposal import (
         ProductProposalIntent,
         ProposalField,
         ground,
     )
     from dw_supply_chain.presentation.zalo_proposal import plan_turn
+    from dw_supply_chain.sla_policy import ProductCategory
 
     try:
         intent = ProductProposalIntent.model_validate(input_data["model_answer"])
@@ -406,7 +410,8 @@ def grade_product_proposal_intent(
         )
     grounded = ground(intent, input_data["message"])
     before = {ProposalField(k): v for k, v in input_data.get("draft", {}).items()}
-    turn = plan_turn(before, grounded, input_data.get("workspace", "Cung ứng"))
+    categories = [ProductCategory.model_validate(c) for c in input_data.get("categories", [])]
+    turn = plan_turn(before, grounded, input_data.get("workspace", "Cung ứng"), categories)
     leaked = [name for name in input_data.get("must_not_echo", []) if name in turn.reply]
     if leaked:
         return GradeResult.fail("the reply carries a value the person did not send", leaked=leaked)
@@ -416,6 +421,7 @@ def grade_product_proposal_intent(
         "dropped": [f.value for f in grounded.dropped],
         "missing": [f.value for f in turn.missing],
         "complete": turn.complete,
+        "offered": turn.offered,
     }
     mismatched = {
         key: {"expected": value, "actual": actual[key]}

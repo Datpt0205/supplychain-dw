@@ -134,8 +134,12 @@ AccessContext theo người đã liên kết, khử trùng theo id tin
       _(Z4b, quyết định A1/A2: NCC không thu ở bước 1 (ghi ở `request_sample`, ADR 0016
       sửa đổi 3), nên phần NCC chuyển thành kiểm mã trùng theo constraint của tenant và
       ca eval xuyên tenant; phần Category tách thành tiêu chí ngay dưới.)_
-- [ ] **Category không có: hỏi lại với danh sách** của tenant A — **chờ S6/QE-13** (quyết
-      định A2: chưa có danh sách Category; Z4b giữ Category là chữ nguyên văn đã kiểm).
+- [x] **Category không có: hỏi lại với danh sách** của tenant A.
+      _(S6, 2026-10-07: chữ đã kiểm nguyên văn được giải trên danh sách Category của
+      tenant (khóa hoặc nhãn, bỏ hoa thường và dấu, đúng một mục); không khớp hoặc khớp
+      nhiều thì hỏi lại với tối đa 5 lựa chọn của tenant đó. Eval `supply_chain@1.3.0`:
+      `sc-boundary-proposal-category-not-in-list`,
+      `sc-sec-cross-tenant-proposal-category-of-another-tenant`. ADR 0019 sửa đổi S6 mục 3.)_
 - [x] **Không đoán:** mô hình giả trả schema hỏng, hoặc `unsupported`: bot nói "chưa hiểu",
       bản nháp không đổi; mention không có nguyên văn trong tin bị bỏ và bot hỏi lại trường
       đó.

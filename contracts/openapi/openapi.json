@@ -1240,8 +1240,22 @@
       },
       "CreatePOCaseRequest": {
         "additionalProperties": false,
-        "description": "A case opened without stage 1 (a reorder, ADR 0017). No PIC field: the\ncaller is the PIC, and an unknown field is a 422.",
+        "description": "A case opened without stage 1 (a reorder, ADR 0017). No PIC field: the\ncaller is the PIC, and an unknown field is a 422. `category`, optional, is\na key of the tenant's Category list (`GET /product-categories`); a key not\nin it is refused.",
         "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[^\\x00]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
           "order_kind": {
             "$ref": "#/components/schemas/OrderKind"
           },
@@ -1732,8 +1746,16 @@
         "type": "object"
       },
       "FollowUpItemView": {
-        "description": "An open follow-up. `mine`: the caller holds a scope it was handed to,\nso the caller is expected to act, and may close it.",
+        "description": "An open follow-up. `mine`: it was handed to the caller (a stamped scope\nthey hold, or they are its stamped PIC), so the caller is expected to act,\nand may close it. `case_kind` says which page `case_id` opens; `reference`\nis the PO reference (null while the case awaits its PO) or the product\ncase's proposal code.",
         "properties": {
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "case_kind": {
+            "$ref": "#/components/schemas/CaseKind"
+          },
           "days": {
             "title": "Days",
             "type": "integer"
@@ -1789,12 +1811,7 @@
             "title": "Opened At",
             "type": "string"
           },
-          "po_case_id": {
-            "format": "uuid",
-            "title": "Po Case Id",
-            "type": "string"
-          },
-          "po_reference": {
+          "reference": {
             "anyOf": [
               {
                 "type": "string"
@@ -1803,17 +1820,25 @@
                 "type": "null"
               }
             ],
-            "title": "Po Reference"
+            "title": "Reference"
           },
           "supplier_name": {
-            "title": "Supplier Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Name"
           }
         },
         "required": [
           "id",
-          "po_case_id",
-          "po_reference",
+          "case_kind",
+          "case_id",
+          "reference",
           "supplier_name",
           "kind",
           "milestone",
@@ -3744,6 +3769,9 @@
             "title": "Skus",
             "type": "array"
           },
+          "sla": {
+            "$ref": "#/components/schemas/SLAEvaluationView"
+          },
           "state": {
             "$ref": "#/components/schemas/ProductDevState"
           },
@@ -3777,6 +3805,7 @@
           "created_by",
           "created_at",
           "version",
+          "sla",
           "rounds",
           "actions",
           "pending_review",
@@ -4056,6 +4085,49 @@
         "title": "ProductCaseView",
         "type": "object"
       },
+      "ProductCategory": {
+        "additionalProperties": false,
+        "description": "One Category of the tenant's list. `key` is what a case is stamped\nwith and what `by_category` is keyed by; `label` is what a person reads\nand may be renamed without touching a case.",
+        "properties": {
+          "key": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*\\S[^\\x00]*$",
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "ProductCategory",
+        "type": "object"
+      },
+      "ProductCategoryView": {
+        "description": "One Category of the tenant's list: the key a case is stamped with, the\nlabel a person reads.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "ProductCategoryView",
+        "type": "object"
+      },
       "ProductDevState": {
         "description": "The states this slice reaches. Labels live in `CONTEXT.md` and, for the\nweb, in one table beside the product-case pages.",
         "enum": [
@@ -4080,7 +4152,7 @@
       },
       "ProposeProductCaseRequest": {
         "additionalProperties": false,
-        "description": "Step 1. JSON only: product images are uploaded after the case exists,\nthrough its documents (doc_type `product_image`).",
+        "description": "Step 1. JSON only: product images are uploaded after the case exists,\nthrough its documents (doc_type `product_image`). `category` is a key of\nthe tenant's list (`GET /product-categories`); the handler refuses any\nother.",
         "properties": {
           "category": {
             "maxLength": 100,
@@ -4131,6 +4203,30 @@
           "checks"
         ],
         "title": "ReadinessResponse",
+        "type": "object"
+      },
+      "ReassignPicRequest": {
+        "additionalProperties": false,
+        "description": "Hands a case to another PIC (ticket 06): who, and why. The new PIC\nmust be a member of the case's workspace; the reason is required.",
+        "properties": {
+          "pic_user_id": {
+            "format": "uuid",
+            "title": "Pic User Id",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pic_user_id",
+          "reason"
+        ],
+        "title": "ReassignPicRequest",
         "type": "object"
       },
       "RenameTenantRequest": {
@@ -5029,7 +5125,7 @@
             "type": "object"
           },
           "schema_version": {
-            "pattern": "^1\\.0$",
+            "pattern": "^1\\.[01]$",
             "title": "Schema Version",
             "type": "string"
           }
@@ -5082,8 +5178,33 @@
       },
       "SupplyChainSLAPolicy": {
         "additionalProperties": false,
-        "description": "The versioned answer to \"how long should each PO milestone take\".\n\n`sla` is a dict keyed by milestone name rather than one field per\nmilestone — same shape as `RetentionPolicy.classes` in dw_platform: the\nset of milestones is data (today the doc's six names; DW-SC-01 will add\nmore once it exists), not a fixed set this code has to be edited to grow.",
+        "description": "The versioned answer to \"how long should each milestone take\", per\nCategory.\n\n`default` is a dict keyed by milestone name rather than one field per\nmilestone — same shape as `RetentionPolicy.classes` in dw_platform: the\nset of milestones is data, not a fixed set this code has to be edited to\ngrow. `by_category` has the same shape under a Category key.",
         "properties": {
+          "by_category": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/SLAMilestone"
+              },
+              "type": "object"
+            },
+            "title": "By Category",
+            "type": "object"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/ProductCategory"
+            },
+            "minItems": 1,
+            "title": "Categories",
+            "type": "array"
+          },
+          "default": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SLAMilestone"
+            },
+            "title": "Default",
+            "type": "object"
+          },
           "policy_id": {
             "title": "Policy Id",
             "type": "string"
@@ -5094,16 +5215,9 @@
             "type": "string"
           },
           "schema_version": {
-            "pattern": "^1\\.0$",
+            "pattern": "^2\\.0$",
             "title": "Schema Version",
             "type": "string"
-          },
-          "sla": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/SLAMilestone"
-            },
-            "title": "Sla",
-            "type": "object"
           },
           "supplier_update": {
             "$ref": "#/components/schemas/SupplierUpdateCadence"
@@ -5113,7 +5227,8 @@
           "schema_version",
           "policy_id",
           "policy_version",
-          "sla",
+          "categories",
+          "default",
           "supplier_update"
         ],
         "title": "SupplyChainSLAPolicy",
@@ -9061,6 +9176,78 @@
         ]
       }
     },
+    "/api/v1/supply-chain/po-cases/{case_id}/pic": {
+      "post": {
+        "description": "Hands the case to another PIC (TP Cung ứng's duty, ticket 06).",
+        "operationId": "reassign_po_case_pic_api_v1_supply_chain_po_cases__case_id__pic_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReassignPicRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/POCaseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reassign Po Case Pic",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/po-cases/{case_id}/sla-evaluation": {
       "get": {
         "operationId": "get_sla_evaluation_route_api_v1_supply_chain_po_cases__case_id__sla_evaluation_get",
@@ -9867,6 +10054,78 @@
         ]
       }
     },
+    "/api/v1/supply-chain/product-cases/{case_id}/pic": {
+      "post": {
+        "description": "Hands the case to another PIC (TP Cung ứng's duty, ticket 06). A\ncase ordered or cancelled refuses (409): its PIC lives on the PO case.",
+        "operationId": "reassign_product_case_pic_api_v1_supply_chain_product_cases__case_id__pic_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReassignPicRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductCaseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reassign Product Case Pic",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
       "get": {
         "operationId": "get_product_case_transitions_api_v1_supply_chain_product_cases__case_id__transitions_get",
@@ -9978,6 +10237,32 @@
           }
         },
         "summary": "Create Product Case Transition",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/product-categories": {
+      "get": {
+        "description": "The caller's tenant's Category list, in its own order.",
+        "operationId": "list_product_categories_api_v1_supply_chain_product_categories_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProductCategoryView"
+                  },
+                  "title": "Response List Product Categories Api V1 Supply Chain Product Categories Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Product Categories",
         "tags": [
           "supply_chain"
         ]

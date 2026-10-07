@@ -26,6 +26,7 @@ import {
   followUpSchema,
   caseDocumentSchema,
   productCaseSchema,
+  productCategorySchema,
   productCaseDetailSchema,
   productCaseStepSchema,
   orderPlacedSchema,
@@ -80,6 +81,7 @@ import {
   type CaseDocument,
   type DocumentType,
   type ProductCase,
+  type ProductCategory,
   type ProductCaseDetail,
   type ProductCaseStep,
   type OrderPlaced,
@@ -371,6 +373,7 @@ void _caseDocumentMirrorsTheRoute;
 
 const _productCaseMirrorsTheRoute: [
   SameType<ProductCase, SupplyChainGenerated["ProductCaseView"]>,
+  SameType<ProductCategory, SupplyChainGenerated["ProductCategoryView"]>,
   SameType<ProductCaseDetail, SupplyChainGenerated["ProductCaseDetailView"]>,
   SameType<ProductCaseStep, SupplyChainGenerated["ProductCaseStepView"]>,
   SameType<SampleRound, SupplyChainGenerated["SampleRoundView"]>,
@@ -388,7 +391,7 @@ const _productCaseMirrorsTheRoute: [
     keyof ProductActionDuties,
     keyof SupplyChainGenerated["SupplyChainProductActionDuties"]
   >,
-] = [true, true, true, true, true, true, true];
+] = [true, true, true, true, true, true, true, true];
 void _productCaseMirrorsTheRoute;
 
 const _poCaseMirrorsTheRoute: [
@@ -1415,7 +1418,17 @@ export class ApiClient {
     );
   }
 
-  /** The tenant's open follow-ups, newest first; the caller's own marked. */
+  /** The tenant's Category list, in its own order (ticket 06): what the
+   * propose form offers, and the labels of the keys a case is stamped with. */
+  listProductCategories(): Promise<ProductCategory[]> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/product-categories",
+      z.array(productCategorySchema),
+    );
+  }
+
+  /** The workspace's open follow-ups, newest first; the caller's own marked. */
   listFollowUps(): Promise<FollowUp[]> {
     return this.request(
       "GET",

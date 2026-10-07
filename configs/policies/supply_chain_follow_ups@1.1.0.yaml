@@ -1,0 +1,40 @@
+schema_version: "1.1"
+policy_id: supply_chain_follow_ups
+policy_version: "1.1.0"
+
+# Ai nhận việc cần làm (và thông báo) cho từng loại tín hiệu. PLATFORM DEFAULT
+# (tenant_id=None): mỗi tenant ghi đè TOÀN BỘ document qua
+# PUT /api/v1/supply-chain/follow-up-policy.
+#
+# Người nhận được gọi theo SCOPE, không theo role hay tên người: thành viên nào
+# trong workspace của case giữ bất kỳ scope nào trong danh sách (qua role hoặc
+# permission set) đều nhận việc và thông báo. Danh sách được đóng dấu lên từng
+# việc khi nó mở, nên sửa policy sau đó không chuyển hướng việc đã giao.
+#
+# 1.1.0 (2026-10-07, ADR 0019, ticket S6): thêm người nhận `pic`, tức PIC của hồ
+# sơ, đóng dấu lên việc lúc mở. PIC chỉ nhận khi hồ sơ có PIC và người đó còn
+# membership trong workspace của hồ sơ (lúc mở, và lại lúc gửi). Mỗi loại vẫn
+# phải có ít nhất một scope: PIC vắng, đã nghỉ, hay hồ sơ cũ không có PIC thì
+# người giữ scope vẫn nhận (QE-18, tạm). Override 1.0 đã lưu vẫn hợp lệ, không
+# có `pic` cho tới khi tenant tự thêm.
+#
+# Mặc định (tạm, Đạt duyệt lại):
+# - nhắc NCC cập nhật: PIC và người ghi nhận cập nhật của NCC (sc_operator);
+# - leo thang và trễ SLA: thêm người sở hữu quy trình (sc_process_admin) và
+#   TP Cung ứng (duty supply_lead, sc_supply_lead), người leo thang tới khi PIC
+#   không xử lý.
+# Công ty nhỏ một người làm hết thì người đó nhận tất cả, một lần.
+recipients:
+  update_reminder:
+    - pic
+    - supply_chain.supplier_update.write
+  update_escalation:
+    - pic
+    - supply_chain.supplier_update.write
+    - supply_chain.sla_policy.write
+    - supply_chain.duty.supply_lead
+  sla_breach:
+    - pic
+    - supply_chain.supplier_update.write
+    - supply_chain.sla_policy.write
+    - supply_chain.duty.supply_lead

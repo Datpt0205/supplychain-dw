@@ -1,0 +1,19 @@
+{
+  "kind": "propose_product",
+  "kept": {
+    "proposal_code": "AM-18",
+    "product_name": "ấm siêu tốc 1.8L"
+  },
+  "dropped": [],
+  "missing": [
+    "category"
+  ],
+  "complete": false,
+  "offered": [
+    "Nồi",
+    "Chảo",
+    "Ấm đun",
+    "Dao kéo",
+    "Hộp bảo quản"
+  ]
+}

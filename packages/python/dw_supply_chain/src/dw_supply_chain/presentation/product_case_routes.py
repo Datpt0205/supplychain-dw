@@ -37,6 +37,7 @@ from dw_kernel.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Page
 from dw_platform.application.access_context import AccessContext
 from dw_supply_chain.application.handlers import (
     GetProductActionDuties,
+    ListProductCategories,
     SetProductActionDutiesOverride,
     duty_scope,
 )
@@ -52,6 +53,7 @@ from dw_supply_chain.application.product_cases import (
     ListProductCaseTransitions,
     PlaceOrder,
     ProposeProductCase,
+    ReassignProductCasePic,
 )
 from dw_supply_chain.domain.case_document import DocumentType
 from dw_supply_chain.domain.product_development_case import (
@@ -66,7 +68,13 @@ from dw_supply_chain.domain.product_development_case import (
     SampleRound,
     SkuDraft,
 )
+from dw_supply_chain.presentation.routes import (
+    ReassignPicRequest,
+    SLAEvaluationView,
+    sla_evaluation_view,
+)
 from dw_supply_chain.product_action_duties import SupplyChainProductActionDuties
+from dw_supply_chain.sla_policy import ProductCategory
 
 AccessContextResolver = Callable[..., Awaitable[AccessContext]]
 IdempotencyResolver = Callable[..., object]
@@ -86,7 +94,9 @@ _NO_NUL = r"^[^\x00]*$"
 
 class ProposeProductCaseRequest(BaseModel):
     """Step 1. JSON only: product images are uploaded after the case exists,
-    through its documents (doc_type `product_image`)."""
+    through its documents (doc_type `product_image`). `category` is a key of
+    the tenant's list (`GET /product-categories`); the handler refuses any
+    other."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -224,7 +234,17 @@ class PendingReviewView(BaseModel):
     steps: list[SignoffStepView]
 
 
+class ProductCategoryView(BaseModel):
+    """One Category of the tenant's list: the key a case is stamped with, the
+    label a person reads."""
+
+    key: str
+    label: str
+
+
 class ProductCaseDetailView(ProductCaseView):
+    # The current step's SLA under the case's Category (ticket 06).
+    sla: SLAEvaluationView
     rounds: list[SampleRoundView]
     actions: list[ProductActionOptionView]
     pending_review: PendingReviewView | None
@@ -319,6 +339,10 @@ def _pending_review_view(approval: PendingApprovalRecord | None) -> PendingRevie
     )
 
 
+def _category_view(category: ProductCategory) -> ProductCategoryView:
+    return ProductCategoryView(key=category.key, label=category.label)
+
+
 def _text(value: object) -> str | None:
     return value if isinstance(value, str) else None
 
@@ -345,6 +369,8 @@ def build_product_cases_router(
     set_duties: SetProductActionDutiesOverride,
     *,
     place_order: PlaceOrder,
+    reassign_pic: ReassignProductCasePic,
+    list_categories: ListProductCategories,
     resolve_access_context: AccessContextResolver,
     resolve_idempotency: IdempotencyResolver,
 ) -> APIRouter:
@@ -364,6 +390,30 @@ def build_product_cases_router(
             proposal_code=body.proposal_code,
             product_name=body.product_name,
             category=body.category,
+        )
+        return await idempotency.record(_view(case))
+
+    @router.get("/product-categories", response_model=list[ProductCategoryView])
+    async def list_product_categories(
+        context: require_access_context,
+    ) -> list[ProductCategoryView]:
+        """The caller's tenant's Category list, in its own order."""
+        return [_category_view(c) for c in await list_categories.handle(context)]
+
+    @router.post("/product-cases/{case_id}/pic", response_model=ProductCaseView)
+    async def reassign_product_case_pic(
+        case_id: uuid.UUID,
+        body: ReassignPicRequest,
+        context: require_access_context,
+        idempotency: require_idempotency,
+    ) -> ProductCaseView:
+        """Hands the case to another PIC (TP Cung ứng's duty, ticket 06). A
+        case ordered or cancelled refuses (409): its PIC lives on the PO case."""
+        case = await reassign_pic.handle(
+            context,
+            case_id=ProductDevelopmentCaseId(case_id),
+            new_pic=body.pic_user_id,
+            reason=body.reason,
         )
         return await idempotency.record(_view(case))
 
@@ -395,6 +445,7 @@ def build_product_cases_router(
         return ProductCaseDetailView.model_validate(
             {
                 **_fields(detail.case),
+                "sla": sla_evaluation_view(detail.sla),
                 "rounds": [_round_view(r) for r in detail.rounds],
                 "actions": [
                     ProductActionOptionView(

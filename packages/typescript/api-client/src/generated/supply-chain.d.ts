@@ -374,6 +374,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/po-cases/{case_id}/pic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reassign Po Case Pic
+         * @description Hands the case to another PIC (TP Cung ứng's duty, ticket 06).
+         */
+        post: operations["reassign_po_case_pic_api_v1_supply_chain_po_cases__case_id__pic_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/po-cases/{case_id}/sla-evaluation": {
         parameters: {
             query?: never;
@@ -547,6 +567,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/product-cases/{case_id}/pic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reassign Product Case Pic
+         * @description Hands the case to another PIC (TP Cung ứng's duty, ticket 06). A
+         *     case ordered or cancelled refuses (409): its PIC lives on the PO case.
+         */
+        post: operations["reassign_product_case_pic_api_v1_supply_chain_product_cases__case_id__pic_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
         parameters: {
             query?: never;
@@ -559,6 +600,26 @@ export interface paths {
         put?: never;
         /** Create Product Case Transition */
         post: operations["create_product_case_transition_api_v1_supply_chain_product_cases__case_id__transitions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/product-categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Product Categories
+         * @description The caller's tenant's Category list, in its own order.
+         */
+        get: operations["list_product_categories_api_v1_supply_chain_product_categories_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -879,9 +940,13 @@ export interface components {
         /**
          * CreatePOCaseRequest
          * @description A case opened without stage 1 (a reorder, ADR 0017). No PIC field: the
-         *     caller is the PIC, and an unknown field is a 422.
+         *     caller is the PIC, and an unknown field is a 422. `category`, optional, is
+         *     a key of the tenant's Category list (`GET /product-categories`); a key not
+         *     in it is refused.
          */
         CreatePOCaseRequest: {
+            /** Category */
+            category?: string | null;
             order_kind: components["schemas"]["OrderKind"];
             /** Po Reference */
             po_reference: string;
@@ -957,10 +1022,19 @@ export interface components {
         DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette";
         /**
          * FollowUpItemView
-         * @description An open follow-up. `mine`: the caller holds a scope it was handed to,
-         *     so the caller is expected to act, and may close it.
+         * @description An open follow-up. `mine`: it was handed to the caller (a stamped scope
+         *     they hold, or they are its stamped PIC), so the caller is expected to act,
+         *     and may close it. `case_kind` says which page `case_id` opens; `reference`
+         *     is the PO reference (null while the case awaits its PO) or the product
+         *     case's proposal code.
          */
         FollowUpItemView: {
+            /**
+             * Case Id
+             * Format: uuid
+             */
+            case_id: string;
+            case_kind: components["schemas"]["CaseKind"];
             /** Days */
             days: number;
             /**
@@ -982,15 +1056,10 @@ export interface components {
              * Format: date-time
              */
             opened_at: string;
-            /**
-             * Po Case Id
-             * Format: uuid
-             */
-            po_case_id: string;
-            /** Po Reference */
-            po_reference: string | null;
+            /** Reference */
+            reference: string | null;
             /** Supplier Name */
-            supplier_name: string;
+            supplier_name: string | null;
         };
         /**
          * FollowUpKind
@@ -1334,6 +1403,7 @@ export interface components {
             signoff_round: number;
             /** Skus */
             skus: components["schemas"]["SkuView"][];
+            sla: components["schemas"]["SLAEvaluationView"];
             state: components["schemas"]["ProductDevState"];
             /** Supplier Name */
             supplier_name: string | null;
@@ -1444,6 +1514,29 @@ export interface components {
             version: number;
         };
         /**
+         * ProductCategory
+         * @description One Category of the tenant's list. `key` is what a case is stamped
+         *     with and what `by_category` is keyed by; `label` is what a person reads
+         *     and may be renamed without touching a case.
+         */
+        ProductCategory: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
+        /**
+         * ProductCategoryView
+         * @description One Category of the tenant's list: the key a case is stamped with, the
+         *     label a person reads.
+         */
+        ProductCategoryView: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
+        /**
          * ProductDevState
          * @description The states this slice reaches. Labels live in `CONTEXT.md` and, for the
          *     web, in one table beside the product-case pages.
@@ -1453,7 +1546,9 @@ export interface components {
         /**
          * ProposeProductCaseRequest
          * @description Step 1. JSON only: product images are uploaded after the case exists,
-         *     through its documents (doc_type `product_image`).
+         *     through its documents (doc_type `product_image`). `category` is a key of
+         *     the tenant's list (`GET /product-categories`); the handler refuses any
+         *     other.
          */
         ProposeProductCaseRequest: {
             /** Category */
@@ -1462,6 +1557,20 @@ export interface components {
             product_name: string;
             /** Proposal Code */
             proposal_code: string;
+        };
+        /**
+         * ReassignPicRequest
+         * @description Hands a case to another PIC (ticket 06): who, and why. The new PIC
+         *     must be a member of the case's workspace; the reason is required.
+         */
+        ReassignPicRequest: {
+            /**
+             * Pic User Id
+             * Format: uuid
+             */
+            pic_user_id: string;
+            /** Reason */
+            reason: string;
         };
         /**
          * ReviewRaise
@@ -1726,24 +1835,33 @@ export interface components {
         };
         /**
          * SupplyChainSLAPolicy
-         * @description The versioned answer to "how long should each PO milestone take".
+         * @description The versioned answer to "how long should each milestone take", per
+         *     Category.
          *
-         *     `sla` is a dict keyed by milestone name rather than one field per
+         *     `default` is a dict keyed by milestone name rather than one field per
          *     milestone — same shape as `RetentionPolicy.classes` in dw_platform: the
-         *     set of milestones is data (today the doc's six names; DW-SC-01 will add
-         *     more once it exists), not a fixed set this code has to be edited to grow.
+         *     set of milestones is data, not a fixed set this code has to be edited to
+         *     grow. `by_category` has the same shape under a Category key.
          */
         SupplyChainSLAPolicy: {
+            /** By Category */
+            by_category?: {
+                [key: string]: {
+                    [key: string]: components["schemas"]["SLAMilestone"];
+                };
+            };
+            /** Categories */
+            categories: components["schemas"]["ProductCategory"][];
+            /** Default */
+            default: {
+                [key: string]: components["schemas"]["SLAMilestone"];
+            };
             /** Policy Id */
             policy_id: string;
             /** Policy Version */
             policy_version: string;
             /** Schema Version */
             schema_version: string;
-            /** Sla */
-            sla: {
-                [key: string]: components["schemas"]["SLAMilestone"];
-            };
             supplier_update: components["schemas"]["SupplierUpdateCadence"];
         };
         /**
@@ -2466,6 +2584,44 @@ export interface operations {
             };
         };
     };
+    reassign_po_case_pic_api_v1_supply_chain_po_cases__case_id__pic_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReassignPicRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["POCaseView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_sla_evaluation_route_api_v1_supply_chain_po_cases__case_id__sla_evaluation_get: {
         parameters: {
             query?: never;
@@ -2934,6 +3090,44 @@ export interface operations {
             };
         };
     };
+    reassign_product_case_pic_api_v1_supply_chain_product_cases__case_id__pic_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReassignPicRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductCaseView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_product_case_transitions_api_v1_supply_chain_product_cases__case_id__transitions_get: {
         parameters: {
             query?: never;
@@ -2999,6 +3193,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_product_categories_api_v1_supply_chain_product_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductCategoryView"][];
                 };
             };
         };

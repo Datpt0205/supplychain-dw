@@ -37,6 +37,7 @@ from dw_supply_chain.application.ports import (
     ReviewNotifierPort,
     ScopeHoldersPort,
     SupplierUpdateRepositoryPort,
+    WorkspaceMembersPort,
 )
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.brief_policy import SupplyChainBriefPolicy
@@ -96,7 +97,7 @@ from dw_supply_chain.product_approvals import (
     PRODUCT_APPROVALS_POLICY_ID,
     SupplyChainProductApprovals,
 )
-from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
+from dw_supply_chain.sla_policy import ProductCategory, SupplyChainSLAPolicy
 from dw_supply_chain.workflows.advance_case_graph import APPROVAL_TYPE_PREFIX
 from dw_supply_chain.workflows.brief_summary import summarize_brief
 from dw_supply_chain.workflows.case_query_understanding import understand_case_query
@@ -143,6 +144,11 @@ def duty_scope(duty: CaseDuty) -> str:
 def po_case_link(case_id: uuid.UUID) -> str:
     """The PO case's page, what a notice about it opens."""
     return f"/supply-chain/po-cases/{case_id}"
+
+
+def product_case_link(case_id: uuid.UUID) -> str:
+    """The product case's page, what a notice about it opens."""
+    return f"/supply-chain/product-cases/{case_id}"
 
 
 async def notify_duty_holders(
@@ -192,7 +198,7 @@ PRODUCT_CASE_WRITE = "supply_chain.product_case.write"
 FOLLOW_UP_POLICY_READ = "supply_chain.follow_up_policy.read"
 FOLLOW_UP_POLICY_WRITE = "supply_chain.follow_up_policy.write"
 _FOLLOW_UP_POLICY_RESOURCE = "follow_up_policy"
-# Matches configs/policies/supply_chain_follow_ups@1.0.0.yaml's policy_id.
+# Matches configs/policies/supply_chain_follow_ups@1.1.0.yaml's policy_id.
 FOLLOW_UP_POLICY_ID = "supply_chain_follow_ups"
 _FOLLOW_UP_RESOURCE = "follow_up"
 
@@ -229,11 +235,15 @@ class CreatePOCase:
     request body — a caller who could name the tenant a case belongs to
     could create cases inside a tenant that is not theirs. The PIC is the
     caller, stamped here; `handle` has no parameter that could name another.
+    A Category is optional here (stage-1 ticket 06); one that is given must be
+    in the tenant's list (`require_category`) and is stamped as given.
     """
 
     repo: POCaseRepositoryPort
     authz: AuthorizationPort
     ids: IdGenerator
+    policy_override_repo: PolicyOverridePort
+    platform_default_sla_policy: SupplyChainSLAPolicy
 
     async def handle(
         self,
@@ -242,8 +252,14 @@ class CreatePOCase:
         po_reference: str,
         supplier_name: str,
         order_kind: OrderKind,
+        category: str | None = None,
     ) -> POCase:
         await self.authz.require(context=context, action=PO_CASE_WRITE, resource_type=_RESOURCE)
+        if category is not None:
+            policy = await resolve_sla_policy(
+                context, self.policy_override_repo, self.platform_default_sla_policy
+            )
+            category = require_category(policy, category)
         case = POCase(
             id=POCaseId(self.ids.new_uuid()),
             tenant_id=TenantId(context.tenant_id),
@@ -252,8 +268,82 @@ class CreatePOCase:
             supplier_name=supplier_name,
             order_kind=order_kind,
             pic_user_id=context.principal_id,
+            category=category,
         )
         await self.repo.add(context, case)
+        return case
+
+
+# Reassigning a PIC (stage-1 ticket 06): TP Cung ứng's duty, on either kind of
+# case. A fixed duty rather than a policy entry: it is not a step of either
+# state machine, and who may hand a case to someone else is QE-18's open answer.
+REASSIGN_PIC_DUTY = CaseDuty.SUPPLY_LEAD
+
+
+async def require_member(
+    members: WorkspaceMembersPort, context: AccessContext, user_id: uuid.UUID
+) -> None:
+    """A PIC must be a member of the case's workspace (the caller's): a case
+    handed to someone who cannot open it is a case nobody works."""
+    if user_id not in await members.members(context, context.workspace_id, frozenset({user_id})):
+        raise DomainError(
+            "the new PIC is not a member of this workspace", details={"field": "pic_user_id"}
+        )
+
+
+@dataclass(frozen=True)
+class ReassignPOCasePic:
+    """Hands a PO case to another PIC, with a reason (ticket 06). The duty is
+    checked before the case is read; the new PIC must be a member of the
+    workspace; the change and its audit event are one transaction, optimistic
+    on the version read. Follow-ups already open keep the PIC they were
+    stamped with; the next one opened goes to the new PIC. The product case
+    ĐẶT HÀNG opened this one from keeps its own PIC."""
+
+    repo: POCaseRepositoryPort
+    members: WorkspaceMembersPort
+    authz: AuthorizationPort
+    ids: IdGenerator
+    clock: UtcClock
+
+    async def handle(
+        self,
+        context: AccessContext,
+        *,
+        po_case_id: POCaseId,
+        new_pic: uuid.UUID,
+        reason: str | None,
+    ) -> POCase:
+        await self.authz.require(
+            context=context,
+            action=duty_scope(REASSIGN_PIC_DUTY),
+            resource_type=_RESOURCE,
+            resource_id=str(po_case_id),
+        )
+        case = await self.repo.get(context, po_case_id)
+        if case is None:
+            raise NotFoundError("PO case not found", details={"case_id": str(po_case_id)})
+        await require_member(self.members, context, new_pic)
+        previous = case.reassign_pic(new_pic=new_pic, reason=reason)
+        await self.repo.save(
+            context,
+            case,
+            audit=AuditEvent(
+                id=self.ids.new_uuid(),
+                tenant_id=TenantId(context.tenant_id),
+                workspace_id=WorkspaceId(context.workspace_id),
+                actor_id=UserId(context.principal_id),
+                action="supply_chain.po_case.reassign_pic",
+                resource_type=_RESOURCE,
+                resource_id=str(case.id),
+                occurred_at=self.clock.now(),
+                details={
+                    "from_pic_user_id": str(previous) if previous else None,
+                    "to_pic_user_id": str(new_pic),
+                    "reason": (reason or "").strip(),
+                },
+            ),
+        )
         return case
 
 
@@ -655,7 +745,7 @@ class GetMissingUpdateStatus:
 
         updates = await self.supplier_update_repo.list_for_case(context, po_case_id)
         last_update_at = updates[0].created_at if updates else None
-        policy = await _resolve_sla_policy(
+        policy = await resolve_sla_policy(
             context, self.policy_override_repo, self.platform_default_policy
         )
 
@@ -908,13 +998,13 @@ class SetApprovalMatrixOverride:
         )
 
 
-async def _resolve_sla_policy(
+async def resolve_sla_policy(
     context: AccessContext,
     policy_override_repo: PolicyOverridePort,
     platform_default_policy: SupplyChainSLAPolicy,
 ) -> SupplyChainSLAPolicy:
     """The tenant's own SLA policy if they have set one, the platform
-    default otherwise."""
+    default otherwise. Also the owner of the tenant's Category list."""
     return await _resolve_policy(
         context,
         policy_override_repo,
@@ -922,6 +1012,40 @@ async def _resolve_sla_policy(
         schema=SupplyChainSLAPolicy,
         platform_default=platform_default_policy,
     )
+
+
+def require_category(policy: SupplyChainSLAPolicy, key: str) -> str:
+    """The key of a Category in the tenant's list, exactly as listed, or a
+    refusal naming the key. What a case is opened with is checked here, once,
+    for every way a case opens (the web form, a chat proposal, a PO case
+    opened by hand); a case already open keeps the key it was stamped with
+    whatever the list says later."""
+    found = policy.category(key.strip())
+    if found is None:
+        raise DomainError(
+            "this Category is not in the tenant's list",
+            details={"field": "category", "category": key},
+        )
+    return found.key
+
+
+@dataclass(frozen=True)
+class ListProductCategories:
+    """The tenant's Category list, in its own order: what the propose form
+    offers. Anyone who may read product cases may read the names."""
+
+    policy_override_repo: PolicyOverridePort
+    platform_default_sla_policy: SupplyChainSLAPolicy
+    authz: AuthorizationPort
+
+    async def handle(self, context: AccessContext) -> list[ProductCategory]:
+        await self.authz.require(
+            context=context, action=PRODUCT_CASE_READ, resource_type="product_category"
+        )
+        policy = await resolve_sla_policy(
+            context, self.policy_override_repo, self.platform_default_sla_policy
+        )
+        return list(policy.categories)
 
 
 @dataclass(frozen=True)
@@ -939,7 +1063,7 @@ class GetSLAPolicy:
         await self.authz.require(
             context=context, action=SLA_POLICY_READ, resource_type=_SLA_POLICY_RESOURCE
         )
-        return await _resolve_sla_policy(
+        return await resolve_sla_policy(
             context, self.policy_override_repo, self.platform_default_policy
         )
 
@@ -1003,11 +1127,12 @@ class GetSLAEvaluation:
         assert case.created_at is not None  # persisted rows always carry it
 
         entered_at = await self.po_case_repo.get_current_state_entered_at(context, po_case_id)
-        policy = await _resolve_sla_policy(
+        policy = await resolve_sla_policy(
             context, self.policy_override_repo, self.platform_default_policy
         )
         return evaluate_sla(
             state=case.state,
+            category=case.category,
             entered_current_state_at=entered_at or case.created_at,
             now=self.clock.now(),
             policy=policy,
@@ -1041,7 +1166,7 @@ async def assess_active_cases(
     case_ids = [case.id for case in cases]
     entered_at_by_case = await po_case_repo.bulk_current_state_entered_at(context, case_ids)
     latest_update_by_case = await supplier_update_repo.bulk_latest(context, case_ids)
-    policy = await _resolve_sla_policy(context, policy_override_repo, platform_default_policy)
+    policy = await resolve_sla_policy(context, policy_override_repo, platform_default_policy)
     now = clock.now()
 
     healths: list[CaseHealth] = []
@@ -1053,6 +1178,7 @@ async def assess_active_cases(
                 case=case,
                 sla=evaluate_sla(
                     state=case.state,
+                    category=case.category,
                     entered_current_state_at=entered_at_by_case.get(case.id.value, case.created_at),
                     now=now,
                     policy=policy,
@@ -1643,8 +1769,9 @@ class SetProductActionDutiesOverride:
 
 @dataclass(frozen=True, slots=True)
 class FollowUpView:
-    """An open follow-up as a caller sees it: `mine` when the caller holds
-    one of the scopes it was handed to, which is also who may close it."""
+    """An open follow-up as a caller sees it: `mine` when it was handed to
+    the caller (a stamped scope they hold, or they are its stamped PIC), which
+    is also who may close it."""
 
     record: FollowUpRecord
     mine: bool
@@ -1652,8 +1779,9 @@ class FollowUpView:
 
 @dataclass(frozen=True)
 class ListFollowUps:
-    """The tenant's open follow-ups, newest first. Reuses `PO_CASE_READ`: a
-    follow-up says nothing a caller who can read the cases could not see."""
+    """The open follow-ups of the caller's workspace, newest first. Reuses
+    `PO_CASE_READ`: a follow-up says nothing a caller who can read the cases
+    could not see."""
 
     follow_up_repo: FollowUpRepositoryPort
     authz: AuthorizationPort
@@ -1661,7 +1789,7 @@ class ListFollowUps:
     async def handle(self, context: AccessContext) -> list[FollowUpView]:
         await self.authz.require(context=context, action=PO_CASE_READ, resource_type=_RESOURCE)
         return [
-            FollowUpView(record=record, mine=bool(record.recipient_scopes & context.scopes))
+            FollowUpView(record=record, mine=record.handed_to(context.principal_id, context.scopes))
             for record in await self.follow_up_repo.list_open(context)
         ]
 
@@ -1669,8 +1797,9 @@ class ListFollowUps:
 @dataclass(frozen=True)
 class CloseFollowUp:
     """A person marks a follow-up done. Only someone it was handed to may:
-    the recipient scopes stamped on it when it opened decide, not the
-    current policy. The audit event commits with the change."""
+    the recipient scopes and the PIC stamped on it when it opened decide, not
+    the current policy or the case's PIC now. Another workspace's follow-up is
+    not found. The audit event commits with the change."""
 
     follow_up_repo: FollowUpRepositoryPort
     authz: AuthorizationPort
@@ -1689,7 +1818,7 @@ class CloseFollowUp:
         record = await self.follow_up_repo.get(context, follow_up_id)
         if record is None:
             raise NotFoundError("follow-up not found", details={"follow_up_id": str(follow_up_id)})
-        if not record.recipient_scopes & context.scopes:
+        if not record.handed_to(context.principal_id, context.scopes):
             raise PermissionDeniedError(
                 "only someone this follow-up was handed to may close it",
                 details={"follow_up_id": str(follow_up_id)},
@@ -1708,7 +1837,11 @@ class CloseFollowUp:
                 resource_type=_FOLLOW_UP_RESOURCE,
                 resource_id=str(follow_up_id),
                 occurred_at=self.clock.now(),
-                details={"po_case_id": str(record.po_case_id), "kind": record.kind.value},
+                details={
+                    "case_kind": record.case_kind.value,
+                    "case_id": str(record.case_id),
+                    "kind": record.kind.value,
+                },
             ),
         )
         if not closed:

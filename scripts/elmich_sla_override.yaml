@@ -1,0 +1,56 @@
+schema_version: "2.0"
+policy_id: supply_chain_sla
+policy_version: "2.0.0"
+
+# Override SLA của TENANT ELMICH (không phải platform default). Ghi bằng
+#   uv run python scripts/seed_supply_chain_demo.py elmich-sla
+# qua đúng handler của PUT /api/v1/supply-chain/sla-policy (kiểm schema, quyền
+# supply_chain.sla_policy.write, audit), không qua migration: số của một khách
+# là dữ liệu của tenant đó, đổi được mà không cần deploy.
+#
+# TẠM (ticket S6, 2026-10-07), chờ Elmich:
+# - Số ngày lấy từ docs/products/elmich/process.md mục 3.2 (BM04 4, chốt SP 5,
+#   đặt cọc 10, về cảng 21, thanh toán 10, nhập kho 5). Mọi mốc là
+#   `pending_business_confirmation` cho tới khi Elmich trả lời QE-04 (số đã áp
+#   dụng hay còn đề xuất) và QE-05 (BM04 2 hay 4 ngày): mốc chờ xác nhận không bật
+#   cảnh báo nào (ADR 0019). Bước còn lại "theo Cate" (lấy mẫu, test mẫu, BGĐ duyệt,
+#   tạo mã hàng, trình ký) chưa có số: vắng mặt, không đánh giá (QE-01, QE-13).
+# - Danh sách Category tạm (QE-13): Nồi, Chảo, Khác.
+# - Nhắc/leo thang NCC 5/10 ngày: số chạy trong code trước 1.2.0 (QE-14).
+categories:
+  - key: noi
+    label: Nồi
+  - key: chao
+    label: Chảo
+  - key: khac
+    label: Khác
+
+default:
+  bm04:
+    duration: 4d
+    status: pending_business_confirmation
+    description: BM04 (bước 7), 4 ngày theo bảng 17 bước; bảng tổng quan ghi 2 (QE-05)
+  supplier_confirmation:
+    duration: 5d
+    status: pending_business_confirmation
+    description: Chốt sản phẩm với NCC (bước 8)
+  deposit:
+    duration: 10d
+    status: pending_business_confirmation
+    description: Đặt cọc
+  port_arrival:
+    duration: 21d
+    status: pending_business_confirmation
+    description: Hàng về cảng
+  payment:
+    duration: 10d
+    status: pending_business_confirmation
+    description: Thanh toán
+  warehouse_receipt:
+    duration: 5d
+    status: pending_business_confirmation
+    description: Nhập kho
+
+supplier_update:
+  reminder_after: 5d
+  escalation_after: 10d

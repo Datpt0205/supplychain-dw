@@ -10,5 +10,6 @@
   "missing": [
     "category"
   ],
-  "complete": false
+  "complete": false,
+  "offered": []
 }

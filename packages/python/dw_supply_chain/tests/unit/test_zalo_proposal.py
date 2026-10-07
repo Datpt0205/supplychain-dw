@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -44,6 +45,7 @@ from dw_supply_chain.domain.product_proposal import (
     ProposalDraftChangedError,
     ProposalField,
 )
+from dw_supply_chain.policy_files import SLA_POLICY_FILE
 from dw_supply_chain.presentation.zalo_proposal import (
     ALREADY_HANDLED,
     BUDGET_SPENT,
@@ -63,8 +65,14 @@ from dw_supply_chain.product_action_duties import (
     PRODUCT_ACTION_DUTIES_POLICY_ID,
     SupplyChainProductActionDuties,
 )
+from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
 
 pytestmark = pytest.mark.unit
+
+# The shipped platform default: Categories `noi` (Nồi) and `chao` (Chảo).
+SLA = load_supply_chain_sla_policy(
+    Path(__file__).resolve().parents[5] / "configs" / "policies" / SLA_POLICY_FILE
+)
 
 TENANT, WORKSPACE = uuid.uuid4(), uuid.uuid4()
 NOW = datetime(2026, 10, 7, 9, 0, tzinfo=UTC)
@@ -229,6 +237,9 @@ class FakeCases:
     async def po_case_of(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError("not exercised by the proposal command")
 
+    async def state_entered_at(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError("not exercised by the proposal command")
+
 
 @dataclass
 class FakePolicies:
@@ -293,6 +304,7 @@ class Bench:
                 authz=ScopeAuthorizationService(),
                 policy_override_repo=self.policies,
                 platform_default_duties=DUTIES,
+                platform_default_sla_policy=SLA,
                 ids=Uuid4Generator(),
                 clock=self.clock,
             ),
@@ -349,10 +361,11 @@ async def test_a_full_proposal_is_summarised_then_created_on_dong_y() -> None:
     created = await bench.say("dong y")  # no accents, lower case: still agreement
 
     [(_context, case, audit)] = bench.cases.added
+    # The person's words, resolved to the key of the tenant's Category.
     assert (case.proposal_code, case.product_name, case.category) == (
         "CH-28",
         "chảo chống dính 28cm",
-        "Chảo",
+        "chao",
     )
     assert case.pic_user_id == bench.principal
     assert (case.tenant_id.value, case.workspace_id.value) == (TENANT, WORKSPACE)
@@ -606,3 +619,105 @@ async def test_ids_and_a_pic_named_in_the_message_change_nothing() -> None:
     assert (context.tenant_id, context.workspace_id) == (TENANT, WORKSPACE)
     assert (case.tenant_id.value, case.workspace_id.value) == (TENANT, WORKSPACE)
     assert case.pic_user_id == bench.principal != someone
+
+
+# ---- the Category against the tenant's list (stage-1 ticket 06) ---------------
+
+
+async def test_a_category_not_in_the_list_is_asked_again_with_the_tenants_own_options() -> None:
+    bench = Bench()
+    reply = await bench.say(
+        "đề xuất SP ấm siêu tốc, mã AM-1, nhóm Ấm",
+        {
+            "kind": "propose_product",
+            "proposal_code": "AM-1",
+            "product_name": "ấm siêu tốc",
+            "category": "Ấm",
+        },
+    )
+    assert reply == (
+        "Category «Ấm» không có trong danh sách của công ty. Anh/chị chọn một trong: Nồi, Chảo."
+    )
+    draft = bench.draft()
+    assert draft is not None and ProposalField.CATEGORY not in draft.fields
+    assert not draft.awaits_confirmation
+
+    summary = await bench.say("nhóm Nồi", {"kind": "amend", "category": "Nồi"})
+    assert "Category: Nồi" in summary
+    draft = bench.draft()
+    assert draft is not None and draft.fields[ProposalField.CATEGORY] == "noi"
+
+
+async def test_the_options_offered_are_at_most_five_of_the_tenants_own_list() -> None:
+    sla = SLA.model_dump(mode="json")
+    sla["categories"] = [{"key": f"c{i}", "label": f"Nhóm {i}"} for i in range(7)]
+    sla["by_category"] = {}
+    bench = Bench(policies=FakePolicies({"supply_chain_sla": sla}))
+    reply = await bench.say(
+        "đề xuất SP ấm siêu tốc, mã AM-1, nhóm Ấm",
+        {
+            "kind": "propose_product",
+            "proposal_code": "AM-1",
+            "product_name": "ấm siêu tốc",
+            "category": "Ấm",
+        },
+    )
+    assert reply.endswith("Anh/chị chọn một trong: Nhóm 0, Nhóm 1, Nhóm 2, Nhóm 3, Nhóm 4.")
+    assert "Chảo" not in reply  # the platform's list is not this tenant's
+
+
+async def test_words_naming_two_categories_are_asked_again_never_chosen() -> None:
+    sla = SLA.model_dump(mode="json")
+    sla["categories"] = [
+        {"key": "noi", "label": "Nồi"},
+        {"key": "noi_xu", "label": "Nói"},
+        {"key": "chao", "label": "Chảo"},
+    ]
+    bench = Bench(policies=FakePolicies({"supply_chain_sla": sla}))
+    reply = await bench.say(
+        "đề xuất SP nồi 24, mã N-24, nhóm noi",
+        {
+            "kind": "propose_product",
+            "proposal_code": "N-24",
+            "product_name": "nồi 24",
+            "category": "noi",
+        },
+    )
+    # "noi" is the key `noi` exactly: kept.
+    assert "Category: Nồi" in reply
+
+    other = Bench(policies=FakePolicies({"supply_chain_sla": sla}))
+    reply = await other.say(
+        "đề xuất SP nồi 24, mã N-24, nhóm Nôi",
+        {
+            "kind": "propose_product",
+            "proposal_code": "N-24",
+            "product_name": "nồi 24",
+            "category": "Nôi",
+        },
+    )
+    assert reply == "Category «Nôi» khớp nhiều mục: Nồi, Nói. Anh/chị chọn một."
+    draft = other.draft()
+    assert draft is not None and ProposalField.CATEGORY not in draft.fields
+
+
+async def test_a_category_dropped_from_the_list_after_the_summary_creates_nothing() -> None:
+    """The list changed between the summary and "Đồng ý": `propose` refuses
+    the stamped key, the draft loses it and is asked again."""
+    policies = FakePolicies()
+    bench = Bench(policies=policies)
+    await bench.say(MESSAGE, FULL)
+    sla = SLA.model_dump(mode="json")
+    sla["categories"] = [{"key": "noi", "label": "Nồi"}]
+    sla["by_category"] = {}
+    policies.stored["supply_chain_sla"] = sla
+
+    reply = await bench.say("Đồng ý")
+
+    assert bench.cases.added == []
+    assert reply == (
+        "Category của đề xuất không còn trong danh sách của công ty, nên mình chưa tạo hồ sơ. "
+        "Anh/chị chọn một trong: Nồi."
+    )
+    draft = bench.draft()
+    assert draft is not None and ProposalField.CATEGORY not in draft.fields

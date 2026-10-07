@@ -1,0 +1,23 @@
+{
+  "message": "đề xuất SP bếp từ đôi, mã BT-02, nhóm Bếp từ",
+  "model_answer": {
+    "kind": "propose_product",
+    "proposal_code": "BT-02",
+    "product_name": "bếp từ đôi",
+    "category": "Bếp từ"
+  },
+  "categories": [
+    {
+      "key": "noi",
+      "label": "Nồi"
+    },
+    {
+      "key": "chao",
+      "label": "Chảo"
+    }
+  ],
+  "must_not_echo": [
+    "Máy xay",
+    "Lò nướng"
+  ]
+}
