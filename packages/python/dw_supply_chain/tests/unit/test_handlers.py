@@ -9,9 +9,10 @@ covers against a real database.
 
 from __future__ import annotations
 
+import inspect
 import uuid
-from collections.abc import Mapping
-from dataclasses import replace
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -33,12 +34,14 @@ from dw_supply_chain.action_duties import (
     SupplyChainActionDuties,
     load_supply_chain_action_duties,
 )
+from dw_supply_chain.adapters.persistence import po_case_repository
 from dw_supply_chain.application.handlers import (
     AdvancePOCase,
     AnalyzeDelayImpact,
     AnswerCaseQuery,
     CaseActionApplied,
     CaseActionPendingApproval,
+    CreatePO,
     CreatePOCase,
     GetActionDuties,
     GetApprovalMatrix,
@@ -62,6 +65,7 @@ from dw_supply_chain.application.handlers import (
     SetSLAPolicyOverride,
     SubmitSupplierUpdate,
     SummarizeDailyBrief,
+    duty_scope,
 )
 from dw_supply_chain.application.ports import PO_REFERENCE_PADDING, POCaseListFilter
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
@@ -80,8 +84,10 @@ from dw_supply_chain.domain.po_case import (
     CaseAction,
     CaseState,
     CaseTransition,
+    OrderKind,
     POCase,
     POCaseId,
+    POCaseLine,
 )
 from dw_supply_chain.domain.sla_evaluation import SLAEvaluationStatus
 from dw_supply_chain.domain.supplier_update import (
@@ -111,7 +117,7 @@ _SHIPPED_ACTION_DUTIES = (
     Path(__file__).resolve().parents[5]
     / "configs"
     / "policies"
-    / "supply_chain_action_duties@1.0.0.yaml"
+    / "supply_chain_action_duties@1.1.0.yaml"
 )
 _SHIPPED_PRODUCT_ACTION_DUTIES = (
     Path(__file__).resolve().parents[5] / "configs" / "policies" / PRODUCT_ACTION_DUTIES_POLICY_FILE
@@ -133,6 +139,7 @@ class FakePOCaseRepository:
         # path, which test_po_case_repository.py already covers for real.
         self.current_state_entered_at: dict[uuid.UUID, datetime] = {}
         self.transitions: dict[uuid.UUID, list[CaseTransition]] = {}
+        self.audits: list[AuditEvent] = []
 
     async def add(self, context: AccessContext, case: POCase) -> None:
         self.by_id[case.id.value] = case
@@ -143,8 +150,12 @@ class FakePOCaseRepository:
             return None
         return case
 
-    async def save(self, context: AccessContext, case: POCase) -> None:
+    async def save(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         self.by_id[case.id.value] = case
+        if audit is not None:
+            self.audits.append(audit)
 
     async def get_current_state_entered_at(
         self, context: AccessContext, case_id: POCaseId
@@ -198,9 +209,11 @@ class FakePOCaseRepository:
                 c
                 for c in self.by_id.values()
                 if c.tenant_id.value == context.tenant_id
+                # As the SQL: a case without a reference never matches.
+                and c.po_reference is not None
                 and c.po_reference.strip(PO_REFERENCE_PADDING).lower() == wanted
             ),
-            key=lambda c: c.po_reference,
+            key=lambda c: c.po_reference or "",
         )
 
     async def bulk_current_state_entered_at(
@@ -267,7 +280,9 @@ async def test_create_opens_a_case_with_tenant_and_workspace_from_context() -> N
         repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(case_id)
     )
 
-    case = await handler.handle(_context(), po_reference="PO-0001", supplier_name="Elmich Co.")
+    case = await handler.handle(
+        _context(), po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
 
     assert case.id.value == case_id
     assert case.tenant_id.value == TENANT
@@ -283,7 +298,12 @@ async def test_create_refuses_without_the_write_scope() -> None:
     context = _context(scopes=frozenset({"supply_chain.po_case.read"}))
 
     with pytest.raises(PermissionDeniedError):
-        await handler.handle(context, po_reference="PO-0001", supplier_name="Elmich Co.")
+        await handler.handle(
+            context,
+            po_reference="PO-0001",
+            supplier_name="Elmich Co.",
+            order_kind=OrderKind.REORDER,
+        )
     assert repo.by_id == {}
 
 
@@ -292,7 +312,9 @@ async def test_get_returns_the_case_it_was_created_with() -> None:
     context = _context()
     created = await CreatePOCase(
         repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
-    ).handle(context, po_reference="PO-0001", supplier_name="Elmich Co.")
+    ).handle(
+        context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
 
     fetched = await GetPOCase(repo=repo, authz=ScopeAuthorizationService()).handle(
         context, created.id
@@ -323,11 +345,15 @@ async def test_list_returns_cases_newest_first() -> None:
     context = _context()
     older = await CreatePOCase(
         repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
-    ).handle(context, po_reference="PO-0001", supplier_name="Elmich Co.")
+    ).handle(
+        context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
     older.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     newer = await CreatePOCase(
         repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
-    ).handle(context, po_reference="PO-0002", supplier_name="Elmich Co.")
+    ).handle(
+        context, po_reference="PO-0002", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
     newer.created_at = datetime(2026, 2, 1, tzinfo=UTC)
 
     page = await ListPOCases(repo=repo, authz=ScopeAuthorizationService()).handle(
@@ -350,11 +376,16 @@ async def test_list_only_returns_the_callers_tenant() -> None:
     )
     case = await CreatePOCase(
         repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
-    ).handle(mine, po_reference="PO-0001", supplier_name="Elmich Co.")
+    ).handle(mine, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER)
     case.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     await CreatePOCase(
         repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
-    ).handle(other, po_reference="PO-9999", supplier_name="Someone Else Co.")
+    ).handle(
+        other,
+        po_reference="PO-9999",
+        supplier_name="Someone Else Co.",
+        order_kind=OrderKind.REORDER,
+    )
 
     page = await ListPOCases(repo=repo, authz=ScopeAuthorizationService()).handle(
         mine, POCaseListFilter(), limit=50, cursor=None
@@ -539,7 +570,9 @@ def _extraction(**overrides: object) -> SupplierUpdateExtraction:
 async def _seeded_case(repo: FakePOCaseRepository, context: AccessContext) -> POCase:
     case = await CreatePOCase(
         repo=repo, authz=ScopeAuthorizationService(), ids=Uuid4Generator()
-    ).handle(context, po_reference="PO-0001", supplier_name="Elmich Co.")
+    ).handle(
+        context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
     return case
 
 
@@ -734,7 +767,9 @@ async def _seeded_case_with_delay_update(
 ) -> tuple[POCase, SupplierUpdate]:
     case = await CreatePOCase(
         repo=po_case_repo, authz=ScopeAuthorizationService(), ids=Uuid4Generator()
-    ).handle(context, po_reference="PO-0001", supplier_name="Elmich Co.")
+    ).handle(
+        context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
     _advance_case_to(case, state)
     await po_case_repo.save(context, case)
     gateway = FakeModelGateway(_extraction(delay_days=delay_days))
@@ -803,7 +838,9 @@ async def test_analyze_refuses_when_the_update_belongs_to_a_different_case() -> 
     _, update = await _seeded_case_with_delay_update(po_case_repo, supplier_update_repo, context)
     other_case = await CreatePOCase(
         repo=po_case_repo, authz=ScopeAuthorizationService(), ids=Uuid4Generator()
-    ).handle(context, po_reference="PO-0002", supplier_name="Elmich Co.")
+    ).handle(
+        context, po_reference="PO-0002", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
 
     handler = AnalyzeDelayImpact(
         po_case_repo=po_case_repo,
@@ -2831,3 +2868,195 @@ async def test_product_action_duties_handlers_refuse_without_their_scopes() -> N
             clock=FixedClock(_NOW),
         ).handle(_context(scopes=frozenset({"supply_chain.action_duties.read"})), shipped)
     assert overrides.by_tenant_and_policy == {}
+
+
+# --- step 10 and the PIC of a PO case (stage-1 ticket 05) -------------------------------
+
+_S5_NOW = datetime(2026, 10, 7, 8, tzinfo=UTC)
+_DUTIES = load_supply_chain_action_duties(_SHIPPED_ACTION_DUTIES)
+ORDERING = duty_scope(CaseDuty.ORDERING)
+FINANCE = duty_scope(CaseDuty.FINANCE)
+SKU = uuid.uuid4()
+
+
+@dataclass
+class _S5Holders:
+    by_scope: dict[str, list[uuid.UUID]] = field(default_factory=dict)
+
+    async def holding(
+        self, context: AccessContext, workspace_id: uuid.UUID, scopes: frozenset[str]
+    ) -> list[uuid.UUID]:
+        return sorted({p for scope in scopes for p in self.by_scope.get(scope, [])})
+
+
+@dataclass
+class _S5Notifier:
+    sent: dict[tuple[uuid.UUID, str], tuple[str, str | None]] = field(default_factory=dict)
+
+    async def deliver(
+        self,
+        context: AccessContext,
+        *,
+        recipients: Sequence[uuid.UUID],
+        source_key: str,
+        title: str,
+        body: str,
+        link: str | None,
+    ) -> None:
+        for person in recipients:
+            self.sent.setdefault((person, source_key), (title, link))
+
+
+def _awaiting(repo: FakePOCaseRepository, *, quantity: int | None = None) -> POCase:
+    case = POCase.requested(
+        id=POCaseId(uuid.uuid4()),
+        tenant_id=TenantId(TENANT),
+        workspace_id=WorkspaceId(WORKSPACE),
+        supplier_name="NCC Minh Long",
+        product_dev_case_id=uuid.uuid4(),
+        pic_user_id=uuid.uuid4(),
+        category="Nồi",
+        lines=(POCaseLine(sku_id=SKU, quantity=quantity),),
+    )
+    repo.by_id[case.id.value] = case
+    return case
+
+
+def _create_po(
+    repo: FakePOCaseRepository,
+    holders: _S5Holders | None = None,
+    notifier: _S5Notifier | None = None,
+) -> CreatePO:
+    return CreatePO(
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_action_duties=_DUTIES,
+        holders=holders or _S5Holders(),
+        notifier=notifier or _S5Notifier(),
+        ids=Uuid4Generator(),
+        clock=FixedClock(_S5_NOW),
+    )
+
+
+async def test_create_po_sets_the_reference_audits_and_tells_ke_toan() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo)
+    accountant = uuid.uuid4()
+    notifier = _S5Notifier()
+    caller = _context(scopes=frozenset({ORDERING}))
+
+    # The caller holds the finance duty as well: told nothing of their own step.
+    holders = _S5Holders({FINANCE: [accountant, caller.principal_id]})
+    done = await _create_po(repo, holders, notifier).handle(
+        caller,
+        po_case_id=case.id,
+        po_reference=" PO-2026-0101 ",
+        order_kind=OrderKind.NEW,
+        quantities={SKU: 40},
+    )
+
+    assert (done.state, done.po_reference) == (CaseState.PO_CREATED, "PO-2026-0101")
+    assert done.lines[0].quantity == 40
+    (audit,) = repo.audits
+    assert (audit.action, audit.resource_type, audit.resource_id) == (
+        "supply_chain.po_case.create_po",
+        "po_case",
+        str(case.id),
+    )
+    assert audit.details["po_reference"] == "PO-2026-0101"
+    key = f"supply_chain.po_created:{case.id}"
+    assert notifier.sent == {
+        (accountant, key): ("Đã tạo PO PO-2026-0101", f"/supply-chain/po-cases/{case.id}")
+    }
+
+
+@pytest.mark.parametrize(
+    "scopes", [frozenset(), frozenset({FINANCE, "supply_chain.po_case.write"})]
+)
+async def test_create_po_needs_its_duty_before_the_case_is_read(scopes: frozenset[str]) -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo, quantity=5)
+
+    with pytest.raises(PermissionDeniedError):
+        await _create_po(repo).handle(
+            _context(scopes=scopes),
+            po_case_id=case.id,
+            po_reference="PO-1",
+            order_kind=OrderKind.NEW,
+        )
+    assert repo.by_id[case.id.value].state is CaseState.ORDER_REQUESTED
+
+
+async def test_create_po_on_another_tenants_case_is_not_found() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo, quantity=5)
+    other = AccessContext(
+        tenant_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        principal_id=uuid.uuid4(),
+        roles=frozenset({"member"}),
+        scopes=frozenset({ORDERING}),
+        plan_id="professional",
+    )
+    with pytest.raises(NotFoundError):
+        await _create_po(repo).handle(
+            other, po_case_id=case.id, po_reference="PO-1", order_kind=OrderKind.NEW
+        )
+
+
+async def test_create_po_with_a_line_still_open_is_a_409_and_tells_nobody() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo)
+    notifier = _S5Notifier()
+
+    with pytest.raises(ConflictError):
+        await _create_po(repo, _S5Holders({FINANCE: [uuid.uuid4()]}), notifier).handle(
+            _context(scopes=frozenset({ORDERING})),
+            po_case_id=case.id,
+            po_reference="PO-1",
+            order_kind=OrderKind.NEW,
+        )
+    assert notifier.sent == {}
+    assert repo.audits == []
+
+
+async def test_create_po_case_stamps_its_caller_as_pic_and_takes_the_kind() -> None:
+    repo = FakePOCaseRepository()
+    caller = _context(scopes=frozenset({"supply_chain.po_case.write"}))
+
+    case = await CreatePOCase(
+        repo=repo, authz=ScopeAuthorizationService(), ids=Uuid4Generator()
+    ).handle(caller, po_reference="PO-R-1", supplier_name="NCC", order_kind=OrderKind.REORDER)
+
+    assert (case.pic_user_id, case.order_kind, case.state) == (
+        caller.principal_id,
+        OrderKind.REORDER,
+        CaseState.PO_CREATED,
+    )
+    assert case.product_dev_case_id is None
+    # Nothing a caller passes could name another PIC.
+    assert "pic_user_id" not in inspect.signature(CreatePOCase.handle).parameters
+
+
+async def test_a_plain_po_step_cannot_be_create_po() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo, quantity=5)
+
+    with pytest.raises(DomainError, match="create_po"):
+        await _advance_po_case_handler(repo).handle(
+            _context(scopes=frozenset({ORDERING})),
+            po_case_id=case.id,
+            action=CaseAction.CREATE_PO,
+        )
+    assert repo.by_id[case.id.value].state is CaseState.ORDER_REQUESTED
+
+
+def test_no_po_case_read_joins_the_product_case() -> None:
+    """The PIC and Category are stamped on the PO case at ĐẶT HÀNG; reading
+    them back from the product case would make a later change of PIC there
+    move the PO case's too (ADR 0017). The PO repository names no
+    product-case table at all."""
+    source = inspect.getsource(po_case_repository)
+    assert "product_dev_cases" not in source
+    assert "pic_user_id=row.pic_user_id" in source

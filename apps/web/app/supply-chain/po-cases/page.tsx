@@ -27,6 +27,10 @@ import {
   stepLabel,
 } from "../../../components/supply-chain/case-state-badge";
 import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
+import {
+  PoReferenceText,
+  poReferenceLabel,
+} from "../../../components/supply-chain/po-reference";
 import { formatDateTime, VN_TIME } from "../../../lib/dates";
 import { errorMessage, regionFailure } from "../../../lib/error-message";
 import { matches } from "../../../lib/search";
@@ -230,7 +234,7 @@ function POCaseResults({
   }
 
   const shown = items.filter((item) =>
-    matches(query, [item.po_reference, item.supplier_name]),
+    matches(query, [poReferenceLabel(item.po_reference), item.supplier_name]),
   );
 
   const columns: TableColumnsType<POCase> = [
@@ -240,7 +244,7 @@ function POCaseResults({
       render: (_: unknown, row) => (
         <Flex vertical>
           <Link href={`/supply-chain/po-cases/${row.id}`}>
-            <Typography.Text code>{row.po_reference}</Typography.Text>
+            <PoReferenceText reference={row.po_reference} />
           </Link>
           <Typography.Text type="secondary">
             {row.supplier_name}

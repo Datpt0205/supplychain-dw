@@ -4,7 +4,7 @@ The product case's own policy, beside `action_duties.py`'s PO one and never
 merged into it: the two enums share five action names, so a single document
 keyed by name would let a PO override decide who may cancel a product case.
 Same mechanism otherwise: the platform default ships in
-`configs/policies/supply_chain_product_action_duties@1.2.0.yaml`, a tenant
+`configs/policies/supply_chain_product_action_duties@1.3.0.yaml`, a tenant
 replaces it whole through `PolicyOverridePort`, and taking a step requires the
 scope of its duty (`application.handlers.duty_scope`). The duties themselves
 are `CaseDuty`'s, because roles are granted in duty terms.
@@ -16,7 +16,7 @@ behind them is the approval's stamped `required_scope`
 nothing would read it, and an override stored before they existed stays valid.
 
 Steps added after a version (`STEPS_ADDED_AFTER`: steps 7 and 8 in 1.1.0, S3;
-step 9's four in 1.2.0, S4): a tenant override stored at an older version was
+step 9's four in 1.2.0, S4; ĐẶT HÀNG in 1.3.0, S5): a tenant override stored at an older version was
 written before they existed and so never decided who takes them.
 `from_stored` gives those steps, and only those, the platform's duty when
 such a document leaves them out; everything the tenant did decide stands. A
@@ -55,11 +55,13 @@ _STEP_9 = frozenset(
         ProductAction.SUBMIT_FOR_SIGNOFF,
     }
 )
+_ORDER = frozenset({ProductAction.PLACE_ORDER})
 # For each older version a tenant override may be stored at, the steps a
 # person takes that it did not have: such an override cannot have decided them.
 STEPS_ADDED_AFTER: Mapping[str, frozenset[ProductAction]] = {
-    "1.0.0": _STEPS_7_8 | _STEP_9,
-    "1.1.0": _STEP_9,
+    "1.0.0": _STEPS_7_8 | _STEP_9 | _ORDER,
+    "1.1.0": _STEP_9 | _ORDER,
+    "1.2.0": _ORDER,
 }
 
 

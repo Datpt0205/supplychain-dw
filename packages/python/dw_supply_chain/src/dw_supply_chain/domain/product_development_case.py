@@ -36,8 +36,13 @@ way its state moves, a closed action enum, and one dispatch,
   answer, never this class's (ADR 0018). A rejected sign-off returns the case
   to `item_coding` with its codes kept.
 
+- **ĐẶT HÀNG ends the case and opens the PO case (ticket 05, ADR 0017).**
+  `place_order` moves `ready_to_order` to `ordered`, terminal, and hands back
+  the PO case awaiting its PO, carrying this case's PIC, Category, supplier
+  and SKUs. It is a command of its own (`PlaceOrder`), never a plain step:
+  the two rows are written in one transaction.
+
 The PIC is stamped from the actor at `propose` and nowhere else takes one.
-ĐẶT HÀNG (ticket 05) moves on from `ready_to_order`.
 """
 
 from __future__ import annotations
@@ -52,6 +57,7 @@ from typing import Self
 from dw_kernel.errors import ConflictError, DomainError, DWError, NotFoundError
 from dw_kernel.ids import EntityId, TenantId, WorkspaceId
 from dw_supply_chain.domain.case_document import CaseDocument, CaseKind, DocumentType
+from dw_supply_chain.domain.po_case import POCase, POCaseId, POCaseLine
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,8 +86,10 @@ class ProductDevState(StrEnum):
     # the tenant's policy gives. Only the sign-off graph moves it on; a person
     # may only cancel.
     PENDING_SIGNOFF = "pending_signoff"
-    # Every sign-off step approved; ĐẶT HÀNG comes next (ticket 05).
+    # Every sign-off step approved; ĐẶT HÀNG comes next.
     READY_TO_ORDER = "ready_to_order"
+    # ĐẶT HÀNG pressed: the PO case carries on (ticket 05). Terminal.
+    ORDERED = "ordered"
 
     WAITING_EXTERNAL = "waiting_external"
     BLOCKED = "blocked"
@@ -89,7 +97,7 @@ class ProductDevState(StrEnum):
     CANCELLED = "cancelled"
 
 
-PRODUCT_TERMINAL_STATES = frozenset({ProductDevState.CANCELLED})
+PRODUCT_TERMINAL_STATES = frozenset({ProductDevState.CANCELLED, ProductDevState.ORDERED})
 PRODUCT_INTERRUPT_STATES = frozenset(
     {ProductDevState.WAITING_EXTERNAL, ProductDevState.BLOCKED, ProductDevState.MANUAL_REVIEW}
 )
@@ -119,6 +127,8 @@ class ProductAction(StrEnum):
     ADD_SKU = "add_sku"
     REMOVE_SKU = "remove_sku"
     SUBMIT_FOR_SIGNOFF = "submit_for_signoff"
+    # ĐẶT HÀNG: the case is ordered and its PO case opened (ticket 05).
+    PLACE_ORDER = "place_order"
     WAIT_FOR_EXTERNAL = "wait_for_external"
     FLAG_BLOCKED = "flag_blocked"
     FLAG_MANUAL_REVIEW = "flag_manual_review"
@@ -144,6 +154,10 @@ GRAPH_ONLY_ACTIONS = frozenset(
         ProductAction.SIGNOFF_REJECT,
     }
 )
+
+# The steps a person takes through a command of their own, never the step
+# command: ĐẶT HÀNG writes the PO case with the step (`PlaceOrder`).
+COMMAND_ONLY_ACTIONS = frozenset({ProductAction.PLACE_ORDER})
 
 # Step 9's coding: each leaves the case in `item_coding`, and only there.
 CODING_ACTIONS = frozenset(
@@ -213,6 +227,7 @@ _FORWARD: dict[ProductAction, tuple[ProductDevState, ProductDevState]] = {
         ProductDevState.PENDING_SIGNOFF,
         ProductDevState.ITEM_CODING,
     ),
+    ProductAction.PLACE_ORDER: (ProductDevState.READY_TO_ORDER, ProductDevState.ORDERED),
 }
 _INTERRUPTS: dict[ProductAction, ProductDevState] = {
     ProductAction.WAIT_FOR_EXTERNAL: ProductDevState.WAITING_EXTERNAL,
@@ -527,10 +542,15 @@ class ProductDevelopmentCase:
         a SKU needs the item code, a submission needs both. The one answer the
         step refuses by and the page locks its control with."""
         missing: list[str] = []
-        needs_code = {ProductAction.ADD_SKU, ProductAction.SUBMIT_FOR_SIGNOFF}
+        needs_code = {
+            ProductAction.ADD_SKU,
+            ProductAction.SUBMIT_FOR_SIGNOFF,
+            ProductAction.PLACE_ORDER,
+        }
         if action in needs_code and self.item_code is None:
             missing.append("item_code")
-        if action is ProductAction.SUBMIT_FOR_SIGNOFF and not self.skus:
+        needs_sku = {ProductAction.SUBMIT_FOR_SIGNOFF, ProductAction.PLACE_ORDER}
+        if action in needs_sku and not self.skus:
             missing.append("sku")
         return tuple(missing)
 
@@ -815,6 +835,43 @@ class ProductDevelopmentCase:
         target = self._expect(ProductAction.SIGNOFF_REJECT)
         self._move(ProductAction.SIGNOFF_REJECT, target, actor_id=actor_id, reason=why)
 
+    # -- ĐẶT HÀNG ------------------------------------------------------------------
+
+    def place_order(self, *, actor_id: uuid.UUID, po_case_id: POCaseId) -> POCase:
+        """ĐẶT HÀNG: the signed product is ordered, and the PO case of steps
+        10-17 opens awaiting its PO (ADR 0017). The PO case carries this case's
+        PIC, Category and supplier as they are now, a stamp never looked up
+        again, and one line per SKU with its planned quantity (open when the
+        SKU has none; `create_po` sets it). The caller saves both together."""
+        target = self._expect(ProductAction.PLACE_ORDER)
+        missing = [*self.unmet_for(ProductAction.PLACE_ORDER)]
+        if self.supplier_name is None:
+            missing.append("supplier")
+        if missing or self.supplier_name is None:
+            raise ConflictError(
+                "place_order cần mã hàng, SKU và NCC",
+                details={"case_id": str(self.id), "missing": ",".join(missing)},
+            )
+        self._move(ProductAction.PLACE_ORDER, target, actor_id=actor_id)
+        return POCase.requested(
+            id=po_case_id,
+            tenant_id=self.tenant_id,
+            workspace_id=self.workspace_id,
+            supplier_name=self.supplier_name,
+            product_dev_case_id=self.id.value,
+            pic_user_id=self.pic_user_id,
+            category=self.category,
+            lines=tuple(
+                POCaseLine(
+                    sku_id=sku.id,
+                    quantity=sku.planned_quantity,
+                    sku_code=sku.sku_code,
+                    variant_label=sku.variant_label,
+                )
+                for sku in self.skus
+            ),
+        )
+
     # -- interrupts, resume, cancel ----------------------------------------------
 
     def _interrupt(self, action: ProductAction, *, actor_id: uuid.UUID, reason: str | None) -> None:
@@ -986,6 +1043,11 @@ def apply_product_action(
     if action is ProductAction.PROPOSE:
         raise DomainError(
             "propose opens a new case; it is not a step on one", details={"action": action.value}
+        )
+    if action in COMMAND_ONLY_ACTIONS:
+        raise DomainError(
+            f"{action.value} is taken through its own command, not as a plain step",
+            details={"action": action.value},
         )
     if given.supplier_name is not None and action is not ProductAction.REQUEST_SAMPLE:
         raise DomainError(

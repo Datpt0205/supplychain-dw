@@ -495,6 +495,12 @@ class FakeCaseList:
     ) -> list[SampleRound]:
         raise NotImplementedError("not read by the lane")
 
+    async def place_order(self, *args: object, **kwargs: object) -> None:
+        raise NotImplementedError("the lane orders nothing")
+
+    async def po_case_of(self, *args: object, **kwargs: object) -> None:
+        raise NotImplementedError("not read by the lane")
+
 
 @dataclass
 class FakeWorkspaces:

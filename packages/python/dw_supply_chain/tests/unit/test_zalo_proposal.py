@@ -84,7 +84,7 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
     {
         "schema_version": "1.0",
         "policy_id": PRODUCT_ACTION_DUTIES_POLICY_ID,
-        "policy_version": "1.2.0",
+        "policy_version": "1.3.0",
         "action_duties": {
             "propose": "ordering",
             "request_sample": "ordering",
@@ -104,6 +104,7 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
             "add_sku": "ordering",
             "remove_sku": "ordering",
             "submit_for_signoff": "ordering",
+            "place_order": "ordering",
         },
     }
 )
@@ -220,6 +221,12 @@ class FakeCases:
         raise NotImplementedError("not exercised by the proposal command")
 
     async def list_rounds(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError("not exercised by the proposal command")
+
+    async def place_order(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError("not exercised by the proposal command")
+
+    async def po_case_of(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError("not exercised by the proposal command")
 
 

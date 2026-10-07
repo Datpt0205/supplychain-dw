@@ -909,7 +909,8 @@
           "wait_for_external",
           "flag_blocked",
           "flag_manual_review",
-          "cancel"
+          "cancel",
+          "create_po"
         ],
         "title": "CaseAction",
         "type": "string"
@@ -1102,8 +1103,9 @@
         "type": "object"
       },
       "CaseState": {
-        "description": "The Elmich product-to-stock happy path, plus the exceptions a real PO\nactually hits.\n\nDeclaration order is the happy-path order; the five exception states\nafter COMPLETED are not part of that sequence and are reached only\nthrough the interrupt/rework/cancel methods below, never by position.",
+        "description": "The Elmich product-to-stock happy path, plus the exceptions a real PO\nactually hits.\n\nDeclaration order is the happy-path order; the five exception states\nafter COMPLETED are not part of that sequence and are reached only\nthrough the interrupt/rework/cancel methods below, never by position.\n\n`ORDER_REQUESTED` heads it: ĐẶT HÀNG on a product case (step 9) opened\nthis case and its PO does not exist yet; step 10's `create_po` gives it\nits reference (ADR 0017). Labelled \"Chờ tạo PO\".",
         "enum": [
+          "order_requested",
           "po_created",
           "waiting_deposit",
           "deposit_confirmed",
@@ -1238,7 +1240,11 @@
       },
       "CreatePOCaseRequest": {
         "additionalProperties": false,
+        "description": "A case opened without stage 1 (a reorder, ADR 0017). No PIC field: the\ncaller is the PIC, and an unknown field is a 422.",
         "properties": {
+          "order_kind": {
+            "$ref": "#/components/schemas/OrderKind"
+          },
           "po_reference": {
             "maxLength": 200,
             "minLength": 1,
@@ -1255,9 +1261,40 @@
         },
         "required": [
           "po_reference",
-          "supplier_name"
+          "supplier_name",
+          "order_kind"
         ],
         "title": "CreatePOCaseRequest",
+        "type": "object"
+      },
+      "CreatePORequest": {
+        "additionalProperties": false,
+        "description": "Step 10: the PO's reference and kind, and the quantity of any line\nstill open or to correct.",
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/POLineQuantity"
+            },
+            "maxItems": 500,
+            "title": "Lines",
+            "type": "array"
+          },
+          "order_kind": {
+            "$ref": "#/components/schemas/OrderKind"
+          },
+          "po_reference": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Po Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "po_reference",
+          "order_kind"
+        ],
+        "title": "CreatePORequest",
         "type": "object"
       },
       "CreateTenantRequest": {
@@ -1758,8 +1795,15 @@
             "type": "string"
           },
           "po_reference": {
-            "title": "Po Reference",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Po Reference"
           },
           "supplier_name": {
             "title": "Supplier Name",
@@ -2729,8 +2773,131 @@
         "title": "OperatorView",
         "type": "object"
       },
-      "POCaseView": {
+      "OrderKind": {
+        "description": "Step 10's classification: Hàng mới (a product out of stage 1) or Hàng\nđặt lại (a reorder, opened by `CreatePOCase` without stage 1).",
+        "enum": [
+          "new",
+          "reorder"
+        ],
+        "title": "OrderKind",
+        "type": "string"
+      },
+      "OrderPlacedView": {
+        "description": "ĐẶT HÀNG done: the case, now ordered, and the PO case it opened.",
         "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "interrupted_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductDevState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pic_user_id": {
+            "format": "uuid",
+            "title": "Pic User Id",
+            "type": "string"
+          },
+          "po_case_id": {
+            "format": "uuid",
+            "title": "Po Case Id",
+            "type": "string"
+          },
+          "product_name": {
+            "title": "Product Name",
+            "type": "string"
+          },
+          "proposal_code": {
+            "title": "Proposal Code",
+            "type": "string"
+          },
+          "sample_round": {
+            "title": "Sample Round",
+            "type": "integer"
+          },
+          "signoff_round": {
+            "title": "Signoff Round",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProductDevState"
+          },
+          "supplier_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Name"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "proposal_code",
+          "product_name",
+          "category",
+          "supplier_name",
+          "pic_user_id",
+          "state",
+          "interrupted_state",
+          "sample_round",
+          "signoff_round",
+          "created_by",
+          "created_at",
+          "version",
+          "po_case_id"
+        ],
+        "title": "OrderPlacedView",
+        "type": "object"
+      },
+      "POCaseDetailView": {
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
           "created_at": {
             "anyOf": [
               {
@@ -2758,9 +2925,50 @@
               }
             ]
           },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/POCaseLineView"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "order_kind": {
+            "$ref": "#/components/schemas/OrderKind"
+          },
+          "pic_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pic User Id"
+          },
           "po_reference": {
-            "title": "Po Reference",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Po Reference"
+          },
+          "product_dev_case_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Dev Case Id"
           },
           "state": {
             "$ref": "#/components/schemas/CaseState"
@@ -2781,9 +2989,193 @@
           "state",
           "interrupted_state",
           "created_at",
-          "version"
+          "version",
+          "order_kind",
+          "product_dev_case_id",
+          "pic_user_id",
+          "category",
+          "lines"
+        ],
+        "title": "POCaseDetailView",
+        "type": "object"
+      },
+      "POCaseLineView": {
+        "description": "A planned line: a SKU of the product and how many (null until step\n10 sets it, when the SKU's planned quantity was open).",
+        "properties": {
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "sku_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Code"
+          },
+          "sku_id": {
+            "format": "uuid",
+            "title": "Sku Id",
+            "type": "string"
+          },
+          "variant_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Label"
+          }
+        },
+        "required": [
+          "sku_id",
+          "sku_code",
+          "variant_label",
+          "quantity"
+        ],
+        "title": "POCaseLineView",
+        "type": "object"
+      },
+      "POCaseView": {
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "interrupted_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "order_kind": {
+            "$ref": "#/components/schemas/OrderKind"
+          },
+          "pic_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pic User Id"
+          },
+          "po_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Po Reference"
+          },
+          "product_dev_case_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Dev Case Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CaseState"
+          },
+          "supplier_name": {
+            "title": "Supplier Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "po_reference",
+          "supplier_name",
+          "state",
+          "interrupted_state",
+          "created_at",
+          "version",
+          "order_kind",
+          "product_dev_case_id",
+          "pic_user_id",
+          "category"
         ],
         "title": "POCaseView",
+        "type": "object"
+      },
+      "POLineQuantity": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10000000.0,
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "sku_id": {
+            "format": "uuid",
+            "title": "Sku Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku_id",
+          "quantity"
+        ],
+        "title": "POLineQuantity",
         "type": "object"
       },
       "Page_ApprovalView_": {
@@ -3099,6 +3491,13 @@
         "title": "PermissionSetView",
         "type": "object"
       },
+      "PlaceOrderRequest": {
+        "additionalProperties": false,
+        "description": "ĐẶT HÀNG takes nothing: the PO case takes the PIC, Category, supplier\nand SKUs from the case. A body may be sent empty or not at all; any field\nin it (a PIC, a Category, a supplier) is a 422, never silently dropped.",
+        "properties": {},
+        "title": "PlaceOrderRequest",
+        "type": "object"
+      },
       "PortfolioSummaryView": {
         "properties": {
           "active_case_count": {
@@ -3154,6 +3553,7 @@
           "add_sku",
           "remove_sku",
           "submit_for_signoff",
+          "place_order",
           "wait_for_external",
           "flag_blocked",
           "flag_manual_review",
@@ -3302,6 +3702,18 @@
             "title": "Pic User Id",
             "type": "string"
           },
+          "po_case_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Po Case Id"
+          },
           "product_name": {
             "title": "Product Name",
             "type": "string"
@@ -3369,7 +3781,8 @@
           "actions",
           "pending_review",
           "item_code",
-          "skus"
+          "skus",
+          "po_case_id"
         ],
         "title": "ProductCaseDetailView",
         "type": "object"
@@ -3656,6 +4069,7 @@
           "item_coding",
           "pending_signoff",
           "ready_to_order",
+          "ordered",
           "waiting_external",
           "blocked",
           "manual_review",
@@ -8346,7 +8760,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/POCaseView"
+                  "$ref": "#/components/schemas/POCaseDetailView"
                 }
               }
             },
@@ -8364,6 +8778,78 @@
           }
         },
         "summary": "Get Po Case",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/create-po": {
+      "post": {
+        "description": "Step 10 on a case awaiting its PO. A reference already taken in\nthe tenant is a 409 naming it; a line still without a quantity, 409.",
+        "operationId": "create_po_route_api_v1_supply_chain_po_cases__case_id__create_po_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePORequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/POCaseDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Po Route",
         "tags": [
           "supply_chain"
         ]
@@ -9297,6 +9783,85 @@
           }
         },
         "summary": "Upload Product Case Document",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/product-cases/{case_id}/order": {
+      "post": {
+        "description": "ĐẶT HÀNG: the case is ordered and its PO case opens awaiting its\nPO. A second click is a 409 and opens nothing (a replay under the\nsame `Idempotency-Key` returns the first answer).",
+        "operationId": "place_product_order_api_v1_supply_chain_product_cases__case_id__order_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PlaceOrderRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderPlacedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Place Product Order",
         "tags": [
           "supply_chain"
         ]

@@ -8,6 +8,7 @@ import { PageHeader, RegionState } from "@dw/ui";
 import { CaseStateTag } from "../../../components/supply-chain/case-state-badge";
 import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
 import { MissingUpdateTag } from "../../../components/supply-chain/missing-update-badge";
+import { PoReferenceText } from "../../../components/supply-chain/po-reference";
 import {
   SlaStatusTag,
   milestoneLabel,
@@ -37,7 +38,7 @@ export default function AttentionQueuePage() {
       render: (_: unknown, item) => (
         <Flex vertical>
           <Link href={`/supply-chain/po-cases/${item.case.id}`}>
-            <Typography.Text code>{item.case.po_reference}</Typography.Text>
+            <PoReferenceText reference={item.case.po_reference} />
           </Link>
           <Typography.Text type="secondary">
             {item.case.supplier_name}

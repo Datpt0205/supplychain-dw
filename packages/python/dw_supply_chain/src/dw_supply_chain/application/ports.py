@@ -119,7 +119,13 @@ class POCaseRepositoryPort(Protocol):
 
     async def add(self, context: AccessContext, case: POCase) -> None: ...
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None: ...
-    async def save(self, context: AccessContext, case: POCase) -> None: ...
+    async def save(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
+        """`audit`, when given, commits in the same transaction (`CreatePO`).
+        A PO reference already taken in the tenant is a `ConflictError`."""
+        ...
+
     async def get_current_state_entered_at(
         self, context: AccessContext, case_id: POCaseId
     ) -> datetime | None:
@@ -411,7 +417,8 @@ class FollowUpRecord:
     id: uuid.UUID
     po_case_id: uuid.UUID
     workspace_id: uuid.UUID
-    po_reference: str
+    # None while the case awaits its PO (ADR 0017).
+    po_reference: str | None
     supplier_name: str
     kind: FollowUpKind
     episode: str
@@ -652,6 +659,24 @@ class ProductCaseRepositoryPort(Protocol):
         self, context: AccessContext, case_id: ProductDevelopmentCaseId
     ) -> list[SampleRound]:
         """The case's sample rounds, first round first."""
+        ...
+
+    async def place_order(
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        po_case: POCase,
+        *,
+        audits: Sequence[AuditEvent],
+    ) -> None:
+        """ĐẶT HÀNG in one transaction: the case moved out of the state its
+        step left, at the version read, or a `ConflictError` and nothing
+        written; then its history row, `po_case` with its lines, and `audits`
+        (ADR 0017)."""
+        ...
+
+    async def po_case_of(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
+        """The PO case ĐẶT HÀNG opened from the case, or None."""
         ...
 
 

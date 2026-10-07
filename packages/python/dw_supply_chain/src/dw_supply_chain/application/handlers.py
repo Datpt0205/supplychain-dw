@@ -8,8 +8,9 @@ check for free, and none can bypass it by skipping a layer above.
 
 from __future__ import annotations
 
+import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import timedelta
 
@@ -33,6 +34,8 @@ from dw_supply_chain.application.ports import (
     PendingApprovalsPort,
     POCaseListFilter,
     POCaseRepositoryPort,
+    ReviewNotifierPort,
+    ScopeHoldersPort,
     SupplierUpdateRepositoryPort,
 )
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
@@ -72,6 +75,7 @@ from dw_supply_chain.domain.po_case import (
     REASON_REQUIRED_ACTIONS,
     CaseAction,
     CaseTransition,
+    OrderKind,
     POCase,
     POCaseId,
     apply_action,
@@ -99,6 +103,8 @@ from dw_supply_chain.workflows.case_query_understanding import understand_case_q
 from dw_supply_chain.workflows.delay_impact_analysis import analyze_delay_impact
 from dw_supply_chain.workflows.supplier_update_understanding import understand_supplier_update
 
+logger = logging.getLogger(__name__)
+
 PO_CASE_READ = "supply_chain.po_case.read"
 # Opening a new case. Taking a step on one is a duty (`duty_scope`).
 PO_CASE_WRITE = "supply_chain.po_case.write"
@@ -124,7 +130,7 @@ _SLA_POLICY_ID = "supply_chain_sla"
 ACTION_DUTIES_READ = "supply_chain.action_duties.read"
 ACTION_DUTIES_WRITE = "supply_chain.action_duties.write"
 _ACTION_DUTIES_RESOURCE = "action_duties"
-# Matches configs/policies/supply_chain_action_duties@1.0.0.yaml's policy_id.
+# Matches configs/policies/supply_chain_action_duties@1.1.0.yaml's policy_id.
 _ACTION_DUTIES_POLICY_ID = "supply_chain_action_duties"
 
 
@@ -132,6 +138,41 @@ def duty_scope(duty: CaseDuty) -> str:
     """The scope a caller must hold to take a step of `duty` — what a
     role grants and what a separation-of-duties rule names."""
     return f"supply_chain.duty.{duty.value}"
+
+
+def po_case_link(case_id: uuid.UUID) -> str:
+    """The PO case's page, what a notice about it opens."""
+    return f"/supply-chain/po-cases/{case_id}"
+
+
+async def notify_duty_holders(
+    context: AccessContext,
+    *,
+    holders: ScopeHoldersPort,
+    notifier: ReviewNotifierPort,
+    duty: CaseDuty,
+    source_key: str,
+    title: str,
+    body: str,
+    link: str,
+) -> None:
+    """Tells the members of the caller's workspace who hold `duty`'s scope,
+    less the caller, once per `source_key`. Called after the write it is
+    about has committed; a failed notice is logged and the write stands."""
+    try:
+        recipients = await holders.holding(
+            context, context.workspace_id, frozenset({duty_scope(duty)})
+        )
+        await notifier.deliver(
+            context,
+            recipients=sorted(set(recipients) - {context.principal_id}),
+            source_key=source_key,
+            title=title,
+            body=body,
+            link=link,
+        )
+    except Exception:
+        logger.exception("notice not delivered", extra={"source_key": source_key})
 
 
 # Case documents (`application.case_documents`). Declared here because this
@@ -181,11 +222,13 @@ _WORKER_VERSION = "1.0.0"
 
 @dataclass(frozen=True)
 class CreatePOCase:
-    """Opens a new PO case.
+    """Opens a new PO case without stage 1, straight in `po_created` (a
+    reorder, ADR 0017; a product out of stage 1 is opened by ĐẶT HÀNG).
 
     Tenant and workspace come from the verified context, never from the
     request body — a caller who could name the tenant a case belongs to
-    could create cases inside a tenant that is not theirs.
+    could create cases inside a tenant that is not theirs. The PIC is the
+    caller, stamped here; `handle` has no parameter that could name another.
     """
 
     repo: POCaseRepositoryPort
@@ -193,7 +236,12 @@ class CreatePOCase:
     ids: IdGenerator
 
     async def handle(
-        self, context: AccessContext, *, po_reference: str, supplier_name: str
+        self,
+        context: AccessContext,
+        *,
+        po_reference: str,
+        supplier_name: str,
+        order_kind: OrderKind,
     ) -> POCase:
         await self.authz.require(context=context, action=PO_CASE_WRITE, resource_type=_RESOURCE)
         case = POCase(
@@ -202,8 +250,101 @@ class CreatePOCase:
             workspace_id=WorkspaceId(context.workspace_id),
             po_reference=po_reference,
             supplier_name=supplier_name,
+            order_kind=order_kind,
+            pic_user_id=context.principal_id,
         )
         await self.repo.add(context, case)
+        return case
+
+
+async def resolve_action_duties(
+    context: AccessContext,
+    policy_override_repo: PolicyOverridePort,
+    platform_default: SupplyChainActionDuties,
+) -> SupplyChainActionDuties:
+    """The tenant's own PO step-to-duty mapping if it has set one, the
+    platform's otherwise: the one reading `AdvancePOCase`, `CreatePO` and
+    ĐẶT HÀNG's notice all authorize or address by."""
+    return await _resolve_policy(
+        context,
+        policy_override_repo,
+        policy_id=_ACTION_DUTIES_POLICY_ID,
+        schema=SupplyChainActionDuties,
+        platform_default=platform_default,
+    )
+
+
+@dataclass(frozen=True)
+class CreatePO:
+    """Step 10: the PO of a case ĐẶT HÀNG opened is created, with its
+    reference, its kind and the line quantities still open or to correct
+    (`POCase.create_po`). Who may is `create_po`'s duty under the tenant's
+    policy, checked before the case is read. The step, its history row and
+    its audit event are one transaction; Kế toán (the `finance` duty's
+    holders, column "Bàn giao cho" of step 10) are told once it is saved."""
+
+    repo: POCaseRepositoryPort
+    authz: AuthorizationPort
+    policy_override_repo: PolicyOverridePort
+    platform_default_action_duties: SupplyChainActionDuties
+    holders: ScopeHoldersPort
+    notifier: ReviewNotifierPort
+    ids: IdGenerator
+    clock: UtcClock
+
+    async def handle(
+        self,
+        context: AccessContext,
+        *,
+        po_case_id: POCaseId,
+        po_reference: str,
+        order_kind: OrderKind,
+        quantities: Mapping[uuid.UUID, int] | None = None,
+    ) -> POCase:
+        duties = await resolve_action_duties(
+            context, self.policy_override_repo, self.platform_default_action_duties
+        )
+        await self.authz.require(
+            context=context,
+            action=duty_scope(duties.duty_for(CaseAction.CREATE_PO)),
+            resource_type=_RESOURCE,
+            resource_id=str(po_case_id),
+        )
+        case = await self.repo.get(context, po_case_id)
+        if case is None:
+            raise NotFoundError("PO case not found", details={"case_id": str(po_case_id)})
+        before = case.state
+        case.create_po(po_reference=po_reference, order_kind=order_kind, quantities=quantities)
+        await self.repo.save(
+            context,
+            case,
+            audit=AuditEvent(
+                id=self.ids.new_uuid(),
+                tenant_id=TenantId(context.tenant_id),
+                workspace_id=WorkspaceId(context.workspace_id),
+                actor_id=UserId(context.principal_id),
+                action=f"supply_chain.po_case.{CaseAction.CREATE_PO.value}",
+                resource_type=_RESOURCE,
+                resource_id=str(case.id),
+                occurred_at=self.clock.now(),
+                details={
+                    "from_state": before.value,
+                    "to_state": case.state.value,
+                    "po_reference": case.po_reference or "",
+                    "order_kind": case.order_kind.value,
+                },
+            ),
+        )
+        await notify_duty_holders(
+            context,
+            holders=self.holders,
+            notifier=self.notifier,
+            duty=CaseDuty.FINANCE,
+            source_key=f"supply_chain.po_created:{case.id}",
+            title=f"Đã tạo PO {case.po_reference}",
+            body=f"Cung ứng đã tạo PO {case.po_reference} với {case.supplier_name}.",
+            link=po_case_link(case.id.value),
+        )
         return case
 
 
@@ -665,12 +806,8 @@ class AdvancePOCase:
         action: CaseAction,
         reason: str | None = None,
     ) -> AdvancePOCaseResult:
-        duties = await _resolve_policy(
-            context,
-            self.policy_override_repo,
-            policy_id=_ACTION_DUTIES_POLICY_ID,
-            schema=SupplyChainActionDuties,
-            platform_default=self.platform_default_action_duties,
+        duties = await resolve_action_duties(
+            context, self.policy_override_repo, self.platform_default_action_duties
         )
         await self.authz.require(
             context=context,
@@ -1312,7 +1449,10 @@ class AnswerCaseQuery:
                     outcome=(
                         CaseQueryOutcome.PO_AMBIGUOUS if matches else CaseQueryOutcome.PO_NOT_FOUND
                     ),
-                    candidates=tuple(case.po_reference for case in matches),
+                    # `find_by_reference` never matches a case without one.
+                    candidates=tuple(
+                        case.po_reference for case in matches if case.po_reference is not None
+                    ),
                 ),
                 cases=tuple(matches),
             )
@@ -1389,12 +1529,8 @@ class GetActionDuties:
         await self.authz.require(
             context=context, action=ACTION_DUTIES_READ, resource_type=_ACTION_DUTIES_RESOURCE
         )
-        return await _resolve_policy(
-            context,
-            self.policy_override_repo,
-            policy_id=_ACTION_DUTIES_POLICY_ID,
-            schema=SupplyChainActionDuties,
-            platform_default=self.platform_default_duties,
+        return await resolve_action_duties(
+            context, self.policy_override_repo, self.platform_default_duties
         )
 
 

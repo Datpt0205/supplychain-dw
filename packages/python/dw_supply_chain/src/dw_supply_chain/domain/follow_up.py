@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from dw_supply_chain.domain.missing_update import MissingUpdateStatus
-from dw_supply_chain.domain.po_case import POCase
+from dw_supply_chain.domain.po_case import POCase, reference_label
 from dw_supply_chain.domain.portfolio import CaseHealth
 
 # What `platform.notifications` holds; its CHECKs refuse longer, so a drift
@@ -110,7 +110,7 @@ class FollowUpMessage:
 def follow_up_message(
     *,
     kind: FollowUpKind,
-    po_reference: str,
+    po_reference: str | None,
     supplier_name: str,
     days: int,
     limit_days: int | None,
@@ -118,6 +118,7 @@ def follow_up_message(
 ) -> FollowUpMessage:
     """What the people who must act are told. The PO reference and supplier
     name are the case's own stored text, shown as text."""
+    po_reference = reference_label(po_reference)
     if kind is FollowUpKind.UPDATE_REMINDER:
         title = f"Nhắc NCC cập nhật: {po_reference}"
         body = f"{supplier_name} chưa gửi cập nhật {days} ngày."

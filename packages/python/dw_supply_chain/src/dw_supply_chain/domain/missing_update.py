@@ -71,7 +71,9 @@ def missing_update_status(
     reference = last_supplier_update_at or case_created_at
     age_days = (now - reference).days
 
-    if state in TERMINAL_STATES:
+    # Awaiting its PO, no supplier holds an order yet: nobody to chase
+    # (ticket 05). Its own group in the brief says what is due instead.
+    if state in TERMINAL_STATES or state is CaseState.ORDER_REQUESTED:
         status = MissingUpdateStatus.ON_TRACK
     elif age_days >= cadence.escalation_after_days:
         status = MissingUpdateStatus.ESCALATION_DUE

@@ -82,6 +82,7 @@ from dw_supply_chain.application.handlers import (
     AnalyzeDelayImpact,
     AnswerCaseQuery,
     CloseFollowUp,
+    CreatePO,
     CreatePOCase,
     GetActionDuties,
     GetApprovalMatrix,
@@ -114,6 +115,7 @@ from dw_supply_chain.application.product_cases import (
     GetProductCase,
     ListProductCases,
     ListProductCaseTransitions,
+    PlaceOrder,
     ProposeProductCase,
 )
 
@@ -177,6 +179,8 @@ class ApiContainer:
     # so there is no boundary left for `object` to guard — only a cast at
     # every use site that a real type makes unnecessary.
     supply_chain_create_po_case: CreatePOCase | None = None
+    # Step 10 on a case ĐẶT HÀNG opened (ticket 05).
+    supply_chain_create_po: CreatePO | None = None
     supply_chain_get_po_case: GetPOCase | None = None
     supply_chain_list_po_cases: ListPOCases | None = None
     supply_chain_submit_supplier_update: SubmitSupplierUpdate | None = None
@@ -216,6 +220,7 @@ class ApiContainer:
     supply_chain_get_product_case: GetProductCase | None = None
     supply_chain_list_product_cases: ListProductCases | None = None
     supply_chain_advance_product_case: AdvanceProductCase | None = None
+    supply_chain_place_order: PlaceOrder | None = None
     supply_chain_list_product_case_transitions: ListProductCaseTransitions | None = None
     supply_chain_get_product_action_duties: GetProductActionDuties | None = None
     supply_chain_set_product_action_duties_override: SetProductActionDutiesOverride | None = None

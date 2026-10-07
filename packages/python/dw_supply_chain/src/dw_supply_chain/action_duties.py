@@ -10,7 +10,7 @@ receiving and paying) out of one membership.
 
 Which department owns which step differs per company, so the mapping is a
 policy. The platform default ships in
-`configs/policies/supply_chain_action_duties@1.0.0.yaml`, and a tenant
+`configs/policies/supply_chain_action_duties@1.1.0.yaml`, and a tenant
 replaces it through the same `PolicyOverridePort` as the SLA policy and the
 approval matrix. The set of duties is fixed here, because roles are granted
 in duty terms.

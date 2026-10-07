@@ -52,6 +52,7 @@ const listProductCaseTransitions = vi.fn();
 const takeProductCaseStep = vi.fn();
 const listProductCaseDocuments = vi.fn();
 const uploadProductCaseDocument = vi.fn();
+const placeProductOrder = vi.fn();
 vi.mock("../../../lib/session", () => ({
   apiClient: () => ({
     listProductCases,
@@ -62,6 +63,7 @@ vi.mock("../../../lib/session", () => ({
     takeProductCaseStep,
     listProductCaseDocuments,
     uploadProductCaseDocument,
+    placeProductOrder,
   }),
 }));
 
@@ -155,6 +157,7 @@ function detail(overrides: Partial<ProductCaseDetail> = {}): ProductCaseDetail {
     pending_review: null,
     item_code: null,
     skus: [],
+    po_case_id: null,
     ...overrides,
   };
 }
@@ -210,6 +213,7 @@ afterEach(() => {
     takeProductCaseStep,
     listProductCaseDocuments,
     uploadProductCaseDocument,
+    placeProductOrder,
     push,
   ]) {
     mock.mockReset();
@@ -1064,6 +1068,144 @@ describe("Hồ sơ phát triển sản phẩm: mã hàng, SKU, trình ký (bư�
       await screen.findByText(
         "Đã ghi: Trình ký. Chưa tạo được yêu cầu ký; hệ thống sẽ tự trình lại.",
       ),
+    ).toBeTruthy();
+  });
+});
+
+describe("Hồ sơ phát triển sản phẩm: ĐẶT HÀNG", () => {
+  const PO_CASE_ID = "77777777-7777-4777-8777-777777777777";
+  const ITEM = { id: "55555555-5555-4555-8555-555555555555", code: "MH-0001" };
+  const SKU = {
+    id: "66666666-6666-4666-8666-666666666666",
+    sku_code: "MH-0001-RED",
+    variant_label: "Đỏ 24cm",
+    planned_quantity: 300,
+  };
+
+  function ready(overrides: Partial<ProductCaseDetail> = {}) {
+    return detail({
+      state: "ready_to_order",
+      signoff_round: 1,
+      item_code: ITEM,
+      skus: [SKU],
+      actions: [
+        option("place_order", { required_scope: ORDERING }),
+        option("cancel", { required_scope: ORDERING, reason_required: true }),
+      ],
+      ...overrides,
+    });
+  }
+
+  it("offers ĐẶT HÀNG once, beside the other steps, never as a generic step", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(ready());
+    renderDetail();
+
+    const order = await screen.findByRole("button", { name: "ĐẶT HÀNG" });
+    expect((order as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getAllByRole("button", { name: "ĐẶT HÀNG" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Hủy hồ sơ" })).toBeTruthy();
+  });
+
+  it("locks ĐẶT HÀNG for a role without the duty, with the reason in words", async () => {
+    scopes = new Set([RND]);
+    getProductCase.mockResolvedValue(ready());
+    renderDetail();
+
+    const order = await screen.findByRole("button", { name: "ĐẶT HÀNG" });
+    expect((order as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      screen.getByText(/^ĐẶT HÀNG: Bước này cần nhiệm vụ Cung ứng/),
+    ).toBeTruthy();
+  });
+
+  it("locks ĐẶT HÀNG while the case still lacks something, with what", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(
+      ready({
+        actions: [
+          option("place_order", { required_scope: ORDERING, unmet: ["sku"] }),
+        ],
+      }),
+    );
+    renderDetail();
+
+    const order = await screen.findByRole("button", { name: "ĐẶT HÀNG" });
+    expect((order as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      screen.getByText("ĐẶT HÀNG: Cần ít nhất một SKU trước."),
+    ).toBeTruthy();
+  });
+
+  it("confirms what opens, then orders at its own route and links the PO case", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase
+      .mockResolvedValueOnce(ready())
+      .mockResolvedValue(
+        ready({ state: "ordered", actions: [], po_case_id: PO_CASE_ID }),
+      );
+    placeProductOrder.mockResolvedValue({
+      ...productCase({ state: "ordered" }),
+      po_case_id: PO_CASE_ID,
+    });
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "ĐẶT HÀNG" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/Chờ tạo PO, chưa có số PO/)).toBeTruthy();
+    expect(within(dialog).getByText(/Category Nồi/)).toBeTruthy();
+    // Nothing is sent before the confirmation.
+    expect(placeProductOrder).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "ĐẶT HÀNG" }));
+
+    await waitFor(() => expect(placeProductOrder).toHaveBeenCalled());
+    const [caseId, key] = placeProductOrder.mock.calls[0]!;
+    expect(caseId).toBe(CASE_ID);
+    expect(typeof key).toBe("string");
+    expect(takeProductCaseStep).not.toHaveBeenCalled();
+    expect(
+      (await screen.findByRole("link", { name: "Hồ sơ PO" })).getAttribute(
+        "href",
+      ),
+    ).toBe(`/supply-chain/po-cases/${PO_CASE_ID}`);
+  });
+
+  it("shows the server's sentence when the case was already ordered, and reloads", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(ready());
+    placeProductOrder.mockRejectedValue(
+      new ApiError(409, {
+        code: "conflict",
+        message: "Hồ sơ đã đặt hàng.",
+        details: {},
+      }),
+    );
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "ĐẶT HÀNG" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "ĐẶT HÀNG" }));
+
+    expect(await screen.findByText("Hồ sơ đã đặt hàng.")).toBeTruthy();
+    await waitFor(() => expect(getProductCase).toHaveBeenCalledTimes(2));
+  });
+
+  it("links an ordered case to the PO case it opened, and offers no step", async () => {
+    scopes = new Set([ORDERING]);
+    getProductCase.mockResolvedValue(
+      ready({ state: "ordered", actions: [], po_case_id: PO_CASE_ID }),
+    );
+    renderDetail();
+
+    expect(
+      (await screen.findByRole("link", { name: "Hồ sơ PO" })).getAttribute(
+        "href",
+      ),
+    ).toBe(`/supply-chain/po-cases/${PO_CASE_ID}`);
+    expect(screen.getAllByText("Đã đặt hàng").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "ĐẶT HÀNG" })).toBeNull();
+    expect(
+      screen.getByText("Thêm SKU: Đã đặt hàng; mã hàng và SKU đã chốt."),
     ).toBeTruthy();
   });
 });

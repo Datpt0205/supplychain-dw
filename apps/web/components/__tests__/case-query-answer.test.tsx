@@ -16,6 +16,10 @@ function poCase(overrides: Partial<POCase> = {}): POCase {
     interrupted_state: null,
     created_at: "2026-09-01T00:00:00Z",
     version: 2,
+    order_kind: "new",
+    product_dev_case_id: null,
+    pic_user_id: null,
+    category: null,
     ...overrides,
   };
 }
@@ -85,6 +89,24 @@ describe("CaseQueryAnswer", () => {
     expect(
       screen.getByRole("link", { name: "Xem tất cả case khớp" }),
     ).toBeTruthy();
+  });
+
+  it("names a case without its PO number in words", () => {
+    render(
+      <CaseQueryAnswer
+        answer={answer({
+          data_view: {
+            type: "case_table",
+            rows: [poCase({ po_reference: null, state: "order_requested" })],
+            has_more: false,
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.getByRole("link", { name: "Chưa có số PO" }).getAttribute("href"),
+    ).toBe("/supply-chain/po-cases/11111111-1111-4111-8111-111111111111");
+    expect(screen.getByText("Chờ tạo PO")).toBeTruthy();
   });
 
   it("opens one named case through its id", () => {

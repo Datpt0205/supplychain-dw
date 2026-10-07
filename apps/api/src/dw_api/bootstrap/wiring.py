@@ -318,6 +318,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         AnalyzeDelayImpact,
         AnswerCaseQuery,
         CloseFollowUp,
+        CreatePO,
         CreatePOCase,
         GetActionDuties,
         GetApprovalMatrix,
@@ -378,6 +379,16 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     )
     container.supply_chain_create_po_case = CreatePOCase(
         repo=po_case_repo, authz=authorization, ids=wiring.seam.ids
+    )
+    container.supply_chain_create_po = CreatePO(
+        repo=po_case_repo,
+        authz=authorization,
+        policy_override_repo=policy_override_repo,
+        platform_default_action_duties=platform_default_action_duties,
+        holders=SqlScopeHolders(wiring.seam.session_factory),
+        notifier=SqlNotificationRepository(wiring.seam.session_factory),
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
     )
     container.supply_chain_get_po_case = GetPOCase(repo=po_case_repo, authz=authorization)
     list_po_cases = ListPOCases(repo=po_case_repo, authz=authorization)
@@ -586,6 +597,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         GetProductCase,
         ListProductCases,
         ListProductCaseTransitions,
+        PlaceOrder,
         ProposeProductCase,
     )
     from dw_supply_chain.application.product_reviews import EnsureProductApproval
@@ -695,6 +707,17 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         policy_override_repo=policy_override_repo,
         platform_default_duties=platform_default_product_duties,
         reviews=product_reviews,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_place_order = PlaceOrder(
+        repo=product_case_repo,
+        authz=authorization,
+        policy_override_repo=policy_override_repo,
+        platform_default_duties=platform_default_product_duties,
+        platform_default_action_duties=platform_default_action_duties,
+        holders=SqlScopeHolders(wiring.seam.session_factory),
+        notifier=SqlNotificationRepository(wiring.seam.session_factory),
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
     )

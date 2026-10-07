@@ -4,7 +4,14 @@ import type { BriefEntry, BriefGroup, DailyBrief } from "@dw/contracts";
 import { formatDateTimeFull } from "../../lib/dates";
 import { poCasesHref } from "../../lib/supply-chain/po-case-filter";
 import { CASE_STATE_LABEL, CaseStateTag } from "./case-state-badge";
+import { PoReferenceText } from "./po-reference";
 import { milestoneLabel } from "./sla-status-badge";
+
+/** "Chờ tạo PO" inside a sentence: only the first letter lowered, so "PO"
+ * stays an acronym. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
 
 /** One sentence per group, composed here from the group's own fields. */
 export function groupHeadline(group: BriefGroup): string {
@@ -30,7 +37,7 @@ export function groupHeadline(group: BriefGroup): string {
       return `${n} case đang làm lại`;
     case "waiting_on_us":
       return group.state
-        ? `${n} case ${CASE_STATE_LABEL[group.state].toLowerCase()}`
+        ? `${n} case ${lowerFirst(CASE_STATE_LABEL[group.state])}`
         : `${n} case chờ phía mình`;
     case "changed_recently":
       return `${n} case vừa đổi trạng thái trong 24 giờ qua`;
@@ -115,7 +122,7 @@ function GroupCard({ group }: { group: BriefGroup }) {
             align="center"
           >
             <Link href={`/supply-chain/po-cases/${entry.case.id}`}>
-              <Typography.Text code>{entry.case.po_reference}</Typography.Text>
+              <PoReferenceText reference={entry.case.po_reference} />
             </Link>
             <Typography.Text type="secondary">
               {entry.case.supplier_name}

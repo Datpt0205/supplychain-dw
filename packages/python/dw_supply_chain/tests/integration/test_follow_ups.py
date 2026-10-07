@@ -218,6 +218,7 @@ async def test_a_quiet_case_reaches_its_coordinator_once_and_resolves_when_the_s
 
     assert await _follow_ups_of(stack, case) == [("update_reminder", "open", [RECORDS])]
     inbox = NotificationService(SqlNotificationRepository(stack.sessions))
+    assert case.po_reference is not None
     mine = [n for n in (await inbox.latest(operator)).items if case.po_reference in n.title]
     assert [(n.title, n.link) for n in mine] == [
         (f"Nhắc NCC cập nhật: {case.po_reference}", f"/supply-chain/po-cases/{case.id.value}")

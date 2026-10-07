@@ -33,6 +33,12 @@ What each command decides, and where:
   domain as they came; the ids of the rows a step creates are minted here.
   Whether a code is taken in the tenant is the database's answer, a 409
   naming the code (ADR 0018).
+- **ĐẶT HÀNG (ticket 05, ADR 0017):** its own command, `PlaceOrder`, never
+  the step command, which refuses it: the case moves to `ordered` and the PO
+  case opens awaiting its PO in one transaction, with both audit events. The
+  PO case takes the PIC, Category and supplier of the row read here, a stamp
+  never looked up again; the request names none of them. Then the holders of
+  `create_po`'s duty in the workspace are told there is a PO to create.
 """
 
 from __future__ import annotations
@@ -43,15 +49,20 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from dw_kernel.errors import DomainError, NotFoundError
-from dw_kernel.ids import TenantId, WorkspaceId
+from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.pagination import Page, page_request
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import AuthorizationPort, PolicyOverridePort
+from dw_platform.domain.audit import AuditEvent
+from dw_supply_chain.action_duties import SupplyChainActionDuties
 from dw_supply_chain.application.handlers import (
     PRODUCT_CASE_READ,
     PRODUCT_CASE_WRITE,
     duty_scope,
+    notify_duty_holders,
+    po_case_link,
+    resolve_action_duties,
     resolve_product_action_duties,
 )
 from dw_supply_chain.application.ports import (
@@ -60,8 +71,10 @@ from dw_supply_chain.application.ports import (
     ProductApprovalPort,
     ProductCaseListFilter,
     ProductCaseRepositoryPort,
+    ReviewNotifierPort,
     ReviewRaise,
     ReviewRequester,
+    ScopeHoldersPort,
 )
 from dw_supply_chain.application.product_case_audit import (
     PRODUCT_CASE_RESOURCE,
@@ -69,14 +82,17 @@ from dw_supply_chain.application.product_case_audit import (
 )
 from dw_supply_chain.application.product_reviews import AWAITED_APPROVAL_TYPE
 from dw_supply_chain.domain.case_document import CaseDocument, CaseDocumentId
+from dw_supply_chain.domain.po_case import CaseAction, POCase, POCaseId
 from dw_supply_chain.domain.product_development_case import (
     AWAITING_APPROVAL_STATES,
+    COMMAND_ONLY_ACTIONS,
     GRAPH_ONLY_ACTIONS,
     ProductAction,
     ProductActionInput,
     ProductCaseTransition,
     ProductDevelopmentCase,
     ProductDevelopmentCaseId,
+    ProductDevState,
     SampleRound,
     SkuDraft,
     apply_product_action,
@@ -106,12 +122,13 @@ class ProductCaseDetail:
     step-to-duty mapping the case page shows who may take each step from (the
     same mapping `AdvanceProductCase` authorizes against, resolved by the same
     function), and, while it waits for BGĐ or for its sign-off, the approval
-    it waits on."""
+    it waits on; once ordered, the PO case ĐẶT HÀNG opened."""
 
     case: ProductDevelopmentCase
     rounds: list[SampleRound]
     duties: SupplyChainProductActionDuties
     pending_review: PendingApprovalRecord | None = None
+    po_case_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +145,11 @@ async def _case_in_workspace(
     repo: ProductCaseRepositoryPort, context: AccessContext, case_id: ProductDevelopmentCaseId
 ) -> ProductDevelopmentCase:
     case = await repo.get(context, case_id)
-    if case is None or case.workspace_id.value != context.workspace_id:
+    if (
+        case is None
+        or case.tenant_id.value != context.tenant_id
+        or case.workspace_id.value != context.workspace_id
+    ):
         raise NotFoundError("product case not found", details={"case_id": str(case_id)})
     return case
 
@@ -248,6 +269,11 @@ class GetProductCase:
                 if case.state in AWAITING_APPROVAL_STATES
                 else None
             ),
+            po_case_id=(
+                await self.repo.po_case_of(context, case.id.value)
+                if case.state is ProductDevState.ORDERED
+                else None
+            ),
         )
 
 
@@ -332,6 +358,11 @@ class AdvanceProductCase:
                 "an approval's outcome is decided on the approval, not as a step on the case",
                 details={"action": action.value},
             )
+        if action in COMMAND_ONLY_ACTIONS:
+            raise DomainError(
+                f"{action.value} is taken through its own command, not as a plain step",
+                details={"action": action.value},
+            )
         duties = await resolve_product_action_duties(
             context, self.policy_override_repo, self.platform_default_duties
         )
@@ -398,6 +429,103 @@ class AdvanceProductCase:
                 extra={"case_id": str(case.id)},
             )
             return ReviewRaise.NOT_RAISED
+
+
+@dataclass(frozen=True, slots=True)
+class OrderPlaced:
+    """ĐẶT HÀNG done: the case, now `ordered`, and the PO case it opened."""
+
+    case: ProductDevelopmentCase
+    po_case: POCase
+
+
+@dataclass(frozen=True)
+class PlaceOrder:
+    """ĐẶT HÀNG (module docstring). Who may is `place_order`'s duty under the
+    tenant's product policy, checked before the case is read; another
+    tenant's or workspace's case is not found. A second click, or a click on
+    a case that moved on, is a 409 and opens nothing: the repository's
+    conditional UPDATE answers it, whatever the case looked like when read."""
+
+    repo: ProductCaseRepositoryPort
+    authz: AuthorizationPort
+    policy_override_repo: PolicyOverridePort
+    platform_default_duties: SupplyChainProductActionDuties
+    platform_default_action_duties: SupplyChainActionDuties
+    holders: ScopeHoldersPort
+    notifier: ReviewNotifierPort
+    ids: IdGenerator
+    clock: UtcClock
+
+    async def handle(
+        self, context: AccessContext, *, case_id: ProductDevelopmentCaseId
+    ) -> OrderPlaced:
+        duties = await resolve_product_action_duties(
+            context, self.policy_override_repo, self.platform_default_duties
+        )
+        await self.authz.require(
+            context=context,
+            action=duty_scope(duties.duty_for(ProductAction.PLACE_ORDER)),
+            resource_type=_RESOURCE,
+            resource_id=str(case_id),
+        )
+        case = await _case_in_workspace(self.repo, context, case_id)
+        before = case.state
+        po_case = case.place_order(
+            actor_id=context.principal_id, po_case_id=POCaseId(self.ids.new_uuid())
+        )
+        await self.repo.place_order(
+            context,
+            case,
+            po_case,
+            audits=(
+                product_case_audit(
+                    context,
+                    self.ids,
+                    self.clock,
+                    case,
+                    ProductAction.PLACE_ORDER.value,
+                    {
+                        "from_state": before.value,
+                        "to_state": case.state.value,
+                        "po_case_id": str(po_case.id),
+                    },
+                ),
+                AuditEvent(
+                    id=self.ids.new_uuid(),
+                    tenant_id=TenantId(context.tenant_id),
+                    workspace_id=WorkspaceId(context.workspace_id),
+                    actor_id=UserId(context.principal_id),
+                    action="supply_chain.po_case.order_requested",
+                    resource_type="po_case",
+                    resource_id=str(po_case.id),
+                    occurred_at=self.clock.now(),
+                    details={
+                        "product_dev_case_id": str(case.id),
+                        "pic_user_id": str(po_case.pic_user_id),
+                        "category": po_case.category or "",
+                        "lines": len(po_case.lines),
+                    },
+                ),
+            ),
+        )
+        action_duties = await resolve_action_duties(
+            context, self.policy_override_repo, self.platform_default_action_duties
+        )
+        await notify_duty_holders(
+            context,
+            holders=self.holders,
+            notifier=self.notifier,
+            duty=action_duties.duty_for(CaseAction.CREATE_PO),
+            source_key=f"supply_chain.order_requested:{po_case.id}",
+            title=f"Chờ tạo PO: {case.product_name}",
+            body=(
+                f"Sản phẩm {case.product_name} ({case.proposal_code}) đã được ĐẶT HÀNG;"
+                " Hồ sơ PO chờ tạo PO (bước 10)."
+            ),
+            link=po_case_link(po_case.id.value),
+        )
+        return OrderPlaced(case=case, po_case=po_case)
 
 
 def _coding_details(

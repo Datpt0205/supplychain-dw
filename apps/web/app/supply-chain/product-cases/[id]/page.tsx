@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -25,14 +25,15 @@ import {
 import type { TableColumnsType, UploadFile } from "antd";
 import { PaperClipOutlined, UploadOutlined } from "@ant-design/icons";
 import { PageHeader, RegionState, type RegionFailure } from "@dw/ui";
-import type {
-  CaseDocument,
-  DocumentType,
-  PendingReview,
-  ProductActionOption,
-  ProductCaseDetail,
-  ProductCaseTransition,
-  SampleRound,
+import {
+  ApiError,
+  type CaseDocument,
+  type DocumentType,
+  type PendingReview,
+  type ProductActionOption,
+  type ProductCaseDetail,
+  type ProductCaseTransition,
+  type SampleRound,
 } from "@dw/api-client";
 import {
   ACCEPT,
@@ -41,7 +42,10 @@ import {
   NO_WRITE_REASON,
   useCaseDocumentUpload,
 } from "../../../../components/supply-chain/case-documents-card";
-import { stepLabel } from "../../../../components/supply-chain/case-state-badge";
+import {
+  CASE_STATE_LABEL,
+  stepLabel,
+} from "../../../../components/supply-chain/case-state-badge";
 import {
   CaseSummary,
   type SummaryCell,
@@ -237,10 +241,10 @@ function CaseView({
   );
 }
 
-/** The steps the case accepts now, less step 9's coding (its own card). A
- * step whose duty the viewer lacks, or that the case is not ready for (the
- * server's `unmet`), is locked, with the reason beside it as well as in its
- * tooltip. */
+/** The steps the case accepts now, less step 9's coding (its own card) and
+ * ĐẶT HÀNG (its own route and confirmation). A step whose duty the viewer
+ * lacks, or that the case is not ready for (the server's `unmet`), is locked,
+ * with the reason beside it as well as in its tooltip. */
 function NextSteps({
   detail,
   onStep,
@@ -256,7 +260,12 @@ function NextSteps({
   const online = useOnline();
   const [open, setOpen] = useState<ProductActionOption | null>(null);
   const steps = detail.actions.filter(
-    (option) => !CODING_ACTIONS.includes(option.action),
+    (option) =>
+      !CODING_ACTIONS.includes(option.action) &&
+      option.action !== "place_order",
+  );
+  const placeOrder = detail.actions.find(
+    (option) => option.action === "place_order",
   );
 
   const lockOf = (option: ProductActionOption): string | null =>
@@ -285,10 +294,38 @@ function NextSteps({
             description="Mã hàng và SKU đã chốt. Bước ĐẶT HÀNG tạo Hồ sơ PO."
           />
         )}
+        {detail.state === "ordered" && (
+          <Alert
+            type="success"
+            showIcon
+            title="Đã đặt hàng; hồ sơ phát triển kết thúc."
+            description={
+              detail.po_case_id ? (
+                <Flex vertical gap="small">
+                  <Typography.Text>
+                    Đơn hàng tiếp tục ở Hồ sơ PO: chờ Cung ứng tạo PO (bước 10).
+                  </Typography.Text>
+                  <Link href={`/supply-chain/po-cases/${detail.po_case_id}`}>
+                    Hồ sơ PO
+                  </Link>
+                </Flex>
+              ) : null
+            }
+          />
+        )}
+        {placeOrder && (
+          <PlaceOrder
+            detail={detail}
+            lock={lockOf(placeOrder)}
+            onStep={onStep}
+          />
+        )}
         {steps.length === 0 ? (
-          <Typography.Text>
-            Hồ sơ đã kết thúc; không còn bước nào.
-          </Typography.Text>
+          placeOrder ? null : (
+            <Typography.Text>
+              Hồ sơ đã kết thúc; không còn bước nào.
+            </Typography.Text>
+          )
         ) : (
           <Flex wrap gap="small">
             {steps.map((option) => {
@@ -339,6 +376,90 @@ function NextSteps({
         />
       )}
     </Card>
+  );
+}
+
+/**
+ * ĐẶT HÀNG (ADR 0017): the case ends as ordered and, in the same transaction,
+ * a PO case opens awaiting its PO number, carrying the PIC, the Category, the
+ * NCC and one line per SKU. Taken at its own route after a confirmation; a
+ * second press is the server's 409, shown with its sentence. One key per
+ * attempt, kept on a retry that never got an answer, so a lost response is
+ * not a second order.
+ */
+function PlaceOrder({
+  detail,
+  lock,
+  onStep,
+}: {
+  detail: ProductCaseDetail;
+  lock: string | null;
+  onStep: () => void;
+}) {
+  const { message, modal } = App.useApp();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const key = useRef<string | null>(null);
+  const label = PRODUCT_ACTION_LABEL.place_order;
+
+  const order = async () => {
+    key.current ??= newIdempotencyKey();
+    setBusy(true);
+    setError(null);
+    try {
+      await apiClient().placeProductOrder(detail.id, key.current);
+      key.current = null;
+      void message.success("Đã đặt hàng; Hồ sơ PO đã mở, chờ tạo PO.");
+      onStep();
+    } catch (caught) {
+      setError(errorMessage(caught));
+      if (caught instanceof ApiError && caught.status === 409) {
+        // The case moved under us: show where it stands now.
+        key.current = null;
+        onStep();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirm = () => {
+    modal.confirm({
+      title: `ĐẶT HÀNG cho ${detail.proposal_code}?`,
+      content: `Hồ sơ phát triển "${detail.product_name}" kết thúc ở ${PRODUCT_DEV_STATE_LABEL.ordered}. Một Hồ sơ PO mở ở ${CASE_STATE_LABEL.order_requested}, chưa có số PO, mang PIC, Category ${detail.category}, NCC và ${detail.skus.length} SKU; Cung ứng tạo PO ở bước 10. Không hoàn tác được.`,
+      okText: label,
+      cancelText: "Chưa đặt",
+      autoFocusButton: "cancel",
+      onOk: () => order(),
+    });
+  };
+
+  const button = (
+    <Button
+      type="primary"
+      disabled={lock !== null}
+      loading={busy}
+      onClick={confirm}
+    >
+      {label}
+    </Button>
+  );
+  return (
+    <Flex vertical gap="small" align="start">
+      {lock ? (
+        <Tooltip title={lock}>
+          <span>{button}</span>
+        </Tooltip>
+      ) : (
+        button
+      )}
+      {lock && (
+        <Typography.Text>
+          {label}: {lock}
+        </Typography.Text>
+      )}
+      {error && <Alert type="error" showIcon title={error} />}
+    </Flex>
   );
 }
 

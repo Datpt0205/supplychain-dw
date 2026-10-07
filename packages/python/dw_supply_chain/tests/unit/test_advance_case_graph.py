@@ -24,6 +24,7 @@ from dw_kernel.errors import ConflictError, DomainError, NotFoundError
 from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.pagination import Page, PageRequest
 from dw_platform.application.access_context import AccessContext
+from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.application.ports import POCaseListFilter
 from dw_supply_chain.domain.po_case import CaseState, CaseTransition, POCase, POCaseId
 from dw_supply_chain.workflows.advance_case_graph import (
@@ -45,7 +46,9 @@ class FakePOCaseRepository:
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
         return self.case if case_id.value == self.case.id.value else None
 
-    async def save(self, context: AccessContext, case: POCase) -> None:
+    async def save(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         self.saved = case
 
     async def get_current_state_entered_at(self, context: AccessContext, case_id: POCaseId) -> None:

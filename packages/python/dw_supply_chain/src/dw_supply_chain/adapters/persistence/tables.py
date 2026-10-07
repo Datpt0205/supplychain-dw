@@ -20,7 +20,9 @@ po_cases = sa.Table(
     sa.Column("id", UUID(as_uuid=True), primary_key=True),
     sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
     sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
-    sa.Column("po_reference", sa.Text, nullable=False),
+    # NULL only while the case awaits its PO (`order_requested`), or cancelled
+    # from there (`ck_po_cases_po_reference`, ADR 0017).
+    sa.Column("po_reference", sa.Text, nullable=True),
     sa.Column("supplier_name", sa.Text, nullable=False),
     sa.Column("state", sa.Text, nullable=False, server_default="po_created"),
     sa.Column("interrupted_state", sa.Text, nullable=True),
@@ -31,6 +33,28 @@ po_cases = sa.Table(
         "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
     sa.Column("version", sa.Integer, nullable=False, server_default="1"),
+    sa.Column("order_kind", sa.Text, nullable=False),
+    # Set when ĐẶT HÀNG opened the case, with the product case's PIC and
+    # Category stamped beside it (migration 84d1c1946b44).
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("pic_user_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("category", sa.Text, nullable=True),
+)
+
+# One planned line of a PO case: a SKU and how many (NULL until `create_po`
+# when the SKU's planned quantity was open).
+po_case_lines = sa.Table(
+    "po_case_lines",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("po_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("sku_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("quantity", sa.Integer, nullable=True),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
 )
 
 supplier_updates = sa.Table(

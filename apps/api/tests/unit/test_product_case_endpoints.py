@@ -19,6 +19,7 @@ import pytest
 from asgi_lifespan import LifespanManager
 
 from dw_api.bootstrap import ApiContainer
+from dw_api.bootstrap.paths import SUPPLY_CHAIN_ACTION_DUTIES
 from dw_api.health import CheckState, HealthService
 from dw_api.main import create_app
 from dw_api.settings import ApiSettings
@@ -38,7 +39,7 @@ from dw_platform.application.idempotency import (
 )
 from dw_platform.application.identity import DbAccessContextFactory, MembershipAccess
 from dw_platform.domain.audit import AuditEvent
-from dw_supply_chain.action_duties import CaseDuty
+from dw_supply_chain.action_duties import CaseDuty, load_supply_chain_action_duties
 from dw_supply_chain.application.case_documents import (
     DownloadCaseDocument,
     ListCaseDocuments,
@@ -66,6 +67,7 @@ from dw_supply_chain.application.product_cases import (
     GetProductCase,
     ListProductCases,
     ListProductCaseTransitions,
+    PlaceOrder,
     ProposeProductCase,
 )
 from dw_supply_chain.domain.case_document import (
@@ -74,7 +76,9 @@ from dw_supply_chain.domain.case_document import (
     CaseKind,
     DocumentType,
 )
+from dw_supply_chain.domain.po_case import POCase
 from dw_supply_chain.domain.product_development_case import (
+    ItemCode,
     ItemCodeIssued,
     ProductAction,
     ProductCaseTransition,
@@ -82,6 +86,7 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevelopmentCaseId,
     ProductDevState,
     SampleRound,
+    Sku,
 )
 from dw_supply_chain.domain.product_proposal import DraftClaim
 from dw_supply_chain.presentation.product_case_routes import ProposeProductCaseRequest
@@ -116,7 +121,7 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
     {
         "schema_version": "1.0",
         "policy_id": PRODUCT_ACTION_DUTIES_POLICY_ID,
-        "policy_version": "1.2.0",
+        "policy_version": "1.3.0",
         "action_duties": {
             "propose": "ordering",
             "request_sample": "ordering",
@@ -136,6 +141,7 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
             "add_sku": "ordering",
             "remove_sku": "ordering",
             "submit_for_signoff": "ordering",
+            "place_order": "ordering",
         },
     }
 )
@@ -173,6 +179,8 @@ class FakeCases:
     rows: dict[uuid.UUID, ProductDevelopmentCase] = field(default_factory=dict)
     history: dict[uuid.UUID, list[ProductCaseTransition]] = field(default_factory=dict)
     rounds: dict[uuid.UUID, list[SampleRound]] = field(default_factory=dict)
+    po_cases: dict[uuid.UUID, POCase] = field(default_factory=dict)
+    audits: list[AuditEvent] = field(default_factory=list)
 
     def _visible(self, context: AccessContext, case: ProductDevelopmentCase) -> bool:
         return (case.tenant_id.value, case.workspace_id.value) == (
@@ -330,6 +338,40 @@ class FakeCases:
             return []
         return list(self.rounds.get(case_id.value, []))
 
+    async def place_order(
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        po_case: POCase,
+        *,
+        audits: Sequence[AuditEvent],
+    ) -> None:
+        """As the SQL: moved only from the state its step left, at the version
+        read; otherwise a conflict and nothing written."""
+        stored = self.rows.get(case.id.value)
+        (step,) = case._pending_steps
+        if (
+            stored is None
+            or not self._visible(context, stored)
+            or stored.version != case.version - 1
+            or stored.state is not step.from_state
+        ):
+            raise ConflictError("hồ sơ đã được đặt hàng hoặc vừa thay đổi")
+        self.put(replace(case))
+        self.po_cases[po_case.id.value] = po_case
+        self.audits.extend(audits)
+
+    async def po_case_of(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
+        return next(
+            (
+                po.id.value
+                for po in self.po_cases.values()
+                if po.product_dev_case_id == case_id
+                and po.workspace_id.value == context.workspace_id
+            ),
+            None,
+        )
+
 
 @dataclass
 class FakeDocuments:
@@ -479,8 +521,42 @@ class FakeApprovals:
 
 
 @dataclass
+class FakeHolders:
+    """`ScopeHoldersPort`: who in a workspace holds a scope, as given."""
+
+    by_scope: dict[str, list[uuid.UUID]] = field(default_factory=dict)
+
+    async def holding(
+        self, context: AccessContext, workspace_id: uuid.UUID, scopes: frozenset[str]
+    ) -> list[uuid.UUID]:
+        return sorted({p for scope in scopes for p in self.by_scope.get(scope, [])})
+
+
+@dataclass
+class FakeNotifier:
+    """The inbox: once per (person, source_key), as the real one is."""
+
+    sent: dict[tuple[uuid.UUID, str], tuple[str, str | None]] = field(default_factory=dict)
+
+    async def deliver(
+        self,
+        context: AccessContext,
+        *,
+        recipients: Sequence[uuid.UUID],
+        source_key: str,
+        title: str,
+        body: str,
+        link: str | None,
+    ) -> None:
+        for person in recipients:
+            self.sent.setdefault((person, source_key), (title, link))
+
+
+@dataclass
 class World:
     cases: FakeCases = field(default_factory=FakeCases)
+    holders: FakeHolders = field(default_factory=FakeHolders)
+    notifier: FakeNotifier = field(default_factory=FakeNotifier)
     reviews: FakeReviews = field(default_factory=FakeReviews)
     approvals: FakeApprovals = field(default_factory=FakeApprovals)
     documents: FakeDocuments = field(default_factory=FakeDocuments)
@@ -537,6 +613,15 @@ class World:
             )
             container.supply_chain_advance_product_case = AdvanceProductCase(
                 repo=self.cases, documents=self.documents, reviews=self.reviews, **common
+            )
+            container.supply_chain_place_order = PlaceOrder(
+                repo=self.cases,
+                platform_default_action_duties=load_supply_chain_action_duties(
+                    SUPPLY_CHAIN_ACTION_DUTIES
+                ),
+                holders=self.holders,
+                notifier=self.notifier,
+                **common,
             )
             container.supply_chain_get_product_case = GetProductCase(
                 repo=self.cases,
@@ -1509,3 +1594,124 @@ async def test_the_detail_of_a_case_waiting_for_signoff_names_its_step_and_the_o
         "steps": [{"step": "bod", "label": "BGĐ"}, {"step": "accounting", "label": "Kế toán"}],
     }
     assert [a["action"] for a in body["actions"]] == ["cancel"]
+
+
+# --- ĐẶT HÀNG (ticket 05) ----------------------------------------------------------------
+
+
+def _ready(world: World, **where: uuid.UUID) -> ProductDevelopmentCase:
+    case = world.case(at=ProductDevState.READY_TO_ORDER, **where)
+    case.supplier_name = "NCC Minh Long"
+    case.item_code = ItemCode(id=uuid.uuid4(), code="MH-0001")
+    case.skus = (
+        Sku(id=uuid.uuid4(), sku_code="MH-0001-RED", variant_label="Đỏ", planned_quantity=5),
+    )
+    return case
+
+
+def _order(
+    case_id: uuid.UUID, body: dict[str, object] | None = None, key: str | None = None
+) -> tuple[str, str, dict[str, object]]:
+    sent: dict[str, object] = {"headers": _headers(key or str(uuid.uuid4()))}
+    if body is not None:
+        sent["json"] = body
+    return ("POST", f"{BASE}/product-cases/{case_id}/order", sent)
+
+
+async def test_placing_the_order_answers_the_po_case_and_the_page_links_it() -> None:
+    world = World()
+    case = _ready(world)
+    container = world.container(SC_OPERATOR)
+
+    placed, detail = await _send(
+        container, [_order(case.id.value), _get(f"/product-cases/{case.id}")]
+    )
+
+    assert placed.status_code == 200, placed.text
+    po_case_id = placed.json()["po_case_id"]
+    assert placed.json()["state"] == "ordered"
+    assert detail.json()["po_case_id"] == po_case_id
+    assert detail.json()["actions"] == []
+    po = world.cases.po_cases[uuid.UUID(po_case_id)]
+    assert po.pic_user_id == case.pic_user_id != world.principal
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"pic_user_id": str(uuid.uuid4())},
+        {"category": "Chảo"},
+        {"supplier_name": "NCC khác"},
+    ],
+)
+async def test_the_order_route_takes_nothing_from_the_request(body: dict[str, object]) -> None:
+    """The PO case takes the PIC, Category and supplier from the case: a body
+    naming any of them is refused, and nothing is ordered."""
+    world = World()
+    case = _ready(world)
+
+    (response,) = await _send(world.container(SC_OPERATOR), [_order(case.id.value, body)])
+
+    assert response.status_code == 422, response.text
+    assert world.cases.po_cases == {}
+    assert world.cases.rows[case.id.value].state is ProductDevState.READY_TO_ORDER
+
+
+async def test_a_second_click_is_409_and_a_replay_under_the_same_key_is_the_first_answer() -> None:
+    world = World()
+    case = _ready(world)
+    key = str(uuid.uuid4())
+
+    first, replay, second = await _send(
+        world.container(SC_OPERATOR),
+        [_order(case.id.value, key=key), _order(case.id.value, key=key), _order(case.id.value)],
+    )
+
+    assert (first.status_code, replay.status_code, second.status_code) == (200, 200, 409)
+    assert replay.json() == first.json()
+    assert len(world.cases.po_cases) == 1
+
+
+async def test_ordering_without_the_ordering_duty_is_403() -> None:
+    world = World()
+    case = _ready(world)
+
+    (response,) = await _send(world.container(SC_RND), [_order(case.id.value)])
+
+    assert response.status_code == 403
+    assert world.cases.po_cases == {}
+
+
+@pytest.mark.parametrize("where", ["tenant", "workspace"])
+async def test_ordering_another_tenants_or_workspaces_case_is_404(where: str) -> None:
+    world = World()
+    case = _ready(
+        world, **({"tenant": uuid.uuid4()} if where == "tenant" else {"workspace": uuid.uuid4()})
+    )
+
+    (response,) = await _send(world.container(SC_OPERATOR), [_order(case.id.value)])
+
+    assert response.status_code == 404
+    assert world.cases.po_cases == {}
+
+
+async def test_ordering_a_case_not_ready_is_409() -> None:
+    world = World()
+    case = world.case(testing=True)
+
+    (response,) = await _send(world.container(SC_OPERATOR), [_order(case.id.value)])
+
+    assert response.status_code == 409
+
+
+async def test_the_step_route_refuses_place_order() -> None:
+    world = World()
+    case = _ready(world)
+
+    (response,) = await _send(
+        world.container(SC_OPERATOR),
+        [_post(f"/product-cases/{case.id}/transitions", {"action": "place_order"})],
+    )
+
+    assert response.status_code == 422
+    assert world.cases.po_cases == {}

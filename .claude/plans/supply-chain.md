@@ -19,8 +19,9 @@ This repo is the Elmich product: bounded context
 ## Where it stands (2026-10-05)
 
 - **Steps 10–17 (PO case)** are on `main` (slice P, `c2f04dc`).
-- **Steps 1–9 are built** (S1 steps 1–5, S2 step 6, S3 steps 7–8, S4 step 9); the
-  hand-off is ticketed (S5–S7). Approvals carry `required_scope` (A); cases carry
+- **Steps 1–17 run as one flow** (S1 steps 1–5, S2 step 6, S3 steps 7–8, S4 step 9,
+  S5 ĐẶT HÀNG and step 10); SLA by Category and PIC routing (S6) and the stage-1 evals
+  (S7) are ticketed. Approvals carry `required_scope` (A); cases carry
   documents (D).
 - **Channels:** in-app inbox only. The Zalo pieces on `main` are built and
   tested but wired into nothing; the API client calls `/api/v1/zalo/*` routes
@@ -65,7 +66,7 @@ means platform code, an upstream candidate (ADR 0011).
 | S2    | `stage-1/issues/02-bod-review-step-6.md`                                  | no      | resolved        | S1, A                               |
 | S3    | `stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`           | no      | resolved        | S2                                  |
 | S4    | `stage-1/issues/04-item-code-sku-signoff-step-9.md`                       | no      | resolved        | S3                                  |
-| S5    | `stage-1/issues/05-place-order-hand-off.md`                               | no      | ready-for-agent | S4                                  |
+| S5    | `stage-1/issues/05-place-order-hand-off.md`                               | no      | resolved        | S4                                  |
 | S6    | `stage-1/issues/06-sla-by-category-and-pic-routing.md`                    | no      | ready-for-agent | S5                                  |
 | S7    | `stage-1/issues/07-stage-1-evals.md`                                      | no      | ready-for-agent | S6                                  |
 | PK    | `packaging-design/issues/01-colour-packaging-and-pre-production.md`       | no      | ready-for-agent | P, D                                |
@@ -73,7 +74,7 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** S5 (S4 in: a case reaches `ready_to_order`); Z6; Z4p when a real photo update exists.
+**Next:** S6 (S5 in: ĐẶT HÀNG opens the PO case, step 10 creates the PO); Z6; Z4p when a real photo update exists.
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 
@@ -227,6 +228,10 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
   biến thể dưới mã hàng; `planned_quantity` tùy chọn; không ERP.)
 - **QE-12** Một sản phẩm sinh mấy PO? Một PO gộp SKU của nhiều sản phẩm được không?
   Hàng đặt lại có bỏ qua giai đoạn 1 không, Hàng mới thì sao?
+  (Tạm ở S5: một hồ sơ phát triển một Hồ sơ PO, câu cập nhật có điều kiện và UNIQUE
+  của database; Hàng đặt lại mở bằng `CreatePOCase`, không qua giai đoạn 1; không gộp
+  SKU nhiều sản phẩm. Trả lời "nhiều" thì bỏ UNIQUE bằng migration mới, đổi máy trạng
+  thái; ADR 0017 sửa đổi S5.)
 - **QE-13** Danh sách Category; SLA từng bước theo Category; chọn Category ở bước 1;
   thang "mức độ ưu tiên" ở bước 1.
 - **QE-14** Mỗi đồng hồ SLA bắt đầu từ đâu (đặt cọc từ lúc tạo PO hay lúc yêu cầu cọc;

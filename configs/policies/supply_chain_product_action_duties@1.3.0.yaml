@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_product_action_duties
-policy_version: "1.2.0"
+policy_version: "1.3.0"
 
 # Mỗi bước trên Hồ sơ phát triển sản phẩm (giai đoạn 1, ADR 0016) thuộc về một
 # nhiệm vụ (duty). Người làm bước đó phải có scope supply_chain.duty.<duty>:
@@ -33,6 +33,10 @@ policy_version: "1.2.0"
 # submit_for_signoff. Override lưu ở 1.0.0 hoặc 1.1.0 lấy duty dưới đây cho các bước
 # thêm sau phiên bản của nó. Kết quả trình ký (signoff_approve, signoff_reject) không
 # có duty: người ký là required_scope của approval (supply_chain_product_approvals).
+#
+# 1.3.0 (S5) thêm place_order (nút ĐẶT HÀNG: hồ sơ phát triển kết thúc, Hồ sơ PO
+# mở ở "Chờ tạo PO", ADR 0017), thuộc ordering như bước 10. Override lưu ở bản cũ
+# hơn lấy duty dưới đây cho place_order.
 action_duties:
   propose: ordering
   request_sample: ordering
@@ -52,3 +56,4 @@ action_duties:
   add_sku: ordering
   remove_sku: ordering
   submit_for_signoff: ordering
+  place_order: ordering

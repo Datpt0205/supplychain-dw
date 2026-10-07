@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_action_duties
-policy_version: "1.0.0"
+policy_version: "1.1.0"
 
 # Mỗi bước chuyển trạng thái của PO case thuộc về một nhiệm vụ (duty). Người
 # thực hiện bước đó phải có scope supply_chain.duty.<duty>, do role cấp:
@@ -20,6 +20,10 @@ policy_version: "1.0.0"
 # Luật tách nhiệm vụ (platform.sod_rules) chặn một người giữ cùng lúc các duty
 # xung đột: ordering với finance, ordering với warehouse, ordering với qc,
 # warehouse với finance; và người cấu hình quy trình không vận hành case.
+#
+# 1.1.0 (S5, ADR 0017) thêm create_po: bước 10, Cung ứng tạo PO (số PO, loại đơn)
+# cho Hồ sơ PO mà nút ĐẶT HÀNG mở ở "Chờ tạo PO". Override công ty lưu trước 1.1.0
+# được migration dữ liệu thêm create_po: ordering, cùng lúc với bản này.
 action_duties:
   request_deposit: ordering
   confirm_deposit: finance
@@ -39,3 +43,4 @@ action_duties:
   flag_manual_review: exceptions
   resume: exceptions
   cancel: ordering
+  create_po: ordering

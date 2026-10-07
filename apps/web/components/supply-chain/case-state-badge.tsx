@@ -1,10 +1,11 @@
-import type { CaseState } from "@dw/contracts";
+import type { CaseState, OrderKind } from "@dw/contracts";
 import { StatusTag, type StatusTone } from "@dw/ui";
 
 /** Vietnamese label for each `CaseState` the backend can return. The one
  * owner of these words (CONTEXT.md "Trạng thái của Hồ sơ PO" copies it); a
  * state added on the Python side fails the type check here first. */
 export const CASE_STATE_LABEL: Record<CaseState, string> = {
+  order_requested: "Chờ tạo PO",
   po_created: "Đã tạo PO",
   waiting_deposit: "Chờ đặt cọc",
   deposit_confirmed: "Đã xác nhận cọc",
@@ -34,6 +35,7 @@ export const CASE_STATE_META: Record<
   CaseState,
   { step: number | null; tone: StatusTone }
 > = {
+  order_requested: { step: 10, tone: "pri" },
   po_created: { step: 10, tone: "pri" },
   waiting_deposit: { step: 11, tone: "pri" },
   deposit_confirmed: { step: 11, tone: "pri" },
@@ -51,6 +53,12 @@ export const CASE_STATE_META: Record<
   rework: { step: 13, tone: "warn" },
   manual_review: { step: null, tone: "warn" },
   cancelled: { step: null, tone: "gray" },
+};
+
+/** Step 10's classification of the order (`OrderKind`). */
+export const ORDER_KIND_LABEL: Record<OrderKind, string> = {
+  new: "Hàng mới",
+  reorder: "Hàng đặt lại",
 };
 
 /** "Bước 11 · Giai đoạn 2": where a step sits in the 17. */

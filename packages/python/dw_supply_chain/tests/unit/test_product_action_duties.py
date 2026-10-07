@@ -24,10 +24,10 @@ pytestmark = pytest.mark.unit
 
 _POLICIES = Path(__file__).resolve().parents[5] / "configs" / "policies"
 _SHIPPED = _POLICIES / PRODUCT_ACTION_DUTIES_POLICY_FILE
-_PO_SHIPPED = _POLICIES / "supply_chain_action_duties@1.0.0.yaml"
+_PO_SHIPPED = _POLICIES / "supply_chain_action_duties@1.1.0.yaml"
 
 
-def _document(mapping: dict[str, str], *, version: str = "1.2.0") -> dict[str, object]:
+def _document(mapping: dict[str, str], *, version: str = "1.3.0") -> dict[str, object]:
     return {
         "schema_version": "1.0",
         "policy_id": PRODUCT_ACTION_DUTIES_POLICY_ID,
@@ -88,11 +88,13 @@ _STEP_9 = {
 _S3_OVERRIDE = _S1_OVERRIDE | {"complete_profile": "rnd", "confirm_with_supplier": "supply_lead"}
 
 
-def test_the_shipped_default_is_1_2_0_with_steps_seven_eight_and_nine() -> None:
+def test_the_shipped_default_is_1_3_0_with_steps_seven_to_nine_and_the_order() -> None:
     """Steps 7 and 8 (S3): R&D completes the BM04, TP Cung ứng confirms with
-    the supplier. Step 9 (S4): Cung ứng codes the product and submits it."""
+    the supplier. Step 9 (S4): Cung ứng codes the product and submits it.
+    ĐẶT HÀNG (S5): Cung ứng, as step 10."""
     policy = _shipped()
-    assert policy.policy_version == "1.2.0"
+    assert policy.policy_version == "1.3.0"
+    assert policy.duty_for(ProductAction.PLACE_ORDER) is CaseDuty.ORDERING
     assert policy.duty_for(ProductAction.COMPLETE_PROFILE) is CaseDuty.RND
     assert policy.duty_for(ProductAction.CONFIRM_WITH_SUPPLIER) is CaseDuty.SUPPLY_LEAD
     for action in _STEP_9:
@@ -102,8 +104,10 @@ def test_the_shipped_default_is_1_2_0_with_steps_seven_eight_and_nine() -> None:
             ProductAction.COMPLETE_PROFILE,
             ProductAction.CONFIRM_WITH_SUPPLIER,
             *_STEP_9,
+            ProductAction.PLACE_ORDER,
         },
-        "1.1.0": _STEP_9,
+        "1.1.0": {*_STEP_9, ProductAction.PLACE_ORDER},
+        "1.2.0": {ProductAction.PLACE_ORDER},
     } == STEPS_ADDED_AFTER
 
 
@@ -253,3 +257,21 @@ def test_the_po_policy_still_loads_and_needs_no_rnd_step() -> None:
     `rnd` or `supply_lead` existed stays valid."""
     po = load_supply_chain_action_duties(_PO_SHIPPED)
     assert {CaseDuty.RND, CaseDuty.SUPPLY_LEAD}.isdisjoint(set(po.action_duties.values()))
+
+
+def test_a_1_2_0_override_takes_the_platforms_duty_for_the_order_only() -> None:
+    """An S4 override (step 9 decided) predates ĐẶT HÀNG: it takes the
+    platform's duty for `place_order`, and keeps every choice it made."""
+    mine = {k: v for k, v in _shipped_mapping().items() if k != "place_order"}
+    mine["submit_for_signoff"] = "supply_lead"
+    policy = SupplyChainProductActionDuties.from_stored(
+        _document(mine, version="1.2.0"), _shipped()
+    )
+    assert policy.duty_for(ProductAction.PLACE_ORDER) is CaseDuty.ORDERING
+    assert policy.duty_for(ProductAction.SUBMIT_FOR_SIGNOFF) is CaseDuty.SUPPLY_LEAD
+
+
+def test_a_1_3_0_override_must_name_the_order() -> None:
+    mine = {k: v for k, v in _shipped_mapping().items() if k != "place_order"}
+    with pytest.raises(ValidationError, match="place_order"):
+        SupplyChainProductActionDuties.from_stored(_document(mine), _shipped())

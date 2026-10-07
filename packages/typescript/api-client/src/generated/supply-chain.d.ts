@@ -301,6 +301,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/po-cases/{case_id}/create-po": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Po Route
+         * @description Step 10 on a case awaiting its PO. A reference already taken in
+         *     the tenant is a 409 naming it; a line still without a quantity, 409.
+         */
+        post: operations["create_po_route_api_v1_supply_chain_po_cases__case_id__create_po_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/po-cases/{case_id}/delay-impact-analyses": {
         parameters: {
             query?: never;
@@ -504,6 +525,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/product-cases/{case_id}/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Place Product Order
+         * @description ĐẶT HÀNG: the case is ordered and its PO case opens awaiting its
+         *     PO. A second click is a 409 and opens nothing (a replay under the
+         *     same `Idempotency-Key` returns the first answer).
+         */
+        post: operations["place_product_order_api_v1_supply_chain_product_cases__case_id__order_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
         parameters: {
             query?: never;
@@ -690,7 +733,7 @@ export interface components {
          *     from this list.
          * @enum {string}
          */
-        CaseAction: "request_deposit" | "confirm_deposit" | "start_pre_production" | "start_production" | "send_to_qc" | "pass_qc" | "arrive_at_port" | "request_final_payment" | "confirm_payment" | "start_warehouse_receiving" | "complete" | "resume_from_rework" | "resume" | "fail_qc" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "cancel";
+        CaseAction: "request_deposit" | "confirm_deposit" | "start_pre_production" | "start_production" | "send_to_qc" | "pass_qc" | "arrive_at_port" | "request_final_payment" | "confirm_payment" | "start_warehouse_receiving" | "complete" | "resume_from_rework" | "resume" | "fail_qc" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "cancel" | "create_po";
         /** CaseActionResultView */
         CaseActionResultView: {
             case?: components["schemas"]["POCaseView"] | null;
@@ -787,9 +830,13 @@ export interface components {
          *     Declaration order is the happy-path order; the five exception states
          *     after COMPLETED are not part of that sequence and are reached only
          *     through the interrupt/rework/cancel methods below, never by position.
+         *
+         *     `ORDER_REQUESTED` heads it: ĐẶT HÀNG on a product case (step 9) opened
+         *     this case and its PO does not exist yet; step 10's `create_po` gives it
+         *     its reference (ADR 0017). Labelled "Chờ tạo PO".
          * @enum {string}
          */
-        CaseState: "po_created" | "waiting_deposit" | "deposit_confirmed" | "pre_production" | "production" | "qc" | "in_transit" | "arrived_port" | "waiting_payment" | "payment_completed" | "warehouse_receiving" | "completed" | "waiting_external" | "blocked" | "rework" | "manual_review" | "cancelled";
+        CaseState: "order_requested" | "po_created" | "waiting_deposit" | "deposit_confirmed" | "pre_production" | "production" | "qc" | "in_transit" | "arrived_port" | "waiting_payment" | "payment_completed" | "warehouse_receiving" | "completed" | "waiting_external" | "blocked" | "rework" | "manual_review" | "cancelled";
         /** CaseTableDataView */
         CaseTableDataView: {
             /** Has More */
@@ -829,12 +876,29 @@ export interface components {
             /** Note */
             note?: string | null;
         };
-        /** CreatePOCaseRequest */
+        /**
+         * CreatePOCaseRequest
+         * @description A case opened without stage 1 (a reorder, ADR 0017). No PIC field: the
+         *     caller is the PIC, and an unknown field is a 422.
+         */
         CreatePOCaseRequest: {
+            order_kind: components["schemas"]["OrderKind"];
             /** Po Reference */
             po_reference: string;
             /** Supplier Name */
             supplier_name: string;
+        };
+        /**
+         * CreatePORequest
+         * @description Step 10: the PO's reference and kind, and the quantity of any line
+         *     still open or to correct.
+         */
+        CreatePORequest: {
+            /** Lines */
+            lines?: components["schemas"]["POLineQuantity"][];
+            order_kind: components["schemas"]["OrderKind"];
+            /** Po Reference */
+            po_reference: string;
         };
         /** DailyBriefSummaryView */
         DailyBriefSummaryView: {
@@ -924,7 +988,7 @@ export interface components {
              */
             po_case_id: string;
             /** Po Reference */
-            po_reference: string;
+            po_reference: string | null;
             /** Supplier Name */
             supplier_name: string;
         };
@@ -989,8 +1053,61 @@ export interface components {
             /** Tradeoff */
             tradeoff: string;
         };
-        /** POCaseView */
-        POCaseView: {
+        /**
+         * OrderKind
+         * @description Step 10's classification: Hàng mới (a product out of stage 1) or Hàng
+         *     đặt lại (a reorder, opened by `CreatePOCase` without stage 1).
+         * @enum {string}
+         */
+        OrderKind: "new" | "reorder";
+        /**
+         * OrderPlacedView
+         * @description ĐẶT HÀNG done: the case, now ordered, and the PO case it opened.
+         */
+        OrderPlacedView: {
+            /** Category */
+            category: string;
+            /** Created At */
+            created_at: string | null;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            interrupted_state: components["schemas"]["ProductDevState"] | null;
+            /**
+             * Pic User Id
+             * Format: uuid
+             */
+            pic_user_id: string;
+            /**
+             * Po Case Id
+             * Format: uuid
+             */
+            po_case_id: string;
+            /** Product Name */
+            product_name: string;
+            /** Proposal Code */
+            proposal_code: string;
+            /** Sample Round */
+            sample_round: number;
+            /** Signoff Round */
+            signoff_round: number;
+            state: components["schemas"]["ProductDevState"];
+            /** Supplier Name */
+            supplier_name: string | null;
+            /** Version */
+            version: number;
+        };
+        /** POCaseDetailView */
+        POCaseDetailView: {
+            /** Category */
+            category: string | null;
             /** Created At */
             created_at: string | null;
             /**
@@ -999,13 +1116,73 @@ export interface components {
              */
             id: string;
             interrupted_state: components["schemas"]["CaseState"] | null;
+            /** Lines */
+            lines: components["schemas"]["POCaseLineView"][];
+            order_kind: components["schemas"]["OrderKind"];
+            /** Pic User Id */
+            pic_user_id: string | null;
             /** Po Reference */
-            po_reference: string;
+            po_reference: string | null;
+            /** Product Dev Case Id */
+            product_dev_case_id: string | null;
             state: components["schemas"]["CaseState"];
             /** Supplier Name */
             supplier_name: string;
             /** Version */
             version: number;
+        };
+        /**
+         * POCaseLineView
+         * @description A planned line: a SKU of the product and how many (null until step
+         *     10 sets it, when the SKU's planned quantity was open).
+         */
+        POCaseLineView: {
+            /** Quantity */
+            quantity: number | null;
+            /** Sku Code */
+            sku_code: string | null;
+            /**
+             * Sku Id
+             * Format: uuid
+             */
+            sku_id: string;
+            /** Variant Label */
+            variant_label: string | null;
+        };
+        /** POCaseView */
+        POCaseView: {
+            /** Category */
+            category: string | null;
+            /** Created At */
+            created_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            interrupted_state: components["schemas"]["CaseState"] | null;
+            order_kind: components["schemas"]["OrderKind"];
+            /** Pic User Id */
+            pic_user_id: string | null;
+            /** Po Reference */
+            po_reference: string | null;
+            /** Product Dev Case Id */
+            product_dev_case_id: string | null;
+            state: components["schemas"]["CaseState"];
+            /** Supplier Name */
+            supplier_name: string;
+            /** Version */
+            version: number;
+        };
+        /** POLineQuantity */
+        POLineQuantity: {
+            /** Quantity */
+            quantity: number;
+            /**
+             * Sku Id
+             * Format: uuid
+             */
+            sku_id: string;
         };
         /**
          * Page
@@ -1062,6 +1239,13 @@ export interface components {
             /** Steps */
             steps: components["schemas"]["SignoffStepView"][];
         };
+        /**
+         * PlaceOrderRequest
+         * @description ĐẶT HÀNG takes nothing: the PO case takes the PIC, Category, supplier
+         *     and SKUs from the case. A body may be sent empty or not at all; any field
+         *     in it (a PIC, a Category, a supplier) is a 422, never silently dropped.
+         */
+        PlaceOrderRequest: Record<string, never>;
         /** PortfolioSummaryView */
         PortfolioSummaryView: {
             /** Active Case Count */
@@ -1084,7 +1268,7 @@ export interface components {
          *     PO policy or approval keyed by one of them must not reach this case.
          * @enum {string}
          */
-        ProductAction: "propose" | "request_sample" | "receive_sample" | "pass_sample" | "request_revision" | "receive_revised_sample" | "reject_sample" | "complete_profile" | "confirm_with_supplier" | "issue_item_code" | "add_sku" | "remove_sku" | "submit_for_signoff" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "resume" | "cancel" | "bod_approve" | "bod_reject" | "signoff_approve" | "signoff_reject";
+        ProductAction: "propose" | "request_sample" | "receive_sample" | "pass_sample" | "request_revision" | "receive_revised_sample" | "reject_sample" | "complete_profile" | "confirm_with_supplier" | "issue_item_code" | "add_sku" | "remove_sku" | "submit_for_signoff" | "place_order" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "resume" | "cancel" | "bod_approve" | "bod_reject" | "signoff_approve" | "signoff_reject";
         /**
          * ProductActionOptionView
          * @description A step the case accepts from its state, what it must carry, and the
@@ -1136,6 +1320,8 @@ export interface components {
              * Format: uuid
              */
             pic_user_id: string;
+            /** Po Case Id */
+            po_case_id: string | null;
             /** Product Name */
             product_name: string;
             /** Proposal Code */
@@ -1263,7 +1449,7 @@ export interface components {
          *     web, in one table beside the product-case pages.
          * @enum {string}
          */
-        ProductDevState: "proposed" | "sample_requested" | "sample_testing" | "revision_requested" | "pending_bod_review" | "profile_in_progress" | "supplier_confirmation" | "item_coding" | "pending_signoff" | "ready_to_order" | "waiting_external" | "blocked" | "manual_review" | "cancelled";
+        ProductDevState: "proposed" | "sample_requested" | "sample_testing" | "revision_requested" | "pending_bod_review" | "profile_in_progress" | "supplier_confirmation" | "item_coding" | "pending_signoff" | "ready_to_order" | "ordered" | "waiting_external" | "blocked" | "manual_review" | "cancelled";
         /**
          * ProposeProductCaseRequest
          * @description Step 1. JSON only: product images are uploaded after the case exists,
@@ -2097,7 +2283,45 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["POCaseView"];
+                    "application/json": components["schemas"]["POCaseDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_po_route_api_v1_supply_chain_po_cases__case_id__create_po_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePORequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["POCaseDetailView"];
                 };
             };
             /** @description Validation Error */
@@ -2659,6 +2883,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CaseDocumentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    place_product_order_api_v1_supply_chain_product_cases__case_id__order_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PlaceOrderRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderPlacedView"];
                 };
             };
             /** @description Validation Error */

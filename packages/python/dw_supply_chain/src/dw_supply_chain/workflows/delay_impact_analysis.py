@@ -12,7 +12,7 @@ from __future__ import annotations
 from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.ports import ModelGateway, ModelRequest
 from dw_supply_chain.domain.delay_impact import DelayImpactExtraction, ImpactedMilestoneEstimate
-from dw_supply_chain.domain.po_case import POCase
+from dw_supply_chain.domain.po_case import POCase, reference_label
 
 PROMPT_ID = "supply_chain.delay_impact_analysis"
 PROMPT_VERSION = "1.0.0"
@@ -39,7 +39,7 @@ async def analyze_delay_impact(
         prompt_id=PROMPT_ID,
         prompt_version=PROMPT_VERSION,
         variables={
-            "po_reference": case.po_reference,
+            "po_reference": reference_label(case.po_reference),
             "supplier_name": case.supplier_name,
             "delay_days": str(delay_days),
             "impacted_milestones": ", ".join(e.milestone.value for e in impacted),

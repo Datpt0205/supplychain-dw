@@ -1,15 +1,39 @@
 "use client";
 
-import { useCallback, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Button, Card, Empty, Flex, List, Timeline, Typography } from "antd";
+import {
+  Alert,
+  App,
+  Button,
+  Card,
+  Descriptions,
+  Empty,
+  Flex,
+  Form,
+  Input,
+  InputNumber,
+  List,
+  Select,
+  Table,
+  Timeline,
+  Typography,
+} from "antd";
+import type { TableColumnsType } from "antd";
 import { StatusTag, PageHeader, RegionState } from "@dw/ui";
+import {
+  ApiError,
+  type OrderKind,
+  type POCaseDetail,
+  type POCaseLine,
+} from "@dw/api-client";
 import { CaseDocumentsCard } from "../../../../components/supply-chain/case-documents-card";
 import {
   CASE_STATE_LABEL,
   CASE_STATE_META,
   CaseStateTag,
+  ORDER_KIND_LABEL,
   stepLabel,
 } from "../../../../components/supply-chain/case-state-badge";
 import {
@@ -22,6 +46,7 @@ import {
   missingUpdateLabel,
 } from "../../../../components/supply-chain/missing-update-badge";
 import { OriginTag } from "../../../../components/supply-chain/origin-tag";
+import { poReferenceLabel } from "../../../../components/supply-chain/po-reference";
 import {
   SlaStatusTag,
   milestoneLabel,
@@ -30,7 +55,10 @@ import {
 import { SupplierEventTag } from "../../../../components/supply-chain/supplier-event-badge";
 import { useAuth } from "../../../../lib/auth/auth-context";
 import { formatDateTimeFull } from "../../../../lib/dates";
-import { regionFailure } from "../../../../lib/error-message";
+import { memberName, useWorkspaceMembers } from "../../../../lib/directory";
+import { errorMessage, regionFailure } from "../../../../lib/error-message";
+import { useOnline } from "../../../../lib/hooks/use-online";
+import { useAttemptKey } from "../../../../lib/idempotency-key";
 import { apiClient } from "../../../../lib/session";
 import { useCachedResource } from "../../../../lib/use-cached-resource";
 
@@ -183,14 +211,14 @@ export default function POCaseWorkspacePage() {
       <PageHeader
         breadcrumb={supplyChainCrumbs(
           { title: "Hồ sơ PO", href: "/supply-chain/po-cases" },
-          poCase.po_reference,
+          poReferenceLabel(poCase.po_reference),
         )}
         meta={
           <Typography.Text type="secondary">
             Hồ sơ PO · NCC {poCase.supplier_name}
           </Typography.Text>
         }
-        title={poCase.po_reference}
+        title={poReferenceLabel(poCase.po_reference)}
         tags={<CaseStateTag state={poCase.state} />}
         description={`Tạo lúc ${formatDateTimeFull(poCase.created_at)} · phiên bản ${poCase.version}`}
       />
@@ -208,6 +236,18 @@ export default function POCaseWorkspacePage() {
             )}
           </Flex>
         )}
+
+        {poCase.state === "order_requested" && (
+          <CreatePOCard
+            poCase={poCase}
+            onCreated={() => {
+              caseResource.reload();
+              transitionsResource.reload();
+            }}
+          />
+        )}
+
+        <OrderCard poCase={poCase} />
 
         <Card title="Đang chờ duyệt">
           {relatedApprovalsResource.loading ||
@@ -458,5 +498,244 @@ export default function POCaseWorkspacePage() {
         />
       </Flex>
     </div>
+  );
+}
+
+const OFFLINE = "Không có kết nối mạng. Kết nối lại rồi thử lại.";
+
+// The constraint a PO number already used in the company is refused by: the
+// server names it in a 409's details, and the page shows the sentence at the
+// field.
+const PO_REFERENCE_TAKEN = "uq_po_cases_tenant_id_po_reference";
+
+const ORDER_KIND_OPTIONS = (Object.keys(ORDER_KIND_LABEL) as OrderKind[]).map(
+  (value) => ({ value, label: ORDER_KIND_LABEL[value] }),
+);
+
+/** What the order is: its kind, Category, PIC, the product case it came from
+ * and its lines (one per SKU), as the server holds them. */
+function OrderCard({ poCase }: { poCase: POCaseDetail }) {
+  const members = useWorkspaceMembers();
+  const columns: TableColumnsType<POCaseLine> = [
+    {
+      title: "Mã SKU",
+      dataIndex: "sku_code",
+      render: (value: string | null) =>
+        value === null ? "—" : <Typography.Text code>{value}</Typography.Text>,
+    },
+    {
+      title: "Biến thể",
+      dataIndex: "variant_label",
+      render: (value: string | null) => value ?? "—",
+    },
+    {
+      title: "Số lượng",
+      dataIndex: "quantity",
+      align: "right",
+      render: (value: number | null) =>
+        value === null ? "Chưa có" : value.toLocaleString("vi-VN"),
+    },
+  ];
+  return (
+    <Card title="Đơn hàng">
+      <Flex vertical gap="middle">
+        <Descriptions
+          size="small"
+          column={{ xs: 1, md: 2 }}
+          items={[
+            {
+              key: "kind",
+              label: "Loại đơn",
+              children: ORDER_KIND_LABEL[poCase.order_kind],
+            },
+            {
+              key: "category",
+              label: "Category",
+              children: poCase.category ?? "—",
+            },
+            {
+              key: "pic",
+              label: "PIC",
+              children: memberName(members, poCase.pic_user_id) ?? "—",
+            },
+            {
+              key: "source",
+              label: "Nguồn",
+              children: poCase.product_dev_case_id ? (
+                <Link
+                  href={`/supply-chain/product-cases/${poCase.product_dev_case_id}`}
+                >
+                  Hồ sơ phát triển sản phẩm
+                </Link>
+              ) : (
+                "Mở trực tiếp, không qua giai đoạn 1"
+              ),
+            },
+          ]}
+        />
+        <Table<POCaseLine>
+          rowKey="sku_id"
+          size="small"
+          pagination={false}
+          scroll={{ x: "max-content" }}
+          columns={columns}
+          dataSource={poCase.lines}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="Hồ sơ không có dòng hàng nào."
+              />
+            ),
+          }}
+        />
+      </Flex>
+    </Card>
+  );
+}
+
+interface CreatePOValues {
+  poReference: string;
+  orderKind: OrderKind;
+  quantities: Record<string, number | null>;
+}
+
+/**
+ * Step 10 on a case ĐẶT HÀNG opened (ADR 0017): the PO's number, its kind and
+ * the quantity of each line, prefilled from the line. Whether the number is
+ * free in the company, and who may create the PO (a duty each company sets,
+ * not sent with the case), are the server's answers: a taken number is shown
+ * at its field, any other refusal with its sentence.
+ */
+function CreatePOCard({
+  poCase,
+  onCreated,
+}: {
+  poCase: POCaseDetail;
+  onCreated: () => void;
+}) {
+  const [form] = Form.useForm<CreatePOValues>();
+  const { message } = App.useApp();
+  const online = useOnline();
+  const attemptKey = useAttemptKey();
+  const [submitting, setSubmitting] = useState(false);
+  const [invalid, setInvalid] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (values: CreatePOValues) => {
+    setInvalid(0);
+    setError(null);
+    const input = {
+      poReference: values.poReference,
+      orderKind: values.orderKind,
+      // Every line, required by the form: a quantity set here or corrected.
+      lines: poCase.lines.map((line) => ({
+        skuId: line.sku_id,
+        quantity: values.quantities[line.sku_id] as number,
+      })),
+    };
+    setSubmitting(true);
+    try {
+      const created = await apiClient().createPO(
+        poCase.id,
+        input,
+        attemptKey(input),
+      );
+      void message.success(
+        `Đã tạo PO ${poReferenceLabel(created.po_reference)}.`,
+      );
+      onCreated();
+    } catch (caught) {
+      if (
+        caught instanceof ApiError &&
+        caught.status === 409 &&
+        caught.body.details.constraint === PO_REFERENCE_TAKEN
+      ) {
+        form.setFields([
+          { name: "poReference", errors: [caught.body.message] },
+        ]);
+      } else {
+        setError(errorMessage(caught));
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Card title="Tạo PO (bước 10)">
+      <Form<CreatePOValues>
+        form={form}
+        layout="vertical"
+        validateTrigger="onBlur"
+        scrollToFirstError={{ focus: true }}
+        initialValues={{
+          orderKind: poCase.product_dev_case_id ? "new" : poCase.order_kind,
+          quantities: Object.fromEntries(
+            poCase.lines.map((line) => [line.sku_id, line.quantity]),
+          ),
+        }}
+        onFinish={(values) => void submit(values)}
+        onFinishFailed={({ errorFields }) => setInvalid(errorFields.length)}
+      >
+        <Typography.Paragraph>
+          ĐẶT HÀNG đã mở hồ sơ này; nhập số PO đã tạo, loại đơn và số lượng từng
+          SKU để hồ sơ sang {CASE_STATE_LABEL.po_created}.
+        </Typography.Paragraph>
+        {invalid > 0 && (
+          <Alert
+            type="error"
+            showIcon
+            title={`Còn ${invalid} trường cần sửa`}
+          />
+        )}
+        <Form.Item
+          name="poReference"
+          label="Số PO"
+          rules={[
+            { required: true, whitespace: true, message: "Nhập số PO" },
+            { max: 200, message: "Số PO tối đa 200 ký tự" },
+          ]}
+        >
+          <Input autoComplete="off" placeholder="Ví dụ: PO-2026-007" />
+        </Form.Item>
+        <Form.Item
+          name="orderKind"
+          label="Loại đơn"
+          rules={[{ required: true, message: "Chọn loại đơn" }]}
+        >
+          <Select
+            aria-label="Loại đơn"
+            options={ORDER_KIND_OPTIONS}
+            virtual={false}
+          />
+        </Form.Item>
+        {poCase.lines.map((line) => {
+          const name = line.sku_code ?? line.sku_id;
+          return (
+            <Form.Item
+              key={line.sku_id}
+              name={["quantities", line.sku_id]}
+              label={`Số lượng ${name}${line.variant_label ? ` (${line.variant_label})` : ""}`}
+              rules={[{ required: true, message: `Nhập số lượng ${name}` }]}
+            >
+              <InputNumber min={1} precision={0} />
+            </Form.Item>
+          );
+        })}
+        {error && <Alert type="error" showIcon title={error} />}
+        <Flex vertical gap="small" align="start">
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={submitting}
+            disabled={!online}
+          >
+            Tạo PO
+          </Button>
+          {!online && <Typography.Text>{OFFLINE}</Typography.Text>}
+        </Flex>
+      </Form>
+    </Card>
   );
 }

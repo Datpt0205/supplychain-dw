@@ -11,6 +11,15 @@ name no `tenant_id` filter of their own: RLS is the one enforcement
 mechanism for a Postgres-backed store in this repo; `dw_platform.
 tenant_filter()` is for the stores that have no RLS to lean on (Qdrant), not
 a second check to bolt onto a query already governed by it.
+
+A case ĐẶT HÀNG opened carries planned lines (`po_case_lines`, tenant AND
+workspace scoped); `get` reads them back with each SKU's code and label, the
+lists do not. `insert_po_case` is the one INSERT of a case and its lines,
+shared with the product repository, which writes the case in ĐẶT HÀNG's own
+transaction. The PIC and Category are the stamped columns, never joined from
+the product case (ADR 0017; `test_no_po_case_read_joins_the_product_case`).
+A PO reference already taken in the tenant is a `ConflictError` by the
+constraint's name.
 """
 
 from __future__ import annotations
@@ -21,26 +30,37 @@ from datetime import datetime
 
 import sqlalchemy as sa
 from sqlalchemy.engine import CursorResult, Row
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from dw_kernel.errors import ConflictError
 from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.pagination import CursorPosition, Page, PageRequest, build_page
 from dw_platform.adapters.persistence.keyset import after_position, newest_first
+from dw_platform.adapters.persistence.repositories import SqlAuditRepository
 from dw_platform.adapters.persistence.tenant_session import TenantScope, tenant_session
 from dw_platform.application.access_context import AccessContext
+from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence import tables
 from dw_supply_chain.application.ports import PO_REFERENCE_PADDING, POCaseListFilter
 from dw_supply_chain.domain.po_case import (
     TERMINAL_STATES,
     CaseState,
     CaseTransition,
+    OrderKind,
     POCase,
     POCaseId,
+    POCaseLine,
 )
 
+_lines = tables.po_case_lines
+PO_REFERENCE_CONSTRAINT = "uq_po_cases_tenant_id_po_reference"
 
-def _case_from_row(row: Row[tuple]) -> POCase:  # type: ignore[type-arg]
+
+def _case_from_row(
+    row: Row[tuple],  # type: ignore[type-arg]
+    lines: tuple[POCaseLine, ...] = (),
+) -> POCase:
     return POCase(
         id=POCaseId(row.id),
         tenant_id=TenantId(row.tenant_id),
@@ -51,6 +71,98 @@ def _case_from_row(row: Row[tuple]) -> POCase:  # type: ignore[type-arg]
         interrupted_state=CaseState(row.interrupted_state) if row.interrupted_state else None,
         created_at=row.created_at,
         version=row.version,
+        order_kind=OrderKind(row.order_kind),
+        product_dev_case_id=row.product_dev_case_id,
+        pic_user_id=row.pic_user_id,
+        category=row.category,
+        lines=lines,
+    )
+
+
+def _constraint(exc: IntegrityError) -> str | None:
+    name = getattr(getattr(exc.orig, "__cause__", None), "constraint_name", None)
+    return name if isinstance(name, str) else None
+
+
+def reference_refusal(exc: IntegrityError, case: POCase) -> ConflictError | None:
+    """A PO reference already taken in the tenant, named; None for any other
+    refusal, which the caller re-raises."""
+    if _constraint(exc) != PO_REFERENCE_CONSTRAINT:
+        return None
+    return ConflictError(
+        f"số PO {case.po_reference} đã có trong công ty",
+        details={"constraint": PO_REFERENCE_CONSTRAINT, "po_reference": case.po_reference or ""},
+    )
+
+
+async def insert_po_case(session: AsyncSession, case: POCase) -> datetime:
+    """The case's row and its lines, in the caller's transaction; returns when
+    the row was written."""
+    created_at: datetime = (
+        await session.execute(
+            sa.insert(tables.po_cases)
+            .values(
+                id=case.id.value,
+                tenant_id=case.tenant_id.value,
+                workspace_id=case.workspace_id.value,
+                po_reference=case.po_reference,
+                supplier_name=case.supplier_name,
+                state=case.state.value,
+                interrupted_state=(
+                    case.interrupted_state.value if case.interrupted_state else None
+                ),
+                version=case.version,
+                order_kind=case.order_kind.value,
+                product_dev_case_id=case.product_dev_case_id,
+                pic_user_id=case.pic_user_id,
+                category=case.category,
+            )
+            .returning(tables.po_cases.c.created_at)
+        )
+    ).scalar_one()
+    if case.lines:
+        await session.execute(
+            sa.insert(_lines),
+            [
+                {
+                    "id": uuid.uuid4(),
+                    "tenant_id": case.tenant_id.value,
+                    "workspace_id": case.workspace_id.value,
+                    "po_case_id": case.id.value,
+                    "sku_id": line.sku_id,
+                    "quantity": line.quantity,
+                }
+                for line in case.lines
+            ],
+        )
+    return created_at
+
+
+async def _lines_of(session: AsyncSession, case_id: POCaseId) -> tuple[POCaseLine, ...]:
+    """The case's lines, in the order they were written, each with its SKU's
+    code and label. RLS narrows both tables to the caller's workspace."""
+    skus = tables.skus
+    rows = (
+        await session.execute(
+            sa.select(_lines.c.sku_id, _lines.c.quantity, skus.c.sku_code, skus.c.variant_label)
+            .select_from(
+                _lines.outerjoin(
+                    skus,
+                    sa.and_(skus.c.tenant_id == _lines.c.tenant_id, skus.c.id == _lines.c.sku_id),
+                )
+            )
+            .where(_lines.c.po_case_id == case_id.value)
+            .order_by(_lines.c.created_at.asc(), skus.c.sku_code.asc())
+        )
+    ).all()
+    return tuple(
+        POCaseLine(
+            sku_id=row.sku_id,
+            quantity=row.quantity,
+            sku_code=row.sku_code,
+            variant_label=row.variant_label,
+        )
+        for row in rows
     )
 
 
@@ -114,22 +226,16 @@ class SqlPOCaseRepository:
 
     async def add(self, context: AccessContext, case: POCase) -> None:
         scope = TenantScope.from_access_context(context)
-        async with tenant_session(self.session_factory, scope) as session:
-            await session.execute(
-                sa.insert(tables.po_cases).values(
-                    id=case.id.value,
-                    tenant_id=case.tenant_id.value,
-                    workspace_id=case.workspace_id.value,
-                    po_reference=case.po_reference,
-                    supplier_name=case.supplier_name,
-                    state=case.state.value,
-                    interrupted_state=(
-                        case.interrupted_state.value if case.interrupted_state else None
-                    ),
-                    version=case.version,
-                )
-            )
-            await self._insert_pending_transitions(session, case)
+        try:
+            async with tenant_session(self.session_factory, scope) as session:
+                created_at = await insert_po_case(session, case)
+                await self._insert_pending_transitions(session, case)
+        except IntegrityError as exc:
+            refusal = reference_refusal(exc, case)
+            if refusal is None:
+                raise
+            raise refusal from exc
+        case.created_at = created_at
 
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
         scope = TenantScope.from_access_context(context)
@@ -138,7 +244,9 @@ class SqlPOCaseRepository:
                 sa.select(tables.po_cases).where(tables.po_cases.c.id == case_id.value)
             )
             row = result.first()
-            return _case_from_row(row) if row else None
+            if row is None:
+                return None
+            return _case_from_row(row, await _lines_of(session, case_id))
 
     async def case_workspace(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
         """The workspace of the caller's tenant's case, or None: what
@@ -150,7 +258,9 @@ class SqlPOCaseRepository:
             )
         return found
 
-    async def save(self, context: AccessContext, case: POCase) -> None:
+    async def save(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         """Persists the aggregate's current state.
 
         `WHERE version = case.version - 1` is the optimistic-concurrency
@@ -163,30 +273,46 @@ class SqlPOCaseRepository:
         paper over a genuine conflict.
         """
         scope = TenantScope.from_access_context(context)
-        async with tenant_session(self.session_factory, scope) as session:
-            result = await session.execute(
-                sa.update(tables.po_cases)
-                .where(
-                    tables.po_cases.c.id == case.id.value,
-                    tables.po_cases.c.version == case.version - 1,
+        quantities = case.pop_pending_line_quantities()
+        try:
+            async with tenant_session(self.session_factory, scope) as session:
+                result = await session.execute(
+                    sa.update(tables.po_cases)
+                    .where(
+                        tables.po_cases.c.id == case.id.value,
+                        tables.po_cases.c.version == case.version - 1,
+                    )
+                    .values(
+                        po_reference=case.po_reference,
+                        supplier_name=case.supplier_name,
+                        state=case.state.value,
+                        interrupted_state=(
+                            case.interrupted_state.value if case.interrupted_state else None
+                        ),
+                        version=case.version,
+                        order_kind=case.order_kind.value,
+                    )
                 )
-                .values(
-                    po_reference=case.po_reference,
-                    supplier_name=case.supplier_name,
-                    state=case.state.value,
-                    interrupted_state=(
-                        case.interrupted_state.value if case.interrupted_state else None
-                    ),
-                    version=case.version,
-                )
-            )
-            assert isinstance(result, CursorResult)
-            if result.rowcount != 1:
-                raise ConflictError(
-                    "PO case was modified concurrently",
-                    details={"case_id": str(case.id)},
-                )
-            await self._insert_pending_transitions(session, case)
+                assert isinstance(result, CursorResult)
+                if result.rowcount != 1:
+                    raise ConflictError(
+                        "PO case was modified concurrently",
+                        details={"case_id": str(case.id)},
+                    )
+                for sku_id, quantity in quantities.items():
+                    await session.execute(
+                        sa.update(_lines)
+                        .where(_lines.c.po_case_id == case.id.value, _lines.c.sku_id == sku_id)
+                        .values(quantity=quantity)
+                    )
+                await self._insert_pending_transitions(session, case)
+                if audit is not None:
+                    await SqlAuditRepository(session).append(audit)
+        except IntegrityError as exc:
+            refusal = reference_refusal(exc, case)
+            if refusal is None:
+                raise
+            raise refusal from exc
 
     async def get_current_state_entered_at(
         self, context: AccessContext, case_id: POCaseId

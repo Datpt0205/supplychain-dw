@@ -11,8 +11,9 @@ later pieces — kept out so this stays reviewable on its own.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
+import uuid
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 
@@ -36,8 +37,13 @@ class CaseState(StrEnum):
     Declaration order is the happy-path order; the five exception states
     after COMPLETED are not part of that sequence and are reached only
     through the interrupt/rework/cancel methods below, never by position.
+
+    `ORDER_REQUESTED` heads it: ĐẶT HÀNG on a product case (step 9) opened
+    this case and its PO does not exist yet; step 10's `create_po` gives it
+    its reference (ADR 0017). Labelled "Chờ tạo PO".
     """
 
+    ORDER_REQUESTED = "order_requested"
     PO_CREATED = "po_created"
     WAITING_DEPOSIT = "waiting_deposit"
     DEPOSIT_CONFIRMED = "deposit_confirmed"
@@ -66,6 +72,37 @@ TERMINAL_STATES = frozenset({CaseState.COMPLETED, CaseState.CANCELLED})
 _INTERRUPT_STATES = frozenset(
     {CaseState.WAITING_EXTERNAL, CaseState.BLOCKED, CaseState.MANUAL_REVIEW}
 )
+# Where a case may sit without a PO reference: awaiting its PO, or cancelled
+# from there. The table's CHECK `ck_po_cases_po_reference` says the same.
+_NO_REFERENCE_STATES = frozenset({CaseState.ORDER_REQUESTED, CaseState.CANCELLED})
+
+
+def reference_label(po_reference: str | None) -> str:
+    """What a message or a prompt names a case by: its PO reference, or, for
+    a case awaiting its PO, that it has none yet. Never a made-up number
+    (ADR 0017 refused a placeholder reference)."""
+    return po_reference if po_reference is not None else "Chưa có số PO"
+
+
+class OrderKind(StrEnum):
+    """Step 10's classification: Hàng mới (a product out of stage 1) or Hàng
+    đặt lại (a reorder, opened by `CreatePOCase` without stage 1)."""
+
+    NEW = "new"
+    REORDER = "reorder"
+
+
+@dataclass(frozen=True, slots=True)
+class POCaseLine:
+    """One planned line of the order: a SKU of the product and how many.
+    `quantity` starts from the SKU's planned quantity, which may be open
+    (QE-11); `create_po` refuses to create the PO until every line has one.
+    `sku_code` and `variant_label` are read back for display only."""
+
+    sku_id: uuid.UUID
+    quantity: int | None
+    sku_code: str | None = None
+    variant_label: str | None = None
 
 
 @dataclass(slots=True)
@@ -80,12 +117,25 @@ class POCase:
     id: POCaseId
     tenant_id: TenantId
     workspace_id: WorkspaceId
-    po_reference: str
+    po_reference: str | None
     supplier_name: str
     state: CaseState = CaseState.PO_CREATED
     created_at: datetime | None = None
     version: int = 1
     interrupted_state: CaseState | None = None
+    # Step 10's classification. The default is what every case opened before
+    # ticket 05 was (the migration backfills `reorder`); `CreatePOCase` and
+    # ĐẶT HÀNG always name one.
+    order_kind: OrderKind = OrderKind.REORDER
+    # Set when ĐẶT HÀNG opened the case: the product case it came from, and
+    # its PIC and Category, stamped from that row in the same transaction and
+    # never looked up again. `CreatePOCase` stamps its caller as PIC; a case
+    # opened before ticket 05 has none.
+    product_dev_case_id: uuid.UUID | None = None
+    pic_user_id: uuid.UUID | None = None
+    category: str | None = None
+    # Read back by `get` only; a listed case carries none.
+    lines: tuple[POCaseLine, ...] = ()
     # Accumulates one (from, to, reason) triple per transition this in-memory
     # instance has made since the last drain — `reason` is the value the five
     # REASON_REQUIRED_ACTIONS methods below were already given and validated
@@ -98,12 +148,57 @@ class POCase:
     _pending_transitions: list[tuple[CaseState, CaseState, str | None]] = field(
         default_factory=list, compare=False, repr=False
     )
+    # Line quantities `create_po` set, by SKU, for the repository to write.
+    _pending_line_quantities: dict[uuid.UUID, int] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
     def __post_init__(self) -> None:
-        if not self.po_reference.strip():
+        if self.po_reference is None:
+            if self.state not in _NO_REFERENCE_STATES:
+                raise ValueError(
+                    "po_reference may be absent only while the case awaits its PO"
+                    f" (state {self.state.value})"
+                )
+        elif not self.po_reference.strip():
             raise ValueError("po_reference must not be blank")
         if not self.supplier_name.strip():
             raise ValueError("supplier_name must not be blank")
+
+    @classmethod
+    def requested(
+        cls,
+        *,
+        id: POCaseId,
+        tenant_id: TenantId,
+        workspace_id: WorkspaceId,
+        supplier_name: str,
+        product_dev_case_id: uuid.UUID,
+        pic_user_id: uuid.UUID,
+        category: str,
+        lines: tuple[POCaseLine, ...],
+    ) -> POCase:
+        """The case ĐẶT HÀNG opens (ADR 0017): no PO yet, a new product, the
+        product case's PIC, Category and supplier as given."""
+        return cls(
+            id=id,
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            po_reference=None,
+            supplier_name=supplier_name,
+            state=CaseState.ORDER_REQUESTED,
+            order_kind=OrderKind.NEW,
+            product_dev_case_id=product_dev_case_id,
+            pic_user_id=pic_user_id,
+            category=category,
+            lines=lines,
+        )
+
+    def pop_pending_line_quantities(self) -> dict[uuid.UUID, int]:
+        """Returns and clears the line quantities set since the last call."""
+        quantities = self._pending_line_quantities
+        self._pending_line_quantities = {}
+        return quantities
 
     def pop_pending_transitions(self) -> list[tuple[CaseState, CaseState, str | None]]:
         """Returns and clears the transitions recorded since the last call."""
@@ -130,6 +225,46 @@ class POCase:
         self._pending_transitions.append((self.state, target, reason))
         self.state = target
         self.version += 1
+
+    # -- step 10: the PO is created -------------------------------------------
+
+    def create_po(
+        self,
+        *,
+        po_reference: str,
+        order_kind: OrderKind,
+        quantities: Mapping[uuid.UUID, int] | None = None,
+    ) -> None:
+        """Step 10: Cung ứng creates the PO, giving its reference and kind,
+        and the line quantities still open or to correct. Every line must end
+        with a quantity. Takes arguments, so it is a command of its own
+        (`CreatePO`), never an `apply_action` dispatch."""
+        reference = po_reference.strip()
+        if not reference:
+            raise ValueError("po_reference must not be blank")
+        given = dict(quantities or {})
+        known = {line.sku_id for line in self.lines}
+        unknown = sorted(str(sku_id) for sku_id in given if sku_id not in known)
+        if unknown:
+            raise DomainError(
+                "the order carries no line for this sku", details={"sku_id": ",".join(unknown)}
+            )
+        if any(quantity < 1 for quantity in given.values()):
+            raise DomainError("a line quantity must be at least 1")
+        lines = tuple(
+            replace(line, quantity=given.get(line.sku_id, line.quantity)) for line in self.lines
+        )
+        unset = [str(line.sku_id) for line in lines if line.quantity is None]
+        if self.state is CaseState.ORDER_REQUESTED and unset:
+            raise ConflictError(
+                "create_po cần số lượng cho mọi dòng",
+                details={"case_id": str(self.id), "missing_quantity": ",".join(unset)},
+            )
+        self._advance(expected=CaseState.ORDER_REQUESTED, target=CaseState.PO_CREATED)
+        self.po_reference = reference
+        self.order_kind = order_kind
+        self.lines = lines
+        self._pending_line_quantities = given
 
     # -- happy path: one guarded method per business action -----------------
 
@@ -182,7 +317,13 @@ class POCase:
     def _interrupt(self, *, reason: str, target: CaseState) -> None:
         if not reason.strip():
             raise ValueError(f"{target.value} requires a non-blank reason")
-        if self.state in TERMINAL_STATES or self.state in _INTERRUPT_STATES:
+        # Awaiting its PO, nothing outside is awaited yet: no supplier holds
+        # an order. Cancel the case, or create the PO.
+        if (
+            self.state in TERMINAL_STATES
+            or self.state in _INTERRUPT_STATES
+            or self.state is CaseState.ORDER_REQUESTED
+        ):
             raise ConflictError(
                 f"cannot interrupt from {self.state.value}",
                 details={"case_id": str(self.id), "current_state": self.state.value},
@@ -267,6 +408,10 @@ class CaseAction(StrEnum):
     FLAG_MANUAL_REVIEW = "flag_manual_review"
     CANCEL = "cancel"
 
+    # Step 10. Takes the reference and the kind, so its own command
+    # (`CreatePO`) calls `POCase.create_po`; `apply_action` refuses it.
+    CREATE_PO = "create_po"
+
 
 # Every CaseAction whose underlying method requires `reason: str` — checked
 # by `AdvancePOCase` before dispatch, since a blank reason should read as
@@ -283,10 +428,10 @@ REASON_REQUIRED_ACTIONS = frozenset(
 )
 
 # Every no-argument CaseAction dispatches through this table; every
-# reason-requiring one (above) through the next. Together they cover
-# CaseAction exhaustively — apply_action() trusts that rather than
-# re-checking it, the same way missing_update.py's terminal-state set is
-# trusted once built from CaseState itself.
+# reason-requiring one (above) through the next; one that takes arguments of
+# its own has a command of its own (`_COMMAND_ONLY_ACTIONS`, below). The
+# three cover CaseAction exactly, each action in one
+# (`test_every_action_is_in_exactly_one_dispatch_set`).
 _NO_REASON_ACTIONS: dict[CaseAction, Callable[[POCase], None]] = {
     CaseAction.REQUEST_DEPOSIT: POCase.request_deposit,
     CaseAction.CONFIRM_DEPOSIT: POCase.confirm_deposit,
@@ -312,6 +457,10 @@ _REASON_ACTIONS: dict[CaseAction, Callable[[POCase, str], None]] = {
 }
 
 
+# Actions with arguments of their own, each taken through its own command.
+_COMMAND_ONLY_ACTIONS = frozenset({CaseAction.CREATE_PO})
+
+
 def apply_action(case: POCase, *, action: CaseAction, reason: str | None) -> None:
     """Dispatches one `CaseAction` to the guarded method it names.
 
@@ -324,8 +473,14 @@ def apply_action(case: POCase, *, action: CaseAction, reason: str | None) -> Non
     a human approves. A blank/missing reason on a `REASON_REQUIRED_ACTIONS`
     member is refused here as `DomainError`, before the method's own bare
     `ValueError` guard — the caller gets `this action requires a reason`,
-    not an error with no taxonomy code behind it.
+    not an error with no taxonomy code behind it. An action with a command of
+    its own (`create_po`) is refused by name.
     """
+    if action in _COMMAND_ONLY_ACTIONS:
+        raise DomainError(
+            f"{action.value} is taken through its own command, not as a plain step",
+            details={"action": action.value},
+        )
     if action in REASON_REQUIRED_ACTIONS:
         if reason is None or not reason.strip():
             raise DomainError("this action requires a reason", details={"action": action.value})

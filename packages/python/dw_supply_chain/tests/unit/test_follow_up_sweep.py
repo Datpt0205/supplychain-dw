@@ -89,7 +89,9 @@ class FakeCases:
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
         raise NotImplementedError("not exercised by the sweep")
 
-    async def save(self, context: AccessContext, case: POCase) -> None:
+    async def save(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         raise NotImplementedError("not exercised by the sweep")
 
     async def get_current_state_entered_at(

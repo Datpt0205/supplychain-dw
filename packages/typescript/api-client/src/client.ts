@@ -16,6 +16,7 @@ import {
   timelineEventSchema,
   workspaceMemberSchema,
   poCaseSchema,
+  poCaseDetailSchema,
   supplierUpdateSchema,
   delayImpactAnalysisSchema,
   slaEvaluationSchema,
@@ -27,6 +28,7 @@ import {
   productCaseSchema,
   productCaseDetailSchema,
   productCaseStepSchema,
+  orderPlacedSchema,
   productCaseTransitionSchema,
   productActionDutiesSchema,
   portfolioSummarySchema,
@@ -64,6 +66,10 @@ import {
   type TimelineEvent,
   type WorkspaceMember,
   type POCase,
+  type POCaseDetail,
+  type POCaseLine,
+  type CreatePOInput,
+  type OrderKind,
   type SupplierUpdate,
   type DelayImpactAnalysis,
   type SLAEvaluation,
@@ -76,6 +82,7 @@ import {
   type ProductCase,
   type ProductCaseDetail,
   type ProductCaseStep,
+  type OrderPlaced,
   type PendingReview,
   type ProductCaseTransition,
   type ProductActionDuties,
@@ -233,6 +240,10 @@ type ProductCaseStepBody =
 type ProposeProductCaseBody =
   SupplyChainOperations["propose_product_case_api_v1_supply_chain_product_cases_post"]["requestBody"]["content"]["application/json"];
 
+/** `POST /po-cases/{id}/create-po`'s body (step 10), from the route's types. */
+type CreatePOBody =
+  SupplyChainOperations["create_po_route_api_v1_supply_chain_po_cases__case_id__create_po_post"]["requestBody"]["content"]["application/json"];
+
 /** `POST /case-query`'s body, from the route's own generated types. */
 type CaseQueryBody =
   SupplyChainOperations["answer_case_query_route_api_v1_supply_chain_case_query_post"]["requestBody"]["content"]["application/json"];
@@ -379,6 +390,18 @@ const _productCaseMirrorsTheRoute: [
   >,
 ] = [true, true, true, true, true, true, true];
 void _productCaseMirrorsTheRoute;
+
+const _poCaseMirrorsTheRoute: [
+  SameType<POCase, SupplyChainGenerated["POCaseView"]>,
+  SameType<keyof POCase, keyof SupplyChainGenerated["POCaseView"]>,
+  SameType<POCaseDetail, SupplyChainGenerated["POCaseDetailView"]>,
+  SameType<keyof POCaseDetail, keyof SupplyChainGenerated["POCaseDetailView"]>,
+  SameType<POCaseLine, SupplyChainGenerated["POCaseLineView"]>,
+  SameType<OrderKind, SupplyChainGenerated["OrderKind"]>,
+  SameType<OrderPlaced, SupplyChainGenerated["OrderPlacedView"]>,
+  SameType<keyof OrderPlaced, keyof SupplyChainGenerated["OrderPlacedView"]>,
+] = [true, true, true, true, true, true, true, true];
+void _poCaseMirrorsTheRoute;
 
 export class ApiClient {
   constructor(private readonly options: ApiClientOptions) {}
@@ -1118,11 +1141,35 @@ export class ApiClient {
     );
   }
 
-  getPOCase(caseId: string): Promise<POCase> {
+  getPOCase(caseId: string): Promise<POCaseDetail> {
     return this.request(
       "GET",
       `/api/v1/supply-chain/po-cases/${caseId}`,
-      poCaseSchema,
+      poCaseDetailSchema,
+    );
+  }
+
+  /** Step 10 on a case awaiting its PO: its reference, its kind and the
+   * quantity of any line still open or to correct. A reference taken in the
+   * tenant is a 409 naming its constraint. The key is minted once per press. */
+  createPO(
+    caseId: string,
+    input: CreatePOInput,
+    idempotencyKey: string,
+  ): Promise<POCaseDetail> {
+    const body: CreatePOBody = {
+      po_reference: input.poReference.trim(),
+      order_kind: input.orderKind,
+      lines: (input.lines ?? []).map((line) => ({
+        sku_id: line.skuId,
+        quantity: line.quantity,
+      })),
+    };
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/create-po`,
+      poCaseDetailSchema,
+      { body, idempotencyKey },
     );
   }
 
@@ -1337,6 +1384,20 @@ export class ApiClient {
     );
   }
 
+  /** ĐẶT HÀNG: the case is ordered and a PO case opens awaiting its PO. A
+   * second press is a 409; the same key replayed returns the first answer. */
+  placeProductOrder(
+    caseId: string,
+    idempotencyKey: string,
+  ): Promise<OrderPlaced> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/order`,
+      orderPlacedSchema,
+      { idempotencyKey },
+    );
+  }
+
   listProductCaseTransitions(caseId: string): Promise<ProductCaseTransition[]> {
     return this.request(
       "GET",
@@ -1436,6 +1497,10 @@ export type {
   TimelineEvent,
   WorkspaceMember,
   POCase,
+  POCaseDetail,
+  POCaseLine,
+  CreatePOInput,
+  OrderKind,
   SupplierUpdate,
   DelayImpactAnalysis,
   SLAEvaluation,
@@ -1450,6 +1515,7 @@ export type {
   ProductCase,
   ProductCaseDetail,
   ProductCaseStep,
+  OrderPlaced,
   PendingReview,
   ProductCaseTransition,
   ProductActionDuties,

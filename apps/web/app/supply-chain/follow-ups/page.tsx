@@ -16,6 +16,10 @@ import {
 import type { FollowUp, FollowUpKind } from "@dw/contracts";
 import { PageHeader, RegionState, StatusTag, type StatusTone } from "@dw/ui";
 import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
+import {
+  PoReferenceText,
+  poReferenceLabel,
+} from "../../../components/supply-chain/po-reference";
 import { milestoneLabel } from "../../../components/supply-chain/sla-status-badge";
 import { formatDateTimeFull } from "../../../lib/dates";
 import { errorMessage, regionFailure } from "../../../lib/error-message";
@@ -139,7 +143,7 @@ function FollowUpCard({
             {KIND[item.kind].label}
           </StatusTag>
           <Link href={`/supply-chain/po-cases/${item.po_case_id}`}>
-            <Typography.Text code>{item.po_reference}</Typography.Text>
+            <PoReferenceText reference={item.po_reference} />
           </Link>
           <Typography.Text>{what(item)}</Typography.Text>
         </Flex>
@@ -154,7 +158,7 @@ function FollowUpCard({
               onChange={(e) => setNote(e.target.value)}
               placeholder="Ví dụ: đã gọi NCC, hẹn gửi lịch xuất hàng"
               className="max-w-sm"
-              aria-label={`Ghi chú cho ${item.po_reference}`}
+              aria-label={`Ghi chú cho ${poReferenceLabel(item.po_reference)}`}
             />
             <Button
               type="primary"

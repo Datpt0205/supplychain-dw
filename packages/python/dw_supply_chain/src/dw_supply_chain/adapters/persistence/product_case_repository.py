@@ -20,11 +20,19 @@ handed out, listed or fetched, carries what its guards read.
 A refusal from the database comes back as a `ConflictError` by the
 constraint's name, never by parsing its message: a code already taken in the
 tenant names the code (ADR 0018), whichever of two racing writers lost.
+
+ĐẶT HÀNG (`place_order`, ADR 0017) is one transaction: the conditional
+UPDATE that moves the case out of `ready_to_order` at the version read, its
+history row, the PO case and its lines (`insert_po_case`, the PO repository's
+one INSERT), and both audit events. The UPDATE is what makes one PO: of two
+clicks at once the second waits on the row lock, finds the version moved and
+updates nothing, and nothing is inserted.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import sqlalchemy as sa
@@ -41,7 +49,9 @@ from dw_platform.adapters.persistence.tenant_session import TenantScope, tenant_
 from dw_platform.application.access_context import AccessContext
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence import tables
+from dw_supply_chain.adapters.persistence.po_case_repository import insert_po_case
 from dw_supply_chain.application.ports import ProductCaseListFilter
+from dw_supply_chain.domain.po_case import POCase
 from dw_supply_chain.domain.product_development_case import (
     ItemCode,
     ItemCodeIssued,
@@ -72,6 +82,9 @@ PROPOSAL_CODE_CONSTRAINT = "uq_product_dev_cases_tenant_id_proposal_code"
 ITEM_CODE_CONSTRAINT = "uq_item_codes_tenant_id_code"
 SKU_CODE_CONSTRAINT = "uq_skus_tenant_id_sku_code"
 _ONE_ITEM_CODE_CONSTRAINT = "uq_item_codes_tenant_id_product_dev_case_id"
+# One PO case per product case (ADR 0017 amendment, QE-12 open): the
+# database's second answer, behind the conditional UPDATE.
+ONE_PO_CASE_CONSTRAINT = "uq_po_cases_tenant_id_workspace_id_product_dev_case_id"
 # The database's own refusal of a step's paper, should one reach it past the
 # domain's check. The refusal names the step that was being written (a
 # `reject_sample` evaluation meets the same constraints as a `pass_sample` one).
@@ -514,6 +527,68 @@ class SqlProductCaseRepository:
             if refusal is None:
                 raise
             raise refusal from exc
+
+    async def place_order(
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        po_case: POCase,
+        *,
+        audits: Sequence[AuditEvent],
+    ) -> None:
+        """ĐẶT HÀNG, one transaction (module docstring). The UPDATE names the
+        state the step left as well as the version read: a case that moved
+        on, or was ordered by a click that got there first, updates nothing,
+        and that is a `ConflictError` before anything is inserted."""
+        steps = case.pop_pending_steps()
+        (step,) = steps
+        assert step.from_state is not None  # a step on a case, never `propose`
+        try:
+            async with tenant_session(
+                self.session_factory, TenantScope.from_access_context(context)
+            ) as session:
+                moved = await session.execute(
+                    sa.update(_c)
+                    .where(
+                        *_in_scope(_c, context),
+                        _c.c.id == case.id.value,
+                        _c.c.version == case.version - 1,
+                        _c.c.state == step.from_state.value,
+                    )
+                    .values(state=case.state.value, version=case.version)
+                )
+                assert isinstance(moved, CursorResult)
+                if moved.rowcount != 1:
+                    raise ConflictError(
+                        "hồ sơ đã được đặt hàng hoặc vừa thay đổi; tải lại để xem",
+                        details={"case_id": str(case.id)},
+                    )
+                await self._write_steps(session, context, case, steps)
+                po_case.created_at = await insert_po_case(session, po_case)
+                audit_log = SqlAuditRepository(session)
+                for audit in audits:
+                    await audit_log.append(audit)
+        except IntegrityError as exc:
+            if _constraint(exc) == ONE_PO_CASE_CONSTRAINT:
+                raise ConflictError(
+                    "hồ sơ này đã có Hồ sơ PO",
+                    details={"constraint": ONE_PO_CASE_CONSTRAINT, "case_id": str(case.id)},
+                ) from exc
+            raise
+
+    async def po_case_of(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
+        """The PO case ĐẶT HÀNG opened from this case, if the caller may read
+        it."""
+        _p = tables.po_cases
+        async with tenant_session(
+            self.session_factory, TenantScope.from_access_context(context)
+        ) as session:
+            found: uuid.UUID | None = await session.scalar(
+                sa.select(_p.c.id).where(
+                    *_in_scope(_p, context), _p.c.product_dev_case_id == case_id
+                )
+            )
+        return found
 
     async def append_audit(self, context: AccessContext, audit: AuditEvent) -> None:
         """An audit event about a case that changes nothing on it: the review

@@ -17,6 +17,11 @@ Step 9's coding goes through the same step route: `item_code` for
 already taken in the tenant is a 409 whose `details` name the constraint and
 the code, so the page can show it at the field.
 
+ĐẶT HÀNG has its own route, `POST /product-cases/{case_id}/order`, taking
+nothing: the PO case takes the PIC, Category and supplier from the case, never
+from the request (a body naming any field is a 422). The step route refuses
+`place_order` (422).
+
 No `from __future__ import annotations`, for the reason `routes.py` gives.
 """
 
@@ -45,10 +50,12 @@ from dw_supply_chain.application.product_cases import (
     GetProductCase,
     ListProductCases,
     ListProductCaseTransitions,
+    PlaceOrder,
     ProposeProductCase,
 )
 from dw_supply_chain.domain.case_document import DocumentType
 from dw_supply_chain.domain.product_development_case import (
+    COMMAND_ONLY_ACTIONS,
     GRAPH_ONLY_ACTIONS,
     ProductAction,
     ProductCaseTransition,
@@ -121,7 +128,17 @@ class AdvanceProductCaseRequest(BaseModel):
     def _a_step_a_person_takes(cls, action: ProductAction) -> ProductAction:
         if action in GRAPH_ONLY_ACTIONS:
             raise ValueError(f"{action.value} is an approval's outcome, decided on the approval")
+        if action in COMMAND_ONLY_ACTIONS:
+            raise ValueError(f"{action.value} is taken at /product-cases/{{case_id}}/order")
         return action
+
+
+class PlaceOrderRequest(BaseModel):
+    """ĐẶT HÀNG takes nothing: the PO case takes the PIC, Category, supplier
+    and SKUs from the case. A body may be sent empty or not at all; any field
+    in it (a PIC, a Category, a supplier) is a 422, never silently dropped."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class ProductCaseView(BaseModel):
@@ -213,6 +230,14 @@ class ProductCaseDetailView(ProductCaseView):
     pending_review: PendingReviewView | None
     item_code: ItemCodeView | None
     skus: list[SkuView]
+    # The PO case ĐẶT HÀNG opened, once the case is ordered.
+    po_case_id: uuid.UUID | None
+
+
+class OrderPlacedView(ProductCaseView):
+    """ĐẶT HÀNG done: the case, now ordered, and the PO case it opened."""
+
+    po_case_id: uuid.UUID
 
 
 class ProductCaseStepView(ProductCaseView):
@@ -319,6 +344,7 @@ def build_product_cases_router(
     get_duties: GetProductActionDuties,
     set_duties: SetProductActionDutiesOverride,
     *,
+    place_order: PlaceOrder,
     resolve_access_context: AccessContextResolver,
     resolve_idempotency: IdempotencyResolver,
 ) -> APIRouter:
@@ -398,7 +424,25 @@ def build_product_cases_router(
                     )
                     for s in detail.case.skus
                 ],
+                "po_case_id": detail.po_case_id,
             }
+        )
+
+    @router.post("/product-cases/{case_id}/order", response_model=OrderPlacedView)
+    async def place_product_order(
+        case_id: uuid.UUID,
+        context: require_access_context,
+        idempotency: require_idempotency,
+        body: PlaceOrderRequest | None = None,
+    ) -> OrderPlacedView:
+        """ĐẶT HÀNG: the case is ordered and its PO case opens awaiting its
+        PO. A second click is a 409 and opens nothing (a replay under the
+        same `Idempotency-Key` returns the first answer)."""
+        placed = await place_order.handle(context, case_id=ProductDevelopmentCaseId(case_id))
+        return await idempotency.record(
+            OrderPlacedView.model_validate(
+                {**_fields(placed.case), "po_case_id": placed.po_case.id.value}
+            )
         )
 
     @router.post("/product-cases/{case_id}/transitions", response_model=ProductCaseStepView)

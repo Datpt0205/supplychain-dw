@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -31,7 +32,7 @@ from dw_kernel.ports import FixedClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.domain.audit import AuditEvent
-from dw_supply_chain.action_duties import CaseDuty
+from dw_supply_chain.action_duties import CaseDuty, load_supply_chain_action_duties
 from dw_supply_chain.application.handlers import (
     ACTION_DUTIES_READ,
     PRODUCT_CASE_READ,
@@ -51,6 +52,7 @@ from dw_supply_chain.application.product_cases import (
     GetProductCase,
     ListProductCases,
     ListProductCaseTransitions,
+    PlaceOrder,
     ProposeProductCase,
 )
 from dw_supply_chain.domain.case_document import (
@@ -59,6 +61,7 @@ from dw_supply_chain.domain.case_document import (
     CaseKind,
     DocumentType,
 )
+from dw_supply_chain.domain.po_case import POCase
 from dw_supply_chain.domain.product_development_case import (
     CODING_ACTIONS,
     GRAPH_ONLY_ACTIONS,
@@ -100,7 +103,7 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
     {
         "schema_version": "1.0",
         "policy_id": PRODUCT_ACTION_DUTIES_POLICY_ID,
-        "policy_version": "1.2.0",
+        "policy_version": "1.3.0",
         "action_duties": {
             "propose": "ordering",
             "request_sample": "ordering",
@@ -120,6 +123,7 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
             "add_sku": "ordering",
             "remove_sku": "ordering",
             "submit_for_signoff": "ordering",
+            "place_order": "ordering",
         },
     }
 )
@@ -151,6 +155,7 @@ class FakeCases:
     steps: list[ProductCaseStep] = field(default_factory=list)
     audits: list[AuditEvent] = field(default_factory=list)
     open_rounds: dict[uuid.UUID, int] = field(default_factory=dict)
+    po_cases: dict[uuid.UUID, POCase] = field(default_factory=dict)
 
     def _visible(self, context: AccessContext, case: ProductDevelopmentCase) -> bool:
         return (case.tenant_id.value, case.workspace_id.value) == (
@@ -240,6 +245,43 @@ class FakeCases:
         self, context: AccessContext, case_id: ProductDevelopmentCaseId
     ) -> list[SampleRound]:
         return []
+
+    async def place_order(
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        po_case: POCase,
+        *,
+        audits: Sequence[AuditEvent],
+    ) -> None:
+        """As the SQL: moved only from the state its step left, at the version
+        read, else a conflict and nothing written; then both rows and audits."""
+        (step,) = case.pop_pending_steps()
+        stored = self.rows.get(case.id.value)
+        if (
+            stored is None
+            or not self._visible(context, stored)
+            or stored.version != case.version - 1
+            or stored.state is not step.from_state
+        ):
+            raise ConflictError("hồ sơ đã được đặt hàng hoặc vừa thay đổi")
+        self.steps.append(step)
+        self.audits.extend(audits)
+        self.rows[case.id.value] = replace(case, _pending_steps=[])
+        po_case.created_at = NOW
+        self.po_cases[po_case.id.value] = po_case
+
+    async def po_case_of(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
+        return next(
+            (
+                po.id.value
+                for po in self.po_cases.values()
+                if po.product_dev_case_id == case_id
+                and (po.tenant_id.value, po.workspace_id.value)
+                == (context.tenant_id, context.workspace_id)
+            ),
+            None,
+        )
 
 
 @dataclass
@@ -1377,3 +1419,229 @@ async def test_the_case_page_shows_the_pending_signoff_step() -> None:
     assert detail.pending_review is signoff
     assert detail.case.item_code is not None and detail.case.item_code.code == "MH-0001"
     assert [s.sku_code for s in detail.case.skus] == ["MH-0001-RED"]
+
+
+# --- ĐẶT HÀNG (ticket 05) ----------------------------------------------------------------
+
+_PO_DUTIES = load_supply_chain_action_duties(
+    Path(__file__).resolve().parents[5]
+    / "configs"
+    / "policies"
+    / "supply_chain_action_duties@1.1.0.yaml"
+)
+
+
+@dataclass
+class FakeHolders:
+    by_scope: dict[str, list[uuid.UUID]] = field(default_factory=dict)
+    asked: list[frozenset[str]] = field(default_factory=list)
+
+    async def holding(
+        self, context: AccessContext, workspace_id: uuid.UUID, scopes: frozenset[str]
+    ) -> list[uuid.UUID]:
+        assert workspace_id == context.workspace_id
+        self.asked.append(scopes)
+        return sorted({p for scope in scopes for p in self.by_scope.get(scope, [])})
+
+
+@dataclass
+class FakeNotifier:
+    """Once per (person, source_key), as the inbox is; `fails` breaks it."""
+
+    sent: dict[tuple[uuid.UUID, str], tuple[str, str | None]] = field(default_factory=dict)
+    fails: bool = False
+
+    async def deliver(
+        self,
+        context: AccessContext,
+        *,
+        recipients: Sequence[uuid.UUID],
+        source_key: str,
+        title: str,
+        body: str,
+        link: str | None,
+    ) -> None:
+        if self.fails:
+            raise RuntimeError("inbox down")
+        for person in recipients:
+            self.sent.setdefault((person, source_key), (title, link))
+
+
+def _place_order(
+    stack: Stack, holders: FakeHolders | None = None, notifier: FakeNotifier | None = None
+) -> PlaceOrder:
+    return PlaceOrder(
+        repo=stack.cases,
+        authz=ScopeAuthorizationService(),
+        policy_override_repo=stack.policies,
+        platform_default_duties=DUTIES,
+        platform_default_action_duties=_PO_DUTIES,
+        holders=holders or FakeHolders(),
+        notifier=notifier or FakeNotifier(),
+        ids=Uuid4Generator(),
+        clock=FixedClock(NOW),
+    )
+
+
+async def _ready_to_order(stack: Stack) -> ProductDevelopmentCase:
+    """Coded, submitted, and signed: what the sign-off graph saves."""
+    case = await _coded(stack)
+    await stack.advance().handle(
+        _context(SC_OPERATOR), case_id=case.id, action=ProductAction.SUBMIT_FOR_SIGNOFF
+    )
+    stored = await stack.cases.get(_context(SC_OPERATOR), case.id)
+    assert stored is not None
+    stored.signoff_approve(actor_id=uuid.uuid4())
+    await stack.cases.save(_context(SC_OPERATOR), stored, audit=stack.cases.audits[-1])
+    return stack.cases.rows[case.id.value]
+
+
+async def test_place_order_opens_the_po_case_with_the_cases_stamps_and_tells_ordering() -> None:
+    stack = Stack()
+    case = await _ready_to_order(stack)
+    colleague, clicker_id = uuid.uuid4(), uuid.uuid4()
+    holders = FakeHolders(by_scope={ORDERING: [colleague, clicker_id]})
+    notifier = FakeNotifier()
+
+    placed = await _place_order(stack, holders, notifier).handle(
+        _context(SC_OPERATOR, principal=clicker_id), case_id=case.id
+    )
+
+    assert placed.case.state is ProductDevState.ORDERED
+    po = stack.cases.po_cases[placed.po_case.id.value]
+    assert po.pic_user_id == case.pic_user_id != clicker_id
+    assert (po.category, po.supplier_name, po.product_dev_case_id) == (
+        case.category,
+        case.supplier_name,
+        case.id.value,
+    )
+    assert [(line.sku_id, line.quantity) for line in po.lines] == [(case.skus[0].id, 120)]
+    product_audit, po_audit = stack.cases.audits[-2:]
+    assert (product_audit.action, product_audit.resource_id) == (
+        "supply_chain.product_case.place_order",
+        str(case.id),
+    )
+    assert (po_audit.action, po_audit.resource_type, po_audit.resource_id) == (
+        "supply_chain.po_case.order_requested",
+        "po_case",
+        str(po.id),
+    )
+    assert {a.actor_id.value for a in (product_audit, po_audit)} == {clicker_id}
+    # The duty of `create_po` is told, less the clicker.
+    assert holders.asked == [frozenset({ORDERING})]
+    key = f"supply_chain.order_requested:{po.id}"
+    assert list(notifier.sent) == [(colleague, key)]
+    assert notifier.sent[(colleague, key)][1] == f"/supply-chain/po-cases/{po.id}"
+
+
+async def test_who_is_told_follows_the_tenants_duty_for_create_po() -> None:
+    """One owner: the PO policy of the tenant says who creates the PO, and so
+    who hears there is one to create."""
+    stack = Stack()
+    shipped = _PO_DUTIES.model_dump(mode="json")
+    stack.policies.stored[(TENANT, "supply_chain_action_duties")] = {
+        **shipped,
+        "action_duties": {**shipped["action_duties"], "create_po": "exceptions"},
+    }
+    case = await _ready_to_order(stack)
+    holders = FakeHolders()
+
+    await _place_order(stack, holders).handle(_context(SC_OPERATOR), case_id=case.id)
+
+    assert holders.asked == [frozenset({EXCEPTIONS})]
+
+
+async def test_a_failed_notice_does_not_undo_the_order() -> None:
+    stack = Stack()
+    case = await _ready_to_order(stack)
+
+    placed = await _place_order(stack, notifier=FakeNotifier(fails=True)).handle(
+        _context(SC_OPERATOR), case_id=case.id
+    )
+
+    assert stack.cases.rows[case.id.value].state is ProductDevState.ORDERED
+    assert placed.po_case.id.value in stack.cases.po_cases
+
+
+@dataclass
+class _NeverRead(FakeCases):
+    async def get(
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId
+    ) -> ProductDevelopmentCase | None:
+        raise AssertionError("read before the duty was checked")
+
+
+@pytest.mark.parametrize(
+    "scopes", [SC_RND, SC_SUPPLY_LEAD, frozenset({PRODUCT_CASE_READ, PRODUCT_CASE_WRITE})]
+)
+async def test_place_order_needs_its_duty_before_the_case_is_read(scopes: frozenset[str]) -> None:
+    stack = Stack(cases=_NeverRead())
+
+    with pytest.raises(PermissionDeniedError):
+        await _place_order(stack).handle(
+            _context(scopes), case_id=ProductDevelopmentCaseId(uuid.uuid4())
+        )
+
+
+@pytest.mark.parametrize(
+    ("tenant", "workspace"), [(OTHER_TENANT, WORKSPACE), (TENANT, OTHER_WORKSPACE)]
+)
+async def test_another_tenant_or_workspace_cannot_order_the_case(
+    tenant: uuid.UUID, workspace: uuid.UUID
+) -> None:
+    stack = Stack(cases=LeakyCases())
+    case = await _ready_to_order(stack)
+
+    with pytest.raises(NotFoundError):
+        await _place_order(stack).handle(
+            _context(SC_OPERATOR, tenant=tenant, workspace=workspace), case_id=case.id
+        )
+    assert stack.cases.po_cases == {}
+
+
+async def test_ordering_a_case_not_ready_is_a_409_and_opens_nothing() -> None:
+    stack = Stack()
+    case = await _coded(stack)
+
+    with pytest.raises(ConflictError):
+        await _place_order(stack).handle(_context(SC_OPERATOR), case_id=case.id)
+    assert stack.cases.po_cases == {}
+    assert stack.cases.rows[case.id.value].state is ProductDevState.ITEM_CODING
+
+
+async def test_a_second_click_is_a_409() -> None:
+    stack = Stack()
+    case = await _ready_to_order(stack)
+    order = _place_order(stack)
+    await order.handle(_context(SC_OPERATOR), case_id=case.id)
+
+    with pytest.raises(ConflictError):
+        await order.handle(_context(SC_OPERATOR), case_id=case.id)
+    assert len(stack.cases.po_cases) == 1
+
+
+async def test_the_step_command_refuses_place_order_before_reading_anything() -> None:
+    stack = Stack(cases=_NeverRead())
+    with pytest.raises(DomainError, match="place_order"):
+        await stack.advance().handle(
+            _context(SC_OPERATOR),
+            case_id=ProductDevelopmentCaseId(uuid.uuid4()),
+            action=ProductAction.PLACE_ORDER,
+        )
+
+
+def test_place_order_takes_no_pic_from_its_caller() -> None:
+    """The command has no parameter that could name a PIC, a Category or a
+    supplier: the PO case takes them from the case."""
+    assert set(inspect.signature(PlaceOrder.handle).parameters) == {"self", "context", "case_id"}
+
+
+async def test_an_ordered_case_shows_its_po_case() -> None:
+    stack = Stack()
+    case = await _ready_to_order(stack)
+    placed = await _place_order(stack).handle(_context(SC_OPERATOR), case_id=case.id)
+
+    detail = await stack.get().handle(_context(SC_OPERATOR), case.id)
+
+    assert detail.po_case_id == placed.po_case.id.value
+    assert detail.case.available_actions() == frozenset()

@@ -31,7 +31,7 @@ import {
 import { useAuth } from "../../lib/auth/auth-context";
 import { errorMessage } from "../../lib/error-message";
 import { useOnline } from "../../lib/hooks/use-online";
-import { newIdempotencyKey } from "../../lib/idempotency-key";
+import { useAttemptKey } from "../../lib/idempotency-key";
 import { apiClient } from "../../lib/session";
 
 const OFFLINE = "Không có kết nối mạng. Kết nối lại rồi thử lại.";
@@ -71,6 +71,8 @@ function stateLock(detail: ProductCaseDetail): string {
       return "Hồ sơ đang chờ ký; mã hàng và SKU khóa tới khi có kết quả ký.";
     case "ready_to_order":
       return "Đã ký đủ; mã hàng và SKU đã chốt.";
+    case "ordered":
+      return "Đã đặt hàng; mã hàng và SKU đã chốt.";
     case "waiting_external":
     case "blocked":
     case "manual_review":
@@ -80,21 +82,6 @@ function stateLock(detail: ProductCaseDetail): string {
     default:
       return `Chỉ sửa được ở bước ${PRODUCT_DEV_STATE_LABEL.item_coding}.`;
   }
-}
-
-/** The key one attempt is sent under: the same values retried keep it, so a
- * retry after a lost answer is not a second step. */
-function useAttemptKey() {
-  const [attempt, setAttempt] = useState<{ key: string; values: string }>();
-  return (values: unknown): string => {
-    const fingerprint = JSON.stringify(values);
-    const key =
-      attempt && attempt.values === fingerprint
-        ? attempt.key
-        : newIdempotencyKey();
-    setAttempt({ key, values: fingerprint });
-    return key;
-  };
 }
 
 /** The 409 a taken code comes back as, when it is that and not another. */

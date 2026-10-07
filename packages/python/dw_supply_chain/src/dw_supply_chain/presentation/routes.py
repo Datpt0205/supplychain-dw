@@ -31,6 +31,7 @@ from dw_supply_chain.application.handlers import (
     CaseActionApplied,
     CaseQueryAnswer,
     CloseFollowUp,
+    CreatePO,
     CreatePOCase,
     FollowUpView,
     GetActionDuties,
@@ -66,7 +67,14 @@ from dw_supply_chain.domain.daily_brief import BriefEntry, BriefGroup, BriefSign
 from dw_supply_chain.domain.delay_impact import DelayImpactAnalysis
 from dw_supply_chain.domain.follow_up import FollowUpKind
 from dw_supply_chain.domain.missing_update import MissingUpdateAssessment, MissingUpdateStatus
-from dw_supply_chain.domain.po_case import CaseAction, CaseState, CaseTransition, POCase, POCaseId
+from dw_supply_chain.domain.po_case import (
+    CaseAction,
+    CaseState,
+    CaseTransition,
+    OrderKind,
+    POCase,
+    POCaseId,
+)
 from dw_supply_chain.domain.portfolio import PortfolioSummary
 from dw_supply_chain.domain.sla_evaluation import SLAEvaluation, SLAEvaluationStatus
 from dw_supply_chain.domain.supplier_update import (
@@ -120,20 +128,32 @@ _SUPPLIER_NAME_MAX_LENGTH = 200
 
 
 class CreatePOCaseRequest(BaseModel):
+    """A case opened without stage 1 (a reorder, ADR 0017). No PIC field: the
+    caller is the PIC, and an unknown field is a 422."""
+
     model_config = ConfigDict(extra="forbid")
 
     po_reference: str = Field(min_length=1, max_length=200)
     supplier_name: str = Field(min_length=1, max_length=_SUPPLIER_NAME_MAX_LENGTH, pattern=_NO_NUL)
+    order_kind: OrderKind
 
 
 class POCaseView(BaseModel):
     id: uuid.UUID
-    po_reference: str
+    # Null while the case awaits its PO (`order_requested`, ADR 0017).
+    po_reference: str | None
     supplier_name: str
     state: CaseState
     interrupted_state: CaseState | None
     created_at: datetime | None
     version: int
+    order_kind: OrderKind
+    # The product case ĐẶT HÀNG opened this case from, and the PIC and
+    # Category stamped from it; null on a case opened otherwise (no PIC on
+    # one opened before ticket 05).
+    product_dev_case_id: uuid.UUID | None
+    pic_user_id: uuid.UUID | None
+    category: str | None
 
 
 def _view(case: POCase) -> POCaseView:
@@ -145,7 +165,60 @@ def _view(case: POCase) -> POCaseView:
         interrupted_state=case.interrupted_state,
         created_at=case.created_at,
         version=case.version,
+        order_kind=case.order_kind,
+        product_dev_case_id=case.product_dev_case_id,
+        pic_user_id=case.pic_user_id,
+        category=case.category,
     )
+
+
+class POCaseLineView(BaseModel):
+    """A planned line: a SKU of the product and how many (null until step
+    10 sets it, when the SKU's planned quantity was open)."""
+
+    sku_id: uuid.UUID
+    sku_code: str | None
+    variant_label: str | None
+    quantity: int | None
+
+
+class POCaseDetailView(POCaseView):
+    lines: list[POCaseLineView]
+
+
+def _detail_view(case: POCase) -> POCaseDetailView:
+    return POCaseDetailView.model_validate(
+        {
+            **_view(case).model_dump(),
+            "lines": [
+                POCaseLineView(
+                    sku_id=line.sku_id,
+                    sku_code=line.sku_code,
+                    variant_label=line.variant_label,
+                    quantity=line.quantity,
+                )
+                for line in case.lines
+            ],
+        }
+    )
+
+
+class POLineQuantity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sku_id: uuid.UUID
+    quantity: int = Field(gt=0, le=10_000_000)
+
+
+class CreatePORequest(BaseModel):
+    """Step 10: the PO's reference and kind, and the quantity of any line
+    still open or to correct."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    po_reference: str = Field(min_length=1, max_length=200, pattern=_NO_NUL)
+    order_kind: OrderKind
+    lines: list[POLineQuantity] = Field(default_factory=list, max_length=500)
 
 
 class SubmitSupplierUpdateRequest(BaseModel):
@@ -250,6 +323,13 @@ class AdvancePOCaseRequest(BaseModel):
     # is a 422 from Pydantic before this ever reaches the handler.
     action: CaseAction
     reason: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("action")
+    @classmethod
+    def _a_plain_step(cls, action: CaseAction) -> CaseAction:
+        if action is CaseAction.CREATE_PO:
+            raise ValueError("create_po is taken at /po-cases/{case_id}/create-po")
+        return action
 
 
 class CaseActionResultView(BaseModel):
@@ -598,7 +678,7 @@ class FollowUpItemView(BaseModel):
 
     id: uuid.UUID
     po_case_id: uuid.UUID
-    po_reference: str
+    po_reference: str | None
     supplier_name: str
     kind: FollowUpKind
     milestone: str | None
@@ -660,6 +740,7 @@ def build_router(
     get_follow_up_policy: GetFollowUpPolicy,
     set_follow_up_policy_override: SetFollowUpPolicyOverride,
     *,
+    create_po: CreatePO,
     resolve_access_context: AccessContextResolver,
     resolve_idempotency: IdempotencyResolver,
 ) -> APIRouter:
@@ -682,7 +763,10 @@ def build_router(
         idempotency: require_idempotency,
     ) -> POCaseView:
         case = await create.handle(
-            context, po_reference=body.po_reference, supplier_name=body.supplier_name
+            context,
+            po_reference=body.po_reference,
+            supplier_name=body.supplier_name,
+            order_kind=body.order_kind,
         )
         return await idempotency.record(_view(case))
 
@@ -805,10 +889,28 @@ def build_router(
         answer = await answer_case_query.handle(context, body.question)
         return _ai_work_response_view(answer)
 
-    @router.get("/po-cases/{case_id}", response_model=POCaseView)
-    async def get_po_case(case_id: uuid.UUID, context: require_access_context) -> POCaseView:
+    @router.get("/po-cases/{case_id}", response_model=POCaseDetailView)
+    async def get_po_case(case_id: uuid.UUID, context: require_access_context) -> POCaseDetailView:
         case = await get.handle(context, POCaseId(case_id))
-        return _view(case)
+        return _detail_view(case)
+
+    @router.post("/po-cases/{case_id}/create-po", response_model=POCaseDetailView)
+    async def create_po_route(
+        case_id: uuid.UUID,
+        body: CreatePORequest,
+        context: require_access_context,
+        idempotency: require_idempotency,
+    ) -> POCaseDetailView:
+        """Step 10 on a case awaiting its PO. A reference already taken in
+        the tenant is a 409 naming it; a line still without a quantity, 409."""
+        case = await create_po.handle(
+            context,
+            po_case_id=POCaseId(case_id),
+            po_reference=body.po_reference,
+            order_kind=body.order_kind,
+            quantities={line.sku_id: line.quantity for line in body.lines},
+        )
+        return await idempotency.record(_detail_view(case))
 
     @router.post(
         "/po-cases/{case_id}/supplier-updates",

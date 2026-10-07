@@ -22,9 +22,11 @@ from dw_supply_chain.domain.case_document import (
     CaseKind,
     DocumentType,
 )
+from dw_supply_chain.domain.po_case import CaseState, OrderKind, POCaseId
 from dw_supply_chain.domain.product_development_case import (
     ACTION_DOCUMENT_TYPE,
     CODING_ACTIONS,
+    COMMAND_ONLY_ACTIONS,
     DOCUMENT_REQUIRED_ACTIONS,
     GRAPH_ONLY_ACTIONS,
     PRODUCT_REASON_REQUIRED_ACTIONS,
@@ -374,7 +376,12 @@ def test_receive_sample_takes_no_supplier(given: ProductActionInput) -> None:
 
 @pytest.mark.parametrize(
     "action",
-    sorted(set(ProductAction) - PRODUCT_REASON_REQUIRED_ACTIONS - {ProductAction.PROPOSE}),
+    sorted(
+        set(ProductAction)
+        - PRODUCT_REASON_REQUIRED_ACTIONS
+        - {ProductAction.PROPOSE}
+        - COMMAND_ONLY_ACTIONS
+    ),
 )
 def test_a_reason_on_a_step_that_takes_none_is_refused(action: ProductAction) -> None:
     """Nothing sent is silently dropped: a step that records no reason
@@ -875,8 +882,7 @@ def test_pausing_at_a_step_does_not_move_the_bound_its_paper_counts_from() -> No
                 ProductAction.SUBMIT_FOR_SIGNOFF,
             },
         ),
-        # ĐẶT HÀNG is ticket 05's.
-        (ProductDevState.READY_TO_ORDER, set()),
+        (ProductDevState.READY_TO_ORDER, {ProductAction.PLACE_ORDER}),
     ],
 )
 def test_available_actions_are_the_states_own_steps_plus_the_exceptions(
@@ -927,7 +933,7 @@ def test_available_actions_of_a_paused_and_a_cancelled_case() -> None:
 def test_every_available_action_is_one_the_case_accepts(state: ProductDevState) -> None:
     """The list a page draws buttons from and the guards agree, from every
     state: a button offered is a step the aggregate takes."""
-    for action in _in_state(state).available_actions():
+    for action in _in_state(state).available_actions() - COMMAND_ONLY_ACTIONS:
         case = _in_state(state)
         apply_product_action(case, action=action, given=_input(case, action))
 
@@ -1152,3 +1158,74 @@ def test_a_coding_field_on_a_step_that_takes_none_is_refused(field: str, value: 
     with pytest.raises(DomainError, match=field):
         apply_product_action(case, action=ProductAction.SUBMIT_FOR_SIGNOFF, given=given)
     assert_state(case, ProductDevState.ITEM_CODING)
+
+
+# --- ĐẶT HÀNG (ticket 05) -------------------------------------------------------------
+
+
+def _ready() -> ProductDevelopmentCase:
+    case = _in_state(ProductDevState.READY_TO_ORDER)
+    case.supplier_name = "NCC Minh Long"
+    case.skus = (
+        replace(SKU, planned_quantity=120),
+        Sku(id=uuid.uuid4(), sku_code="MH-0001-BLUE", variant_label="Xanh 24cm"),
+    )
+    return case
+
+
+def test_placing_the_order_ends_the_case_and_opens_its_po_case() -> None:
+    case = _ready()
+    clicker = uuid.uuid4()
+    po_id = POCaseId(uuid.uuid4())
+
+    po = case.place_order(actor_id=clicker, po_case_id=po_id)
+
+    assert_state(case, ProductDevState.ORDERED)
+    assert case.available_actions() == frozenset()
+    (step,) = case.pop_pending_steps()
+    assert (step.action, step.from_state, step.to_state, step.actor_id) == (
+        ProductAction.PLACE_ORDER,
+        ProductDevState.READY_TO_ORDER,
+        ProductDevState.ORDERED,
+        clicker,
+    )
+    assert po.id == po_id
+    assert po.state is CaseState.ORDER_REQUESTED
+    assert po.po_reference is None
+    assert po.order_kind is OrderKind.NEW
+    assert (po.tenant_id, po.workspace_id) == (case.tenant_id, case.workspace_id)
+    assert po.product_dev_case_id == case.id.value
+    # The PIC is the case's, never the clicker's.
+    assert po.pic_user_id == PIC != clicker
+    assert (po.category, po.supplier_name) == ("Nồi", "NCC Minh Long")
+    assert [(line.sku_id, line.quantity) for line in po.lines] == [
+        (case.skus[0].id, 120),
+        (case.skus[1].id, None),
+    ]
+
+
+@pytest.mark.parametrize("state", sorted(set(ProductDevState) - {ProductDevState.READY_TO_ORDER}))
+def test_only_a_case_ready_to_order_can_be_ordered(state: ProductDevState) -> None:
+    case = _in_state(state)
+    case.supplier_name = "NCC"
+    with pytest.raises(ConflictError):
+        case.place_order(actor_id=PIC, po_case_id=POCaseId(uuid.uuid4()))
+    assert case.state is state
+
+
+def test_an_ordered_case_cannot_be_ordered_again_nor_cancelled() -> None:
+    case = _ready()
+    case.place_order(actor_id=PIC, po_case_id=POCaseId(uuid.uuid4()))
+    with pytest.raises(ConflictError):
+        case.place_order(actor_id=PIC, po_case_id=POCaseId(uuid.uuid4()))
+    with pytest.raises(ConflictError):
+        case.cancel(actor_id=PIC, reason="đổi ý")
+
+
+def test_place_order_is_never_a_plain_step() -> None:
+    case = _ready()
+    with pytest.raises(DomainError, match="place_order"):
+        apply_product_action(
+            case, action=ProductAction.PLACE_ORDER, given=ProductActionInput(actor_id=PIC)
+        )
+    assert_state(case, ProductDevState.READY_TO_ORDER)

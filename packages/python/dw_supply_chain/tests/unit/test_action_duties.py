@@ -21,7 +21,7 @@ _SHIPPED = (
     Path(__file__).resolve().parents[5]
     / "configs"
     / "policies"
-    / "supply_chain_action_duties@1.0.0.yaml"
+    / "supply_chain_action_duties@1.1.0.yaml"
 )
 
 
@@ -86,3 +86,18 @@ def test_an_unknown_field_is_refused() -> None:
     document = _document(_shipped_mapping()) | {"default_duty": "ordering"}
     with pytest.raises(ValidationError):
         SupplyChainActionDuties.model_validate(document)
+
+
+def test_step_ten_is_cung_ungs_in_1_1_0() -> None:
+    """`create_po` (ticket 05) belongs to ordering, as the steps around it."""
+    policy = load_supply_chain_action_duties(_SHIPPED)
+    assert policy.policy_version == "1.1.0"
+    assert policy.duty_for(CaseAction.CREATE_PO) is CaseDuty.ORDERING
+
+
+def test_an_override_without_create_po_is_refused_so_the_migration_must_add_it() -> None:
+    """Why ticket 05 ships a data migration: a stored override from before
+    `create_po` fails this check on read, and every step of that tenant with it."""
+    mine = {k: v for k, v in _shipped_mapping().items() if k != "create_po"}
+    with pytest.raises(ValidationError, match="create_po"):
+        SupplyChainActionDuties.model_validate(_document(mine))

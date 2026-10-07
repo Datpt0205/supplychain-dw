@@ -56,9 +56,15 @@ _EXCEPTION_SIGNAL: dict[CaseState, BriefSignal] = {
     CaseState.REWORK: BriefSignal.REWORK,
 }
 
-# States where the next move is the buyer's own (paying the deposit, paying
-# the balance), not the supplier's.
-WAITING_ON_US_STATES: tuple[CaseState, ...] = (CaseState.WAITING_DEPOSIT, CaseState.WAITING_PAYMENT)
+# States where the next move is the buyer's own (creating the PO after ĐẶT
+# HÀNG, paying the deposit, paying the balance), not the supplier's. Each is
+# its own group, qualified by the state: "Chờ tạo PO" is the one Cung ứng
+# (the holders of `create_po`'s duty) acts on.
+WAITING_ON_US_STATES: tuple[CaseState, ...] = (
+    CaseState.ORDER_REQUESTED,
+    CaseState.WAITING_DEPOSIT,
+    CaseState.WAITING_PAYMENT,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,13 +154,14 @@ class DailyBrief:
 
 
 def _by_days(entries: list[BriefEntry]) -> tuple[BriefEntry, ...]:
-    """Longest-standing first; a stable tiebreak on the PO reference."""
+    """Longest-standing first; a stable tiebreak on the PO reference (a case
+    awaiting its PO has none and sorts first among equals)."""
     return tuple(
         sorted(
             entries,
             key=lambda entry: (
                 -(entry.days if entry.days is not None else -1),
-                entry.case.po_reference,
+                entry.case.po_reference or "",
             ),
         )
     )

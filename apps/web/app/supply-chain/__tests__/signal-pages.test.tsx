@@ -46,6 +46,10 @@ function item(overrides: Partial<AttentionItem> = {}): AttentionItem {
       interrupted_state: null,
       created_at: "2026-10-01T02:00:00Z",
       version: 3,
+      order_kind: "new",
+      product_dev_case_id: null,
+      pic_user_id: null,
+      category: null,
     },
     sla: {
       status: "breached",
@@ -71,6 +75,18 @@ describe("Cần chú ý", () => {
     expect(screen.getByText("Trễ SLA")).toBeTruthy();
     expect(screen.getByText(/Mốc thanh toán · 9\s+ngày/)).toBeTruthy();
     expect(screen.getByText("Chờ thanh toán")).toBeTruthy();
+  });
+
+  it("names a case without its PO number in words", async () => {
+    fresh();
+    api.listAttentionQueue.mockResolvedValue([
+      item({ case: { ...item().case, po_reference: null } }),
+    ]);
+    render(<AttentionQueuePage />);
+
+    expect(
+      await screen.findByRole("link", { name: "Chưa có số PO" }),
+    ).toBeTruthy();
   });
 
   it("says nothing needs attention, and what was not counted", async () => {

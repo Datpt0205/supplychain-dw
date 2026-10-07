@@ -63,3 +63,54 @@ Bước 9 kết thúc bằng nút ĐẶT HÀNG; bước 10 mới tạo PO. Nhưn
 - Một sản phẩm sinh mấy PO là điểm mở (QE-12). Bảng cho phép nhiều PO trên một
   `product_dev_case_id` (không có UNIQUE); máy trạng thái chỉ cho một, vì `ordered` là
   trạng thái kết thúc. Elmich trả lời "nhiều" thì đổi máy trạng thái, không đổi bảng.
+
+## Sửa đổi 2026-10-07 (tạm, lát S5; Đạt ủy quyền quyết các điểm mở)
+
+Làm theo quyết định ở trên. Các điểm mở được quyết tạm theo cách an toàn nhất; chi tiết
+và test ở Comments của `.claude/plans/supply-chain/stage-1/issues/05-place-order-hand-off.md`.
+
+1. **QE-12 (tạm): một hồ sơ phát triển, một Hồ sơ PO, và database cũng nói vậy.** Lệch
+   chữ "không có UNIQUE" ở trên: thêm `uq_po_cases_tenant_id_workspace_id_product_dev_case_id`
+   (cũng là index của FK). Câu cập nhật có điều kiện vẫn là thứ bảo đảm (có test và
+   mutation riêng); UNIQUE là câu trả lời thứ hai của database, như ADR 0018 cho mã hàng,
+   để một đường ghi khác (sau này, hoặc ghi thẳng) không tạo PO thứ hai. Elmich trả lời
+   "nhiều" thì bỏ ràng buộc bằng một migration mới và đổi máy trạng thái. Hàng đặt lại
+   không qua giai đoạn 1: `CreatePOCase` như hôm nay, `order_kind` bắt buộc, không có
+   `product_dev_case_id`. Một PO gộp SKU của nhiều sản phẩm: chưa làm.
+2. **`po_reference`** do Cung ứng đặt ở `create_po` (duty `ordering` trong policy duty PO
+   1.1.0, tenant ghi đè được). CHECK `ck_po_cases_po_reference`: NULL chỉ ở
+   `order_requested`, hoặc `cancelled` từ đó; khác rỗng ở mọi chỗ khác. Không số tạm.
+3. **Ở `order_requested` chỉ có `create_po` hoặc `cancel`.** Không tạm dừng: chưa có PO
+   thì chưa có gì bên ngoài để chờ. SLA `not_applicable`; không bao giờ tới hạn nhắc NCC;
+   daily brief đưa hồ sơ vào nhóm `waiting_on_us` với qualifier `order_requested` ("Chờ
+   tạo PO"), không thêm tín hiệu mới (thêm thì mọi override `supply_chain_brief` đã lưu sẽ
+   hỏng). Nhóm hiện cho mọi người đọc được brief như mọi nhóm khác; người giữ duty của
+   `create_po` được báo bằng thông báo, không phải bằng việc chỉ họ thấy nhóm.
+4. **Dòng PO** (`po_case_lines`): `quantity` NULL hoặc > 0, vì `planned_quantity` của
+   SKU có thể để trống (QE-11); `create_po` nhận số lượng cho dòng còn trống hoặc cần sửa
+   và từ chối (409, nêu SKU) khi còn dòng trống. Hẹp theo tenant VÀ workspace; FK tới Hồ
+   sơ PO `CASCADE`, tới SKU `RESTRICT`, cả hai ghép với workspace. `dw_app`: SELECT,
+   INSERT, UPDATE `quantity`; không DELETE (dòng đi cùng Hồ sơ PO, kể cả khi offboarding).
+   **Mục mở:** `po_cases` vẫn chỉ hẹp theo tenant (từ `fddd7579ba27`), nên người của
+   workspace khác cùng tenant thấy Hồ sơ PO mà không thấy dòng của nó.
+5. **PIC, Category, NCC là dấu** chép từ dòng hồ sơ phát triển đọc trong giao dịch ĐẶT
+   HÀNG; repository Hồ sơ PO không nhắc tới `product_dev_cases` (test). `CreatePOCase`
+   đóng dấu người gọi. Không lệnh nào có tham số PIC; route ĐẶT HÀNG nhận body rỗng hoặc
+   không body, mọi trường (PIC, Category, NCC) là 422.
+6. **Thông báo**, sau khi ghi xong (hỏng thì ghi log, việc đã ghi vẫn còn): ĐẶT HÀNG báo
+   người giữ duty mà policy PO của tenant giao cho `create_po` (một chủ), trừ người bấm;
+   `create_po` báo người giữ duty `finance` (Kế toán), trừ người làm.
+7. **Audit:** ĐẶT HÀNG ghi hai sự kiện (`supply_chain.product_case.place_order`,
+   `supply_chain.po_case.order_requested`) trong giao dịch ghi hai dòng; `create_po` ghi
+   `supply_chain.po_case.create_po` trong giao dịch của bước. Các bước 11–17 vẫn chưa ghi
+   audit (có từ trước, ngoài lát này).
+8. **Bấm hai lần:** cùng `Idempotency-Key` trả lại câu trả lời đầu; khóa khác là 409
+   (câu cập nhật có điều kiện), không chèn gì. Số PO đã có trong tenant là 409 nêu ràng
+   buộc và số PO (cả `CreatePOCase`, trước đây là 500).
+9. **Policy:** duty hồ sơ phát triển 1.3.0 thêm `place_order: ordering` (override cũ lấy
+   duty nền tảng cho bước này, `STEPS_ADDED_AFTER`); duty PO 1.1.0 thêm `create_po:
+ordering` và migration dữ liệu thêm khóa này vào mọi override đã lưu; ma trận approval
+   từ chối `create_po` (không ai đọc nó: `create_po` là lệnh riêng, không khởi động run).
+10. **Migration** `84d1c1946b44` (id ngẫu nhiên, down_revision `76bd1b5fc546`, một head).
+    Hồ sơ PO có sẵn được điền `order_kind = 'reorder'` (đều do `CreatePOCase` mở, không qua
+    giai đoạn 1), rồi bỏ default. Downgrade từ chối khi còn dòng cần phần nó gỡ.

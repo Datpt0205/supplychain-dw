@@ -39,7 +39,9 @@ _Avoid_: "case" trơn; "đơn" (đơn là PO).
 **Hồ sơ PO** (`POCase`):
 Một đơn đặt hàng với NCC, từ lúc tạo PO tới khi nhập kho xong hoặc hủy. Hôm nay mang số
 PO, NCC, trạng thái, lịch sử chuyển trạng thái, cập nhật của NCC và phân tích ảnh hưởng
-trễ. Loại đơn, PIC, Category, các dòng PO và trạng thái Chờ tạo PO đến từ S5.
+trễ; từ S5 còn loại đơn, PIC, Category, các dòng PO và trạng thái Chờ tạo PO (số PO để
+trống tới bước 10). PIC và Category là dấu chép từ hồ sơ phát triển lúc ĐẶT HÀNG, không
+bao giờ đọc lại từ đó.
 _Avoid_: "PO" trơn khi muốn nói hồ sơ (PO là chứng từ, Hồ sơ PO là thứ hệ thống theo
 dõi); "đơn hàng" trong code.
 
@@ -76,7 +78,8 @@ tenant. Không phải mã hàng.
 **ĐẶT HÀNG** (bàn giao, `PlaceOrder`) (từ S5):
 Nút cuối giai đoạn 1. Trong một giao dịch: hồ sơ phát triển sang Đã đặt hàng, và một Hồ
 sơ PO mới ở trạng thái Chờ tạo PO mang PIC, Category, NCC và các SKU (ADR 0017). Bấm hai
-lần không tạo hai PO.
+lần không tạo hai PO: câu cập nhật có điều kiện, và UNIQUE một Hồ sơ PO mỗi hồ sơ phát
+triển khi QE-12 còn mở.
 _Avoid_: "đặt hàng" viết thường để chỉ bước 10 (bước 10 là Tạo PO).
 
 **Loại đơn** (`order_kind`) (từ S5):
@@ -197,33 +200,33 @@ Một lần gửi một thông báo tới một người qua một kênh, có tr
 
 ### Trạng thái của Hồ sơ PO (`CaseState`)
 
-| Giá trị               | Nhãn                 | Ghi chú                                     |
-| --------------------- | -------------------- | ------------------------------------------- |
-| `order_requested`     | Chờ tạo PO           | (đề xuất) Mới, ticket S5; chưa có số PO     |
-| `po_created`          | Đã tạo PO            | Bước 10                                     |
-| `waiting_deposit`     | Chờ đặt cọc          | Bước 11; mốc `deposit`                      |
-| `deposit_confirmed`   | Đã xác nhận cọc      | Bước 11                                     |
-| `pre_production`      | Chuẩn bị sản xuất    | Bước 12, một trạng thái thô                 |
-| `production`          | Đang sản xuất        | Bước 13                                     |
-| `qc`                  | Kiểm tra chất lượng  | Bước 14                                     |
-| `in_transit`          | Đang vận chuyển      | Sau QC đạt; mốc `port_arrival`              |
-| `arrived_port`        | Đã đến cảng          | Bước 15                                     |
-| `waiting_payment`     | Chờ thanh toán       | Bước 16; mốc `payment`                      |
-| `payment_completed`   | Đã thanh toán        | Bước 16; mốc `warehouse_receipt`            |
-| `warehouse_receiving` | Đang nhập kho        | Bước 17                                     |
-| `completed`           | Hoàn tất             | Kết thúc                                    |
-| `waiting_external`    | Chờ bên ngoài        | Ngắt; `resume` về trạng thái trước          |
-| `blocked`             | Đang bị chặn         | Ngắt                                        |
-| `rework`              | Làm lại              | Chỉ vào từ QC không đạt, ra về `production` |
-| `manual_review`       | Cần xem xét thủ công | Ngắt                                        |
-| `cancelled`           | Đã hủy               | Kết thúc                                    |
+| Giá trị               | Nhãn                 | Ghi chú                                      |
+| --------------------- | -------------------- | -------------------------------------------- |
+| `order_requested`     | Chờ tạo PO           | Sau ĐẶT HÀNG; chưa có số PO; chỉ tạo PO, hủy |
+| `po_created`          | Đã tạo PO            | Bước 10                                      |
+| `waiting_deposit`     | Chờ đặt cọc          | Bước 11; mốc `deposit`                       |
+| `deposit_confirmed`   | Đã xác nhận cọc      | Bước 11                                      |
+| `pre_production`      | Chuẩn bị sản xuất    | Bước 12, một trạng thái thô                  |
+| `production`          | Đang sản xuất        | Bước 13                                      |
+| `qc`                  | Kiểm tra chất lượng  | Bước 14                                      |
+| `in_transit`          | Đang vận chuyển      | Sau QC đạt; mốc `port_arrival`               |
+| `arrived_port`        | Đã đến cảng          | Bước 15                                      |
+| `waiting_payment`     | Chờ thanh toán       | Bước 16; mốc `payment`                       |
+| `payment_completed`   | Đã thanh toán        | Bước 16; mốc `warehouse_receipt`             |
+| `warehouse_receiving` | Đang nhập kho        | Bước 17                                      |
+| `completed`           | Hoàn tất             | Kết thúc                                     |
+| `waiting_external`    | Chờ bên ngoài        | Ngắt; `resume` về trạng thái trước           |
+| `blocked`             | Đang bị chặn         | Ngắt                                         |
+| `rework`              | Làm lại              | Chỉ vào từ QC không đạt, ra về `production`  |
+| `manual_review`       | Cần xem xét thủ công | Ngắt                                         |
+| `cancelled`           | Đã hủy               | Kết thúc                                     |
 
 ### Trạng thái của Hồ sơ phát triển sản phẩm (`ProductDevState`) (đề xuất)
 
 Từ S1, nhãn trong code có một chủ: `PRODUCT_DEV_STATE_LABEL` trong
 `apps/web/components/supply-chain/product-case-labels.tsx`; S2 đi tới
 `profile_in_progress` (cùng ba trạng thái ngắt và `cancelled`), S3 tới `item_coding`, S4
-tới `ready_to_order`.
+tới `ready_to_order`, S5 tới `ordered` (ĐẶT HÀNG, lệnh riêng `PlaceOrder`).
 Hai bên lệch thì sửa cả hai trong cùng commit. Ở `pending_bod_review` người dùng chỉ hủy
 được; `bod_approve` và `bod_reject` do graph duyệt áp sau quyết định ở `/approvals`.
 `complete_profile` (R&D) cần Profile SP (BM04), `confirm_with_supplier` (TP Cung ứng)

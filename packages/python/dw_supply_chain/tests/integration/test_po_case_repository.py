@@ -160,8 +160,14 @@ async def test_po_reference_is_unique_within_a_tenant(
     other = _case(po_reference="PO-DUP-0001")
 
     await repo.add(context, case)
-    with pytest.raises(IntegrityError):
+    # The database's refusal, by its constraint's name (ticket 05).
+    with pytest.raises(ConflictError) as raised:
         await repo.add(context, other)
+    assert raised.value.details == {
+        "constraint": "uq_po_cases_tenant_id_po_reference",
+        "po_reference": "PO-DUP-0001",
+    }
+    assert isinstance(raised.value.__cause__, IntegrityError)
 
 
 async def test_another_tenant_neither_sees_nor_saves_over_the_case(

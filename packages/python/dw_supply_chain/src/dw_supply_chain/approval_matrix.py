@@ -27,7 +27,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from dw_supply_chain.domain.po_case import CaseAction
 
@@ -41,6 +41,18 @@ class SupplyChainApprovalMatrix(BaseModel):
     policy_id: str
     policy_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
     approval_required_actions: frozenset[CaseAction] = frozenset()
+
+    @field_validator("approval_required_actions")
+    @classmethod
+    def _only_steps_the_approval_graph_applies(
+        cls, actions: frozenset[CaseAction]
+    ) -> frozenset[CaseAction]:
+        # `create_po` is its own command (`CreatePO`), never started as an
+        # approval run, so gating it here would be read by nothing
+        # (failure-modes #1): refuse it rather than look like a safeguard.
+        if CaseAction.CREATE_PO in actions:
+            raise ValueError("create_po is not gated by the approval matrix")
+        return actions
 
     def requires_approval(self, action: CaseAction) -> bool:
         return action in self.approval_required_actions

@@ -104,6 +104,8 @@ def _names(groups: Iterable[BriefGroup]) -> set[str]:
         for group in groups
         for entry in group.entries
         for name in (entry.case.po_reference, entry.case.supplier_name)
+        # A case awaiting its PO has no reference to cite.
+        if name is not None
     }
 
 
@@ -116,7 +118,7 @@ def _allowed_numbers(groups: Sequence[BriefGroup]) -> set[str]:
             allowed.add(str(CHANGE_WINDOW_HOURS))
         for entry in group.entries:
             allowed.update(str(v) for v in (entry.days, entry.limit_days) if v is not None)
-            allowed.update(_NUMBER.findall(entry.case.po_reference))
+            allowed.update(_NUMBER.findall(entry.case.po_reference or ""))
             allowed.update(_NUMBER.findall(entry.case.supplier_name))
     return allowed
 

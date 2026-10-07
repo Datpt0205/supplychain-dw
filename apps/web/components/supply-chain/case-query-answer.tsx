@@ -9,6 +9,7 @@ import { Flex, Table, Typography, type TableColumnsType } from "antd";
 import { StatusTag } from "@dw/ui";
 import { poCasesHref } from "../../lib/supply-chain/po-case-filter";
 import { CASE_STATE_LABEL, CaseStateTag } from "./case-state-badge";
+import { poReferenceLabel } from "./po-reference";
 
 /**
  * Renders one command-bar answer — structured data, never model markup.
@@ -219,7 +220,7 @@ function DataViewBlock({
       return (
         <Flex gap="small" align="center">
           <Link href={`/supply-chain/po-cases/${view.case.id}`}>
-            Mở case {view.case.po_reference}
+            Mở case {poReferenceLabel(view.case.po_reference)}
           </Link>
           <CaseStateTag state={view.case.state} />
         </Flex>
@@ -248,7 +249,7 @@ function CaseRows({
       key: "case",
       render: (_: unknown, row) => (
         <Link href={`/supply-chain/po-cases/${row.id}`}>
-          {row.po_reference}
+          {poReferenceLabel(row.po_reference)}
         </Link>
       ),
     },

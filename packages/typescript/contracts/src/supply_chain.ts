@@ -3,6 +3,9 @@ import { z } from "zod";
 /** Mirrors dw_supply_chain's presentation views. */
 
 export const caseStateSchema = z.enum([
+  // Opened by ĐẶT HÀNG on a product case (ADR 0017); its PO does not exist
+  // yet, so `po_reference` is null until step 10 (`create_po`).
+  "order_requested",
   "po_created",
   "waiting_deposit",
   "deposit_confirmed",
@@ -23,16 +26,51 @@ export const caseStateSchema = z.enum([
 ]);
 export type CaseState = z.infer<typeof caseStateSchema>;
 
+/** Step 10's classification: Hàng mới (out of stage 1) or Hàng đặt lại. */
+export const orderKindSchema = z.enum(["new", "reorder"]);
+export type OrderKind = z.infer<typeof orderKindSchema>;
+
+/** Mirrors `POCaseView`. `po_reference` is null while the case is
+ * `order_requested`; the stage-1 fields are null for a case opened without
+ * stage 1. */
 export const poCaseSchema = z.object({
   id: z.string().uuid(),
-  po_reference: z.string(),
+  po_reference: z.string().nullable(),
   supplier_name: z.string(),
   state: caseStateSchema,
   interrupted_state: caseStateSchema.nullable(),
   created_at: z.string().nullable(),
   version: z.number(),
+  order_kind: orderKindSchema,
+  product_dev_case_id: z.string().nullable(),
+  pic_user_id: z.string().nullable(),
+  category: z.string().nullable(),
 });
 export type POCase = z.infer<typeof poCaseSchema>;
+
+/** Mirrors `POCaseLineView`: one SKU of the product and how many (null until
+ * step 10 sets it). */
+export const poCaseLineSchema = z.object({
+  sku_id: z.string().uuid(),
+  sku_code: z.string().nullable(),
+  variant_label: z.string().nullable(),
+  quantity: z.number().int().nullable(),
+});
+export type POCaseLine = z.infer<typeof poCaseLineSchema>;
+
+/** Mirrors `POCaseDetailView`: the case and its planned lines. */
+export const poCaseDetailSchema = poCaseSchema.extend({
+  lines: z.array(poCaseLineSchema),
+});
+export type POCaseDetail = z.infer<typeof poCaseDetailSchema>;
+
+/** The body of `POST /po-cases/{id}/create-po` (step 10). */
+export interface CreatePOInput {
+  poReference: string;
+  orderKind: OrderKind;
+  /** Quantities to set or correct, one per SKU. */
+  lines?: { skuId: string; quantity: number }[];
+}
 
 /** Narrowing for `GET /po-cases`, mirroring the server's `POCaseListFilter`:
  * every field an exact match, and "active" is the server's own definition
@@ -327,7 +365,7 @@ export type FollowUpKind = z.infer<typeof followUpKindSchema>;
 export const followUpSchema = z.object({
   id: z.string(),
   po_case_id: z.string(),
-  po_reference: z.string(),
+  po_reference: z.string().nullable(),
   supplier_name: z.string(),
   kind: followUpKindSchema,
   milestone: z.string().nullable(),
@@ -395,6 +433,8 @@ export const productDevStateSchema = z.enum([
   // Step 9: submitted for sign-off; every sign-off step approved.
   "pending_signoff",
   "ready_to_order",
+  // ĐẶT HÀNG: terminal; the PO case it opened carries the order on.
+  "ordered",
   "waiting_external",
   "blocked",
   "manual_review",
@@ -419,6 +459,8 @@ export const productActionSchema = z.enum([
   "add_sku",
   "remove_sku",
   "submit_for_signoff",
+  // ĐẶT HÀNG, taken at `/product-cases/{id}/order`, never as a generic step.
+  "place_order",
   "wait_for_external",
   "flag_blocked",
   "flag_manual_review",
@@ -536,6 +578,8 @@ export const productCaseDetailSchema = productCaseSchema.extend({
   pending_review: pendingReviewSchema.nullable(),
   item_code: itemCodeSchema.nullable(),
   skus: z.array(skuSchema),
+  /** The PO case ĐẶT HÀNG opened; null until the case is ordered. */
+  po_case_id: z.string().nullable(),
 });
 export type ProductCaseDetail = z.infer<typeof productCaseDetailSchema>;
 
@@ -555,6 +599,12 @@ export const productCaseStepSchema = productCaseSchema.extend({
   review: reviewRaiseSchema.nullable(),
 });
 export type ProductCaseStep = z.infer<typeof productCaseStepSchema>;
+
+/** Mirrors `OrderPlacedView`: ĐẶT HÀNG done, and the PO case it opened. */
+export const orderPlacedSchema = productCaseSchema.extend({
+  po_case_id: z.string(),
+});
+export type OrderPlaced = z.infer<typeof orderPlacedSchema>;
 
 /** One row of a product case's history, oldest first. */
 export const productCaseTransitionSchema = z.object({

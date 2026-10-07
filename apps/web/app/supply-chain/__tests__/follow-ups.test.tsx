@@ -86,6 +86,20 @@ describe("Việc cần làm", () => {
     expect(await screen.findByText("Không có việc nào")).toBeTruthy();
   });
 
+  it("names a case without its PO number in words", async () => {
+    listFollowUps.mockResolvedValue([followUp({ po_reference: null })]);
+    render(<FollowUpsPage />);
+
+    expect(
+      (await screen.findByRole("link", { name: "Chưa có số PO" })).getAttribute(
+        "href",
+      ),
+    ).toBe("/supply-chain/po-cases/c-1");
+    expect(
+      screen.getByRole("textbox", { name: "Ghi chú cho Chưa có số PO" }),
+    ).toBeTruthy();
+  });
+
   it("never reads a failed load as nothing to do", async () => {
     listFollowUps.mockRejectedValue(new Error("403"));
     render(<FollowUpsPage />);

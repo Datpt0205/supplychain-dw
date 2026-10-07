@@ -61,7 +61,7 @@ pytestmark = pytest.mark.integration
 
 STALE_AFTER_SECONDS_LOCAL = 3600
 _WORKER_CONFIG = REPO_ROOT / "configs" / "workers" / "supply_chain_advance_case.yaml"
-_ACTION_DUTIES = REPO_ROOT / "configs" / "policies" / "supply_chain_action_duties@1.0.0.yaml"
+_ACTION_DUTIES = REPO_ROOT / "configs" / "policies" / "supply_chain_action_duties@1.1.0.yaml"
 
 
 class _UnmeteredPlan:
