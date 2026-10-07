@@ -13,6 +13,8 @@ service-level suite cannot:
 * a case approval issued on the portal is decided by ``DUYỆT <mã>`` from the
   linked chat, through the router's claim, once — the same update delivered
   again is skipped by its message id;
+* the requester of a strict sign-off gets no code on the portal, and a code
+  that reached them anyway is refused on chat: pending, the run still parked;
 * ``KHÔNG`` with a number but no reason gets the grammar back; ordinary
   sentences that start with "không" go on to the next command;
 * without ``DW_APPROVAL_CODE_SECRET`` a decision is answered "not enabled".
@@ -23,6 +25,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -37,7 +40,9 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 from dw_agent_runtime.adapters.mock_model import MockModelAdapter
-from dw_agent_runtime.approval_codes import ApprovalViewService
+from dw_agent_runtime.adapters.run_store import RunStatus
+from dw_agent_runtime.adapters.runtime_tables import worker_runs
+from dw_agent_runtime.approval_codes import ApprovalViewService, CodeUnavailable
 from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_agent_runtime.channel_decisions import APPROVE_HINT, REJECT_HINT
 from dw_agent_runtime.model.prompts import RenderedPrompt
@@ -64,6 +69,7 @@ from dw_supply_chain.domain.product_development_case import (
 )
 from dw_supply_chain.presentation.zalo_case_query import read_only_hint
 from dw_supply_chain.presentation.zalo_proposal import NOT_UNDERSTOOD
+from dw_supply_chain.workflows import product_signoff_graph
 from dw_supply_chain.workflows.advance_product_case_graph import (
     APPROVAL_TYPE_PREFIX,
     BOD_REVIEW_CASE_KEY,
@@ -312,16 +318,14 @@ async def _sign_off(
     return approval_id
 
 
-async def _view(
-    sessions: async_sessionmaker[AsyncSession], bod: _Person, approval_id: uuid.UUID
-) -> str:
+def _views(sessions: async_sessionmaker[AsyncSession]) -> ApprovalViewService:
     """The portal half, as the API composes it."""
     uow_factory = SqlPlatformUnitOfWorkFactory(sessions)
     subjects = ApprovalSubjectVersions()
     subjects.register(
         APPROVAL_TYPE_PREFIX, ProductCaseApprovalSubject(SqlProductCaseRepository(sessions))
     )
-    views = ApprovalViewService(
+    return ApprovalViewService(
         uow_factory=uow_factory,
         approval_flow=ApproveAndResumeService(
             uow_factory=uow_factory,
@@ -338,7 +342,12 @@ async def _view(
         clock=SystemClock(),
         ids=Uuid4Generator(),
     )
-    outcome = await views.view(
+
+
+async def _view(
+    sessions: async_sessionmaker[AsyncSession], bod: _Person, approval_id: uuid.UUID
+) -> str:
+    outcome = await _views(sessions).view(
         approval_id=approval_id,
         context=bod.web(),
         authorization=ScopeAuthorizationService(),
@@ -404,6 +413,105 @@ async def test_words_that_look_like_a_decision_never_reach_the_model(
     reply = await lane.send(bod.chat, "không biết mã đề xuất là gì")
     assert reply == "\n".join([NOT_UNDERSTOOD, read_only_hint("https://portal.example")])
     assert len(lane.model_calls) == 1
+
+
+async def _own_sign_off(
+    sessions: async_sessionmaker[AsyncSession], migrator: AsyncEngine, bod: _Person
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """A step-9 sign-off asked by ``bod`` themself, parked on a run of the
+    graph this lane's runner hosts, so nothing but a refusal keeps it parked."""
+    approval_id = await _sign_off(sessions, migrator, bod)
+    run_id = uuid.uuid4()
+    now = SystemClock().now()
+    async with migrator.begin() as conn:
+        await conn.execute(
+            sa.insert(worker_runs).values(
+                id=run_id,
+                thread_id=uuid.uuid4(),
+                tenant_id=bod.tenant,
+                workspace_id=bod.workspace,
+                worker_id=product_signoff_graph.WORKER_ID,
+                worker_version=product_signoff_graph.WORKER_VERSION,
+                graph_version=product_signoff_graph.GRAPH_VERSION,
+                status=RunStatus.WAITING_APPROVAL.value,
+                approval_request_id=approval_id,
+                requested_by=bod.user,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await conn.execute(
+            sa.update(tables.approval_requests)
+            .where(tables.approval_requests.c.id == approval_id)
+            .values(requested_by=bod.user, run_id=run_id)
+        )
+    return approval_id, run_id
+
+
+async def test_the_requester_cannot_decide_their_own_strict_approval_by_chat(
+    sessions: async_sessionmaker[AsyncSession], migrator: AsyncEngine
+) -> None:
+    """Separation of duties on the chat path (ADR 0007 point 3). The portal
+    issues the requester no code; a code that reached them anyway (written
+    here straight into the store, over the receipt their own view recorded)
+    is refused by the chat too, with the approval pending and its run parked."""
+    lane = _Lane(sessions)
+    bod = await _bod(lane, migrator)
+    approval_id, run_id = await _own_sign_off(sessions, migrator, bod)
+    views = _views(sessions)
+
+    outcome = await views.view(
+        approval_id=approval_id,
+        context=bod.web(),
+        authorization=ScopeAuthorizationService(),
+        comment="Tự ký.",
+        issue_code=True,
+    )
+
+    assert outcome.issued is None
+    assert outcome.unavailable is CodeUnavailable.REQUESTER
+    code = "246813"
+    async with migrator.begin() as conn:
+        receipt = await conn.scalar(
+            sa.select(tables.approval_view_receipts.c.id).where(
+                tables.approval_view_receipts.c.approval_id == approval_id
+            )
+        )
+        await conn.execute(
+            sa.insert(tables.approval_decision_codes).values(
+                id=uuid.uuid4(),
+                tenant_id=bod.tenant,
+                workspace_id=bod.workspace,
+                approval_id=approval_id,
+                user_id=bod.user,
+                receipt_id=receipt,
+                code_hash=DecisionCodeKey(_CODE_SECRET.encode()).digest(
+                    approval_id, bod.user, code
+                ),
+                comment="Tự ký.",
+                expires_at=SystemClock().now() + timedelta(minutes=10),
+            )
+        )
+
+    reply = await lane.send(bod.chat, f"DUYỆT {code}")
+
+    assert reply == "Anh/chị là người tạo yêu cầu này nên không tự quyết được."
+    assert await _status(migrator, approval_id) == ("pending", 0)
+    async with migrator.connect() as conn:
+        run_status = await conn.scalar(
+            sa.select(worker_runs.c.status).where(worker_runs.c.id == run_id)
+        )
+        refusals = await conn.scalar(
+            sa.text(
+                "SELECT count(*) FROM platform.audit_events WHERE resource_id = :a"
+                " AND action = 'approval.channel_decision_refused'"
+                " AND details->>'reason' = 'requester'"
+            ),
+            {"a": str(approval_id)},
+        )
+    assert run_status == RunStatus.WAITING_APPROVAL.value
+    assert refusals == 1
+    assert lane.model_calls == []
 
 
 async def test_without_a_code_key_a_decision_is_answered_not_enabled(
