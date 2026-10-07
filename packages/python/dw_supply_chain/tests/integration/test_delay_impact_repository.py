@@ -186,7 +186,11 @@ async def test_deleting_the_case_cascades_to_its_analyses(
 
     async with sessions() as session, session.begin():
         await session.execute(
-            text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(TENANT_A)}
+            text(
+                "SELECT set_config('app.tenant_id', :t, true),"
+                " set_config('app.workspace_id', :w, true)"
+            ),
+            {"t": str(context.tenant_id), "w": str(context.workspace_id)},
         )
         await session.execute(
             text("DELETE FROM supply_chain.po_cases WHERE id = :id"), {"id": str(case.id)}

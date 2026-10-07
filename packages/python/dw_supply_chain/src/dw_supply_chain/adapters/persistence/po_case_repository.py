@@ -444,7 +444,8 @@ class SqlPOCaseRepository:
         transitions = tables.po_case_state_transitions
         async with tenant_session(self.session_factory, scope) as session:
             # `ix_po_case_state_transitions_tenant_occurred_at` carries the
-            # window: RLS supplies tenant_id, the range bounds occurred_at.
+            # window: RLS supplies tenant_id and workspace_id, the range bounds
+            # occurred_at.
             result = await session.execute(
                 sa.select(
                     transitions.c.po_case_id,

@@ -23,8 +23,8 @@ once per recipient (the inbox's), and "notified" is recorded only after the
 delivery. A follow-up nobody holds a scope for stays unnotified, and is
 delivered the first sweep after someone does.
 
-Per workspace, not per tenant: product cases and follow-ups are narrowed by
-workspace in the database, so one workspace's sweep reads nothing of another,
+Per workspace, not per tenant: PO cases, product cases and follow-ups are
+narrowed by workspace in the database, so one workspace's sweep reads nothing of another,
 and a failure in one leaves the others swept.
 
 This is a system process, not a caller: it acts under a context with no
@@ -154,7 +154,8 @@ class SweepFollowUps:
         due = [
             item
             for health in healths
-            # PO cases are read tenant-wide; each workspace's sweep takes its own.
+            # RLS already reads only this workspace's PO cases (`62cdcf3bf2d2`);
+            # kept as a second check, so a widened policy cannot double-notify.
             if health.case.workspace_id.value == context.workspace_id
             for item in follow_ups_due(health)
         ]

@@ -299,8 +299,8 @@ async def test_uploading_to_another_tenants_case_is_not_found_and_writes_nothing
 
 
 async def test_uploading_to_another_workspaces_case_is_not_found_and_writes_nothing() -> None:
-    """`po_cases` is narrowed by tenant only, so the case IS readable here;
-    the handler is what keeps a document out of another workspace."""
+    """The fake returns the case as if RLS had failed open: the handler's own
+    workspace check is what this asserts, the layer behind RLS."""
     elsewhere = _case(workspace=OTHER_WORKSPACE)
     stack = _stack(elsewhere)
 

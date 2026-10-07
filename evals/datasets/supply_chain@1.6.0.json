@@ -1,6 +1,6 @@
 {
   "dataset_id": "supply_chain_smoke",
-  "dataset_version": "1.5.0",
+  "dataset_version": "1.6.0",
   "worker_id": "supply_chain",
   "cases": [
     {
@@ -541,6 +541,18 @@
       "description": "Hỏi qua Zalo về mã PO chỉ có ở tenant khác: câu trả lời giống hệt mã không tồn tại, không lộ NCC",
       "input_ref": "evals/fixtures/cases/sc_sec_cross_tenant_chat_po_of_another_tenant.json",
       "expected_ref": "evals/expected/sc_sec_cross_tenant_chat_po_of_another_tenant.json",
+      "grader": "supply_chain.chat_case_answer",
+      "tags": [
+        "supply_chain",
+        "zalo"
+      ]
+    },
+    {
+      "case_id": "sc-sec-cross-tenant-chat-po-of-another-workspace",
+      "category": "cross_tenant_attack",
+      "description": "Hỏi qua Zalo về mã PO chỉ có ở workspace khác cùng tenant: câu trả lời giống hệt mã không tồn tại, không lộ NCC",
+      "input_ref": "evals/fixtures/cases/sc_sec_cross_tenant_chat_po_of_another_workspace.json",
+      "expected_ref": "evals/expected/sc_sec_cross_tenant_chat_po_of_another_workspace.json",
       "grader": "supply_chain.chat_case_answer",
       "tags": [
         "supply_chain",

@@ -138,3 +138,10 @@ CASCADE` (không `RESTRICT`, cùng lý do điểm 1 của lát D); CHECK
 và Nghị định 174/2016/NĐ-CP đòi lưu tối thiểu 10 năm. Nền tảng không tự xóa chứng từ của
 hồ sơ: chứng từ chỉ rời đi khi tenant bị offboard, và bundle offboarding trao lại cho chủ
 dữ liệu trước khi xóa. Nghĩa vụ lưu thuộc Elmich, chủ sở hữu hồ sơ.
+
+## Sửa đổi 2026-10-07 (lát P4; nhất quán với ADR 0017)
+
+Câu "RLS của `po_cases` không đổi (chỉ theo tenant)" ở điểm 2 lát D không còn đúng:
+`62cdcf3bf2d2` hẹp `po_cases` theo workspace (ADR 0017, sửa đổi P4). Phép kiểm
+`CaseLookupPort.case_workspace` của handler giữ nguyên, làm lớp thứ hai: với Hồ sơ PO của
+workspace khác, RLS đã trả "không có", và handler vẫn trả 404 trước khi ghi đối tượng nào.

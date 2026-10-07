@@ -636,7 +636,11 @@ async def test_a_transitions_reason_is_persisted_and_a_reasonless_one_is_null(
 
     async with sessions() as session, session.begin():
         await session.execute(
-            text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(context.tenant_id)}
+            text(
+                "SELECT set_config('app.tenant_id', :t, true),"
+                " set_config('app.workspace_id', :w, true)"
+            ),
+            {"t": str(context.tenant_id), "w": str(context.workspace_id)},
         )
         rows = (
             await session.execute(

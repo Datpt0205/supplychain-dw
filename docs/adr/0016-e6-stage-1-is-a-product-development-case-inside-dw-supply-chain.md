@@ -245,3 +245,9 @@ Comments của `.claude/plans/supply-chain/stage-1/issues/04-item-code-sku-signo
    mọi approval đang chờ (bước sau của vòng ký được tạo trong run, không ai được báo ở đó).
 4. **Duty 1.2.0:** bốn bước của bước 9 thuộc `ordering`; override lưu ở 1.0.0 hoặc 1.1.0
    lấy duty nền tảng cho các bước thêm sau phiên bản của nó (`STEPS_ADDED_AFTER`).
+
+## Sửa đổi 2026-10-07 (lát P4; nhất quán với ADR 0017)
+
+Hồ sơ PO mà ĐẶT HÀNG mở giờ cũng hẹp theo workspace (ADR 0017, sửa đổi P4, migration
+`62cdcf3bf2d2`): hồ sơ phát triển và Hồ sơ PO nó sinh ra đọc được ở cùng một workspace,
+không còn trường hợp người workspace khác thấy Hồ sơ PO mà không thấy hồ sơ cha.

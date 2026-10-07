@@ -48,7 +48,7 @@ means platform code, an upstream candidate (ADR 0011).
 | P     | `port/issues/01-port-dw-supply-chain.md`                                  | no      | resolved        | —                                   |
 | P2    | `port/issues/02-audit-and-spend-on-supply-chain-writes.md`                | partly  | ready-for-agent | P                                   |
 | P3    | `port/issues/03-follow-ups-retention.md`                                  | no      | ready-for-agent | P                                   |
-| P4    | `port/issues/04-po-cases-narrowed-by-workspace.md`                        | no      | needs-triage    | P; Đạt: PO cases tenant-wide?       |
+| P4    | `port/issues/04-po-cases-narrowed-by-workspace.md`                        | no      | resolved        | P                                   |
 | ENV   | `env/issues/01-env-example-and-init-env.md`                               | yes     | resolved        | P                                   |
 | Z1    | `zalo-channel/issues/01-zalo-link.md`                                     | yes     | resolved        | P, ENV                              |
 | U     | `personal-settings/issues/01-settings-page-and-login.md`                  | yes     | resolved        | Z1, ENV, web-ui antd-shell 03/05    |
@@ -76,8 +76,8 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** S8 (Z6 in: read-only questions on Zalo; its W2-sees-W1 gap is P4, which asks
-Đạt first); Z4p when a real photo update exists.
+**Next:** S8 (Z6 and P4 in: PO cases are read only in their own workspace);
+Z4p when a real photo update exists.
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 
@@ -270,7 +270,7 @@ them: "tự quyết định cho hướng tốt nhất"); see "Decided on 2026-10
   platform operator is not Elmich's BGĐ; a business approval needs the scope
   itself (human-in-command). Ticket A2 (`approval-decider-scope/issues/02`).
   Everything else stands: documents and product cases are workspace-narrowed
-  while `po_cases` stays tenant-only; `proposal_code` unique per tenant;
+  while `po_cases` stays tenant-only (narrowed too by P4, 2026-10-07); `proposal_code` unique per tenant;
   supplier from step 2; Category free text until S6; `sc_rnd` without the
   exceptions duty; product duties in their own policy.
 - **QO-3 SMTP:** the customer's own mail domain, set per deployment from env

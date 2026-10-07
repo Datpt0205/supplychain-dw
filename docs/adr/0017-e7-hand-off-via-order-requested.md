@@ -114,3 +114,28 @@ ordering` và migration dữ liệu thêm khóa này vào mọi override đã l�
 10. **Migration** `84d1c1946b44` (id ngẫu nhiên, down_revision `76bd1b5fc546`, một head).
     Hồ sơ PO có sẵn được điền `order_kind = 'reorder'` (đều do `CreatePOCase` mở, không qua
     giai đoạn 1), rồi bỏ default. Downgrade từ chối khi còn dòng cần phần nó gỡ.
+
+## Sửa đổi 2026-10-07 (lát P4; Đạt ủy quyền, chọn hướng đóng an toàn)
+
+Đóng **Mục mở** của điểm 4 ở trên. Chi tiết và test ở Comments của
+`.claude/plans/supply-chain/port/issues/04-po-cases-narrowed-by-workspace.md`.
+
+1. **Hồ sơ PO chỉ đọc được trong workspace của nó**, như hồ sơ phát triển (ADR 0016),
+   dòng PO và chứng từ (ADR 0021). Phòng ban cần thấy nhiều workspace thì được thêm làm
+   thành viên của từng workspace; không có quyền đọc cả tenant cho Hồ sơ PO.
+2. **Migration `62cdcf3bf2d2`**: `po_cases`, `po_case_state_transitions`,
+   `supplier_updates`, `delay_impact_analyses` (bốn bảng `supply_chain` cuối cùng còn chỉ
+   theo tenant) theo đúng dạng của `CLAUDE.md`, USING và WITH CHECK. FK của con tới hồ sơ
+   và của phân tích trễ tới cập nhật NCC ghép thêm `workspace_id` (cùng tên ràng buộc);
+   `uq_supplier_updates_tenant_id_workspace_id_id` là đích mới; hai UNIQUE chỉ theo tenant
+   không còn FK nào dùng nên bỏ. Index phân trang có `workspace_id` sau `tenant_id`.
+3. **Số PO vẫn duy nhất trong tenant** (`uq_po_cases_tenant_id_po_reference`): số PO là
+   của công ty. Người ở W2 gõ số W1 đã dùng nhận 409 "đã có trong công ty", chỉ biết số
+   đã có, không thấy hồ sơ.
+4. **Đường đọc không có người gọi:** lane follow-up đã đi từng workspace qua
+   `workspaces_with_cases()` (S6); không cần hàm SECURITY DEFINER mới. Offboarding đọc và
+   xóa mọi workspace bằng `app.workspace_scope = 'tenant'`. Control Tower, daily brief, SLA,
+   thanh lệnh (`POST /case-query`) và câu hỏi Zalo đọc theo context của người gọi, nên hẹp
+   theo workspace của họ.
+5. **Downgrade** đưa bốn policy, các FK và index về dạng chỉ theo tenant, thêm lại hai
+   UNIQUE; không mất dòng nào.

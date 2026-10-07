@@ -1,10 +1,9 @@
 """An in-memory `POCaseRepositoryPort` for the reads a case question runs.
 
-Keeps the promise RLS keeps for `SqlPOCaseRepository` today: a caller sees only
-the cases of its own tenant, so another tenant's row is simply absent — never
-"found but forbidden". Only the tenant: `tenant_isolation_po_cases` does not
-narrow by workspace (ADR 0017's open item, ticket `port/issues/04`), and a fake
-that narrowed further would make a test pass that the database fails. Shared by the eval
+Keeps the promise RLS keeps for `SqlPOCaseRepository`: a caller sees only the
+cases of its own tenant AND workspace (`tenant_isolation_po_cases`, migration
+`62cdcf3bf2d2`), so another tenant's or another workspace's row is simply
+absent — never "found but forbidden". Shared by the eval
 grader of the chat answer (`eval_graders.grade_chat_case_answer`) and the Zalo
 question command's unit tests. The writes and the reads a question never runs
 raise `NotImplementedError` rather than pretend.
@@ -39,8 +38,13 @@ class InMemoryPOCases:
         self.cases.extend(cases)
 
     def _visible(self, context: AccessContext) -> list[POCase]:
-        # What RLS returns: the context's tenant, nothing else.
-        return [case for case in self.cases if case.tenant_id.value == context.tenant_id]
+        # What RLS returns: the context's tenant and workspace, nothing else.
+        return [
+            case
+            for case in self.cases
+            if case.tenant_id.value == context.tenant_id
+            and case.workspace_id.value == context.workspace_id
+        ]
 
     async def list_page(
         self, context: AccessContext, request: PageRequest, case_filter: POCaseListFilter

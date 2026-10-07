@@ -508,13 +508,8 @@ async def test_another_tenant_or_workspace_neither_reads_nor_writes_the_lines(
                     "s": case.skus[0].id,
                 },
             )
-    seen_case = await SqlPOCaseRepository(db.sessions).get(caller, placed.po_case.id)
-    if other == "tenant":
-        assert seen_case is None
-    else:
-        # `po_cases` is narrowed by tenant only (as since fddd7579ba27); its
-        # lines by workspace too, so another workspace sees none of them.
-        assert seen_case is not None and seen_case.lines == ()
+    # The case itself is narrowed by workspace as its lines are (`62cdcf3bf2d2`).
+    assert await SqlPOCaseRepository(db.sessions).get(caller, placed.po_case.id) is None
 
 
 # --- step 10 -----------------------------------------------------------------------------

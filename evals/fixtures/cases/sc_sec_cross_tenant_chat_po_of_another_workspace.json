@@ -1,0 +1,22 @@
+{
+  "question": "PO-888 đang ở đâu?",
+  "model_answer": {
+    "kind": "open_case",
+    "po_reference_mention": "PO-888"
+  },
+  "cases": [
+    {
+      "reference": "PO-1"
+    },
+    {
+      "reference": "PO-888",
+      "supplier": "Other Desk Co.",
+      "state": "in_transit",
+      "workspace": "other"
+    }
+  ],
+  "must_not_contain": [
+    "Other Desk Co.",
+    "Đang vận chuyển"
+  ]
+}

@@ -6,9 +6,9 @@ Built from the worker's own wiring (``build_channel_commands``,
 model is the mock provider of that stack, given scripted readings. What it shows
 that no unit test can:
 
-* a PO of another tenant reads exactly as one that does not exist — RLS, not a
-  filter in code, hides it (another workspace of the same tenant is NOT hidden
-  yet: `po_cases` is tenant-only, ADR 0017's open item; strict xfail below);
+* a PO of another tenant, or of another workspace of the same tenant, reads
+  exactly as one that does not exist — RLS, not a filter in code, hides it
+  (`po_cases` narrowed by workspace in `62cdcf3bf2d2`, port ticket 04);
 * the chat answers what the web's ``POST /case-query`` answers for the same
   person and question, in a tenant with restricted record visibility (the
   context built from the linked chat against the one built at sign-in);
@@ -351,14 +351,6 @@ async def test_a_po_of_another_tenant_reads_exactly_as_one_that_does_not_exist(
     assert seen_foreign == seen_missing.replace(missing, foreign)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "po_cases RLS narrows by tenant only (ADR 0017 open item); the web shows "
-        "W1's PO cases to W2 too. Ticket port/issues/04 owns the fix; this turns "
-        "XPASS (a failure) the day it lands, and the mark comes off."
-    ),
-)
 async def test_another_workspace_of_the_same_tenant_is_not_seen(
     sessions: async_sessionmaker[AsyncSession], migrator: AsyncEngine
 ) -> None:
@@ -373,6 +365,14 @@ async def test_another_workspace_of_the_same_tenant_is_not_seen(
 
     assert await lane.send(asker.chat, f"{in_w1} thế nào?") == f"Không tìm thấy PO «{in_w1}»."
     assert await lane.send(asker.chat, "Cho tôi các PO") == "Không có PO nào khớp."
+    # The web's `POST /case-query` for the same person: the same handler,
+    # under the context sign-in builds for W2.
+    access = await SqlMembershipLookup(sessions).find_access(
+        f"test|{asker.user}", "dev", tenant, w2
+    )
+    assert access is not None
+    web = await lane.command.answer.handle(context_from(access), "Cho tôi các PO")
+    assert web.cases == ()
 
 
 async def test_the_chat_answers_what_the_web_answers_for_the_same_person_and_question(

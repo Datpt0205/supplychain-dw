@@ -7,10 +7,9 @@ Every decision here is made before a byte is stored:
 - **Which case:** a PO case or a product-development case (`CaseKind`), each
   looked up through its own repository, chosen from one table keyed by kind.
   The case is read under the caller's tenant (RLS) and must be in the caller's
-  workspace. `po_cases` is narrowed by tenant only, so this check is what
-  keeps a document out of another workspace's PO case; the composite FK
-  refuses it again in the database. `product_dev_cases` is narrowed by
-  workspace in RLS as well.
+  workspace. Both `po_cases` and `product_dev_cases` are narrowed by
+  workspace in RLS as well (`62cdcf3bf2d2` for PO cases), so this check is the
+  second layer, and the composite FK refuses it again in the database.
 - **What:** at most `max_bytes` (the deployment's setting), not empty, and a
   content type `accepted_content_type` lets through.
 - **Where:** the object key is built from the context's tenant and workspace

@@ -792,9 +792,9 @@ def grade_chat_case_answer(
     """One question asked in a linked chat (zalo-channel ticket 06), through
     the SAME command, request rules, handler, grounding, planning and reply
     the worker runs, over storage that keeps RLS's promise (the asker's tenant
-    only, as `po_cases` is narrowed today). What crosses into the chat is the gate: a question
+    and workspace only). What crosses into the chat is the gate: a question
     spelling the prompt's `<input>` tag never reaches the model; another
-    tenant's PO reads as one that does not exist; an injected question cannot
+    tenant's or another workspace's PO reads as one that does not exist; an injected question cannot
     widen the answer; a claim the question gives no grounds for is never used;
     at most ten cases are named. `must_not_contain`: words that exist only
     where the asker cannot see."""
