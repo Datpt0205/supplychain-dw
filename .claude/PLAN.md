@@ -37,7 +37,7 @@ the reference after each `git merge platform/main`.
   hardening and the FCI rerank merged from `platform/main` (`c16857c`). Next:
   Z4 (Z4a, Z4b; photos split to 04b, waiting for a real photo update),
   S3 → S7, Z5, Z6.
-- **2026-10-07:** Z4a, Z4b, S3, Z2, Z5, S4, S5, S6, S7 done (ADR 0012 A6 Proposed). Next: Z6, S8.
+- **2026-10-07:** Z4a–Z4b, S3–S7, Z2, Z5, Z6 done. Next: S8; P4 (PO by workspace) asks Đạt.
 - **Run locally:** `make infra-up`, `make db-migrate`, seed
   (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
   then `scripts/keycloak_dev_users.py`), `make dev`, open http://localhost:3200.

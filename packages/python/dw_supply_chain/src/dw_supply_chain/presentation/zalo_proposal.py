@@ -13,7 +13,9 @@ One message, in this order:
 
 1. **May this person propose here?** `ProposeProductCase.propose_scopes` — the
    very set the handler enforces, from the tenant's own duty policy — must be
-   held; otherwise a refusal, no draft and no model call. The context is then cut
+   held; otherwise the message is not this command's (no draft, no model call)
+   and goes on to the read-only question command (ticket 06): someone who may
+   only read still gets an answer. The context is then cut
    to exactly that set, so nothing this command does can use a scope proposing
    does not need (ADR 0012 condition 2, amended for Z4b).
 2. **"Đồng ý"** (whole message, case and accents ignored) creates the case —
@@ -31,6 +33,9 @@ One message, in this order:
    more than one, is not kept and is asked again with up to five of the
    tenant's own options. Complete: a summary is sent and recorded as the
    version it summarised. Not complete: the missing fields are asked for.
+   A reading of `question` (it asks about, or to change, a case that already
+   exists) is the one intent classification of ticket 06 step 3: the draft is
+   left as it was and the message goes on to the question command.
 
 Replies echo only what the person sent, the workspace's name, and the names
 of the tenant's own Categories. The model
@@ -114,13 +119,6 @@ RESUMMARIZED = "Bản nháp đã đổi sau lần tóm tắt trước, anh/chị
 _UNNAMED_WORKSPACE = "đang dùng"
 # How many of the tenant's Categories a question offers (Z4 criterion 5).
 MAX_CATEGORY_OPTIONS = 5
-
-
-def no_permission(workspace: str) -> str:
-    return (
-        f"Anh/chị chưa có quyền đề xuất sản phẩm ở workspace «{workspace}», "
-        "nên mình không ghi đề xuất này."
-    )
 
 
 def quota_spent(reason: str) -> str:
@@ -319,11 +317,11 @@ class ZaloProposalCommand:
         return PROPOSAL_CEILING
 
     async def handle(self, message: ChatMessage, context: AccessContext, reply: Reply) -> bool:
-        workspace = await self.workspaces.name_of(context) or _UNNAMED_WORKSPACE
         required = await self.propose.propose_scopes(context)
         if not required <= context.scopes:
-            await reply(no_permission(workspace))
-            return True
+            # Not someone who may propose here: not this command's message.
+            return False
+        workspace = await self.workspaces.name_of(context) or _UNNAMED_WORKSPACE
         # Exactly what proposing needs in this tenant, whatever else the
         # membership (and the ceiling) allowed.
         context = context.model_copy(update={"scopes": required})
@@ -344,8 +342,7 @@ class ZaloProposalCommand:
             discarded = draft is not None and await self.drafts.discard(context, channel)
             await reply(CANCELLED if discarded else NOTHING_TO_CANCEL)
             return True
-        await self._read(message, context, draft, workspace, reply)
-        return True
+        return await self._read(message, context, draft, workspace, reply)
 
     # ---- free text ------------------------------------------------------------
 
@@ -356,7 +353,8 @@ class ZaloProposalCommand:
         draft: ProposalDraft | None,
         workspace: str,
         reply: Reply,
-    ) -> None:
+    ) -> bool:
+        """False when the message is a question for the next command."""
         run_id = self.ids.new_uuid()
         run_context = RunContext(
             run_id=run_id,
@@ -379,18 +377,20 @@ class ZaloProposalCommand:
             )
         except QuotaExceededError as exc:
             await reply(quota_spent(exc.message))
-            return
+            return True
         except BudgetExceededError:
             await reply(BUDGET_SPENT)
-            return
+            return True
         except (ModelOutputInvalidError, InfrastructureError, TimeoutError):
             await reply(f"{NOT_UNDERSTOOD} {CONFIRM_HINT}" if waiting else NOT_UNDERSTOOD)
-            return
+            return True
 
         grounded = ground(intent, message.text)
+        if grounded.kind is ProposalKind.QUESTION:
+            return False
         if grounded.kind is ProposalKind.UNSUPPORTED:
             await reply(f"{NOT_UNDERSTOOD} {CONFIRM_HINT}" if waiting else NOT_UNDERSTOOD)
-            return
+            return True
 
         categories = await self.propose.categories(context)
         turn = plan_turn(draft.fields if draft is not None else {}, grounded, workspace, categories)
@@ -414,8 +414,9 @@ class ZaloProposalCommand:
             )
         except ProposalDraftChangedError:
             await reply(ALREADY_HANDLED)
-            return
+            return True
         await reply(turn.reply)
+        return True
 
     # ---- "Đồng ý" -------------------------------------------------------------
 

@@ -22,6 +22,8 @@ what `wiring.py` gives the API's: the strict prefix and the case-version port.
 The Zalo proposal command (zalo-channel ticket 04, Z4b) is built here too: the
 chat's "Đồng ý" creates a product case through the same `ProposeProductCase`
 the API's route calls, over the same tables and the same duty policy file.
+So is the read-only question command (ticket 06, Z6): the same `AnswerCaseQuery`
+and `ListPOCases` the API's `POST /case-query` runs.
 
 Built here, at this process's composition root: the concrete adapters are
 imported only here, the policies are the shipped files the API also loads
@@ -80,6 +82,7 @@ from dw_supply_chain.adapters.persistence.supplier_update_repository import (
 from dw_supply_chain.application.approval_subject import ProductCaseApprovalSubject
 from dw_supply_chain.application.document_orphan_sweep import SweepOrphanDocuments
 from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
+from dw_supply_chain.application.handlers import AnswerCaseQuery, ListPOCases
 from dw_supply_chain.application.ports import CaseDocumentObjectListingPort
 from dw_supply_chain.application.product_cases import ProposeProductCase
 from dw_supply_chain.application.product_reviews import (
@@ -95,6 +98,7 @@ from dw_supply_chain.policy_files import (
     PRODUCT_SIGNOFF_WORKER_FILE,
     SLA_POLICY_FILE,
 )
+from dw_supply_chain.presentation.zalo_case_query import ZaloCaseQueryCommand
 from dw_supply_chain.presentation.zalo_proposal import ZaloProposalCommand
 from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.product_approvals import load_supply_chain_product_approvals
@@ -275,6 +279,29 @@ def build_zalo_proposal_command(
         workspaces=SqlWorkspaceNames(sessions),
         ids=ids,
         clock=clock,
+        web_url=web_url,
+    )
+
+
+def build_zalo_case_query_command(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    gateway: ModelGateway,
+    ids: IdGenerator,
+    web_url: str,
+) -> ZaloCaseQueryCommand:
+    """The chat's read-only questions. `gateway` is the process's one-call
+    gateway, as for the proposal command; the handler is the API's own."""
+    repo = SqlPOCaseRepository(sessions)
+    authz = ScopeAuthorizationService()
+    return ZaloCaseQueryCommand(
+        answer=AnswerCaseQuery(
+            po_case_repo=repo,
+            list_cases=ListPOCases(repo=repo, authz=authz),
+            gateway=gateway,
+            authz=authz,
+            ids=ids,
+        ),
         web_url=web_url,
     )
 

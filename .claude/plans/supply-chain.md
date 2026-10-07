@@ -48,6 +48,7 @@ means platform code, an upstream candidate (ADR 0011).
 | P     | `port/issues/01-port-dw-supply-chain.md`                                  | no      | resolved        | —                                   |
 | P2    | `port/issues/02-audit-and-spend-on-supply-chain-writes.md`                | partly  | ready-for-agent | P                                   |
 | P3    | `port/issues/03-follow-ups-retention.md`                                  | no      | ready-for-agent | P                                   |
+| P4    | `port/issues/04-po-cases-narrowed-by-workspace.md`                        | no      | needs-triage    | P; Đạt: PO cases tenant-wide?       |
 | ENV   | `env/issues/01-env-example-and-init-env.md`                               | yes     | resolved        | P                                   |
 | Z1    | `zalo-channel/issues/01-zalo-link.md`                                     | yes     | resolved        | P, ENV                              |
 | U     | `personal-settings/issues/01-settings-page-and-login.md`                  | yes     | resolved        | Z1, ENV, web-ui antd-shell 03/05    |
@@ -57,7 +58,7 @@ means platform code, an upstream candidate (ADR 0011).
 | Z4b   | `zalo-channel/issues/04-chat-proposal.md` (steps 4–7, 9, 10)              | no      | resolved        | Z4a, S1, D                          |
 | Z4p   | `zalo-channel/issues/04b-photos.md` (photos, old step 8)                  | no      | ready-for-human | Z4b; a real photo update as fixture |
 | Z5    | `zalo-channel/issues/05-approve-via-zalo.md`                              | partly  | resolved        | Z4, Z2, A, S2                       |
-| Z6    | `zalo-channel/issues/06-read-only-qa.md`                                  | partly  | ready-for-agent | Z4                                  |
+| Z6    | `zalo-channel/issues/06-read-only-qa.md`                                  | partly  | resolved        | Z4                                  |
 | ZL    | `zalo-channel/issues/07-live-run.md`                                      | —       | ready-for-human | Z1–Z6, H2                           |
 | A     | `approval-decider-scope/issues/01-required-scope.md`                      | yes     | resolved        | P                                   |
 | A2    | `approval-decider-scope/issues/02-admin-does-not-pass-stamped-scope.md`   | yes     | resolved        | A                                   |
@@ -75,7 +76,8 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** Z6, S8 (S7 in: stage-1 evals, context graders registered from `scripts/run_evals.py`); Z4p when a real photo update exists.
+**Next:** S8 (Z6 in: read-only questions on Zalo; its W2-sees-W1 gap is P4, which asks
+Đạt first); Z4p when a real photo update exists.
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 
@@ -115,7 +117,7 @@ email as a second channel.
 | S4     | `4500ee0` | Item code, SKUs and sign-off, step 9: UNIQUE per tenant by the database (409 by constraint, race-tested), SKU under its case's item code, sign-off graph (own worker) with ordered stamped steps BGĐ → Kế toán from policy 1.1.0, one ensure + extended lane, `sc_finance` signs, coding card on the case page.                                                   |
 | S5     | `3deec0e` | ĐẶT HÀNG and step 10: conditional UPDATE opens one PO case in `order_requested` (race-tested; UNIQUE per product case while QE-12 is open), PIC/Category stamped, `po_case_lines` (workspace RLS), `create_po` command, duty policies 1.3.0/1.1.0 with override migration, end-to-end step 1 → `completed`.                                                       |
 | S6     | `ff65682` | SLA policy 2.0 (`categories`, `default`, `by_category`; overrides migrated), Category checked at propose/CreatePOCase and resolved in chat, stage-1 milestones, `follow_ups` for product cases with workspace RLS and per-workspace sweep, `pic` recipient (follow-up policy 1.1.0) re-checked at delivery, `reassign_pic` on both cases, Elmich override script. |
-| S7     | `024a287` | Stage-1 evals: `supply_chain@1.4.0` (43 cases, +11: proposal prompt containment, propose/step authority through route and handler, approval stamp), each security case red without its guard; graders moved to `dw_supply_chain.testing`, registered in `scripts/run_evals.py`, `dw_evals` forbidden from importing a context; brief/command bar split to S8. |
+| S7     | `024a287` | Stage-1 evals: `supply_chain@1.4.0` (43 cases, +11: proposal prompt containment, propose/step authority through route and handler, approval stamp), each security case red without its guard; graders moved to `dw_supply_chain.testing`, registered in `scripts/run_evals.py`, `dw_evals` forbidden from importing a context; brief/command bar split to S8.     |
 
 ## Open — named, not fixed, still true after the port
 

@@ -59,3 +59,11 @@ về hồ sơ phát triển bằng command bar; mỗi đường mô hình mới 
 ## Comments
 
 - Báo cáo hằng ngày là một nhóm của brief, không phải tin riêng; dạng và kênh chờ QE-19.
+- 2026-10-07 (Z6): phần dùng chung đã có ở Z6, bước 3 của ticket này chỉ mở rộng hiểu
+  biết, không dựng đường mới: Zalo gọi đúng `AnswerCaseQuery` (`channel="zalo"`), câu trả
+  lời chat do `presentation/zalo_case_query.answer_text` dựng từ `CaseQueryAnswer`. Khi
+  bước 3 thêm hồ sơ phát triển vào `CaseQueryAnswer` thì thêm dòng hồ sơ phát triển vào
+  `answer_text`, scope đọc hồ sơ phát triển vào `QA_CEILING`, bỏ chữ "hồ sơ phát triển
+  sản phẩm chưa hỗ trợ" của `read_only_hint`, và thêm ca `supply_chain.chat_case_answer`
+  cho nó. Hôm nay câu hỏi về hồ sơ phát triển đọc thành `unsupported` (model thật,
+  Comments Z6).

@@ -62,10 +62,20 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevelopmentCase,
     ProductDevelopmentCaseId,
 )
-from dw_supply_chain.presentation.zalo_proposal import no_permission
+from dw_supply_chain.presentation.zalo_case_query import read_only_hint
+from dw_supply_chain.presentation.zalo_proposal import NOT_UNDERSTOOD
 from dw_supply_chain.workflows.advance_product_case_graph import (
     APPROVAL_TYPE_PREFIX,
     BOD_REVIEW_CASE_KEY,
+)
+from dw_supply_chain.workflows.case_query_understanding import (
+    PROMPT_ID as CASE_QUERY_PROMPT,
+)
+from dw_supply_chain.workflows.case_query_understanding import (
+    PROMPT_VERSION as CASE_QUERY_VERSION,
+)
+from dw_supply_chain.workflows.product_proposal_understanding import (
+    PROMPT_VERSION as PROPOSAL_VERSION,
 )
 from dw_worker.composition import REPO_ROOT, build_model_stack_for
 from dw_worker.consumers.supply_chain import build_product_review_runner
@@ -134,6 +144,9 @@ class _Lane:
             product_name="Cổng thử",
             public_web_url="https://portal.example",
             model_provider="mock",
+            model_profile="balanced",
+            openai_api_key="",
+            openai_base_url="",
         )
         clock = SystemClock()
         stack = build_model_stack_for(
@@ -141,7 +154,8 @@ class _Lane:
         )
         model = stack.gateway.adapters["mock"]
         assert isinstance(model, MockModelAdapter)
-        model.register_builder(_PROMPT, "1.0.0", self.answer)
+        model.register_builder(_PROMPT, PROPOSAL_VERSION, self.answer)
+        model.register_builder(CASE_QUERY_PROMPT, CASE_QUERY_VERSION, self.answer)
         commands = build_channel_commands(
             settings,
             self.sessions,
@@ -379,9 +393,11 @@ async def test_words_that_look_like_a_decision_never_reach_the_model(
     assert await lane.send(bod.chat, "KHÔNG 123456") == REJECT_HINT
     assert lane.model_calls == []
     assert await _status(migrator, approval_id) == ("pending", 0)
-    # An ordinary sentence starting with "không" is not a decision: the next
-    # command, the proposal, reads it (and refuses: BGĐ may not propose).
-    assert await lane.send(bod.chat, "không biết mã đề xuất là gì") == no_permission("Cung ứng HN")
+    # An ordinary sentence starting with "không" is not a decision: BGĐ may
+    # not propose, so the read-only question command (ticket 06) reads it.
+    reply = await lane.send(bod.chat, "không biết mã đề xuất là gì")
+    assert reply == "\n".join([NOT_UNDERSTOOD, read_only_hint("https://portal.example")])
+    assert len(lane.model_calls) == 1
 
 
 async def test_without_a_code_key_a_decision_is_answered_not_enabled(

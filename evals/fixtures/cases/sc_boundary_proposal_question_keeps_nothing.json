@@ -1,0 +1,7 @@
+{
+  "message": "PO-123 đang ở đâu, mã CH-28?",
+  "model_answer": {
+    "kind": "question",
+    "proposal_code": "CH-28"
+  }
+}

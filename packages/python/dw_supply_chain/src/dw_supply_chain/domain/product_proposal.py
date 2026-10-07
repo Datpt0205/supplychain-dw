@@ -62,6 +62,11 @@ class ProposalKind(StrEnum):
     PROPOSE_PRODUCT = "propose_product"
     # The message corrects or completes a proposal already being drafted.
     AMEND = "amend"
+    # The message asks about cases that already exist (where a PO is, which
+    # ones wait on a deposit), or asks to change one. Not this command's: it
+    # writes no draft and hands the message on to the read-only question
+    # command (zalo-channel ticket 06), which answers or refuses.
+    QUESTION = "question"
     # Anything else — including a request this command does not handle. The
     # honest reply is "not understood", never a nearest guess.
     UNSUPPORTED = "unsupported"
@@ -121,9 +126,9 @@ def ground(intent: ProductProposalIntent, message: str) -> GroundedProposal:
     A proposal code becomes an identifier, so it must be whole words of the
     message ("SP-12" inside "SP-123" is not "SP-12"). An unsupported reading
     keeps nothing: a value the model found in a message it could not read is
-    not a value the person asked to record.
+    not a value the person asked to record; nor is one found in a question.
     """
-    if intent.kind is ProposalKind.UNSUPPORTED:
+    if intent.kind in (ProposalKind.UNSUPPORTED, ProposalKind.QUESTION):
         return GroundedProposal(kind=intent.kind, values={}, dropped=())
     values: dict[ProposalField, str] = {}
     dropped: list[ProposalField] = []

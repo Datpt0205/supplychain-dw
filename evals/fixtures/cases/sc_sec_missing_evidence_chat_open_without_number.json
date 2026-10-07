@@ -1,0 +1,17 @@
+{
+  "question": "mở hồ sơ",
+  "model_answer": {
+    "kind": "open_case",
+    "po_reference_mention": "PO-1"
+  },
+  "cases": [
+    {
+      "reference": "PO-1",
+      "state": "waiting_deposit"
+    }
+  ],
+  "must_not_contain": [
+    "PO-1",
+    "Chờ đặt cọc"
+  ]
+}

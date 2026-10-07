@@ -126,6 +126,43 @@ trước Z4b không có `ModelGateway`. Quyết định:
   bị cắt ở `MODEL_CALL_TIMEOUT_SECONDS` (20 giây) để `/start` không bị chặn, và quá
   hạn được trả lời "chưa hiểu" như mô hình không gọi được.
 
+## Bổ sung 7/10/2026 (Z6): hỏi chỉ đọc, và một lần phân loại ý định
+
+Trạng thái: Proposed (2026-10-07, lead theo ủy quyền của Đạt; Đạt duyệt hoặc chỉnh).
+
+- **Lệnh hỏi đứng cuối registry**, sau lệnh quyết (Z5) và lệnh đề xuất (Z4b); trần
+  `QA_CEILING = {supply_chain.po_case.read}`: không scope ghi, không duty, không
+  `approvals.decide`, không role. Trần không mang scope đọc hồ sơ phát triển, vì chưa
+  đường nào của lệnh đọc nó (failure-modes #1); ticket S8 thêm khi command bar hiểu hồ
+  sơ phát triển. Lệnh gọi đúng `AnswerCaseQuery` của `POST /case-query` (thêm tham số
+  `channel` cho trace), kiểm câu hỏi bằng chính `CaseQueryRequest` của route (dài tối đa
+  500, không có thẻ `<input>`), cùng `DailyAllowance` và cùng giới hạn 20 giây như Z4b.
+  Câu trả lời do code dựng: tối đa 10 hồ sơ (số PO, NCC, nhãn trạng thái, liên kết
+  tuyệt đối), "còn nữa" kèm liên kết danh sách có bộ lọc; không giá, chứng từ, ghi chú
+  (QE-20 tạm thời).
+- **Một lần phân loại là lần đọc của lệnh đề xuất.** Prompt
+  `product_proposal_understanding@1.1.0` thêm `kind: question` (hỏi về, hoặc đòi đổi,
+  hồ sơ đã có); lệnh đề xuất trả lượt cho lệnh hỏi, không đụng bản nháp. Người hỏi có
+  quyền đề xuất tốn hai lượt gọi mô hình cho một câu hỏi (phân loại rồi đọc câu hỏi),
+  cả hai trừ vào hạn mức ngày của gói.
+- **Người không có quyền đề xuất được lệnh đề xuất trả lượt** (trước Z6: từ chối "chưa có
+  quyền đề xuất"), không gọi mô hình, để người chỉ đọc vẫn hỏi được. Hệ quả: người không
+  đề xuất được mà gửi một đề xuất nhận câu của lệnh hỏi ("chưa hiểu… qua Zalo chỉ hỏi
+  được; thao tác trên cổng"), hoặc "chưa có quyền xem hồ sơ cung ứng" nếu cũng không đọc
+  được.
+- **Câu đòi thay đổi** đọc thành `unsupported` và nhận câu "chỉ hỏi được" kèm liên kết
+  cổng; không đường nào từ lệnh hỏi tới handler ghi (test kiến trúc trên import và trường
+  của lệnh).
+- **Chưa đạt: hẹp theo workspace.** `po_cases` chỉ hẹp theo tenant (mục mở của ADR
+  0017), nên người ở W2 thấy Hồ sơ PO của W1 qua Zalo đúng như trên web. Lệnh hỏi không
+  lọc thêm trong code (sẽ là chỗ thực thi thứ hai và lệch với web); ticket
+  `port/issues/04-po-cases-narrowed-by-workspace.md` sở hữu việc sửa ở RLS.
+- **`visible_owners`:** context của lệnh từ chat bị cắt theo trần nên mất
+  `crm.records.all.read`; ở tenant `restricted`, người có scope đó trên web sẽ bị hẹp hơn
+  qua Zalo nếu một repository Supply Chain đọc `visible_owners`. Hiện không repository
+  nào đọc (Hồ sơ PO không hẹp theo người ở cả hai kênh), nên hai kênh trả cùng hồ sơ
+  (test so hai kênh). Hẹp hơn là hướng an toàn; ghi lại để ai thêm lọc theo người biết.
+
 ## Phương án đã cân nhắc
 
 - **Zalo OA cùng ZNS.** Gửi được tới người chưa nhắn trước, nhưng cần tài khoản doanh

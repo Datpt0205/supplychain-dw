@@ -1502,7 +1502,11 @@ class AnswerCaseQuery:
     authz: AuthorizationPort
     ids: IdGenerator
 
-    async def handle(self, context: AccessContext, question: str) -> CaseQueryAnswer:
+    async def handle(
+        self, context: AccessContext, question: str, *, channel: str = "web"
+    ) -> CaseQueryAnswer:
+        """`channel` is where the question came from (the command bar, a linked
+        chat), carried into the run's trace; it decides nothing."""
         await self.authz.require(context=context, action=PO_CASE_READ, resource_type=_RESOURCE)
 
         run_id = self.ids.new_uuid()
@@ -1513,7 +1517,7 @@ class AnswerCaseQuery:
             actor_id=context.principal_id,
             worker_id=_CASE_QUERY_WORKER_ID,
             worker_version=_WORKER_VERSION,
-            channel="web",
+            channel=channel,
             plan_id=context.plan_id,
             roles=context.roles,
             scopes=context.scopes,

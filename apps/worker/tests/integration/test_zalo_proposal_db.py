@@ -51,7 +51,11 @@ from dw_platform.adapters.persistence import tables
 from dw_platform.adapters.persistence.zalo_link_repo import SqlZaloLink
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_supply_chain.adapters.persistence import tables as sc_tables
-from dw_supply_chain.presentation.zalo_proposal import CONFIRM_HINT, no_permission
+from dw_supply_chain.presentation.zalo_case_query import NO_READ
+from dw_supply_chain.presentation.zalo_proposal import CONFIRM_HINT
+from dw_supply_chain.workflows.product_proposal_understanding import (
+    PROMPT_VERSION as PROPOSAL_VERSION,
+)
 from dw_worker.composition import REPO_ROOT, build_model_stack_for
 from dw_worker.consumers.supply_chain import build_product_review_runner
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
@@ -149,7 +153,7 @@ class _Lane:
         )
         model = stack.gateway.adapters["mock"]
         assert isinstance(model, MockModelAdapter)
-        model.register_builder(_PROMPT, "1.0.0", self.answer)
+        model.register_builder(_PROMPT, PROPOSAL_VERSION, self.answer)
         self.model = model
         commands = build_channel_commands(
             settings,
@@ -332,16 +336,19 @@ async def test_ok_and_duoc_after_the_summary_create_nothing(
     assert await _drafts(migrator, person.user) == 1
 
 
-async def test_someone_who_may_not_propose_gets_a_refusal_and_no_draft(
+async def test_someone_who_may_neither_propose_nor_read_gets_a_refusal_and_no_draft(
     sessions: async_sessionmaker[AsyncSession], migrator: AsyncEngine
 ) -> None:
+    """Not a proposer: the proposal command hands the message on, and the
+    read-only question command (ticket 06) refuses someone who cannot read
+    either — both before any model call."""
     lane = _Lane(sessions)
     person = await _linked(lane, migrator, roles=["approver"])
     calls_before = len(lane.model.calls)
 
     reply = await lane.send(person.chat, _proposal(lane, _code()))
 
-    assert reply == no_permission("Cung ứng HN")
+    assert reply == NO_READ
     assert await _drafts(migrator, person.user) == 0
     assert len(lane.model.calls) == calls_before
 

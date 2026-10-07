@@ -58,7 +58,6 @@ from dw_supply_chain.presentation.zalo_proposal import (
     RESUMMARIZED,
     ZaloProposalCommand,
     duplicate_code,
-    no_permission,
     quota_spent,
 )
 from dw_supply_chain.product_action_duties import (
@@ -328,18 +327,23 @@ class Bench:
             plan_id="professional",
         )
 
-    async def say(
+    async def offer(
         self, text: str, *answers: object, scopes: frozenset[str] = PROPOSER, timeout: float = 20.0
-    ) -> str:
+    ) -> bool:
+        """Whether the command took the message (False: the next command's)."""
         self.model.answers.extend(answers)
 
         async def reply(sent: str) -> None:
             self.replies.append(sent)
 
-        handled = await self.command(timeout=timeout).handle(
+        return await self.command(timeout=timeout).handle(
             Message(text), self.context(scopes), reply
         )
-        assert handled
+
+    async def say(
+        self, text: str, *answers: object, scopes: frozenset[str] = PROPOSER, timeout: float = 20.0
+    ) -> str:
+        assert await self.offer(text, *answers, scopes=scopes, timeout=timeout)
         return self.replies[-1]
 
     def draft(self) -> ProposalDraft | None:
@@ -393,15 +397,14 @@ async def test_the_command_acts_with_exactly_the_scopes_propose_needs() -> None:
 
 async def test_the_ceiling_follows_the_tenants_own_duty_policy() -> None:
     """A tenant whose policy gives `propose` to the exceptions duty: an ordering
-    holder is refused, an exceptions holder proposes — the ceiling is the
-    handler's own answer, not a list kept beside it."""
+    holder's message is not this command's, an exceptions holder proposes — the
+    ceiling is the handler's own answer, not a list kept beside it."""
     override = DUTIES.model_dump(mode="json")
     override["action_duties"]["propose"] = "exceptions"
     bench = Bench(policies=FakePolicies({PRODUCT_ACTION_DUTIES_POLICY_ID: override}))
 
-    refused = await bench.say(MESSAGE, scopes=PROPOSER)
-    assert refused == no_permission("Cung ứng HN")
-    assert bench.model.calls == [] and bench.draft() is None
+    assert not await bench.offer(MESSAGE, scopes=PROPOSER)
+    assert bench.model.calls == [] and bench.draft() is None and bench.replies == []
 
     holder = frozenset({PRODUCT_CASE_WRITE, EXCEPTIONS})
     await bench.say(MESSAGE, FULL, scopes=holder)
@@ -410,11 +413,34 @@ async def test_the_ceiling_follows_the_tenants_own_duty_policy() -> None:
     assert context.scopes == {PRODUCT_CASE_WRITE, EXCEPTIONS}
 
 
-async def test_someone_who_may_not_propose_is_refused_without_a_draft_or_a_model_call() -> None:
+async def test_someone_who_may_not_propose_is_handed_on_without_a_draft_or_a_model_call() -> None:
+    """Ticket 06: the read-only question command after this one answers people
+    who may only read, so a missing propose duty is not a refusal here."""
     bench = Bench()
-    reply = await bench.say(MESSAGE, scopes=frozenset({PRODUCT_CASE_READ, PRODUCT_CASE_WRITE}))
-    assert reply == no_permission("Cung ứng HN")
+    taken = await bench.offer(MESSAGE, scopes=frozenset({PRODUCT_CASE_READ, PRODUCT_CASE_WRITE}))
+    assert not taken
     assert bench.model.calls == [] and bench.draft() is None and bench.cases.added == []
+    assert bench.replies == []
+
+
+async def test_a_question_is_handed_on_and_leaves_the_open_draft_as_it_was() -> None:
+    """The proposal reading is ticket 06's one intent classification: a
+    question about an existing case writes nothing, replies nothing, and goes
+    on — even mid-draft, and even when the model also offered a value."""
+    bench = Bench()
+    await bench.say(
+        "đề xuất SP chảo chống dính 28cm",
+        {"kind": "propose_product", "product_name": "chảo chống dính 28cm"},
+    )
+    before, replies = bench.draft(), list(bench.replies)
+
+    taken = await bench.offer(
+        "PO-123 đang ở đâu, mã CH-28?", {"kind": "question", "proposal_code": "CH-28"}
+    )
+
+    assert not taken
+    assert bench.draft() == before and bench.replies == replies
+    assert len(bench.model.calls) == 2
 
 
 # ---- several turns -----------------------------------------------------------------

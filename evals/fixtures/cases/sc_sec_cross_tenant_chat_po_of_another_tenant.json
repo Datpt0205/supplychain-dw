@@ -1,0 +1,23 @@
+{
+  "question": "PO-777 đang ở đâu?",
+  "model_answer": {
+    "kind": "open_case",
+    "po_reference_mention": "PO-777"
+  },
+  "cases": [
+    {
+      "reference": "PO-1"
+    },
+    {
+      "reference": "PO-777",
+      "supplier": "Their Secret Co.",
+      "state": "in_transit",
+      "tenant": "other",
+      "workspace": "other"
+    }
+  ],
+  "must_not_contain": [
+    "Their Secret Co.",
+    "Đang vận chuyển"
+  ]
+}

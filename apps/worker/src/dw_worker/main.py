@@ -115,6 +115,7 @@ from dw_worker.consumers.supply_chain import (
     build_product_review_reconcile_consumer,
     build_product_review_runner,
     build_proposal_draft_retention,
+    build_zalo_case_query_command,
     build_zalo_proposal_command,
     register_product_approvals,
 )
@@ -266,8 +267,11 @@ def build_channel_commands(
     convenience: the decide command first (`build_channel_decision_command`,
     ticket 05: a reply to a pending decision is never re-read as a new
     request), then an open conversation, then intent classification. Z4b's
-    proposal is both of the last two today: it continues an open draft or
-    reads a new message as a proposal. Each command declares
+    proposal is both of the last two: it continues an open draft or reads a
+    new message as a proposal, and its reading is the classification — a
+    question (ticket 06) it hands on, untouched, to the read-only question
+    command registered last, which also answers whoever may not propose.
+    Each command declares
     its own scope ceiling; the router builds its context from the person's
     membership cut to that ceiling.
     """
@@ -283,6 +287,13 @@ def build_channel_commands(
             ids=ids,
             clock=clock,
             web_url=settings.public_web_url,
+        ),
+    )
+    # Last: read-only, so it may see whatever no command before it took.
+    commands.register(
+        "supply_chain.case_query",
+        build_zalo_case_query_command(
+            sessions, gateway=gateway, ids=ids, web_url=settings.public_web_url
         ),
     )
     return commands
