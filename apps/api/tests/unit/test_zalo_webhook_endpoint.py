@@ -287,10 +287,8 @@ def test_a_deployed_webhook_refuses_a_public_base_url_that_is_not_https(base: st
         deployed(public_base_url=base).validate_for_profile()
 
 
-def test_a_deployed_poll_needs_neither() -> None:
-    deployed(
-        zalo_updates_mode="poll", zalo_webhook_secret="", public_base_url=""
-    ).validate_for_profile()
+def test_a_deployed_poll_needs_no_webhook_secret() -> None:
+    deployed(zalo_updates_mode="poll", zalo_webhook_secret="").validate_for_profile()
 
 
 def test_local_webhook_needs_neither() -> None:

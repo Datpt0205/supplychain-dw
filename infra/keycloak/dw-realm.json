@@ -20,11 +20,11 @@
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["http://localhost:3200/*", "http://127.0.0.1:3200/*"],
-      "webOrigins": ["http://localhost:3200", "http://127.0.0.1:3200"],
+      "redirectUris": ["${DW_PUBLIC_WEB_URL:http://localhost:3200}/*"],
+      "webOrigins": ["${DW_PUBLIC_WEB_URL:http://localhost:3200}"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:3200/*"
+        "post.logout.redirect.uris": "${DW_PUBLIC_WEB_URL:http://localhost:3200}/*"
       },
       "protocolMappers": [
         {

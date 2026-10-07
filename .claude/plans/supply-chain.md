@@ -73,10 +73,10 @@ means platform code, an upstream candidate (ADR 0011).
 | S8    | `stage-1/issues/08-stage-1-brief-and-command-bar.md`                      | no      | resolved        | S7; QE-19 provisional               |
 | PK    | `packaging-design/issues/01-colour-packaging-and-pre-production.md`       | no      | resolved        | P, D                                |
 | W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md` (E-HSDT v3 look)     | no      | ready-for-agent | P; Playwright viewports owed        |
-| H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
+| H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | resolved        | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** W (Playwright viewports), H then H2 (the domain the webhook needs);
+**Next:** W (Playwright viewports), H2 (the domain the webhook needs; runbook `docs/deploy/host.md`);
 Z4p when a real photo update exists; ZL measures the webhook header (Z3).
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).

@@ -384,20 +384,36 @@ class ApiSettings(BaseSettings):
                 raise RuntimeError(
                     f"CORS origins must be listed explicitly in the {self.profile} profile"
                 )
-            if self.zalo_updates_mode == "webhook":
-                # Zalo reaches the webhook over the internet; a guessable
-                # secret or a plain-http URL would hand chat traffic to anyone
-                # on the path (ADR 0015).
-                if len(self.zalo_webhook_secret.get_secret_value()) < 32:
-                    raise RuntimeError(
-                        "ZALO_UPDATES_MODE=webhook needs a ZALO_WEBHOOK_SECRET of at least "
-                        f"32 characters in the {self.profile} profile"
-                    )
-                if not self.public_base_url.startswith("https://"):
-                    raise RuntimeError(
-                        "ZALO_UPDATES_MODE=webhook needs DW_API_PUBLIC_BASE_URL to start "
-                        f"with https:// in the {self.profile} profile"
-                    )
+            # Real people sign in here (ADR 0023): a token, a cookie or a
+            # cross-origin response over plain http is readable on the path.
+            # The issuer is the URL the browser logs in through, so it must be
+            # the TLS host too; the JWKS fetch stays internal and is not checked.
+            plain = [
+                name
+                for name, url in (
+                    ("DW_API_OIDC_ISSUER_URL", self.oidc_issuer_url or ""),
+                    ("DW_API_PUBLIC_BASE_URL", self.public_base_url),
+                    *(("DW_API_CORS_ORIGINS", origin) for origin in self.cors_origins),
+                )
+                if not url.startswith("https://")
+            ]
+            if plain:
+                raise RuntimeError(
+                    f"{', '.join(dict.fromkeys(plain))} must start with https:// "
+                    f"in the {self.profile} profile"
+                )
+            # Zalo reaches the webhook over the internet; a guessable secret
+            # would hand chat traffic to anyone who tries (ADR 0015). The https
+            # base URL it is registered under is checked above for every
+            # deployment, webhook or not.
+            if (
+                self.zalo_updates_mode == "webhook"
+                and len(self.zalo_webhook_secret.get_secret_value()) < 32
+            ):
+                raise RuntimeError(
+                    "ZALO_UPDATES_MODE=webhook needs a ZALO_WEBHOOK_SECRET of at least "
+                    f"32 characters in the {self.profile} profile"
+                )
         if self.auth_mode == "oidc" and not self.oidc_issuer_url:
             raise RuntimeError("auth_mode=oidc requires DW_API_OIDC_ISSUER_URL")
         if self.langfuse_enabled and not (

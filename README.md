@@ -95,8 +95,13 @@ Four profiles, and two of them are deployed.
 `uat` and `production` are held to **identical** rules, because the difference
 between them is who a mistake reaches, not how strict the configuration should
 be. In both, startup fails on: a mock model provider, dev-mode auth, the
-meaningless hash embeddings, a missing vector store, or CORS origins left
-unlisted — and the OpenAPI schema and its UIs are not served.
+meaningless hash embeddings, a missing vector store, CORS origins left
+unlisted, or an issuer, CORS origin or public API URL that is not `https://`
+— and the OpenAPI schema and its UIs are not served.
+
+On a host with real hostnames, `infra/compose/docker-compose.host.yml` adds
+Caddy (TLS, three hostnames from `.env`); the first-deployment runbook is
+[`docs/deploy/host.md`](docs/deploy/host.md).
 
 The profile is pinned by the compose overlay, not by an environment variable
 somebody has to remember:

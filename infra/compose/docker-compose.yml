@@ -507,7 +507,6 @@ services:
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
       NEXT_PUBLIC_CHAT_BASE_URL: ${NEXT_PUBLIC_CHAT_BASE_URL:-http://localhost:8100}
-      API_INTERNAL_BASE_URL: http://api:8000
     ports:
       # Overridable for the same reason as postgres: a `next dev` from `make dev`
       # (or a second checkout, or another session running e2e) already owns 3000,

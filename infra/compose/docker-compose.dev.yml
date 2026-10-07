@@ -92,7 +92,7 @@ services:
   web:
     # NEXT_PUBLIC_* build args are interpolated from the server .env by the
     # base file; the runtime env below overrides the hardcoded localhost values
-    # for SSR. API_INTERNAL_BASE_URL (http://api:8000) stays internal.
+    # for SSR.
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?}
       NEXT_PUBLIC_CHAT_BASE_URL: ${NEXT_PUBLIC_CHAT_BASE_URL:?}

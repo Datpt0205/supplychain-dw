@@ -45,3 +45,33 @@ source:
 - Webhook Zalo ([ADR 0015](0015-e5-zalo-poll-locally-webhook-when-hosted.md)) chỉ bật
   được sau overlay này; CDN đứng trước phải cho user agent "Java" đi qua.
 - Code của overlay ra trước; chạy thật khi có tên miền.
+
+## Sửa đổi 2026-10-07 (tạm, lát H; Đạt ủy quyền quyết các điểm mở)
+
+Quyết định tạm của lead khi làm ticket hosting/01. Lệnh, kết quả và mutation ở Comments
+của `.claude/plans/supply-chain/hosting/issues/01-caddy-overlay-and-runbook.md`.
+
+1. **Caddy `2.11.7-alpine`, ghim tag và digest**; trivy 0.74.0: 0 HIGH/CRITICAL. Chỉ ở
+   hai mạng: `dw-ingress` (cổng công khai, ACME) và `dw-proxy` (internal, chỉ Caddy, web,
+   api, Keycloak). Caddy không tới được Postgres, Qdrant, Valkey.
+2. **Proxy tin được là một địa chỉ.** `dw-proxy` có subnet cố định; Caddy giữ một IP
+   ngoài `ip_range` cấp động. API tin `X-Forwarded-*` chỉ từ IP đó (`FORWARDED_ALLOW_IPS`
+   của uvicorn, mặc định của nó là loopback), Keycloak cũng vậy
+   (`KC_PROXY_TRUSTED_ADDRESSES`). Caddy thay `X-Forwarded-For` bằng IP nó thấy, nên giới
+   hạn theo IP của API thấy người gọi thật. CDN đứng trước cần `trusted_proxies`.
+3. **Danh sách cho phép theo host, không phải chuyển cả host.** API: chỉ `/api/*`
+   (`/metrics` không xác thực và dựa vào mạng nội bộ). Keycloak: chỉ `/realms/*`,
+   `/resources/*`, `/robots.txt`, trừ realm `master`. Trang quản trị Keycloak qua đường hầm
+   SSH tới cổng loopback, `KC_HOSTNAME_ADMIN=http://localhost:<cổng>`.
+4. **`DW_API_PUBLIC_BASE_URL` phải `https://` ở mọi profile deployed**, không chỉ khi
+   webhook (theo ticket); kiểm riêng cho webhook trong `validate_for_profile` thành thừa và
+   được bỏ.
+5. **Realm theo env làm ở đây** (bước 1 của U chưa làm): `${DW_PUBLIC_WEB_URL:http://localhost:3200}`
+   trong `dw-realm.json`, đã chạy trên Keycloak 26.7.2 cả khi có và khi không có biến. Bỏ
+   `127.0.0.1:3200` khỏi realm cục bộ.
+6. **Header ở biên:** HSTS 1 năm `includeSubDomains` (không preload), `nosniff`,
+   `Referrer-Policy`, `X-Frame-Options: DENY` trên web và API (không trên host đăng nhập:
+   iframe trạng thái đăng nhập của keycloak-js), bỏ `Server`, `Via`, `X-Powered-By`. CSP
+   chưa đặt: cần đo với Next.js và antd trước.
+7. **Không access log ở Caddy**, để header secret của webhook Zalo không vào log; runbook
+   ghi bộ lọc nếu bật.
