@@ -7,7 +7,8 @@ a product case; a read joins whichever it names for the case's identifier and
 supplier, each join under that table's own RLS. The exception is
 `SqlWorkspacesWithCases`, which calls the SECURITY DEFINER
 `supply_chain.workspaces_with_cases()`: ids only, so the sweep knows where to
-go before it can bind anyone.
+go before it can bind anyone. Retention deletes through the SECURITY DEFINER
+`supply_chain.prune_follow_ups(interval)`, bound by the same session settings.
 """
 
 from __future__ import annotations
@@ -205,6 +206,19 @@ class SqlFollowUpRepository:
                 return False
             await SqlAuditRepository(session).append(audit)
         return True
+
+    async def prune_closed(self, context: AccessContext, *, older_than_days: int) -> int:
+        """Implements `ClosedFollowUpPrunePort` through
+        `supply_chain.prune_follow_ups` (`dw_app` has no DELETE): the function
+        deletes only closed rows of the workspace this session binds."""
+        async with tenant_session(
+            self.session_factory, TenantScope.from_access_context(context)
+        ) as session:
+            gone = await session.scalar(
+                sa.text("SELECT supply_chain.prune_follow_ups(make_interval(days => :days))"),
+                {"days": older_than_days},
+            )
+        return int(gone or 0)
 
 
 @dataclass(frozen=True)

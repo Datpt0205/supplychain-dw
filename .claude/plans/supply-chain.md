@@ -47,7 +47,7 @@ means platform code, an upstream candidate (ADR 0011).
 | ----- | ------------------------------------------------------------------------- | ------- | --------------- | ----------------------------------- |
 | P     | `port/issues/01-port-dw-supply-chain.md`                                  | no      | resolved        | —                                   |
 | P2    | `port/issues/02-audit-and-spend-on-supply-chain-writes.md`                | partly  | resolved        | P                                   |
-| P3    | `port/issues/03-follow-ups-retention.md`                                  | no      | ready-for-agent | P                                   |
+| P3    | `port/issues/03-follow-ups-retention.md`                                  | no      | resolved        | P                                   |
 | P4    | `port/issues/04-po-cases-narrowed-by-workspace.md`                        | no      | resolved        | P                                   |
 | ENV   | `env/issues/01-env-example-and-init-env.md`                               | yes     | resolved        | P                                   |
 | Z1    | `zalo-channel/issues/01-zalo-link.md`                                     | yes     | resolved        | P, ENV                              |
@@ -76,8 +76,8 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** P2, P3 or PK (S8 in: stage 1 in the brief, command bar, Zalo and the
-daily report); Z4p when a real photo update exists.
+**Next:** PK (P2 audit on PO-case writes and P3 follow-up retention in); Z4p
+when a real photo update exists.
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 

@@ -878,6 +878,7 @@ def make_container(
         ),
         supply_chain_set_follow_up_policy_override=SetFollowUpPolicyOverride(
             policy_override_repo=resolved_policy_override_repo,
+            platform_default_policy=_SHIPPED_FOLLOW_UP_POLICY,
             authz=authz,
             ids=Uuid4Generator(),
             clock=resolved_clock,

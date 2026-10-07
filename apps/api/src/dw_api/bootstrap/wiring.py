@@ -598,13 +598,17 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
     )
+    platform_default_follow_up_policy = load_supply_chain_follow_up_policy(
+        SUPPLY_CHAIN_FOLLOW_UP_POLICY
+    )
     container.supply_chain_get_follow_up_policy = GetFollowUpPolicy(
         policy_override_repo=policy_override_repo,
-        platform_default_policy=load_supply_chain_follow_up_policy(SUPPLY_CHAIN_FOLLOW_UP_POLICY),
+        platform_default_policy=platform_default_follow_up_policy,
         authz=authorization,
     )
     container.supply_chain_set_follow_up_policy_override = SetFollowUpPolicyOverride(
         policy_override_repo=policy_override_repo,
+        platform_default_policy=platform_default_follow_up_policy,
         authz=authorization,
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,

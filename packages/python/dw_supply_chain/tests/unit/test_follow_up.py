@@ -31,11 +31,12 @@ from dw_supply_chain.follow_up_policy import (
     SupplyChainFollowUpPolicy,
     load_supply_chain_follow_up_policy,
 )
+from dw_supply_chain.policy_files import FOLLOW_UP_POLICY_FILE
 
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-POLICY_PATH = REPO_ROOT / "configs" / "policies" / "supply_chain_follow_ups@1.1.0.yaml"
+POLICY_PATH = REPO_ROOT / "configs" / "policies" / FOLLOW_UP_POLICY_FILE
 _NOW = datetime(2026, 9, 28, tzinfo=UTC)
 _CASE = POCase(
     id=POCaseId(uuid.uuid4()),

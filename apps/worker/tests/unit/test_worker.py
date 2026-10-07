@@ -151,6 +151,8 @@ def test_only_the_platform_lanes_are_wired() -> None:
     cadence whether or not this process polls Zalo.
     `supply_chain_stage_one_report` is the fourth: the stage-1 daily report to
     TP Cung ứng (stage-1 ticket 08), on the sweep's cadence.
+    `supply_chain_follow_ups_retention` is the fifth: closed follow-ups past
+    their tenant's term (ticket P3), on the retention cadence.
 
     Naming the whole set is the point: a context's lane arriving in this process
     becomes a visible change rather than a silent one.
@@ -172,6 +174,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "supply_chain_product_review_reconcile",
         "supply_chain_proposal_drafts_retention",
         "supply_chain_stage_one_report",
+        "supply_chain_follow_ups_retention",
     }
 
 

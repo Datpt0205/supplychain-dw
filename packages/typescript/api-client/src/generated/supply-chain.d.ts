@@ -1876,6 +1876,8 @@ export interface components {
         };
         /** SupplyChainFollowUpPolicy */
         SupplyChainFollowUpPolicy: {
+            /** Closed Retention Days */
+            closed_retention_days?: number | null;
             /** Policy Id */
             policy_id: string;
             /** Policy Version */

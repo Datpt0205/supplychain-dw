@@ -110,6 +110,7 @@ from dw_worker.consumers.retention import RetentionPrunePort, build_retention_co
 from dw_worker.consumers.supply_chain import (
     build_document_orphan_sweep,
     build_follow_up_consumer,
+    build_follow_up_retention,
     build_follow_up_sweep,
     build_product_review_reconcile,
     build_product_review_reconcile_consumer,
@@ -408,6 +409,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     document_orphans: RetentionPrunePort | None = None
     # Supply Chain's chat proposal drafts past their 30 minutes: a database.
     proposal_drafts_retention: RetentionPrunePort | None = None
+    # Supply Chain's closed follow-ups past their tenant's term: a database.
+    follow_ups_retention: RetentionPrunePort | None = None
 
     if settings.database_url:
         # ---- transactional outbox ----------------------------------------
@@ -485,6 +488,9 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
             release_manifest_ref=release_manifest_ref_for(settings, REPO_ROOT),
         )
         proposal_drafts_retention = build_proposal_draft_retention(sessions)
+        follow_ups_retention = build_follow_up_retention(
+            sessions, policies_dir=REPO_ROOT / "configs" / "policies"
+        )
         # Rows are queued whether or not this host sends them, so they are
         # pruned whether or not it does.
         channel_deliveries_retention = SqlChannelDeliveryRetention(session_factory=sessions)
@@ -619,6 +625,15 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         registry.register(
             "supply_chain_proposal_drafts_retention",
             build_retention_consumer(proposal_drafts_retention),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
+
+    # Closed follow-ups past their tenant's term (ticket P3): its own lane on
+    # the retention cadence; open ones are never touched.
+    if follow_ups_retention is not None:
+        registry.register(
+            "supply_chain_follow_ups_retention",
+            build_retention_consumer(follow_ups_retention),
             interval_seconds=RETENTION_INTERVAL_SECONDS,
         )
 

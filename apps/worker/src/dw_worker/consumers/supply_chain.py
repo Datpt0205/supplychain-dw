@@ -91,6 +91,7 @@ from dw_supply_chain.application.approval_subject import ProductCaseApprovalSubj
 from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.daily_report import SendStageOneReport
 from dw_supply_chain.application.document_orphan_sweep import SweepOrphanDocuments
+from dw_supply_chain.application.follow_up_retention import PruneClosedFollowUps
 from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
 from dw_supply_chain.application.handlers import ListPOCases, ListProductCategories
 from dw_supply_chain.application.ports import CaseDocumentObjectListingPort
@@ -353,6 +354,22 @@ def build_zalo_case_query_command(
             ids=ids,
         ),
         web_url=web_url,
+    )
+
+
+def build_follow_up_retention(
+    sessions: async_sessionmaker[AsyncSession], *, policies_dir: Path
+) -> PruneClosedFollowUps:
+    """Satisfies `RetentionPrunePort`; registered as
+    `supply_chain_follow_ups_retention` on the retention cadence (ticket P3).
+    Reads the same follow-up policy file the sweep does."""
+    return PruneClosedFollowUps(
+        workspaces=SqlWorkspacesWithCases(sessions),
+        policy_override_repo=SqlPolicyOverrideRepository(sessions),
+        platform_default_policy=load_supply_chain_follow_up_policy(
+            policies_dir / FOLLOW_UP_POLICY_FILE
+        ),
+        follow_ups=SqlFollowUpRepository(sessions),
     )
 
 

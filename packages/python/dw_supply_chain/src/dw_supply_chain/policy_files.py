@@ -19,7 +19,7 @@ from a chat's "Đồng ý"), so both read the product step-to-duty policy that
 from __future__ import annotations
 
 SLA_POLICY_FILE = "supply_chain_sla@2.0.0.yaml"
-FOLLOW_UP_POLICY_FILE = "supply_chain_follow_ups@1.1.0.yaml"
+FOLLOW_UP_POLICY_FILE = "supply_chain_follow_ups@1.2.0.yaml"
 PRODUCT_APPROVALS_POLICY_FILE = "supply_chain_product_approvals@1.1.0.yaml"
 ADVANCE_PRODUCT_CASE_WORKER_FILE = "supply_chain_advance_product_case.yaml"
 PRODUCT_SIGNOFF_WORKER_FILE = "supply_chain_product_signoff.yaml"

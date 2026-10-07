@@ -89,7 +89,10 @@ from dw_supply_chain.domain.supplier_update import (
     SupplierUpdateId,
     requires_confirmation,
 )
-from dw_supply_chain.follow_up_policy import SupplyChainFollowUpPolicy
+from dw_supply_chain.follow_up_policy import (
+    SupplyChainFollowUpPolicy,
+    follow_up_retention_days,
+)
 from dw_supply_chain.product_action_duties import (
     PRODUCT_ACTION_DUTIES_POLICY_ID,
     SupplyChainProductActionDuties,
@@ -198,7 +201,7 @@ PRODUCT_CASE_WRITE = "supply_chain.product_case.write"
 FOLLOW_UP_POLICY_READ = "supply_chain.follow_up_policy.read"
 FOLLOW_UP_POLICY_WRITE = "supply_chain.follow_up_policy.write"
 _FOLLOW_UP_POLICY_RESOURCE = "follow_up_policy"
-# Matches configs/policies/supply_chain_follow_ups@1.1.0.yaml's policy_id.
+# Matches configs/policies/supply_chain_follow_ups@1.2.0.yaml's policy_id.
 FOLLOW_UP_POLICY_ID = "supply_chain_follow_ups"
 _FOLLOW_UP_RESOURCE = "follow_up"
 
@@ -1909,9 +1912,13 @@ class GetFollowUpPolicy:
 class SetFollowUpPolicyOverride:
     """Replaces the caller's tenant's own routing, whole. Every kind must
     still reach someone (the policy schema refuses otherwise). Follow-ups
-    already open keep the recipients they were stamped with."""
+    already open keep the recipients they were stamped with. A retention term
+    shorter than the platform's is refused (ticket P3): the platform's is the
+    floor, and the lane would keep the floor anyway, so storing less would
+    show the tenant a term nobody applies."""
 
     policy_override_repo: PolicyOverridePort
+    platform_default_policy: SupplyChainFollowUpPolicy
     authz: AuthorizationPort
     ids: IdGenerator
     clock: UtcClock
@@ -1920,6 +1927,12 @@ class SetFollowUpPolicyOverride:
         await self.authz.require(
             context=context, action=FOLLOW_UP_POLICY_WRITE, resource_type=_FOLLOW_UP_POLICY_RESOURCE
         )
+        floor = follow_up_retention_days(self.platform_default_policy, self.platform_default_policy)
+        if policy.closed_retention_days is not None and policy.closed_retention_days < floor:
+            raise DomainError(
+                f"hạn giữ việc đã đóng không được ngắn hơn {floor} ngày của nền tảng",
+                details={"field": "closed_retention_days", "minimum": floor},
+            )
         await _put_policy_override(
             context,
             self.policy_override_repo,
