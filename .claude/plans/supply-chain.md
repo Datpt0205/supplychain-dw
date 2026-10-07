@@ -107,6 +107,7 @@ email as a second channel.
 | PM-3   | merge     | Merge `platform/main` (`96f95ad`): a stamped approval is seen only by its deciders and requester (ADR 0020 sửa đổi 2026-10-07); `raised_by_payload` for the BGĐ dedupe; head unchanged.                                                                                                                     |
 | Z4a    | `6f491fb` | Inbound Zalo foundation: router and `ChannelCommandRegistry` (empty), message-id dedupe, linked-user AccessContext cut to a ceiling with no role, `channel_preferences` + `/settings` select.                                                                                                               |
 | Z4b    | `9852e52` | Chat proposal: `ProductProposalIntent` grounded per message, `proposal_drafts` (workspace RLS, guarded consume in the case's transaction), "Đồng ý" only at the summarised version, ceiling = `propose_scopes`; model in the worker via shared `model_stack` + `DailyAllowance`; eval `supply_chain@1.2.0`. |
+| S3     | `689f841` | BM04 and the supplier's confirmation, steps 7–8: paper on the history row (composite FK, CHECK), bound = when the case reached the step, `sc_supply_lead`, duty policy 1.1.0 with 1.0.0 overrides kept, upload inside the step form.                                                                        |
 
 ## Open — named, not fixed, still true after the port
 
