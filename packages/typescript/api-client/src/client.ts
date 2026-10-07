@@ -25,6 +25,8 @@ import {
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
+  packagingDesignSchema,
+  packagingStateSchema,
   productCaseSchema,
   productCategorySchema,
   productCaseDetailSchema,
@@ -80,6 +82,12 @@ import {
   type FollowUp,
   type CaseDocument,
   type DocumentType,
+  type PackagingAction,
+  type PackagingDesign,
+  type PackagingState,
+  type PackagingStepOption,
+  type PreProductionTest,
+  type ReviewStatus,
   type ProductCase,
   type ProductCategory,
   type ProductCaseDetail,
@@ -250,6 +258,10 @@ type CreatePOBody =
 type CaseQueryBody =
   SupplyChainOperations["answer_case_query_route_api_v1_supply_chain_case_query_post"]["requestBody"]["content"]["application/json"];
 
+/** `POST /po-cases/{id}/packaging-design/steps`' body (slice PK). */
+type TakePackagingStepBody =
+  SupplyChainOperations["take_packaging_step_api_v1_supply_chain_po_cases__case_id__packaging_design_steps_post"]["requestBody"]["content"]["application/json"];
+
 /** True only when A and B are the same type, both ways. */
 type SameType<A, B> = [A] extends [B]
   ? [B] extends [A]
@@ -290,6 +302,27 @@ const _aiWorkResponseMirrorsTheRoute: [
   >,
 ] = [true, true, true, true, true, true];
 void _aiWorkResponseMirrorsTheRoute;
+
+// Slice PK: the document types (one list, `DocumentType` in `dw_supply_chain`)
+// and step 12's views.
+const _packagingMirrorsTheRoute: [
+  SameType<DocumentType, SupplyChainGenerated["DocumentType"]>,
+  SameType<PackagingDesign, SupplyChainGenerated["PackagingDesignView"]>,
+  SameType<
+    keyof PackagingDesign,
+    keyof SupplyChainGenerated["PackagingDesignView"]
+  >,
+  SameType<
+    keyof PackagingDesign["steps"][number],
+    keyof SupplyChainGenerated["PackagingStepOptionView"]
+  >,
+  SameType<
+    keyof PackagingDesign["history"][number],
+    keyof SupplyChainGenerated["PackagingEventView"]
+  >,
+  SameType<PackagingState, SupplyChainGenerated["PackagingStateView"]>,
+] = [true, true, true, true, true, true];
+void _packagingMirrorsTheRoute;
 
 const _dailyBriefMirrorsTheRoute: [
   SameType<DailyBrief, SupplyChainGenerated["DailyBriefView"]>,
@@ -1216,6 +1249,35 @@ export class ApiClient {
     );
   }
 
+  /** Step 12's sub-flow on a PO case: its state, each step with whether the
+   * caller may take it, the tenant's step-13 rule and the history. */
+  getPackagingDesign(caseId: string): Promise<PackagingDesign> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/packaging-design`,
+      packagingDesignSchema,
+    );
+  }
+
+  /** Takes one step of step 12's sub-flow; a test step names its report. */
+  takePackagingStep(
+    caseId: string,
+    input: { action: PackagingAction; reason?: string; documentId?: string },
+    idempotencyKey: string,
+  ): Promise<PackagingState> {
+    const body: TakePackagingStepBody = {
+      action: input.action,
+      reason: input.reason?.trim() || null,
+      document_id: input.documentId ?? null,
+    };
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/packaging-design/steps`,
+      packagingStateSchema,
+      { body, idempotencyKey },
+    );
+  }
+
   /** A PO case's documents, by type and newest version first. */
   listCaseDocuments(caseId: string): Promise<CaseDocument[]> {
     return this.request(
@@ -1526,6 +1588,12 @@ export type {
   AIWorkResponse,
   CaseDocument,
   DocumentType,
+  PackagingAction,
+  PackagingDesign,
+  PackagingState,
+  PackagingStepOption,
+  PreProductionTest,
+  ReviewStatus,
   ProductCase,
   ProductCaseDetail,
   ProductCaseStep,

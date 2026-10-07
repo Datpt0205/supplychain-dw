@@ -100,6 +100,7 @@ from dw_supply_chain.domain.delay_impact import (
 )
 from dw_supply_chain.domain.follow_up import FollowUpKind, FollowUpStatus
 from dw_supply_chain.domain.missing_update import MissingUpdateStatus
+from dw_supply_chain.domain.packaging_design import PreProductionTest, ProductionGate
 from dw_supply_chain.domain.po_case import (
     TERMINAL_STATES,
     CaseAction,
@@ -127,6 +128,7 @@ from dw_supply_chain.sla_policy import (
     SupplyChainSLAPolicy,
 )
 from dw_supply_chain.testing.product_cases import InMemoryDirectory, InMemoryProductCases
+from dw_supply_chain.testing.production_gate import open_production_gate
 
 pytestmark = pytest.mark.unit
 
@@ -140,7 +142,7 @@ _SHIPPED_ACTION_DUTIES = (
     Path(__file__).resolve().parents[5]
     / "configs"
     / "policies"
-    / "supply_chain_action_duties@1.1.0.yaml"
+    / "supply_chain_action_duties@1.2.0.yaml"
 )
 _SHIPPED_PRODUCT_ACTION_DUTIES = (
     Path(__file__).resolve().parents[5] / "configs" / "policies" / PRODUCT_ACTION_DUTIES_POLICY_FILE
@@ -892,7 +894,11 @@ def _advance_case_to(case: POCase, target: CaseState) -> None:
     if target is CaseState.PO_CREATED:
         return
     for method_name, reached in _HAPPY_PATH_METHODS:
-        getattr(case, method_name)()
+        method = getattr(case, method_name)
+        if method_name == "start_production":
+            method(ProductionGate(required=False, test=PreProductionTest.PENDING))
+        else:
+            method()
         if reached is target:
             return
     raise AssertionError(f"{target} is not reachable via the happy path")
@@ -1333,6 +1339,7 @@ def _advance_po_case_handler(
         platform_default_action_duties=platform_default_action_duties
         or load_supply_chain_action_duties(_SHIPPED_ACTION_DUTIES),
         runner=runner or FakeWorkflowRunnerPort(),
+        production_gate=open_production_gate(),
         ids=Uuid4Generator(),
         clock=SystemClock(),
     )

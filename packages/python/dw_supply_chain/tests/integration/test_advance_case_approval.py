@@ -51,6 +51,7 @@ from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRep
 from dw_supply_chain.application.handlers import AdvancePOCase, CaseActionPendingApproval
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.domain.po_case import CaseAction, CaseState, POCase, POCaseId
+from dw_supply_chain.testing.production_gate import open_production_gate
 from dw_supply_chain.workflows.advance_case_graph import (
     APPROVAL_TYPE_PREFIX,
     GRAPH_VERSION,
@@ -62,7 +63,7 @@ pytestmark = pytest.mark.integration
 
 STALE_AFTER_SECONDS_LOCAL = 3600
 _WORKER_CONFIG = REPO_ROOT / "configs" / "workers" / "supply_chain_advance_case.yaml"
-_ACTION_DUTIES = REPO_ROOT / "configs" / "policies" / "supply_chain_action_duties@1.1.0.yaml"
+_ACTION_DUTIES = REPO_ROOT / "configs" / "policies" / "supply_chain_action_duties@1.2.0.yaml"
 
 
 class _UnmeteredPlan:
@@ -127,7 +128,9 @@ class RunnerStack:
         graphs.register(
             WORKER_ID,
             GRAPH_VERSION,
-            lambda: build_advance_case_graph(self.po_case_repo, Uuid4Generator(), SystemClock()),
+            lambda: build_advance_case_graph(
+                self.po_case_repo, Uuid4Generator(), SystemClock(), open_production_gate()
+            ),
         )
         workers = WorkerRegistry(graph_registry=graphs)
         workers.load_file(_WORKER_CONFIG)
@@ -165,6 +168,7 @@ class RunnerStack:
             platform_default_approval_matrix=matrix,
             platform_default_action_duties=load_supply_chain_action_duties(_ACTION_DUTIES),
             runner=self.runner,
+            production_gate=open_production_gate(),
             ids=Uuid4Generator(),
             clock=SystemClock(),
         )

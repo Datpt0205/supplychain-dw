@@ -42,6 +42,7 @@ from dw_supply_chain.application.ports import (
     SupplierUpdateRepositoryPort,
     WorkspaceMembersPort,
 )
+from dw_supply_chain.application.production_gate import ProductionGateResolver
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.brief_policy import BRIEF_POLICY_ID, SupplyChainBriefPolicy
 from dw_supply_chain.domain.brief_summary import (
@@ -70,6 +71,7 @@ from dw_supply_chain.domain.missing_update import (
     missing_update_status,
 )
 from dw_supply_chain.domain.po_case import (
+    GATED_ACTIONS,
     REASON_REQUIRED_ACTIONS,
     CaseAction,
     CaseTransition,
@@ -134,7 +136,7 @@ _SLA_POLICY_ID = "supply_chain_sla"
 ACTION_DUTIES_READ = "supply_chain.action_duties.read"
 ACTION_DUTIES_WRITE = "supply_chain.action_duties.write"
 _ACTION_DUTIES_RESOURCE = "action_duties"
-# Matches configs/policies/supply_chain_action_duties@1.1.0.yaml's policy_id.
+# Matches configs/policies/supply_chain_action_duties@1.2.0.yaml's policy_id.
 _ACTION_DUTIES_POLICY_ID = "supply_chain_action_duties"
 
 
@@ -948,6 +950,8 @@ class AdvancePOCase:
     platform_default_approval_matrix: SupplyChainApprovalMatrix
     platform_default_action_duties: SupplyChainActionDuties
     runner: WorkflowRunnerPort
+    # Step 13's gate (slice PK): asked when the step is `start_production`.
+    production_gate: ProductionGateResolver
     ids: IdGenerator
     clock: UtcClock
 
@@ -1009,7 +1013,12 @@ class AdvancePOCase:
         if action in REASON_REQUIRED_ACTIONS and (reason is None or not reason.strip()):
             raise DomainError("this action requires a reason", details={"action": action.value})
         before = case.state
-        apply_action(case, action=action, reason=reason)
+        gate = (
+            await self.production_gate.for_case(context, case.id.value)
+            if action in GATED_ACTIONS
+            else None
+        )
+        apply_action(case, action=action, reason=reason, gate=gate)
         await self.repo.save(
             context,
             case,

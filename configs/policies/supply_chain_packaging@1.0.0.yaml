@@ -1,0 +1,14 @@
+schema_version: "1.0"
+policy_id: supply_chain_packaging
+policy_version: "1.0.0"
+
+# Bước 12–13 (lát PK): Hồ sơ PO có cần R&D đạt test trước sản xuất mới được vào
+# "Sản xuất" (start_production) hay không.
+#
+# Đây là PLATFORM DEFAULT: false, để mọi Hồ sơ PO có sẵn và mọi tenant khác giữ
+# đúng hành vi trước lát này. Tenant bật luật qua PUT
+# /api/v1/supply-chain/packaging-policy (platform.policy_overrides, cùng cơ chế với
+# supply_chain_sla). Override của Elmich đặt true
+# (scripts/elmich_packaging_override.yaml, ghi bằng
+# `uv run python scripts/seed_supply_chain_demo.py elmich-packaging`).
+require_pre_production_test: false

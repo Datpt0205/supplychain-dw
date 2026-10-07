@@ -27,7 +27,9 @@ from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.application.ports import POCaseListFilter
+from dw_supply_chain.domain.packaging_design import PreProductionTest, ProductionGate
 from dw_supply_chain.domain.po_case import CaseState, CaseTransition, POCase, POCaseId
+from dw_supply_chain.testing.production_gate import open_production_gate
 from dw_supply_chain.workflows.advance_case_graph import (
     APPROVAL_TYPE_PREFIX,
     build_advance_case_graph,
@@ -121,16 +123,24 @@ def _config(run_context: RunContext) -> dict[str, object]:
     return {"configurable": {"thread_id": str(run_context.run_id)}}
 
 
-def _compiled(repo: FakePOCaseRepository) -> Any:
+class _ClosedGate:
+    """Step 13's gate for a tenant that requires the test, on a case whose
+    test is not passed (slice PK)."""
+
+    async def for_case(self, context: AccessContext, po_case_id: uuid.UUID) -> ProductionGate:
+        return ProductionGate(required=True, test=PreProductionTest.FAILED)
+
+
+def _compiled(repo: FakePOCaseRepository, gate: Any = None) -> Any:
     # Typed `Any` on purpose, matching `LangGraphWorkflowRunner._graph`'s own
     # return type: a `StateGraph` compiled with full generics makes mypy
     # check `ainvoke`'s `context=` kwarg against a graph-level context type
     # this module never parameterises (same reasoning `build_advance_case_
     # graph`'s own `# type: ignore[type-arg]` already documents), not a
     # real type hole in the graph or in `RunContext` itself.
-    return build_advance_case_graph(repo, Uuid4Generator(), SystemClock()).compile(
-        checkpointer=MemorySaver()
-    )
+    return build_advance_case_graph(
+        repo, Uuid4Generator(), SystemClock(), gate or open_production_gate()
+    ).compile(checkpointer=MemorySaver())
 
 
 async def test_starting_a_run_pauses_before_anything_is_applied() -> None:
@@ -267,3 +277,29 @@ async def test_an_unknown_case_id_fails_the_apply_node() -> None:
         await graph.ainvoke(
             Command(resume={"approved": True, "comment": "ok"}), config, context=run_context
         )
+
+
+async def test_an_approved_start_production_still_asks_the_gate_when_applied() -> None:
+    """Slice PK: the graph's apply node is the second door to step 13. An
+    approval decided while the required test is not passed applies nothing."""
+    case = _case()
+    case.request_deposit()
+    case.confirm_deposit()
+    case.start_pre_production()
+    repo = FakePOCaseRepository(case)
+    graph = _compiled(repo, _ClosedGate())
+    run_context = _run_context(tenant_id=case.tenant_id.value, workspace_id=case.workspace_id.value)
+    config = _config(run_context)
+    await graph.ainvoke(
+        {"po_case_id": str(case.id), "action": "start_production", "reason": None},
+        config,
+        context=run_context,
+    )
+
+    with pytest.raises(ConflictError, match="test trước sản xuất"):
+        await graph.ainvoke(
+            Command(resume={"approved": True, "comment": "duyệt"}), config, context=run_context
+        )
+
+    assert repo.saved is None
+    assert case.state is CaseState.PRE_PRODUCTION

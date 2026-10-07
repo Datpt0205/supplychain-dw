@@ -126,6 +126,7 @@ from dw_supply_chain.sla_policy import (
     SupplyChainSLAPolicy,
 )
 from dw_supply_chain.testing.product_cases import InMemoryDirectory, InMemoryProductCases
+from dw_supply_chain.testing.production_gate import open_production_gate
 
 pytestmark = pytest.mark.unit
 
@@ -770,6 +771,7 @@ def make_container(
                 SUPPLY_CHAIN_ACTION_DUTIES
             ),
             runner=resolved_runner,
+            production_gate=open_production_gate(),
             ids=Uuid4Generator(),
             clock=SystemClock(),
         ),

@@ -269,6 +269,29 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # Step 12's colour, packaging and pre-production sub-flow (slice PK): its
+    # own router on its own guard, as the documents router is.
+    if (
+        container.supply_chain_get_packaging_design is not None
+        and container.supply_chain_take_packaging_step is not None
+        and container.supply_chain_get_packaging_policy is not None
+        and container.supply_chain_set_packaging_policy_override is not None
+    ):
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.packaging_routes import build_packaging_router
+
+        app.include_router(
+            build_packaging_router(
+                container.supply_chain_get_packaging_design,
+                container.supply_chain_take_packaging_step,
+                container.supply_chain_get_packaging_policy,
+                container.supply_chain_set_packaging_policy_override,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
     # Product-development cases (stage 1): their own router on their own guard,
     # as the documents router is.
     if (

@@ -47,6 +47,9 @@ export const DOC_TYPE_LABEL: Record<DocumentType, string> = {
   packaging_content: "Nội dung bao bì",
   user_manual: "Sách HDSD",
   maquette: "Maquette",
+  colour_sample: "Mẫu màu",
+  packaging_design: "Thiết kế bao bì",
+  pre_production_test_report: "Biên bản test trước SX",
 };
 
 const DOC_TYPE_OPTIONS = (Object.keys(DOC_TYPE_LABEL) as DocumentType[]).map(

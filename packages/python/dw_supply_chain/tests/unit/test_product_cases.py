@@ -1455,7 +1455,7 @@ _PO_DUTIES = load_supply_chain_action_duties(
     Path(__file__).resolve().parents[5]
     / "configs"
     / "policies"
-    / "supply_chain_action_duties@1.1.0.yaml"
+    / "supply_chain_action_duties@1.2.0.yaml"
 )
 
 

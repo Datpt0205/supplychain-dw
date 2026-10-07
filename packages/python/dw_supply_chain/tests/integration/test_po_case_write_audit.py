@@ -59,6 +59,7 @@ from dw_supply_chain.domain.po_case import CaseAction, CaseState, OrderKind, POC
 from dw_supply_chain.domain.supplier_update import SupplierEventType, SupplierUpdateExtraction
 from dw_supply_chain.policy_files import SLA_POLICY_FILE
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
+from dw_supply_chain.testing.production_gate import open_production_gate
 
 pytestmark = pytest.mark.integration
 
@@ -124,9 +125,10 @@ class _Stack:
                 policy_version="1.0.0",
             ),
             platform_default_action_duties=load_supply_chain_action_duties(
-                POLICIES / "supply_chain_action_duties@1.1.0.yaml"
+                POLICIES / "supply_chain_action_duties@1.2.0.yaml"
             ),
             runner=_NoRunner(),
+            production_gate=open_production_gate(),
             ids=Uuid4Generator(),
             clock=SystemClock(),
         )

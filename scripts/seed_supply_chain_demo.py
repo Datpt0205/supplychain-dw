@@ -4,6 +4,7 @@ Usage (reads `.env`; `make` exports it, a plain shell needs `set -a; source .env
     uv run python scripts/seed_supply_chain_demo.py seed
     uv run python scripts/seed_supply_chain_demo.py supplier-update PO-DEMO-001
     uv run python scripts/seed_supply_chain_demo.py elmich-sla
+    uv run python scripts/seed_supply_chain_demo.py elmich-packaging
 
 `seed` is idempotent:
 - the platform demo roster (tenants, workspaces, users, memberships, plans),
@@ -44,6 +45,12 @@ migration, since one customer's numbers are that tenant's data. Not part of
 `seed`: pending numbers raise no SLA signal, and the demo's PO-DEMO-003 shows
 one. Run it again after editing the file; a later `PUT` replaces it whole.
 
+`elmich-packaging` turns on Elmich's step-13 rule
+(`scripts/elmich_packaging_override.yaml`: a PO case enters production only
+after R&D passes the pre-production test; slice PK) for tenant Alpha, as Bình,
+through `SetPackagingPolicyOverride`, the handler behind `PUT
+/packaging-policy`, for the same reasons as `elmich-sla`.
+
 Refuses to run unless DW_API_PROFILE is explicitly `local` (unset is refused):
 it writes through the migrator role and backdates rows, which no deployed
 database should ever see.
@@ -73,7 +80,12 @@ from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRep
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
-from dw_supply_chain.application.handlers import SLA_POLICY_WRITE, SetSLAPolicyOverride
+from dw_supply_chain.application.handlers import (
+    ACTION_DUTIES_WRITE,
+    SLA_POLICY_WRITE,
+    SetSLAPolicyOverride,
+)
+from dw_supply_chain.application.packaging_designs import SetPackagingPolicyOverride
 from dw_supply_chain.domain.po_case import POCase, POCaseId
 from dw_supply_chain.domain.supplier_update import (
     SupplierEventType,
@@ -81,9 +93,11 @@ from dw_supply_chain.domain.supplier_update import (
     SupplierUpdateExtraction,
     SupplierUpdateId,
 )
+from dw_supply_chain.packaging_policy import load_supply_chain_packaging_policy
 from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
 
 ELMICH_SLA = Path(__file__).resolve().parent / "elmich_sla_override.yaml"
+ELMICH_PACKAGING = Path(__file__).resolve().parent / "elmich_packaging_override.yaml"
 # Bình, `sc_process_admin`: the persona who sets the SLA.
 PROCESS_OWNER = "dev|binh.tran"
 
@@ -298,6 +312,26 @@ async def elmich_sla(migrator: AsyncEngine, app: AsyncEngine) -> None:
     )
 
 
+async def elmich_packaging(migrator: AsyncEngine, app: AsyncEngine) -> None:
+    policy = load_supply_chain_packaging_policy(ELMICH_PACKAGING)
+    owner = _context(await _user_id(migrator, PROCESS_OWNER)).model_copy(
+        update={
+            "roles": frozenset({"sc_process_admin"}),
+            "scopes": frozenset({ACTION_DUTIES_WRITE}),
+        }
+    )
+    await SetPackagingPolicyOverride(
+        policy_override_repo=SqlPolicyOverrideRepository(async_sessionmaker(app)),
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=SystemClock(),
+    ).handle(owner, policy)
+    print(
+        "elmich packaging override written for tenant Alpha: require_pre_production_test="
+        f"{policy.require_pre_production_test}"
+    )
+
+
 async def main(argv: list[str]) -> None:
     migrator_url, app_url = _urls()
     migrator = create_async_engine(migrator_url, poolclass=NullPool)
@@ -309,6 +343,8 @@ async def main(argv: list[str]) -> None:
             await supplier_update(migrator, app, argv[1])
         elif argv == ["elmich-sla"]:
             await elmich_sla(migrator, app)
+        elif argv == ["elmich-packaging"]:
+            await elmich_packaging(migrator, app)
         else:
             sys.exit(__doc__)
     finally:

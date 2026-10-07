@@ -51,6 +51,7 @@ from dw_api.bootstrap.paths import (
     SUPPLY_CHAIN_APPROVAL_MATRIX_POLICY,
     SUPPLY_CHAIN_BRIEF_POLICY,
     SUPPLY_CHAIN_FOLLOW_UP_POLICY,
+    SUPPLY_CHAIN_PACKAGING_POLICY,
     SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES,
     SUPPLY_CHAIN_PRODUCT_APPROVALS,
     SUPPLY_CHAIN_PRODUCT_SIGNOFF_WORKER,
@@ -314,6 +315,9 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         SqlDelayImpactAnalysisRepository,
     )
     from dw_supply_chain.adapters.persistence.follow_up_repository import SqlFollowUpRepository
+    from dw_supply_chain.adapters.persistence.packaging_design_repository import (
+        SqlPackagingDesignRepository,
+    )
     from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
     from dw_supply_chain.adapters.persistence.product_case_repository import (
         SqlProductCaseRepository,
@@ -355,9 +359,11 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         SummarizeDailyBrief,
     )
     from dw_supply_chain.application.product_cases import ListProductCases
+    from dw_supply_chain.application.production_gate import ProductionGateResolver
     from dw_supply_chain.approval_matrix import load_supply_chain_approval_matrix
     from dw_supply_chain.brief_policy import load_supply_chain_brief_policy
     from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
+    from dw_supply_chain.packaging_policy import load_supply_chain_packaging_policy
     from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
     from dw_supply_chain.workflows.advance_case_graph import (
         APPROVAL_TYPE_PREFIX,
@@ -377,6 +383,17 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     )
     platform_default_brief_policy = load_supply_chain_brief_policy(SUPPLY_CHAIN_BRIEF_POLICY)
     platform_default_action_duties = load_supply_chain_action_duties(SUPPLY_CHAIN_ACTION_DUTIES)
+    platform_default_packaging_policy = load_supply_chain_packaging_policy(
+        SUPPLY_CHAIN_PACKAGING_POLICY
+    )
+    packaging_design_repo = SqlPackagingDesignRepository(wiring.seam.session_factory)
+    # Step 13's gate (slice PK), one object for both doors to it: the direct
+    # step and the approval graph's apply node.
+    production_gate = ProductionGateResolver(
+        designs=packaging_design_repo,
+        policy_override_repo=policy_override_repo,
+        platform_default=platform_default_packaging_policy,
+    )
     supplier_update_repo = SqlSupplierUpdateRepository(wiring.seam.session_factory)
     delay_impact_repo = SqlDelayImpactAnalysisRepository(wiring.seam.session_factory)
     # Every Supply Chain model call is a one-call run with no runner around it,
@@ -460,7 +477,9 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     wiring.seam.graphs.register(
         WORKER_ID,
         GRAPH_VERSION,
-        lambda: build_advance_case_graph(po_case_repo, wiring.seam.ids, wiring.seam.clock),
+        lambda: build_advance_case_graph(
+            po_case_repo, wiring.seam.ids, wiring.seam.clock, production_gate
+        ),
     )
     wiring.seam.workers.load_file(SUPPLY_CHAIN_ADVANCE_CASE_WORKER)
     # Separation of duties + a mandatory comment for every approval this
@@ -478,6 +497,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         platform_default_approval_matrix=platform_default_approval_matrix,
         platform_default_action_duties=platform_default_action_duties,
         runner=wiring.runner,
+        production_gate=production_gate,
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
     )
@@ -638,6 +658,12 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         GetProductActionDuties,
         SetProductActionDutiesOverride,
     )
+    from dw_supply_chain.application.packaging_designs import (
+        GetPackagingDesign,
+        GetPackagingPolicy,
+        SetPackagingPolicyOverride,
+        TakePackagingStep,
+    )
     from dw_supply_chain.application.product_cases import (
         AdvanceProductCase,
         GetProductCase,
@@ -675,6 +701,38 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     )
     container.supply_chain_download_case_document = DownloadCaseDocument(
         documents=document_repo, storage=document_storage, authz=authorization
+    )
+    # Step 12's sub-flow (slice PK): its test steps take a report from these
+    # documents, read under the caller's RLS.
+    container.supply_chain_get_packaging_design = GetPackagingDesign(
+        po_cases=po_case_repo,
+        designs=packaging_design_repo,
+        authz=authorization,
+        policy_override_repo=policy_override_repo,
+        platform_default_duties=platform_default_action_duties,
+        platform_default_policy=platform_default_packaging_policy,
+    )
+    container.supply_chain_take_packaging_step = TakePackagingStep(
+        po_cases=po_case_repo,
+        designs=packaging_design_repo,
+        documents=document_repo,
+        authz=authorization,
+        policy_override_repo=policy_override_repo,
+        platform_default_duties=platform_default_action_duties,
+        notifier=SqlNotificationRepository(wiring.seam.session_factory),
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_get_packaging_policy = GetPackagingPolicy(
+        policy_override_repo=policy_override_repo,
+        platform_default_policy=platform_default_packaging_policy,
+        authz=authorization,
+    )
+    container.supply_chain_set_packaging_policy_override = SetPackagingPolicyOverride(
+        policy_override_repo=policy_override_repo,
+        authz=authorization,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
     )
 
     # Product-development cases (stage 1, ADR 0016). Built here, beside the

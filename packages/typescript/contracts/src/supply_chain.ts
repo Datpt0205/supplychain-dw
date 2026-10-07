@@ -458,7 +458,8 @@ export type DailyBriefSummary = z.infer<typeof dailyBriefSummarySchema>;
 
 // ---- case documents (ADR 0021) --------------------------------------------
 
-/** ADR 0021's fourteen document types; the API's `DocumentType`. */
+/** ADR 0021's fourteen document types and step 12's three (slice PK); the
+ * API's `DocumentType`, checked against it in `@dw/api-client`. */
 export const documentTypeSchema = z.enum([
   "proposal_list",
   "product_image",
@@ -474,6 +475,9 @@ export const documentTypeSchema = z.enum([
   "packaging_content",
   "user_manual",
   "maquette",
+  "colour_sample",
+  "packaging_design",
+  "pre_production_test_report",
 ]);
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 
@@ -753,3 +757,68 @@ export interface ProductCaseStepInput {
   /** `remove_sku` */
   skuId?: string;
 }
+
+// ---- step 12's colour, packaging and pre-production sub-flow (slice PK) -------
+
+export const packagingActionSchema = z.enum([
+  "approve_colour",
+  "request_colour_revision",
+  "approve_design",
+  "request_design_revision",
+  "receive_pre_production_sample",
+  "pass_pre_production_test",
+  "fail_pre_production_test",
+]);
+export type PackagingAction = z.infer<typeof packagingActionSchema>;
+
+export const reviewStatusSchema = z.enum([
+  "pending",
+  "revision_requested",
+  "approved",
+]);
+export type ReviewStatus = z.infer<typeof reviewStatusSchema>;
+
+export const preProductionTestSchema = z.enum(["pending", "passed", "failed"]);
+export type PreProductionTest = z.infer<typeof preProductionTestSchema>;
+
+/** One step as the caller sees it. `allowed`: the caller holds the step's
+ * duty, by the same check the step runs. Mirrors `PackagingStepOptionView`. */
+export const packagingStepOptionSchema = z.object({
+  action: packagingActionSchema,
+  duty: caseDutySchema,
+  allowed: z.boolean(),
+  requires_reason: z.boolean(),
+  requires_document: z.boolean(),
+});
+export type PackagingStepOption = z.infer<typeof packagingStepOptionSchema>;
+
+/** One step taken, oldest first. Mirrors `PackagingEventView`. */
+export const packagingEventSchema = z.object({
+  action: packagingActionSchema,
+  reason: z.string().nullable(),
+  note: z.string().nullable(),
+  document_id: z.string().nullable(),
+  actor_id: z.string(),
+  occurred_at: z.string(),
+});
+export type PackagingEvent = z.infer<typeof packagingEventSchema>;
+
+/** Mirrors `PackagingStateView`: what a step returns. */
+export const packagingStateSchema = z.object({
+  po_case_id: z.string(),
+  colour_status: reviewStatusSchema,
+  design_status: reviewStatusSchema,
+  pre_production_sample_received_at: z.string().nullable(),
+  pre_production_test: preProductionTestSchema,
+  version: z.number().int(),
+});
+export type PackagingState = z.infer<typeof packagingStateSchema>;
+
+/** Mirrors `PackagingDesignView`. */
+export const packagingDesignSchema = packagingStateSchema.extend({
+  case_state: caseStateSchema,
+  require_pre_production_test: z.boolean(),
+  steps: z.array(packagingStepOptionSchema),
+  history: z.array(packagingEventSchema),
+});
+export type PackagingDesign = z.infer<typeof packagingDesignSchema>;

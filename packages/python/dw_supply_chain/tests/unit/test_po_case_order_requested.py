@@ -158,7 +158,8 @@ def test_every_action_is_in_exactly_one_dispatch_set() -> None:
     no_reason = set(po_case_module._NO_REASON_ACTIONS)
     reason = set(po_case_module._REASON_ACTIONS)
     command_only = set(po_case_module._COMMAND_ONLY_ACTIONS)
+    gated = set(po_case_module.GATED_ACTIONS)
     for action in CaseAction:
-        homes = [action in no_reason, action in reason, action in command_only]
+        homes = [action in no_reason, action in reason, action in command_only, action in gated]
         assert homes.count(True) == 1, action
     assert reason == set(REASON_REQUIRED_ACTIONS)

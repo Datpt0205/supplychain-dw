@@ -81,6 +81,7 @@ from dw_supply_chain.application.handlers import (
 from dw_supply_chain.application.product_cases import OrderPlaced, PlaceOrder, ProposeProductCase
 from dw_supply_chain.approval_matrix import load_supply_chain_approval_matrix
 from dw_supply_chain.domain.case_document import DocumentType
+from dw_supply_chain.domain.packaging_design import PackagingAction
 from dw_supply_chain.domain.po_case import (
     CaseAction,
     CaseState,
@@ -98,6 +99,7 @@ from dw_supply_chain.domain.product_development_case import (
 from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE, SLA_POLICY_FILE
 from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
+from dw_supply_chain.testing.production_gate import open_production_gate
 
 pytestmark = pytest.mark.integration
 
@@ -105,7 +107,7 @@ _POLICIES = REPO_ROOT / "configs" / "policies"
 _PRODUCT_DUTIES = load_supply_chain_product_action_duties(
     _POLICIES / PRODUCT_ACTION_DUTIES_POLICY_FILE
 )
-_PO_DUTIES = load_supply_chain_action_duties(_POLICIES / "supply_chain_action_duties@1.1.0.yaml")
+_PO_DUTIES = load_supply_chain_action_duties(_POLICIES / "supply_chain_action_duties@1.2.0.yaml")
 _SLA = load_supply_chain_sla_policy(_POLICIES / SLA_POLICY_FILE)
 _MATRIX = load_supply_chain_approval_matrix(_POLICIES / "supply_chain_approval_matrix@1.0.0.yaml")
 _MIGRATION = (
@@ -116,7 +118,10 @@ _MIGRATION = (
     / "84d1c1946b44_supply_chain_place_order_hand_off_to_.py"
 )
 
+_PK_MIGRATION = _MIGRATION.with_name("85659fd91943_supply_chain_packaging_designs_step_12.py")
+
 ORDERING = duty_scope(CaseDuty.ORDERING)
+_PACKAGING_STEPS = {step.value for step in PackagingAction}
 _READ_PO = "supply_chain.po_case.read"
 _WRITE_PO = "supply_chain.po_case.write"
 
@@ -199,6 +204,7 @@ def _advance_po(stack: Stack) -> AdvancePOCase:
         platform_default_approval_matrix=_MATRIX,
         platform_default_action_duties=_PO_DUTIES,
         runner=stack.runner,
+        production_gate=open_production_gate(),
         ids=Uuid4Generator(),
         clock=SystemClock(),
     )
@@ -595,7 +601,9 @@ async def test_an_override_stored_before_create_po_loads_after_the_migration(db:
     tenant's own choices stand."""
     owner = _fresh(_READ_PO, _WRITE_PO, ORDERING)
     duties = {
-        a.value: d.value for a, d in _PO_DUTIES.action_duties.items() if a.value != "create_po"
+        a.value: d.value
+        for a, d in _PO_DUTIES.action_duties.items()
+        if a.value != "create_po" and a.value not in _PACKAGING_STEPS
     }
     duties["request_deposit"] = "exceptions"
     stored = {
@@ -634,6 +642,7 @@ async def test_an_override_stored_before_create_po_loads_after_the_migration(db:
         platform_default_approval_matrix=_MATRIX,
         platform_default_action_duties=_PO_DUTIES,
         runner=None,  # type: ignore[arg-type]  # the matrix gates nothing: no run starts
+        production_gate=open_production_gate(),
         ids=Uuid4Generator(),
         clock=SystemClock(),
     )
@@ -645,8 +654,14 @@ async def test_an_override_stored_before_create_po_loads_after_the_migration(db:
     assert spec is not None and spec.loader is not None
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
+    # And slice PK's step (85659fd91943), which this deploy runs after it.
+    later = importlib.util.spec_from_file_location("migration_85659fd91943", _PK_MIGRATION)
+    assert later is not None and later.loader is not None
+    packaging = importlib.util.module_from_spec(later)
+    later.loader.exec_module(packaging)
     async with db.migrator.begin() as conn:
         await conn.execute(sa.text(migration.ADD_CREATE_PO_TO_OVERRIDES))
+        await conn.execute(sa.text(packaging.ADD_PACKAGING_STEPS_TO_OVERRIDES))
 
     result = await advance.handle(exceptions, po_case_id=po.id, action=CaseAction.REQUEST_DEPOSIT)
     assert result.case.state is CaseState.WAITING_DEPOSIT  # type: ignore[union-attr]

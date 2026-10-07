@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_action_duties
-policy_version: "1.1.0"
+policy_version: "1.2.0"
 
 # Mỗi bước chuyển trạng thái của PO case thuộc về một nhiệm vụ (duty). Người
 # thực hiện bước đó phải có scope supply_chain.duty.<duty>, do role cấp:
@@ -24,6 +24,11 @@ policy_version: "1.1.0"
 # 1.1.0 (S5, ADR 0017) thêm create_po: bước 10, Cung ứng tạo PO (số PO, loại đơn)
 # cho Hồ sơ PO mà nút ĐẶT HÀNG mở ở "Chờ tạo PO". Override công ty lưu trước 1.1.0
 # được migration dữ liệu thêm create_po: ordering, cùng lúc với bản này.
+#
+# 1.2.0 (PK) thêm bảy bước con của bước 12 (thiết kế màu, bao bì, test trước
+# SX) trên Hồ sơ PO: Cung ứng duyệt màu, duyệt thiết kế, nhận mẫu trước SX
+# (ordering); R&D đạt hoặc không đạt test trước SX (rnd, role sc_rnd). Override
+# công ty lưu trước 1.2.0 được migration dữ liệu thêm đúng bảy dòng này.
 action_duties:
   request_deposit: ordering
   confirm_deposit: finance
@@ -44,3 +49,10 @@ action_duties:
   resume: exceptions
   cancel: ordering
   create_po: ordering
+  approve_colour: ordering
+  request_colour_revision: ordering
+  approve_design: ordering
+  request_design_revision: ordering
+  receive_pre_production_sample: ordering
+  pass_pre_production_test: rnd
+  fail_pre_production_test: rnd

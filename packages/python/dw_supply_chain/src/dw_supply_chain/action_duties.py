@@ -10,10 +10,14 @@ receiving and paying) out of one membership.
 
 Which department owns which step differs per company, so the mapping is a
 policy. The platform default ships in
-`configs/policies/supply_chain_action_duties@1.1.0.yaml`, and a tenant
+`configs/policies/supply_chain_action_duties@1.2.0.yaml`, and a tenant
 replaces it through the same `PolicyOverridePort` as the SLA policy and the
 approval matrix. The set of duties is fixed here, because roles are granted
 in duty terms.
+
+The steps of step 12's colour, packaging and pre-production sub-flow
+(`PackagingAction`, slice PK) are PO-case steps too, so they are keys of the
+same mapping (1.2.0): one answer to "who may take this step on a PO case".
 
 Placed at the package's top level, like `approval_matrix.py`: a versioned
 artifact's schema and parser, touching the filesystem.
@@ -27,9 +31,18 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from dw_supply_chain.domain.packaging_design import PackagingAction
 from dw_supply_chain.domain.po_case import CaseAction
 
-__all__ = ["CaseDuty", "SupplyChainActionDuties", "load_supply_chain_action_duties"]
+__all__ = [
+    "CaseDuty",
+    "POStep",
+    "SupplyChainActionDuties",
+    "load_supply_chain_action_duties",
+]
+
+# Every step a person takes on a PO case: its transitions and step 12's sub-flow.
+POStep = CaseAction | PackagingAction
 
 
 class CaseDuty(StrEnum):
@@ -61,20 +74,21 @@ class SupplyChainActionDuties(BaseModel):
     schema_version: str = Field(pattern=r"^1\.0$")
     policy_id: str
     policy_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
-    action_duties: dict[CaseAction, CaseDuty]
+    action_duties: dict[POStep, CaseDuty]
 
     @model_validator(mode="after")
     def _every_action_has_a_duty(self) -> SupplyChainActionDuties:
         # An action with no duty would be one nobody could take, or, read
         # permissively, one anybody could. Neither is a policy; refuse it.
-        missing = sorted(action.value for action in CaseAction if action not in self.action_duties)
+        steps: list[POStep] = [*CaseAction, *PackagingAction]
+        missing = sorted(step.value for step in steps if step not in self.action_duties)
         if missing:
             raise ValueError(
                 f"action_duties must give every case action a duty (missing: {missing})"
             )
         return self
 
-    def duty_for(self, action: CaseAction) -> CaseDuty:
+    def duty_for(self, action: POStep) -> CaseDuty:
         return self.action_duties[action]
 
 

@@ -145,3 +145,14 @@ Câu "RLS của `po_cases` không đổi (chỉ theo tenant)" ở điểm 2 lát
 `62cdcf3bf2d2` hẹp `po_cases` theo workspace (ADR 0017, sửa đổi P4). Phép kiểm
 `CaseLookupPort.case_workspace` của handler giữ nguyên, làm lớp thứ hai: với Hồ sơ PO của
 workspace khác, RLS đã trả "không có", và handler vẫn trả 404 trước khi ghi đối tượng nào.
+
+## Sửa đổi 2026-10-07 (tạm, lát PK; Đạt ủy quyền quyết các điểm mở)
+
+Ba loại chứng từ của sơ đồ con bước 12 thêm vào danh sách: `colour_sample` (mẫu màu),
+`packaging_design` (thiết kế bao bì), `pre_production_test_report` (biên bản test trước
+SX). Một chủ của danh sách vẫn là `DocumentType` trong `dw_supply_chain`; CHECK
+`ck_case_documents_doc_type` (migration `85659fd91943`) lặp lại và test integration so
+bằng nhau; enum zod của web so `SameType` với kiểu sinh từ OpenAPI nên lệch thì không
+biên dịch. Bước test trước SX lấy biên bản của chính Hồ sơ PO, tải lên từ khi nhận mẫu
+trước SX, ghi trên dòng lịch sử với FK `ON DELETE NO ACTION` như bước 7–8. Chi tiết ở
+Comments của `.claude/plans/supply-chain/packaging-design/issues/01-colour-packaging-and-pre-production.md`.

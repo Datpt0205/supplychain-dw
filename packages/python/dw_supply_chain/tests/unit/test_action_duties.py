@@ -13,6 +13,7 @@ from dw_supply_chain.action_duties import (
     SupplyChainActionDuties,
     load_supply_chain_action_duties,
 )
+from dw_supply_chain.domain.packaging_design import PackagingAction
 from dw_supply_chain.domain.po_case import CaseAction
 
 pytestmark = pytest.mark.unit
@@ -21,7 +22,7 @@ _SHIPPED = (
     Path(__file__).resolve().parents[5]
     / "configs"
     / "policies"
-    / "supply_chain_action_duties@1.1.0.yaml"
+    / "supply_chain_action_duties@1.2.0.yaml"
 )
 
 
@@ -41,7 +42,7 @@ def _shipped_mapping() -> dict[str, str]:
 
 def test_the_shipped_default_gives_every_step_a_duty() -> None:
     policy = load_supply_chain_action_duties(_SHIPPED)
-    assert set(policy.action_duties) == set(CaseAction)
+    assert set(policy.action_duties) == {*CaseAction, *PackagingAction}
 
 
 @pytest.mark.parametrize(
@@ -88,11 +89,28 @@ def test_an_unknown_field_is_refused() -> None:
         SupplyChainActionDuties.model_validate(document)
 
 
-def test_step_ten_is_cung_ungs_in_1_1_0() -> None:
+def test_step_ten_is_cung_ungs_since_1_1_0() -> None:
     """`create_po` (ticket 05) belongs to ordering, as the steps around it."""
     policy = load_supply_chain_action_duties(_SHIPPED)
-    assert policy.policy_version == "1.1.0"
     assert policy.duty_for(CaseAction.CREATE_PO) is CaseDuty.ORDERING
+
+
+def test_step_12s_sub_flow_is_cung_ungs_and_its_test_is_rnds_in_1_2_0() -> None:
+    """Slice PK: Cung ứng approves the colour and the design and receives the
+    sample; R&D passes or fails the pre-production test (QE-03 provisional)."""
+    policy = load_supply_chain_action_duties(_SHIPPED)
+    assert policy.policy_version == "1.2.0"
+    rnd = {PackagingAction.PASS_PRE_PRODUCTION_TEST, PackagingAction.FAIL_PRE_PRODUCTION_TEST}
+    for step in PackagingAction:
+        expected = CaseDuty.RND if step in rnd else CaseDuty.ORDERING
+        assert policy.duty_for(step) is expected, step
+
+
+def test_an_override_without_a_packaging_step_is_refused_so_the_migration_must_add_it() -> None:
+    """Why slice PK ships a data migration, as ticket 05 did."""
+    mine = {k: v for k, v in _shipped_mapping().items() if k != "approve_colour"}
+    with pytest.raises(ValidationError, match="approve_colour"):
+        SupplyChainActionDuties.model_validate(_document(mine))
 
 
 def test_an_override_without_create_po_is_refused_so_the_migration_must_add_it() -> None:

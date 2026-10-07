@@ -32,6 +32,6 @@ Ticket 01 `resolved`; `process.md` mục 4 hàng 12–13 trỏ ticket này.
 
 ## Danh sách ticket
 
-| #   | Ticket                                                                                       | Status          | Blocked by                                                                                                                               |
-| --- | -------------------------------------------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 01  | [Duyệt màu, duyệt thiết kế, test trước SX](issues/01-colour-packaging-and-pre-production.md) | ready-for-agent | .claude/plans/supply-chain/port/issues/01-port-dw-supply-chain.md, .claude/plans/supply-chain/case-documents/issues/01-case-documents.md |
+| #   | Ticket                                                                                       | Status   | Blocked by                                                                                                                               |
+| --- | -------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 01  | [Duyệt màu, duyệt thiết kế, test trước SX](issues/01-colour-packaging-and-pre-production.md) | resolved | .claude/plans/supply-chain/port/issues/01-port-dw-supply-chain.md, .claude/plans/supply-chain/case-documents/issues/01-case-documents.md |

@@ -32,6 +32,7 @@ from dw_supply_chain.domain.follow_up import (
     FollowUpStatus,
     follow_up_key,
 )
+from dw_supply_chain.domain.packaging_design import PackagingDesign, PackagingHistoryEntry
 from dw_supply_chain.domain.po_case import (
     TERMINAL_STATES,
     CaseState,
@@ -818,4 +819,37 @@ class ProposalDraftRepositoryPort(Protocol):
 
     async def discard(self, context: AccessContext, channel: str) -> bool:
         """Delete the caller's draft; False when there was none."""
+        ...
+
+
+class PackagingDesignReaderPort(Protocol):
+    """A PO case's step-12 sub-flow, if any step of it was taken; read under
+    the caller's tenant and workspace. All step 13's gate asks."""
+
+    async def get(
+        self, context: AccessContext, po_case_id: uuid.UUID
+    ) -> PackagingDesign | None: ...
+
+
+class PackagingDesignRepositoryPort(PackagingDesignReaderPort, Protocol):
+    """Persists `PackagingDesign` (slice PK)."""
+
+    async def history(
+        self, context: AccessContext, po_case_id: uuid.UUID
+    ) -> list[PackagingHistoryEntry]:
+        """Every step taken, oldest first."""
+        ...
+
+    async def save(
+        self,
+        context: AccessContext,
+        design: PackagingDesign,
+        *,
+        actor_id: uuid.UUID,
+        audit: AuditEvent,
+    ) -> None:
+        """The row, its pending history rows and `audit` in one transaction,
+        and only while the PO case is still in `pre_production` (checked in
+        that transaction). Optimistic on `version`; the first step inserts.
+        Either refusal is a `ConflictError`."""
         ...

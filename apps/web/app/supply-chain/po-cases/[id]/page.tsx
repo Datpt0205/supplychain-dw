@@ -46,6 +46,7 @@ import {
   missingUpdateLabel,
 } from "../../../../components/supply-chain/missing-update-badge";
 import { OriginTag } from "../../../../components/supply-chain/origin-tag";
+import { PackagingDesignCard } from "../../../../components/supply-chain/packaging-design-card";
 import { poReferenceLabel } from "../../../../components/supply-chain/po-reference";
 import {
   SlaStatusTag,
@@ -490,6 +491,13 @@ export default function POCaseWorkspacePage() {
             />
           )}
         </Card>
+
+        <PackagingDesignCard
+          caseId={id}
+          onStep={() => {
+            caseResource.reload();
+          }}
+        />
 
         <CaseDocumentsCard
           caseKind="po"

@@ -19,6 +19,7 @@ from enum import StrEnum
 
 from dw_kernel.errors import ConflictError, DomainError
 from dw_kernel.ids import EntityId, TenantId, WorkspaceId
+from dw_supply_chain.domain.packaging_design import ProductionGate
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,7 +278,12 @@ class POCase:
     def start_pre_production(self) -> None:
         self._advance(expected=CaseState.DEPOSIT_CONFIRMED, target=CaseState.PRE_PRODUCTION)
 
-    def start_production(self) -> None:
+    def start_production(self, gate: ProductionGate) -> None:
+        """Step 13. `gate` is the tenant's packaging rule and this case's
+        pre-production test (slice PK): required by the signature, so no
+        caller reaches `production` without asking it."""
+        if self.state is CaseState.PRE_PRODUCTION:
+            gate.check(self.id.value)
         self._advance(expected=CaseState.PRE_PRODUCTION, target=CaseState.PRODUCTION)
 
     def send_to_qc(self) -> None:
@@ -459,7 +465,6 @@ _NO_REASON_ACTIONS: dict[CaseAction, Callable[[POCase], None]] = {
     CaseAction.REQUEST_DEPOSIT: POCase.request_deposit,
     CaseAction.CONFIRM_DEPOSIT: POCase.confirm_deposit,
     CaseAction.START_PRE_PRODUCTION: POCase.start_pre_production,
-    CaseAction.START_PRODUCTION: POCase.start_production,
     CaseAction.SEND_TO_QC: POCase.send_to_qc,
     CaseAction.PASS_QC: POCase.pass_qc,
     CaseAction.ARRIVE_AT_PORT: POCase.arrive_at_port,
@@ -483,8 +488,17 @@ _REASON_ACTIONS: dict[CaseAction, Callable[[POCase, str], None]] = {
 # Actions with arguments of their own, each taken through its own command.
 _COMMAND_ONLY_ACTIONS = frozenset({CaseAction.CREATE_PO})
 
+# Step 13 asks the production gate (slice PK); `apply_action` takes it.
+GATED_ACTIONS = frozenset({CaseAction.START_PRODUCTION})
 
-def apply_action(case: POCase, *, action: CaseAction, reason: str | None) -> None:
+
+def apply_action(
+    case: POCase,
+    *,
+    action: CaseAction,
+    reason: str | None,
+    gate: ProductionGate | None = None,
+) -> None:
     """Dispatches one `CaseAction` to the guarded method it names.
 
     The single owner of "which method does this action call" — moved here
@@ -497,8 +511,16 @@ def apply_action(case: POCase, *, action: CaseAction, reason: str | None) -> Non
     member is refused here as `DomainError`, before the method's own bare
     `ValueError` guard — the caller gets `this action requires a reason`,
     not an error with no taxonomy code behind it. An action with a command of
-    its own (`create_po`) is refused by name.
+    its own (`create_po`) is refused by name. `start_production` needs the
+    production gate; without one it is refused, never let through.
     """
+    if action in GATED_ACTIONS:
+        if gate is None:
+            raise DomainError(
+                f"{action.value} needs the production gate", details={"action": action.value}
+            )
+        case.start_production(gate)
+        return
     if action in _COMMAND_ONLY_ACTIONS:
         raise DomainError(
             f"{action.value} is taken through its own command, not as a plain step",

@@ -266,6 +266,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/packaging-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Packaging Policy
+         * @description Whether the tenant's PO cases need a passed pre-production test to
+         *     enter production.
+         */
+        get: operations["get_packaging_policy_api_v1_supply_chain_packaging_policy_get"];
+        /**
+         * Set Packaging Policy
+         * @description Replaces the tenant's own step-13 rule, whole. No `Idempotency-Key`,
+         *     as for the other policies' `PUT`.
+         */
+        put: operations["set_packaging_policy_api_v1_supply_chain_packaging_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/po-cases": {
         parameters: {
             query?: never;
@@ -368,6 +394,40 @@ export interface paths {
         get: operations["get_missing_update_status_route_api_v1_supply_chain_po_cases__case_id__missing_update_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/po-cases/{case_id}/packaging-design": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Packaging Design */
+        get: operations["get_packaging_design_api_v1_supply_chain_po_cases__case_id__packaging_design_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/po-cases/{case_id}/packaging-design/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take Packaging Step */
+        post: operations["take_packaging_step_api_v1_supply_chain_po_cases__case_id__packaging_design_steps_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1025,10 +1085,11 @@ export interface components {
         };
         /**
          * DocumentType
-         * @description ADR 0021's fourteen document types, from process.md section 2.
+         * @description ADR 0021's fourteen document types, from process.md section 2, and the
+         *     three papers of step 12's sub-flow (slice PK).
          * @enum {string}
          */
-        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette";
+        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report";
         /**
          * FollowUpItemView
          * @description An open follow-up. `mine`: it was handed to the caller (a stamped scope
@@ -1263,6 +1324,79 @@ export interface components {
             sku_id: string;
         };
         /**
+         * PackagingAction
+         * @enum {string}
+         */
+        PackagingAction: "approve_colour" | "request_colour_revision" | "approve_design" | "request_design_revision" | "receive_pre_production_sample" | "pass_pre_production_test" | "fail_pre_production_test";
+        /** PackagingDesignView */
+        PackagingDesignView: {
+            case_state: components["schemas"]["CaseState"];
+            colour_status: components["schemas"]["ReviewStatus"];
+            design_status: components["schemas"]["ReviewStatus"];
+            /** History */
+            history: components["schemas"]["PackagingEventView"][];
+            /**
+             * Po Case Id
+             * Format: uuid
+             */
+            po_case_id: string;
+            /** Pre Production Sample Received At */
+            pre_production_sample_received_at: string | null;
+            pre_production_test: components["schemas"]["PreProductionTest"];
+            /** Require Pre Production Test */
+            require_pre_production_test: boolean;
+            /** Steps */
+            steps: components["schemas"]["PackagingStepOptionView"][];
+            /** Version */
+            version: number;
+        };
+        /** PackagingEventView */
+        PackagingEventView: {
+            action: components["schemas"]["PackagingAction"];
+            /**
+             * Actor Id
+             * Format: uuid
+             */
+            actor_id: string;
+            /** Document Id */
+            document_id: string | null;
+            /** Note */
+            note: string | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Reason */
+            reason: string | null;
+        };
+        /** PackagingStateView */
+        PackagingStateView: {
+            colour_status: components["schemas"]["ReviewStatus"];
+            design_status: components["schemas"]["ReviewStatus"];
+            /**
+             * Po Case Id
+             * Format: uuid
+             */
+            po_case_id: string;
+            /** Pre Production Sample Received At */
+            pre_production_sample_received_at: string | null;
+            pre_production_test: components["schemas"]["PreProductionTest"];
+            /** Version */
+            version: number;
+        };
+        /** PackagingStepOptionView */
+        PackagingStepOptionView: {
+            action: components["schemas"]["PackagingAction"];
+            /** Allowed */
+            allowed: boolean;
+            duty: components["schemas"]["CaseDuty"];
+            /** Requires Document */
+            requires_document: boolean;
+            /** Requires Reason */
+            requires_reason: boolean;
+        };
+        /**
          * Page
          * @description A page of results and the cursor that continues it.
          *
@@ -1337,6 +1471,11 @@ export interface components {
             /** Update Overdue Count */
             update_overdue_count: number;
         };
+        /**
+         * PreProductionTest
+         * @enum {string}
+         */
+        PreProductionTest: "pending" | "passed" | "failed";
         /**
          * ProductAction
          * @description Every step a person takes on a product-development case.
@@ -1647,6 +1786,11 @@ export interface components {
          */
         ReviewRaise: "raised" | "already_pending" | "not_raised" | "not_waiting";
         /**
+         * ReviewStatus
+         * @enum {string}
+         */
+        ReviewStatus: "pending" | "revision_requested" | "approved";
+        /**
          * SLAConfirmationStatus
          * @description Whether a milestone's duration is real policy yet.
          *
@@ -1889,6 +2033,17 @@ export interface components {
             /** Schema Version */
             schema_version: string;
         };
+        /** SupplyChainPackagingPolicy */
+        SupplyChainPackagingPolicy: {
+            /** Policy Id */
+            policy_id: string;
+            /** Policy Version */
+            policy_version: string;
+            /** Require Pre Production Test */
+            require_pre_production_test: boolean;
+            /** Schema Version */
+            schema_version: string;
+        };
         /** SupplyChainProductActionDuties */
         SupplyChainProductActionDuties: {
             /** Action Duties */
@@ -1932,6 +2087,14 @@ export interface components {
             /** Schema Version */
             schema_version: string;
             supplier_update: components["schemas"]["SupplierUpdateCadence"];
+        };
+        /** TakePackagingStepRequest */
+        TakePackagingStepRequest: {
+            action: components["schemas"]["PackagingAction"];
+            /** Document Id */
+            document_id?: string | null;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * UnderstoodView
@@ -2386,6 +2549,59 @@ export interface operations {
             };
         };
     };
+    get_packaging_policy_api_v1_supply_chain_packaging_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainPackagingPolicy"];
+                };
+            };
+        };
+    };
+    set_packaging_policy_api_v1_supply_chain_packaging_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplyChainPackagingPolicy"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainPackagingPolicy"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_po_cases_api_v1_supply_chain_po_cases_get: {
         parameters: {
             query?: {
@@ -2648,6 +2864,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MissingUpdateStatusView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_packaging_design_api_v1_supply_chain_po_cases__case_id__packaging_design_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackagingDesignView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    take_packaging_step_api_v1_supply_chain_po_cases__case_id__packaging_design_steps_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TakePackagingStepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackagingStateView"];
                 };
             };
             /** @description Validation Error */

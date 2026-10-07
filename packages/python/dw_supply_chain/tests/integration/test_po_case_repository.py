@@ -26,6 +26,7 @@ from dw_kernel.pagination import PageQuery, page_request
 from dw_platform.application.access_context import AccessContext
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
 from dw_supply_chain.application.ports import POCaseListFilter
+from dw_supply_chain.domain.packaging_design import PreProductionTest, ProductionGate
 from dw_supply_chain.domain.po_case import CaseState, POCase, POCaseId
 
 pytestmark = pytest.mark.integration
@@ -762,7 +763,9 @@ async def _walk_to_completed(
         case.request_deposit,
         case.confirm_deposit,
         case.start_pre_production,
-        case.start_production,
+        lambda: case.start_production(
+            ProductionGate(required=False, test=PreProductionTest.PENDING)
+        ),
         case.send_to_qc,
         case.pass_qc,
         case.arrive_at_port,

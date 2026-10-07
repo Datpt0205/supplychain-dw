@@ -4,6 +4,7 @@ import pytest
 
 from dw_kernel.ids import TenantId, WorkspaceId
 from dw_supply_chain.domain.delay_impact import impacted_milestones, propagated_estimates
+from dw_supply_chain.domain.packaging_design import PreProductionTest, ProductionGate
 from dw_supply_chain.domain.po_case import CaseState, POCase, POCaseId
 
 pytestmark = pytest.mark.unit
@@ -70,7 +71,7 @@ def test_rework_resumes_into_production_specifically() -> None:
     case.request_deposit()
     case.confirm_deposit()
     case.start_pre_production()
-    case.start_production()
+    case.start_production(ProductionGate(required=False, test=PreProductionTest.PENDING))
     case.send_to_qc()
     case.fail_qc("failed dimensional check")
     assert case.state is CaseState.REWORK

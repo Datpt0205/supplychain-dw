@@ -10,6 +10,7 @@ import {
 import { App } from "antd";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ApiError, type CaseDocument } from "@dw/api-client";
+import { documentTypeSchema } from "@dw/contracts";
 
 const listCaseDocuments = vi.fn();
 const uploadCaseDocument = vi.fn();
@@ -121,7 +122,10 @@ describe("CaseDocumentsCard", () => {
   });
 
   it("labels every document type the API can return, from one table", () => {
-    expect(Object.keys(DOC_TYPE_LABEL)).toHaveLength(14);
+    // ADR 0021's fourteen and step 12's three (slice PK): the contract's list.
+    expect(Object.keys(DOC_TYPE_LABEL).sort()).toEqual(
+      [...documentTypeSchema.options].sort(),
+    );
     expect(
       Object.values(DOC_TYPE_LABEL).every((label) => label.length > 0),
     ).toBe(true);

@@ -1,0 +1,13 @@
+schema_version: "1.0"
+policy_id: supply_chain_packaging
+policy_version: "1.0.0"
+
+# Override bước 12–13 của TENANT ELMICH (không phải platform default). Ghi bằng
+#   uv run python scripts/seed_supply_chain_demo.py elmich-packaging
+# qua đúng handler của PUT /api/v1/supply-chain/packaging-policy (kiểm schema,
+# quyền supply_chain.action_duties.write, audit), không qua migration: luật của
+# một khách là dữ liệu của tenant đó.
+#
+# Hồ sơ PO của Elmich chỉ vào "Sản xuất" khi R&D đã đạt test trước sản xuất
+# (process.md bước 13, sơ đồ con bước 12; lát PK).
+require_pre_production_test: true

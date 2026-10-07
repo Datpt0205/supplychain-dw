@@ -1684,7 +1684,7 @@
         "type": "object"
       },
       "DocumentType": {
-        "description": "ADR 0021's fourteen document types, from process.md section 2.",
+        "description": "ADR 0021's fourteen document types, from process.md section 2, and the\nthree papers of step 12's sub-flow (slice PK).",
         "enum": [
           "proposal_list",
           "product_image",
@@ -1699,7 +1699,10 @@
           "payment_docs",
           "packaging_content",
           "user_manual",
-          "maquette"
+          "maquette",
+          "colour_sample",
+          "packaging_design",
+          "pre_production_test_report"
         ],
         "title": "DocumentType",
         "type": "string"
@@ -3265,6 +3268,224 @@
         "title": "POLineQuantity",
         "type": "object"
       },
+      "PackagingAction": {
+        "enum": [
+          "approve_colour",
+          "request_colour_revision",
+          "approve_design",
+          "request_design_revision",
+          "receive_pre_production_sample",
+          "pass_pre_production_test",
+          "fail_pre_production_test"
+        ],
+        "title": "PackagingAction",
+        "type": "string"
+      },
+      "PackagingDesignView": {
+        "properties": {
+          "case_state": {
+            "$ref": "#/components/schemas/CaseState"
+          },
+          "colour_status": {
+            "$ref": "#/components/schemas/ReviewStatus"
+          },
+          "design_status": {
+            "$ref": "#/components/schemas/ReviewStatus"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/PackagingEventView"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "po_case_id": {
+            "format": "uuid",
+            "title": "Po Case Id",
+            "type": "string"
+          },
+          "pre_production_sample_received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pre Production Sample Received At"
+          },
+          "pre_production_test": {
+            "$ref": "#/components/schemas/PreProductionTest"
+          },
+          "require_pre_production_test": {
+            "title": "Require Pre Production Test",
+            "type": "boolean"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/PackagingStepOptionView"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "po_case_id",
+          "colour_status",
+          "design_status",
+          "pre_production_sample_received_at",
+          "pre_production_test",
+          "version",
+          "case_state",
+          "require_pre_production_test",
+          "steps",
+          "history"
+        ],
+        "title": "PackagingDesignView",
+        "type": "object"
+      },
+      "PackagingEventView": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/PackagingAction"
+          },
+          "actor_id": {
+            "format": "uuid",
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "action",
+          "reason",
+          "note",
+          "document_id",
+          "actor_id",
+          "occurred_at"
+        ],
+        "title": "PackagingEventView",
+        "type": "object"
+      },
+      "PackagingStateView": {
+        "properties": {
+          "colour_status": {
+            "$ref": "#/components/schemas/ReviewStatus"
+          },
+          "design_status": {
+            "$ref": "#/components/schemas/ReviewStatus"
+          },
+          "po_case_id": {
+            "format": "uuid",
+            "title": "Po Case Id",
+            "type": "string"
+          },
+          "pre_production_sample_received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pre Production Sample Received At"
+          },
+          "pre_production_test": {
+            "$ref": "#/components/schemas/PreProductionTest"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "po_case_id",
+          "colour_status",
+          "design_status",
+          "pre_production_sample_received_at",
+          "pre_production_test",
+          "version"
+        ],
+        "title": "PackagingStateView",
+        "type": "object"
+      },
+      "PackagingStepOptionView": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/PackagingAction"
+          },
+          "allowed": {
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "duty": {
+            "$ref": "#/components/schemas/CaseDuty"
+          },
+          "requires_document": {
+            "title": "Requires Document",
+            "type": "boolean"
+          },
+          "requires_reason": {
+            "title": "Requires Reason",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "action",
+          "duty",
+          "allowed",
+          "requires_reason",
+          "requires_document"
+        ],
+        "title": "PackagingStepOptionView",
+        "type": "object"
+      },
       "Page_ApprovalView_": {
         "description": "A page of results and the cursor that continues it.\n\n``next_cursor`` is ``None`` on the last page, and that — not an empty\n``items`` — is the client's stop condition: a filtered listing can return an\nempty page in the middle of a run and still have more rows behind it.",
         "properties": {
@@ -3623,6 +3844,15 @@
         ],
         "title": "PortfolioSummaryView",
         "type": "object"
+      },
+      "PreProductionTest": {
+        "enum": [
+          "pending",
+          "passed",
+          "failed"
+        ],
+        "title": "PreProductionTest",
+        "type": "string"
       },
       "ProductAction": {
         "description": "Every step a person takes on a product-development case.\n\nIts own enum, never `CaseAction`: five names are shared (`cancel`,\n`resume`, `wait_for_external`, `flag_blocked`, `flag_manual_review`) and a\nPO policy or approval keyed by one of them must not reach this case.",
@@ -4474,6 +4704,15 @@
         "title": "ReviewRaise",
         "type": "string"
       },
+      "ReviewStatus": {
+        "enum": [
+          "pending",
+          "revision_requested",
+          "approved"
+        ],
+        "title": "ReviewStatus",
+        "type": "string"
+      },
       "RoleView": {
         "properties": {
           "key": {
@@ -5206,9 +5445,6 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/CaseDuty"
             },
-            "propertyNames": {
-              "$ref": "#/components/schemas/CaseAction"
-            },
             "title": "Action Duties",
             "type": "object"
           },
@@ -5358,6 +5594,38 @@
         "title": "SupplyChainFollowUpPolicy",
         "type": "object"
       },
+      "SupplyChainPackagingPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_id": {
+            "pattern": "^supply_chain_packaging$",
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "require_pre_production_test": {
+            "title": "Require Pre Production Test",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version",
+          "require_pre_production_test"
+        ],
+        "title": "SupplyChainPackagingPolicy",
+        "type": "object"
+      },
       "SupplyChainProductActionDuties": {
         "additionalProperties": false,
         "properties": {
@@ -5451,6 +5719,44 @@
           "supplier_update"
         ],
         "title": "SupplyChainSLAPolicy",
+        "type": "object"
+      },
+      "TakePackagingStepRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/PackagingAction"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "pattern": "^[^\\x00]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "TakePackagingStepRequest",
         "type": "object"
       },
       "TenantSettingsView": {
@@ -8949,6 +9255,68 @@
         ]
       }
     },
+    "/api/v1/supply-chain/packaging-policy": {
+      "get": {
+        "description": "Whether the tenant's PO cases need a passed pre-production test to\nenter production.",
+        "operationId": "get_packaging_policy_api_v1_supply_chain_packaging_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainPackagingPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Packaging Policy",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "description": "Replaces the tenant's own step-13 rule, whole. No `Idempotency-Key`,\nas for the other policies' `PUT`.",
+        "operationId": "set_packaging_policy_api_v1_supply_chain_packaging_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainPackagingPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainPackagingPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Packaging Policy",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/po-cases": {
       "get": {
         "operationId": "list_po_cases_api_v1_supply_chain_po_cases_get",
@@ -9438,6 +9806,120 @@
           }
         },
         "summary": "Get Missing Update Status Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/packaging-design": {
+      "get": {
+        "operationId": "get_packaging_design_api_v1_supply_chain_po_cases__case_id__packaging_design_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackagingDesignView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Packaging Design",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/packaging-design/steps": {
+      "post": {
+        "operationId": "take_packaging_step_api_v1_supply_chain_po_cases__case_id__packaging_design_steps_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakePackagingStepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackagingStateView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Take Packaging Step",
         "tags": [
           "supply_chain"
         ]

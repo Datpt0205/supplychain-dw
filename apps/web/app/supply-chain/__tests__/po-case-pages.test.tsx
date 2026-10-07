@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { App } from "antd";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@dw/api-client";
 import type {
   MissingUpdateStatus,
@@ -48,11 +48,17 @@ const api = {
   listCaseDocuments: vi.fn(),
   listWorkspaceMembers: vi.fn(),
   createPO: vi.fn(),
+  getPackagingDesign: vi.fn(),
 };
 vi.mock("../../../lib/session", () => ({ apiClient: () => api }));
 
 import POCasesPage from "../po-cases/page";
 import POCaseWorkspacePage from "../po-cases/[id]/page";
+
+beforeEach(() => {
+  // Step 12's card loads on its own; these tests are about the rest of the page.
+  api.getPackagingDesign.mockReturnValue(new Promise(() => {}));
+});
 
 afterEach(() => {
   cleanup();

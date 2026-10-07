@@ -300,3 +300,42 @@ proposal_drafts = sa.Table(
         "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )
+
+# Step 12's colour, packaging and pre-production sub-flow (slice PK): one row
+# per PO case, and its history.
+packaging_designs = sa.Table(
+    "packaging_designs",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("po_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("colour_status", sa.Text, nullable=False),
+    sa.Column("design_status", sa.Text, nullable=False),
+    sa.Column("pre_production_sample_received_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("pre_production_test", sa.Text, nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+    sa.Column(
+        "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+packaging_design_events = sa.Table(
+    "packaging_design_events",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("po_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("action", sa.Text, nullable=False),
+    sa.Column("actor_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("reason", sa.Text, nullable=True),
+    sa.Column("note", sa.Text, nullable=True),
+    sa.Column("document_id", UUID(as_uuid=True), nullable=True),
+    sa.Column(
+        "occurred_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)

@@ -113,6 +113,12 @@ from dw_supply_chain.application.handlers import (
     SubmitSupplierUpdate,
     SummarizeDailyBrief,
 )
+from dw_supply_chain.application.packaging_designs import (
+    GetPackagingDesign,
+    GetPackagingPolicy,
+    SetPackagingPolicyOverride,
+    TakePackagingStep,
+)
 from dw_supply_chain.application.product_cases import (
     AdvanceProductCase,
     GetProductCase,
@@ -220,6 +226,13 @@ class ApiContainer:
     supply_chain_upload_case_document: UploadCaseDocument | None = None
     supply_chain_list_case_documents: ListCaseDocuments | None = None
     supply_chain_download_case_document: DownloadCaseDocument | None = None
+    # Step 12's colour, packaging and pre-production sub-flow (slice PK): its
+    # own router on its own guard; wired with the documents, whose reports the
+    # test steps are taken on.
+    supply_chain_get_packaging_design: GetPackagingDesign | None = None
+    supply_chain_take_packaging_step: TakePackagingStep | None = None
+    supply_chain_get_packaging_policy: GetPackagingPolicy | None = None
+    supply_chain_set_packaging_policy_override: SetPackagingPolicyOverride | None = None
     # Product-development cases (stage 1): their own router on their own guard,
     # as the documents router is.
     supply_chain_propose_product_case: ProposeProductCase | None = None

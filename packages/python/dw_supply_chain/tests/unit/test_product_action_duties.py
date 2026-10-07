@@ -24,7 +24,7 @@ pytestmark = pytest.mark.unit
 
 _POLICIES = Path(__file__).resolve().parents[5] / "configs" / "policies"
 _SHIPPED = _POLICIES / PRODUCT_ACTION_DUTIES_POLICY_FILE
-_PO_SHIPPED = _POLICIES / "supply_chain_action_duties@1.1.0.yaml"
+_PO_SHIPPED = _POLICIES / "supply_chain_action_duties@1.2.0.yaml"
 
 
 def _document(mapping: dict[str, str], *, version: str = "1.3.0") -> dict[str, object]:
@@ -251,12 +251,13 @@ def test_an_unknown_field_is_refused() -> None:
         )
 
 
-def test_the_po_policy_still_loads_and_needs_no_rnd_step() -> None:
+def test_the_po_policy_still_loads_and_needs_no_supply_lead_step() -> None:
     """Adding a duty does not touch the PO policy: it requires every PO step a
     duty, not every duty a step, so a tenant's PO override written before
-    `rnd` or `supply_lead` existed stays valid."""
+    `supply_lead` existed stays valid. (`rnd` takes PO steps since slice PK:
+    the pre-production test.)"""
     po = load_supply_chain_action_duties(_PO_SHIPPED)
-    assert {CaseDuty.RND, CaseDuty.SUPPLY_LEAD}.isdisjoint(set(po.action_duties.values()))
+    assert CaseDuty.SUPPLY_LEAD not in set(po.action_duties.values())
 
 
 def test_a_1_2_0_override_takes_the_platforms_duty_for_the_order_only() -> None:

@@ -29,7 +29,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
-def test_adr_0021_names_fourteen_document_types() -> None:
+def test_adr_0021_names_fourteen_document_types_and_step_12_adds_three() -> None:
     assert {t.value for t in DocumentType} == {
         "proposal_list",
         "product_image",
@@ -45,6 +45,10 @@ def test_adr_0021_names_fourteen_document_types() -> None:
         "packaging_content",
         "user_manual",
         "maquette",
+        # Slice PK, step 12's sub-flow.
+        "colour_sample",
+        "packaging_design",
+        "pre_production_test_report",
     }
 
 

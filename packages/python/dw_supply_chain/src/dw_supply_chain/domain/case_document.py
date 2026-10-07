@@ -33,7 +33,8 @@ from dw_kernel.errors import DomainError, UnsupportedMediaTypeError
 
 
 class DocumentType(StrEnum):
-    """ADR 0021's fourteen document types, from process.md section 2."""
+    """ADR 0021's fourteen document types, from process.md section 2, and the
+    three papers of step 12's sub-flow (slice PK)."""
 
     PROPOSAL_LIST = "proposal_list"
     PRODUCT_IMAGE = "product_image"
@@ -49,6 +50,11 @@ class DocumentType(StrEnum):
     PACKAGING_CONTENT = "packaging_content"
     USER_MANUAL = "user_manual"
     MAQUETTE = "maquette"
+    # Step 12 (slice PK): the supplier's colour sample, the packaging design
+    # Cung ứng approves, and R&D's pre-production test report.
+    COLOUR_SAMPLE = "colour_sample"
+    PACKAGING_DESIGN = "packaging_design"
+    PRE_PRODUCTION_TEST_REPORT = "pre_production_test_report"
 
 
 class CaseKind(StrEnum):
