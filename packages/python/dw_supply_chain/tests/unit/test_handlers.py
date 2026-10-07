@@ -90,6 +90,7 @@ from dw_supply_chain.domain.supplier_update import (
     SupplierUpdateExtraction,
     SupplierUpdateId,
 )
+from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE
 from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.sla_policy import (
     SLAConfirmationStatus,
@@ -113,10 +114,7 @@ _SHIPPED_ACTION_DUTIES = (
     / "supply_chain_action_duties@1.0.0.yaml"
 )
 _SHIPPED_PRODUCT_ACTION_DUTIES = (
-    Path(__file__).resolve().parents[5]
-    / "configs"
-    / "policies"
-    / "supply_chain_product_action_duties@1.0.0.yaml"
+    Path(__file__).resolve().parents[5] / "configs" / "policies" / PRODUCT_ACTION_DUTIES_POLICY_FILE
 )
 _SUPPLIER_UPDATE_SCOPES = frozenset(
     {"supply_chain.supplier_update.read", "supply_chain.supplier_update.write"}

@@ -1,5 +1,5 @@
 """Unit: ProposeProductCase / GetProductCase / ListProductCases /
-ListProductCaseTransitions / AdvanceProductCase (stage-1 tickets 01 and 02).
+ListProductCaseTransitions / AdvanceProductCase (stage-1 tickets 01-03).
 
 Fakes stand in for the case records, the document records and the policy
 store; each honours its port the way the database does (tenant AND workspace
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import inspect
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
@@ -88,12 +88,15 @@ EXCEPTIONS = duty_scope(CaseDuty.EXCEPTIONS)
 # handles exceptions; sc_rnd tests samples and nothing else (lead decision 8).
 SC_OPERATOR = frozenset({PRODUCT_CASE_READ, PRODUCT_CASE_WRITE, ORDERING, EXCEPTIONS})
 SC_RND = frozenset({PRODUCT_CASE_READ, RND})
+SUPPLY_LEAD = duty_scope(CaseDuty.SUPPLY_LEAD)
+# sc_supply_lead (TP Cung ứng, S3): confirms with the supplier and nothing else.
+SC_SUPPLY_LEAD = frozenset({PRODUCT_CASE_READ, SUPPLY_LEAD})
 
 DUTIES = SupplyChainProductActionDuties.model_validate(
     {
         "schema_version": "1.0",
         "policy_id": PRODUCT_ACTION_DUTIES_POLICY_ID,
-        "policy_version": "1.0.0",
+        "policy_version": "1.1.0",
         "action_duties": {
             "propose": "ordering",
             "request_sample": "ordering",
@@ -107,6 +110,8 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
             "flag_manual_review": "exceptions",
             "resume": "exceptions",
             "cancel": "ordering",
+            "complete_profile": "rnd",
+            "confirm_with_supplier": "supply_lead",
         },
     }
 )
@@ -191,11 +196,19 @@ class FakeCases:
             raise ConflictError("product case was modified concurrently")
         if stored.version != case.version - 1:
             raise ConflictError("product case was modified concurrently")
+        before = len(self.steps)
         self._drain(case)
+        last = self.steps[before:]
         self.audits.append(audit)
-        # A round opened by this save is read back with its opening time.
+        # A round opened by this save is read back with its opening time, and
+        # a step reached by it with when it was reached (a resume reaches none).
         opened = case.round_opened_at or (NOW if case.sample_round else None)
-        self.rows[case.id.value] = replace(case, _pending_steps=[], round_opened_at=opened)
+        entered = (
+            NOW if last and last[-1].action is not ProductAction.RESUME else case.stage_entered_at
+        )
+        self.rows[case.id.value] = replace(
+            case, _pending_steps=[], round_opened_at=opened, stage_entered_at=entered
+        )
 
     async def list_page(
         self, context: AccessContext, request: PageRequest, case_filter: ProductCaseListFilter
@@ -393,6 +406,27 @@ class Stack:
             case_id=case.id,
             action=ProductAction.PASS_SAMPLE,
             document_id=evaluation.id.value,
+        )
+        return result.case
+
+    async def profiling(self) -> ProductDevelopmentCase:
+        """BGĐ approved: what the review graph saves, as the repository would
+        (the step command refuses `bod_approve`)."""
+        case = await self.passed()
+        stored = await self.cases.get(_context(SC_RND), case.id)
+        assert stored is not None
+        stored.bod_approve(actor_id=uuid.uuid4())
+        await self.cases.save(_context(SC_RND), stored, audit=self.cases.audits[-1])
+        return self.cases.rows[case.id.value]
+
+    async def confirming(self) -> ProductDevelopmentCase:
+        case = await self.profiling()
+        bm04 = self.documents.add(case, DocumentType.PRODUCT_PROFILE_BM04)
+        result = await self.advance().handle(
+            _context(SC_RND),
+            case_id=case.id,
+            action=ProductAction.COMPLETE_PROFILE,
+            document_id=bm04.id.value,
         )
         return result.case
 
@@ -658,6 +692,178 @@ async def test_steps_one_to_five_through_the_handlers() -> None:
     assert (passed.case.state, passed.case.sample_round) == (ProductDevState.PENDING_BOD_REVIEW, 2)
     assert [a.action for a in stack.cases.audits][-1] == "supply_chain.product_case.pass_sample"
     assert stack.cases.audits[-1].details["document_id"] == str(evaluation.id)
+
+
+# --- steps 7-8: BM04 and the supplier's confirmation ------------------------------
+
+
+async def test_rnd_completes_the_bm04_and_the_supply_lead_confirms_with_the_supplier() -> None:
+    stack = Stack()
+    case = await stack.profiling()
+    bm04 = stack.documents.add(case, DocumentType.PRODUCT_PROFILE_BM04)
+    profiled = await stack.advance().handle(
+        _context(SC_RND),
+        case_id=case.id,
+        action=ProductAction.COMPLETE_PROFILE,
+        document_id=bm04.id.value,
+    )
+    assert profiled.case.state is ProductDevState.SUPPLIER_CONFIRMATION
+    assert profiled.review is None
+    assert stack.cases.steps[-1].document_id == bm04.id.value
+    assert stack.cases.audits[-1].details["document_id"] == str(bm04.id)
+
+    email = stack.documents.add(case, DocumentType.SUPPLIER_CONFIRMATION_EMAIL)
+    confirmed = await stack.advance().handle(
+        _context(SC_SUPPLY_LEAD),
+        case_id=case.id,
+        action=ProductAction.CONFIRM_WITH_SUPPLIER,
+        document_id=email.id.value,
+    )
+    assert confirmed.case.state is ProductDevState.ITEM_CODING
+    assert stack.cases.audits[-1].action == "supply_chain.product_case.confirm_with_supplier"
+    assert stack.cases.audits[-1].details["document_id"] == str(email.id)
+    assert stack.reviews.asked == [stack.reviews.asked[0]]  # only the pass asked BGĐ
+
+
+async def test_rnd_cannot_confirm_with_the_supplier() -> None:
+    stack = Stack()
+    case = await stack.confirming()
+    email = stack.documents.add(case, DocumentType.SUPPLIER_CONFIRMATION_EMAIL)
+    with pytest.raises(PermissionDeniedError):
+        await stack.advance().handle(
+            _context(SC_RND),
+            case_id=case.id,
+            action=ProductAction.CONFIRM_WITH_SUPPLIER,
+            document_id=email.id.value,
+        )
+    assert stack.cases.rows[case.id.value].state is ProductDevState.SUPPLIER_CONFIRMATION
+
+
+async def test_the_supply_lead_cannot_complete_the_bm04() -> None:
+    stack = Stack()
+    case = await stack.profiling()
+    bm04 = stack.documents.add(case, DocumentType.PRODUCT_PROFILE_BM04)
+    with pytest.raises(PermissionDeniedError):
+        await stack.advance().handle(
+            _context(SC_SUPPLY_LEAD),
+            case_id=case.id,
+            action=ProductAction.COMPLETE_PROFILE,
+            document_id=bm04.id.value,
+        )
+    assert stack.cases.rows[case.id.value].state is ProductDevState.PROFILE_IN_PROGRESS
+
+
+@pytest.mark.parametrize(
+    ("action", "doc_type", "caller"),
+    [
+        (ProductAction.COMPLETE_PROFILE, DocumentType.PRODUCT_PROFILE_BM04, SC_RND),
+        (
+            ProductAction.CONFIRM_WITH_SUPPLIER,
+            DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
+            SC_SUPPLY_LEAD,
+        ),
+    ],
+)
+@pytest.mark.parametrize("paper", ["none", "another_tenants", "another_cases", "older"])
+async def test_steps_seven_and_eight_refuse_paper_that_is_not_theirs_with_409(
+    action: ProductAction, doc_type: DocumentType, caller: frozenset[str], paper: str
+) -> None:
+    """Missing, another tenant's (unreadable to the caller under RLS),
+    another case's, or uploaded before the case reached the step: one 409
+    naming the missing type, and the case does not move."""
+    stack = Stack()
+    case = (
+        await stack.profiling()
+        if action is ProductAction.COMPLETE_PROFILE
+        else await stack.confirming()
+    )
+    other = await stack.proposed(code="DX-OTHER")
+    papers: dict[str, Callable[[], uuid.UUID | None]] = {
+        "none": lambda: None,
+        "another_tenants": lambda: (
+            stack.documents.add(case, doc_type, tenant=OTHER_TENANT).id.value
+        ),
+        "another_cases": lambda: stack.documents.add(other, doc_type).id.value,
+        "older": lambda: (
+            stack.documents.add(case, doc_type, uploaded_at=NOW - timedelta(seconds=1)).id.value
+        ),
+    }
+    document_id = papers[paper]()
+    before = stack.cases.rows[case.id.value].state
+
+    with pytest.raises(ConflictError) as raised:
+        await stack.advance().handle(
+            _context(caller), case_id=case.id, action=action, document_id=document_id
+        )
+    assert raised.value.details["missing_document_type"] == doc_type.value
+    assert stack.cases.rows[case.id.value].state is before
+
+
+@pytest.mark.parametrize("owner", [(OTHER_TENANT, WORKSPACE), (TENANT, OTHER_WORKSPACE)])
+@pytest.mark.parametrize(
+    ("action", "doc_type"),
+    [
+        (ProductAction.COMPLETE_PROFILE, DocumentType.PRODUCT_PROFILE_BM04),
+        (ProductAction.CONFIRM_WITH_SUPPLIER, DocumentType.SUPPLIER_CONFIRMATION_EMAIL),
+    ],
+)
+async def test_steps_seven_and_eight_on_another_tenants_or_workspaces_case_are_not_found(
+    owner: tuple[uuid.UUID, uuid.UUID], action: ProductAction, doc_type: DocumentType
+) -> None:
+    stack = Stack()
+    case = (
+        await stack.profiling()
+        if action is ProductAction.COMPLETE_PROFILE
+        else await stack.confirming()
+    )
+    paper = stack.documents.add(case, doc_type)
+    before = stack.cases.rows[case.id.value].state
+    tenant, workspace = owner
+    caller = _context(SC_RND | SC_SUPPLY_LEAD, tenant=tenant, workspace=workspace)
+
+    with pytest.raises(NotFoundError):
+        await stack.advance().handle(
+            caller, case_id=case.id, action=action, document_id=paper.id.value
+        )
+    assert stack.cases.rows[case.id.value].state is before
+
+
+async def test_an_override_stored_before_steps_seven_and_eight_still_lets_them_be_taken() -> None:
+    """A tenant override written at 1.0.0 names neither step; the platform's
+    duty applies to them and the tenant's own choices still hold."""
+    stack = Stack()
+    case = await stack.profiling()
+    old = DUTIES.model_dump(mode="json")
+    old["policy_version"] = "1.0.0"
+    del old["action_duties"]["complete_profile"]
+    del old["action_duties"]["confirm_with_supplier"]
+    old["action_duties"]["cancel"] = "rnd"
+    stack.policies.stored[(TENANT, PRODUCT_ACTION_DUTIES_POLICY_ID)] = old
+
+    bm04 = stack.documents.add(case, DocumentType.PRODUCT_PROFILE_BM04)
+    with pytest.raises(PermissionDeniedError):
+        await stack.advance().handle(
+            _context(SC_SUPPLY_LEAD),
+            case_id=case.id,
+            action=ProductAction.COMPLETE_PROFILE,
+            document_id=bm04.id.value,
+        )
+    profiled = await stack.advance().handle(
+        _context(SC_RND),
+        case_id=case.id,
+        action=ProductAction.COMPLETE_PROFILE,
+        document_id=bm04.id.value,
+    )
+    assert profiled.case.state is ProductDevState.SUPPLIER_CONFIRMATION
+    with pytest.raises(PermissionDeniedError):
+        await stack.advance().handle(
+            _context(SC_OPERATOR), case_id=case.id, action=ProductAction.CANCEL, reason="x"
+        )
+    duties = await GetProductActionDuties(
+        stack.policies, DUTIES, ScopeAuthorizationService()
+    ).handle(_context(frozenset({ACTION_DUTIES_READ})))
+    assert duties.duty_for(ProductAction.CONFIRM_WITH_SUPPLIER) is CaseDuty.SUPPLY_LEAD
+    assert duties.duty_for(ProductAction.CANCEL) is CaseDuty.RND
 
 
 # --- another tenant's or workspace's case ----------------------------------------

@@ -19,8 +19,8 @@ This repo is the Elmich product: bounded context
 ## Where it stands (2026-10-05)
 
 - **Steps 10–17 (PO case)** are on `main` (slice P, `c2f04dc`).
-- **Steps 1–5 are built** (S1, product development case); steps 6–9 are
-  ticketed (S2–S7). Approvals carry `required_scope` (A); cases carry
+- **Steps 1–8 are built** (S1 steps 1–5, S2 step 6, S3 steps 7–8); step 9 and
+  the hand-off are ticketed (S4–S7). Approvals carry `required_scope` (A); cases carry
   documents (D).
 - **Channels:** in-app inbox only. The Zalo pieces on `main` are built and
   tested but wired into nothing; the API client calls `/api/v1/zalo/*` routes
@@ -62,8 +62,8 @@ means platform code, an upstream candidate (ADR 0011).
 | A2    | `approval-decider-scope/issues/02-admin-does-not-pass-stamped-scope.md`   | yes     | resolved        | A                                   |
 | D     | `case-documents/issues/01-case-documents.md`                              | no      | resolved        | P                                   |
 | S1    | `stage-1/issues/01-product-case-steps-1-5.md`                             | no      | resolved        | P, D                                |
-| S2    | `stage-1/issues/02-bod-review-step-6.md`                                  | no      | ready-for-human | S1, A                               |
-| S3    | `stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`           | no      | ready-for-agent | S2                                  |
+| S2    | `stage-1/issues/02-bod-review-step-6.md`                                  | no      | resolved        | S1, A                               |
+| S3    | `stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`           | no      | resolved        | S2                                  |
 | S4    | `stage-1/issues/04-item-code-sku-signoff-step-9.md`                       | no      | ready-for-agent | S3                                  |
 | S5    | `stage-1/issues/05-place-order-hand-off.md`                               | no      | ready-for-agent | S4                                  |
 | S6    | `stage-1/issues/06-sla-by-category-and-pic-routing.md`                    | no      | ready-for-agent | S5                                  |
@@ -73,7 +73,7 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** S3 (S2 in); Z5 after Z2 (Z4 in); Z6; Z4p when a real photo update exists.
+**Next:** S4 (S3 in); Z5 after Z2 (Z4 in); Z6; Z4p when a real photo update exists.
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 

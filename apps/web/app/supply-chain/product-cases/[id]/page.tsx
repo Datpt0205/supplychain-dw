@@ -19,11 +19,14 @@ import {
   Timeline,
   Tooltip,
   Typography,
+  Upload,
 } from "antd";
-import type { TableColumnsType } from "antd";
+import type { TableColumnsType, UploadFile } from "antd";
+import { PaperClipOutlined, UploadOutlined } from "@ant-design/icons";
 import { PageHeader, RegionState, type RegionFailure } from "@dw/ui";
 import type {
   CaseDocument,
+  DocumentType,
   PendingReview,
   ProductActionOption,
   ProductCaseDetail,
@@ -31,8 +34,11 @@ import type {
   SampleRound,
 } from "@dw/api-client";
 import {
+  ACCEPT,
   CaseDocumentsCard,
   DOC_TYPE_LABEL,
+  NO_WRITE_REASON,
+  useCaseDocumentUpload,
 } from "../../../../components/supply-chain/case-documents-card";
 import { stepLabel } from "../../../../components/supply-chain/case-state-badge";
 import {
@@ -150,6 +156,8 @@ function CaseView({
   const { hasScope, principalId } = useAuth();
   const members = useWorkspaceMembers();
   const [documentsTick, setDocumentsTick] = useState(0);
+  // A paper uploaded from a step's form: the documents card lists it too.
+  const [stepUploads, setStepUploads] = useState(0);
   const who = (userId: string | null) =>
     userId === principalId ? "Bạn" : (memberName(members, userId) ?? "—");
 
@@ -201,6 +209,7 @@ function CaseView({
           detail={detail}
           onStep={onStep}
           documentsTick={documentsTick}
+          onPaperUploaded={() => setStepUploads((tick) => tick + 1)}
         />
 
         <RoundsCard rounds={detail.rounds} who={who} />
@@ -210,6 +219,7 @@ function CaseView({
           caseId={detail.id}
           canUpload={hasScope(DOCUMENT_WRITE)}
           onUploaded={() => setDocumentsTick((tick) => tick + 1)}
+          refreshTick={stepUploads}
         />
       </Flex>
     </>
@@ -222,10 +232,12 @@ function NextSteps({
   detail,
   onStep,
   documentsTick,
+  onPaperUploaded,
 }: {
   detail: ProductCaseDetail;
   onStep: () => void;
   documentsTick: number;
+  onPaperUploaded: () => void;
 }) {
   const { hasScope } = useAuth();
   const online = useOnline();
@@ -289,6 +301,7 @@ function NextSteps({
           detail={detail}
           option={open}
           documentsTick={documentsTick}
+          onPaperUploaded={onPaperUploaded}
           onClose={() => setOpen(null)}
           onDone={() => {
             setOpen(null);
@@ -345,25 +358,27 @@ interface StepValues {
 /**
  * The form one step needs, built from what the server says it takes: a
  * supplier, a reason, a document of a given type. Documents offered are this
- * case's of that type uploaded since the current round opened. That filter is
- * a second copy of a server rule, kept on purpose and only to narrow the
- * picker: the owner is `ProductDevelopmentCase._round_document` (domain), which
- * re-checks the chosen paper on the step and refuses any other with the type
- * it is missing. A change to that rule changes this filter in the same commit.
- * `Date.parse` keeps milliseconds where Postgres keeps microseconds, so a paper
- * uploaded under 1 ms before the round opened is offered and then refused:
- * the copy can only fail closed.
+ * case's of that type uploaded since `documents_since`, the bound the server
+ * gives with the option (when the round opened, or when the case reached the
+ * step) and checks again on the step (`ProductDevelopmentCase._step_document`,
+ * domain); the page only narrows the picker with it, and offers nothing when
+ * the server gives no bound. `Date.parse` keeps milliseconds where Postgres
+ * keeps microseconds, so a paper uploaded under 1 ms before the bound is
+ * offered and then refused: the comparison can only fail closed. A step's
+ * paper can be uploaded right here, and is then chosen.
  */
 function StepModal({
   detail,
   option,
   documentsTick,
+  onPaperUploaded,
   onClose,
   onDone,
 }: {
   detail: ProductCaseDetail;
   option: ProductActionOption;
   documentsTick: number;
+  onPaperUploaded: () => void;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -380,9 +395,7 @@ function StepModal({
   const [documentsError, setDocumentsError] = useState<string | null>(null);
   const label = PRODUCT_ACTION_LABEL[option.action];
   const documentType = option.document_type;
-  const currentRound = detail.rounds.find(
-    (r) => r.round_no === detail.sample_round,
-  );
+  const since = option.documents_since;
 
   useEffect(() => {
     if (!documentType) return;
@@ -395,8 +408,8 @@ function StepModal({
           all.filter(
             (d) =>
               d.doc_type === documentType &&
-              currentRound !== undefined &&
-              Date.parse(d.uploaded_at) >= Date.parse(currentRound.opened_at),
+              since !== null &&
+              Date.parse(d.uploaded_at) >= Date.parse(since),
           ),
         );
       })
@@ -406,7 +419,16 @@ function StepModal({
     return () => {
       cancelled = true;
     };
-  }, [detail.id, documentType, currentRound, documentsTick]);
+  }, [detail.id, documentType, since, documentsTick]);
+
+  const paperUploaded = (created: CaseDocument) => {
+    setDocuments((current) => [...(current ?? []), created]);
+    form.setFieldValue("documentId", created.id);
+    void message.success(
+      `Đã tải lên ${DOC_TYPE_LABEL[created.doc_type]}, phiên bản ${created.version}; đã chọn cho bước này.`,
+    );
+    onPaperUploaded();
+  };
 
   const submit = async (values: StepValues) => {
     setInvalid(0);
@@ -494,7 +516,7 @@ function StepModal({
           <Form.Item
             name="documentId"
             label={DOC_TYPE_LABEL[documentType]}
-            extra={`Chỉ ${DOC_TYPE_LABEL[documentType]} của hồ sơ này, tải lên từ khi vòng mẫu ${detail.sample_round} bắt đầu.`}
+            extra={`Chỉ ${DOC_TYPE_LABEL[documentType]} của hồ sơ này, tải lên từ ${formatDateTimeFull(since)} trở đi.`}
             rules={
               option.document_required
                 ? [
@@ -523,9 +545,16 @@ function StepModal({
         )}
         {noDocument && option.document_required && (
           <Typography.Paragraph>
-            Chưa có {DOC_TYPE_LABEL[documentType]} nào cho vòng mẫu này. Tải lên
-            ở mục Chứng từ của hồ sơ rồi chọn lại.
+            Chưa có {DOC_TYPE_LABEL[documentType]} nào cho bước này. Tải lên
+            ngay dưới đây; file vừa tải được chọn cho bước.
           </Typography.Paragraph>
+        )}
+        {documentType && (
+          <StepPaperUpload
+            caseId={detail.id}
+            docType={documentType}
+            onUploaded={paperUploaded}
+          />
         )}
         {option.reason_required && (
           <Form.Item
@@ -546,6 +575,93 @@ function StepModal({
         {error && <Alert type="error" showIcon title={error} />}
       </Form>
     </Modal>
+  );
+}
+
+/**
+ * Uploading a step's paper without leaving its form (ticket 03: "tải chứng từ
+ * ngay trong luồng"): the type is the step's, the upload is the documents
+ * card's (`useCaseDocumentUpload`), and who may upload is the server's
+ * document write, drawn locked with the reason for a viewer without it.
+ */
+function StepPaperUpload({
+  caseId,
+  docType,
+  onUploaded,
+}: {
+  caseId: string;
+  docType: DocumentType;
+  onUploaded: (created: CaseDocument) => void;
+}) {
+  const { hasScope } = useAuth();
+  const online = useOnline();
+  const { upload, uploading, error, clearError } = useCaseDocumentUpload(
+    "product",
+    caseId,
+  );
+  const [file, setFile] = useState<File | null>(null);
+  const lock = !hasScope(DOCUMENT_WRITE)
+    ? NO_WRITE_REASON
+    : !online
+      ? OFFLINE
+      : null;
+  const name = `Tải lên ${DOC_TYPE_LABEL[docType]}`;
+  const fileList: UploadFile[] = file
+    ? [{ uid: "chosen", name: file.name, status: "done" }]
+    : [];
+  const send = async () => {
+    if (!file) return;
+    const created = await upload(docType, file);
+    if (!created) return;
+    setFile(null);
+    onUploaded(created);
+  };
+  const button = (
+    <Button
+      icon={<UploadOutlined aria-hidden />}
+      loading={uploading}
+      disabled={lock !== null || !file}
+      onClick={() => void send()}
+    >
+      {name}
+    </Button>
+  );
+  return (
+    <Flex vertical gap="small">
+      <Flex wrap gap="small" align="start">
+        <Upload
+          accept={ACCEPT}
+          maxCount={1}
+          fileList={fileList}
+          disabled={lock !== null}
+          beforeUpload={(chosen) => {
+            setFile(chosen);
+            clearError();
+            return false;
+          }}
+          onRemove={() => {
+            setFile(null);
+            return true;
+          }}
+        >
+          <Button
+            icon={<PaperClipOutlined aria-hidden />}
+            disabled={lock !== null}
+          >
+            Chọn file
+          </Button>
+        </Upload>
+        {lock ? (
+          <Tooltip title={lock}>
+            <span>{button}</span>
+          </Tooltip>
+        ) : (
+          button
+        )}
+      </Flex>
+      {lock && <Typography.Text>{lock}</Typography.Text>}
+      {error && <Alert type="error" showIcon title={error} />}
+    </Flex>
   );
 }
 

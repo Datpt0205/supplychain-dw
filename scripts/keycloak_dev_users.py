@@ -13,7 +13,7 @@ user with the roles the seed gave it.
 The users are read from the database, not listed here: the seed owns who
 exists; this only makes them able to sign in. That includes the stage-1
 personas `scripts/seed_supply_chain_demo.py seed` creates (Linh, R&D; Khánh,
-BGĐ), so run the seed first. Refuses outside the `local` profile.
+BGĐ; Tuấn, TP Cung ứng), so run the seed first. Refuses outside the `local` profile.
 """
 
 from __future__ import annotations

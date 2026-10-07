@@ -175,6 +175,8 @@ product_dev_case_state_transitions = sa.Table(
     sa.Column(
         "occurred_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
+    # The paper of steps 7 and 8 (3fc6599ecd5e); a round's paper is on the round.
+    sa.Column("document_id", UUID(as_uuid=True), nullable=True),
 )
 
 product_sample_rounds = sa.Table(

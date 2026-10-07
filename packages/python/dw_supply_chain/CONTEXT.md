@@ -107,15 +107,15 @@ _Avoid_: "supplier" trong chữ tiếng Việt trên giao diện.
 
 **Duty** (nhiệm vụ, `supply_chain.duty.<duty>`):
 Quyền làm một nhóm hành động trên hồ sơ. Có trong code (`CaseDuty`): `ordering`
-(Cung ứng), `finance` (Kế toán), `qc`, `logistics`, `warehouse`, `exceptions`. Thêm ở
-giai đoạn 1: `rnd` (R&D, từ S1), `supply_lead` (TP Cung ứng, từ S3). Hành động nào
+(Cung ứng), `finance` (Kế toán), `qc`, `logistics`, `warehouse`, `exceptions`, và ở
+giai đoạn 1 `rnd` (R&D, từ S1), `supply_lead` (TP Cung ứng, từ S3). Hành động nào
 thuộc duty nào là policy tenant ghi đè được.
 _Avoid_: "vai" (vai là `sc_*`, gom scope và duty).
 
 **Vai** (`sc_*`):
 `sc_viewer`, `sc_operator`, `sc_finance`, `sc_qc`, `sc_logistics`, `sc_warehouse`,
-`sc_process_admin`; dự kiến thêm `sc_rnd` (S1), `sc_supply_lead` (S3), `sc_bod` (S2)
-(còn mở, QE-16). Không có `sc_accounting`: xem **Kế toán**.
+`sc_process_admin`, `sc_rnd` (S1), `sc_bod` (S2), `sc_supply_lead` (S3); danh mục còn
+mở (QE-16). Không có `sc_accounting`: xem **Kế toán**.
 
 **Kế toán**:
 Một vai, `sc_finance` (duty `finance`): xác nhận đặt cọc ở bước 11 và thanh toán ở
@@ -222,9 +222,11 @@ Một lần gửi một thông báo tới một người qua một kênh, có tr
 
 Từ S1, nhãn trong code có một chủ: `PRODUCT_DEV_STATE_LABEL` trong
 `apps/web/components/supply-chain/product-case-labels.tsx`; S2 đi tới
-`profile_in_progress` (cùng ba trạng thái ngắt và `cancelled`). Hai bên lệch thì sửa
-cả hai trong cùng commit. Ở `pending_bod_review` người dùng chỉ hủy được; `bod_approve`
-và `bod_reject` do graph duyệt áp sau quyết định ở `/approvals`.
+`profile_in_progress` (cùng ba trạng thái ngắt và `cancelled`), S3 tới `item_coding`.
+Hai bên lệch thì sửa cả hai trong cùng commit. Ở `pending_bod_review` người dùng chỉ hủy
+được; `bod_approve` và `bod_reject` do graph duyệt áp sau quyết định ở `/approvals`.
+`complete_profile` (R&D) cần Profile SP (BM04), `confirm_with_supplier` (TP Cung ứng)
+cần email xác nhận của NCC, mỗi file của chính hồ sơ và tải lên từ khi hồ sơ tới bước đó.
 
 | Giá trị                 | Nhãn                   | Bước, ghi chú                                   |
 | ----------------------- | ---------------------- | ----------------------------------------------- |

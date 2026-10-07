@@ -4,7 +4,7 @@ The product case's own policy, beside `action_duties.py`'s PO one and never
 merged into it: the two enums share five action names, so a single document
 keyed by name would let a PO override decide who may cancel a product case.
 Same mechanism otherwise: the platform default ships in
-`configs/policies/supply_chain_product_action_duties@1.0.0.yaml`, a tenant
+`configs/policies/supply_chain_product_action_duties@1.1.0.yaml`, a tenant
 replaces it whole through `PolicyOverridePort`, and taking a step requires the
 scope of its duty (`application.handlers.duty_scope`). The duties themselves
 are `CaseDuty`'s, because roles are granted in duty terms.
@@ -14,11 +14,20 @@ step 6) have no duty, because no person takes them; who decides the approval
 behind them is the approval's stamped `required_scope`
 (`supply_chain_product_approvals`). A key for one of them is refused, since
 nothing would read it, and an override stored before they existed stays valid.
+
+Steps added after 1.0.0 (`STEPS_ADDED_AFTER_1_0_0`, steps 7 and 8 in S3): a
+tenant override stored at 1.0.0 was written before they existed and so never
+decided who takes them. `from_stored` gives those steps, and only those, the
+platform's duty when such a document leaves them out; everything the tenant
+did decide stands. A document claiming a later version, and every new
+override (the PUT validates whole), must name them.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -28,12 +37,20 @@ from dw_supply_chain.domain.product_development_case import GRAPH_ONLY_ACTIONS, 
 
 __all__ = [
     "PRODUCT_ACTION_DUTIES_POLICY_ID",
+    "STEPS_ADDED_AFTER_1_0_0",
     "SupplyChainProductActionDuties",
     "load_supply_chain_product_action_duties",
 ]
 
 # The document's own `policy_id`, and the key its tenant override is stored under.
 PRODUCT_ACTION_DUTIES_POLICY_ID = "supply_chain_product_action_duties"
+
+# The steps a person takes that policy 1.0.0 did not have: an override stored
+# at that version cannot have decided them.
+STEPS_ADDED_AFTER_1_0_0 = frozenset(
+    {ProductAction.COMPLETE_PROFILE, ProductAction.CONFIRM_WITH_SUPPLIER}
+)
+_VERSION_BEFORE_STEPS_7_8 = "1.0.0"
 
 
 class SupplyChainProductActionDuties(BaseModel):
@@ -69,6 +86,23 @@ class SupplyChainProductActionDuties(BaseModel):
 
     def duty_for(self, action: ProductAction) -> CaseDuty:
         return self.action_duties[action]
+
+    @classmethod
+    def from_stored(cls, stored: Mapping[str, object], platform_default: Self) -> Self:
+        """A tenant's stored override, validated whole. One stored at 1.0.0
+        that leaves out a step added after it takes the platform's duty for
+        that step; any other gap is refused, as it always was."""
+        duties = stored.get("action_duties")
+        if stored.get("policy_version") != _VERSION_BEFORE_STEPS_7_8 or not isinstance(
+            duties, Mapping
+        ):
+            return cls.model_validate(stored)
+        predated = {
+            action.value: platform_default.duty_for(action).value
+            for action in STEPS_ADDED_AFTER_1_0_0
+            if action.value not in duties
+        }
+        return cls.model_validate({**stored, "action_duties": {**duties, **predated}})
 
 
 def load_supply_chain_product_action_duties(path: Path) -> SupplyChainProductActionDuties:

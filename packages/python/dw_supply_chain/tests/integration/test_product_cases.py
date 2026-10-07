@@ -1,10 +1,13 @@
-"""Integration: product-development cases on the real database (stage-1 ticket 01).
+"""Integration: product-development cases on the real database (stage-1 tickets
+01 and 03).
 
 What only Postgres can prove: the four tables' RLS narrows by tenant AND
 workspace on read and write, a child cannot sit in another workspace than its
 case, the CHECKs equal the domain's enums, the proposal code is unique per
 tenant and refused by its constraint's name, a round is closed once whatever
-the statement says, a round's paper must be a document of its own case, the
+the statement says, a round's paper and a step's paper (BM04, the supplier's
+email) must be a document of its own case, when the case reached its step is
+read back from the history (a resume does not count), the
 grants are what the migration says, and offboarding purges a tenant's
 product cases, rounds and documents in every workspace and nobody else's.
 """
@@ -815,7 +818,8 @@ async def test_offboarding_purges_product_cases_rounds_and_documents_of_one_tena
         evaluation = await _document(db, context, case, DocumentType.SAMPLE_EVALUATION)
         case.pass_sample(actor_id=context.principal_id, evaluation=evaluation)
         await db.cases.save(context, case, audit=_audit(context, case, "pass_sample"))
-        return case
+        # On to item coding, so history rows hold papers too (NO ACTION FKs).
+        return await _to_item_coding(db, context, case)
 
     for context in leaving:
         await full_case(context)
@@ -833,9 +837,9 @@ async def test_offboarding_purges_product_cases_rounds_and_documents_of_one_tena
             db, f"SELECT count(*) FROM supply_chain.{table} WHERE tenant_id = :t", t=tenant
         )
         assert left == 0, table
-    assert (await _reloaded(db, staying, kept)).state is ProductDevState.PENDING_BOD_REVIEW
+    assert (await _reloaded(db, staying, kept)).state is ProductDevState.ITEM_CODING
     assert len(await db.cases.list_rounds(staying, kept.id)) == 2
-    assert len(await db.documents.list_for_case(staying, CaseKind.PRODUCT, kept.id.value)) == 2
+    assert len(await db.documents.list_for_case(staying, CaseKind.PRODUCT, kept.id.value)) == 4
 
 
 # --- audit and provenance (reviewing-feature-security §5) ----------------------------
@@ -950,3 +954,247 @@ async def test_a_document_a_round_was_closed_on_cannot_be_deleted_on_its_own(db:
                 sa.text("DELETE FROM supply_chain.case_documents WHERE id = :d"),
                 {"d": evaluation.id.value},
             )
+
+
+# --- steps 7-8: BM04 and the supplier's confirmation (ticket 03) ----------------------
+
+
+async def _approved(
+    db: _Db, context: AccessContext, case: ProductDevelopmentCase
+) -> ProductDevelopmentCase:
+    """BGĐ approved, saved as the review graph saves it."""
+    case = await _reloaded(db, context, case)
+    case.bod_approve(actor_id=uuid.uuid4())
+    await db.cases.save(context, case, audit=_audit(context, case, "bod_approve"))
+    return await _reloaded(db, context, case)
+
+
+async def _profiling(db: _Db, context: AccessContext) -> ProductDevelopmentCase:
+    case = await _testing(db, context)
+    evaluation = await _document(db, context, case, DocumentType.SAMPLE_EVALUATION)
+    case.pass_sample(actor_id=context.principal_id, evaluation=evaluation)
+    await db.cases.save(context, case, audit=_audit(context, case, "pass_sample"))
+    return await _approved(db, context, case)
+
+
+async def _to_item_coding(
+    db: _Db, context: AccessContext, case: ProductDevelopmentCase
+) -> ProductDevelopmentCase:
+    case = await _approved(db, context, case)
+    bm04 = await _document(db, context, case, DocumentType.PRODUCT_PROFILE_BM04)
+    case.complete_profile(actor_id=context.principal_id, profile=bm04)
+    await db.cases.save(context, case, audit=_audit(context, case, "complete_profile"))
+    case = await _reloaded(db, context, case)
+    email = await _document(db, context, case, DocumentType.SUPPLIER_CONFIRMATION_EMAIL)
+    case.confirm_with_supplier(actor_id=context.principal_id, confirmation=email)
+    await db.cases.save(context, case, audit=_audit(context, case, "confirm_with_supplier"))
+    return await _reloaded(db, context, case)
+
+
+async def test_steps_seven_and_eight_are_saved_with_their_paper_on_the_history(db: _Db) -> None:
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _profiling(db, context)
+    assert case.state is ProductDevState.PROFILE_IN_PROGRESS
+    approved_at = case.stage_entered_at
+    assert approved_at is not None
+
+    bm04 = await _document(db, context, case, DocumentType.PRODUCT_PROFILE_BM04)
+    case.complete_profile(actor_id=context.principal_id, profile=bm04)
+    await db.cases.save(context, case, audit=_audit(context, case, "complete_profile"))
+    case = await _reloaded(db, context, case)
+    assert case.state is ProductDevState.SUPPLIER_CONFIRMATION
+    assert case.stage_entered_at is not None
+    assert case.stage_entered_at > approved_at
+
+    email = await _document(db, context, case, DocumentType.SUPPLIER_CONFIRMATION_EMAIL)
+    case.confirm_with_supplier(actor_id=context.principal_id, confirmation=email)
+    await db.cases.save(context, case, audit=_audit(context, case, "confirm_with_supplier"))
+
+    assert (await _reloaded(db, context, case)).state is ProductDevState.ITEM_CODING
+    history = await db.cases.list_transitions(context, case.id)
+    assert [(t.action, t.document_id) for t in history[-3:]] == [
+        (ProductAction.BOD_APPROVE, None),
+        (ProductAction.COMPLETE_PROFILE, bm04.id.value),
+        (ProductAction.CONFIRM_WITH_SUPPLIER, email.id.value),
+    ]
+    # The round's paper stays on the round, not on the pass's history row.
+    assert all(t.document_id is None for t in history[:-2])
+
+
+async def test_a_bm04_uploaded_before_bgd_approved_is_refused_by_its_upload_time(
+    db: _Db,
+) -> None:
+    """The bound is when the case reached step 7, read from the history: a
+    profile drafted while the sample was still in test is not this step's."""
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _testing(db, context)
+    early = await _document(db, context, case, DocumentType.PRODUCT_PROFILE_BM04)
+    evaluation = await _document(db, context, case, DocumentType.SAMPLE_EVALUATION)
+    case.pass_sample(actor_id=context.principal_id, evaluation=evaluation)
+    await db.cases.save(context, case, audit=_audit(context, case, "pass_sample"))
+    case = await _approved(db, context, case)
+
+    assert case.stage_entered_at is not None
+    assert early.uploaded_at < case.stage_entered_at
+    with pytest.raises(ConflictError, match="product_profile_bm04"):
+        case.complete_profile(actor_id=context.principal_id, profile=early)
+
+
+async def test_a_bm04_uploaded_before_a_pause_still_counts_after_the_resume(db: _Db) -> None:
+    """A resume returns the case to step 7; it does not reach it anew, so the
+    bound read back is still BGĐ's approval, not the resume."""
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _profiling(db, context)
+    approved_at = case.stage_entered_at
+    bm04 = await _document(db, context, case, DocumentType.PRODUCT_PROFILE_BM04)
+    case.flag_blocked(actor_id=context.principal_id, reason="Chờ thông số NCC")
+    await db.cases.save(context, case, audit=_audit(context, case, "flag_blocked"))
+    case = await _reloaded(db, context, case)
+    case.resume(actor_id=context.principal_id)
+    await db.cases.save(context, case, audit=_audit(context, case, "resume"))
+    case = await _reloaded(db, context, case)
+
+    assert case.stage_entered_at == approved_at
+    case.complete_profile(actor_id=context.principal_id, profile=bm04)
+    await db.cases.save(context, case, audit=_audit(context, case, "complete_profile"))
+    assert (await _reloaded(db, context, case)).state is ProductDevState.SUPPLIER_CONFIRMATION
+
+
+async def _history_sql(db: _Db, context: AccessContext, **params: object) -> None:
+    await _close_round_sql(
+        db,
+        context,
+        "INSERT INTO supply_chain.product_dev_case_state_transitions (id, tenant_id,"
+        " workspace_id, product_dev_case_id, action, from_state, to_state, actor_id,"
+        " document_id) VALUES (gen_random_uuid(), :t, :w, :c, :a, :f, :s, :p, :d)",
+        t=context.tenant_id,
+        w=context.workspace_id,
+        p=context.principal_id,
+        **params,
+    )
+
+
+@pytest.mark.parametrize("owner", ["another_case", "another_workspace"])
+async def test_a_steps_paper_must_be_a_document_of_its_own_case(db: _Db, owner: str) -> None:
+    """Past the domain: the composite FK to the case's own documents. A
+    document of another case, or of another workspace's case of the same
+    tenant (written there by its own member), cannot be named."""
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _profiling(db, context)
+    elsewhere = context if owner == "another_case" else _context(context.tenant_id, uuid.uuid4())
+    foreign = await _document(
+        db, elsewhere, await _proposed(db, elsewhere), DocumentType.PRODUCT_PROFILE_BM04
+    )
+
+    with pytest.raises(
+        IntegrityError, match="fk_product_dev_case_state_transitions_tenant_id_case_documents"
+    ):
+        await _history_sql(
+            db,
+            context,
+            c=case.id.value,
+            a="complete_profile",
+            f="profile_in_progress",
+            s="supplier_confirmation",
+            d=foreign.id.value,
+        )
+
+
+@pytest.mark.parametrize(
+    ("action", "from_state", "to_state", "with_paper"),
+    [
+        ("complete_profile", "profile_in_progress", "supplier_confirmation", False),
+        ("confirm_with_supplier", "supplier_confirmation", "item_coding", False),
+        ("resume", "blocked", "profile_in_progress", True),
+    ],
+)
+async def test_only_steps_seven_and_eight_carry_a_paper_and_both_must(
+    db: _Db, action: str, from_state: str, to_state: str, with_paper: bool
+) -> None:
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _profiling(db, context)
+    bm04 = await _document(db, context, case, DocumentType.PRODUCT_PROFILE_BM04)
+    with pytest.raises(
+        IntegrityError, match="ck_product_dev_case_state_transitions_document_steps"
+    ):
+        await _history_sql(
+            db,
+            context,
+            c=case.id.value,
+            a=action,
+            f=from_state,
+            s=to_state,
+            d=bm04.id.value if with_paper else None,
+        )
+
+
+async def test_a_database_refusal_of_a_steps_paper_is_a_409_naming_its_type(db: _Db) -> None:
+    """The repository turns the FK's refusal into the same 409 the domain
+    gives, by the constraint's name, for the step being written."""
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _profiling(db, context)
+    other = await _proposed(db, context)
+    foreign = await _document(db, context, other, DocumentType.PRODUCT_PROFILE_BM04)
+    # A paper the domain was told is this case's (as a buggy caller might).
+    case.complete_profile(
+        actor_id=context.principal_id,
+        profile=replace(foreign, case_id=case.id.value),
+    )
+
+    with pytest.raises(ConflictError) as raised:
+        await db.cases.save(context, case, audit=_audit(context, case, "complete_profile"))
+    assert raised.value.details["action"] == "complete_profile"
+    assert raised.value.details["missing_document_type"] == "product_profile_bm04"
+    assert (
+        raised.value.details["constraint"]
+        == "fk_product_dev_case_state_transitions_tenant_id_case_documents"
+    )
+    assert (await _reloaded(db, context, case)).state is ProductDevState.PROFILE_IN_PROGRESS
+
+
+async def test_a_document_a_step_was_taken_on_cannot_be_deleted_on_its_own(db: _Db) -> None:
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _to_item_coding(db, context, await _testing_passed(db, context))
+    bm04 = next(
+        t.document_id
+        for t in await db.cases.list_transitions(context, case.id)
+        if t.action is ProductAction.COMPLETE_PROFILE
+    )
+    async with db.migrator.begin() as conn:
+        with pytest.raises(
+            IntegrityError, match="fk_product_dev_case_state_transitions_tenant_id_case_documents"
+        ):
+            await conn.execute(
+                sa.text("DELETE FROM supply_chain.case_documents WHERE id = :d"), {"d": bm04}
+            )
+
+
+async def _testing_passed(db: _Db, context: AccessContext) -> ProductDevelopmentCase:
+    case = await _testing(db, context)
+    evaluation = await _document(db, context, case, DocumentType.SAMPLE_EVALUATION)
+    case.pass_sample(actor_id=context.principal_id, evaluation=evaluation)
+    await db.cases.save(context, case, audit=_audit(context, case, "pass_sample"))
+    return case
+
+
+@pytest.mark.parametrize("other", ["tenant", "workspace"])
+async def test_another_tenant_or_workspace_cannot_take_steps_seven_or_eight(
+    db: _Db, other: str
+) -> None:
+    """The case reads as absent, and a save under the other context moves
+    nothing (RLS and the repository's own filter)."""
+    context = _context(uuid.uuid4(), uuid.uuid4())
+    case = await _profiling(db, context)
+    bm04 = await _document(db, context, case, DocumentType.PRODUCT_PROFILE_BM04)
+    intruder = (
+        _context(uuid.uuid4(), context.workspace_id)
+        if other == "tenant"
+        else _context(context.tenant_id, uuid.uuid4())
+    )
+    assert await db.cases.get(intruder, case.id) is None
+    assert await db.documents.get(intruder, bm04.id) is None
+
+    case.complete_profile(actor_id=intruder.principal_id, profile=bm04)
+    with pytest.raises(ConflictError):
+        await db.cases.save(intruder, case, audit=_audit(intruder, case, "complete_profile"))
+    assert (await _reloaded(db, context, case)).state is ProductDevState.PROFILE_IN_PROGRESS

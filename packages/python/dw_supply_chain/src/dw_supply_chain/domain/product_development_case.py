@@ -1,5 +1,5 @@
 """The product-development case: one proposed product through stage 1 of the
-Elmich process, steps 1-6 so far (stage-1 tickets 01 and 02, ADR 0016).
+Elmich process, steps 1-8 so far (stage-1 tickets 01-03, ADR 0016).
 
 Same shape as `POCase`: a mutable dataclass whose named methods are the only
 way its state moves, a closed action enum, and one dispatch,
@@ -15,9 +15,13 @@ way its state moves, a closed action enum, and one dispatch,
   writes exactly that, in the transaction that saves the state.
 - **A step that needs paper checks the paper here.** Passing a sample needs a
   Biên bản đánh giá mẫu of THIS case, uploaded after THIS round opened;
-  requesting a revision needs a Phiếu yêu cầu chỉnh sửa the same way. The
-  handler fetches the document the caller named under RLS and hands it in; the
-  rule that it belongs to the round is decided here, once.
+  requesting a revision needs a Phiếu yêu cầu chỉnh sửa the same way.
+  Completing the profile (step 7) needs a BM04, and confirming with the
+  supplier (step 8) the supplier's confirmation email, each of THIS case and
+  uploaded since the case reached THAT step (`stage_entered_at`). The handler
+  fetches the document the caller named under RLS and hands it in; the rule
+  that it belongs to the round or the step is decided here, once, and
+  `action_options` hands the page the same bound (`documents_since`).
 
 - **Some steps are no person's button.** BGĐ's two outcomes of step 6
   (`GRAPH_ONLY_ACTIONS`) are applied by the review graph after the approval is
@@ -25,8 +29,8 @@ way its state moves, a closed action enum, and one dispatch,
   them and the step command refuses them.
 
 The PIC is stamped from the actor at `propose` and nowhere else takes one.
-Steps 7 onwards (BM04, item code, sign-off, ĐẶT HÀNG) are later tickets;
-`profile_in_progress` is where this one stops.
+Step 9 onwards (item code, SKU, sign-off, ĐẶT HÀNG) are later tickets;
+`item_coding` is where this one stops.
 """
 
 from __future__ import annotations
@@ -61,6 +65,10 @@ class ProductDevState(StrEnum):
     PENDING_BOD_REVIEW = "pending_bod_review"
     # BGĐ approved; R&D completes the BM04 profile (step 7, S3).
     PROFILE_IN_PROGRESS = "profile_in_progress"
+    # BM04 done; TP Cung ứng confirms the product with the supplier (step 8).
+    SUPPLIER_CONFIRMATION = "supplier_confirmation"
+    # The supplier confirmed; the item code and SKUs come next (step 9, S4).
+    ITEM_CODING = "item_coding"
 
     WAITING_EXTERNAL = "waiting_external"
     BLOCKED = "blocked"
@@ -88,6 +96,11 @@ class ProductAction(StrEnum):
     REQUEST_REVISION = "request_revision"
     RECEIVE_REVISED_SAMPLE = "receive_revised_sample"
     REJECT_SAMPLE = "reject_sample"
+    # Step 7: R&D completes the BM04 profile.
+    COMPLETE_PROFILE = "complete_profile"
+    # Step 8: TP Cung ứng confirms the product agreed with the supplier, on
+    # the supplier's email (QE-09: confirmed in the app, no mailbox read).
+    CONFIRM_WITH_SUPPLIER = "confirm_with_supplier"
     WAIT_FOR_EXTERNAL = "wait_for_external"
     FLAG_BLOCKED = "flag_blocked"
     FLAG_MANUAL_REVIEW = "flag_manual_review"
@@ -138,6 +151,14 @@ _FORWARD: dict[ProductAction, tuple[ProductDevState, ProductDevState]] = {
         ProductDevState.PROFILE_IN_PROGRESS,
     ),
     ProductAction.BOD_REJECT: (ProductDevState.PENDING_BOD_REVIEW, ProductDevState.CANCELLED),
+    ProductAction.COMPLETE_PROFILE: (
+        ProductDevState.PROFILE_IN_PROGRESS,
+        ProductDevState.SUPPLIER_CONFIRMATION,
+    ),
+    ProductAction.CONFIRM_WITH_SUPPLIER: (
+        ProductDevState.SUPPLIER_CONFIRMATION,
+        ProductDevState.ITEM_CODING,
+    ),
 }
 _INTERRUPTS: dict[ProductAction, ProductDevState] = {
     ProductAction.WAIT_FOR_EXTERNAL: ProductDevState.WAITING_EXTERNAL,
@@ -145,14 +166,30 @@ _INTERRUPTS: dict[ProductAction, ProductDevState] = {
     ProductAction.FLAG_MANUAL_REVIEW: ProductDevState.MANUAL_REVIEW,
 }
 
-# The document type a step takes. `pass_sample` and `request_revision` cannot
-# be taken without theirs; `reject_sample` may carry an evaluation.
+# The document type a step takes. Every one but `reject_sample` (which may
+# carry an evaluation) cannot be taken without its own.
 ACTION_DOCUMENT_TYPE: dict[ProductAction, DocumentType] = {
     ProductAction.PASS_SAMPLE: DocumentType.SAMPLE_EVALUATION,
     ProductAction.REQUEST_REVISION: DocumentType.SAMPLE_REVISION_REQUEST,
     ProductAction.REJECT_SAMPLE: DocumentType.SAMPLE_EVALUATION,
+    ProductAction.COMPLETE_PROFILE: DocumentType.PRODUCT_PROFILE_BM04,
+    ProductAction.CONFIRM_WITH_SUPPLIER: DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
 }
-DOCUMENT_REQUIRED_ACTIONS = frozenset({ProductAction.PASS_SAMPLE, ProductAction.REQUEST_REVISION})
+DOCUMENT_REQUIRED_ACTIONS = frozenset(
+    {
+        ProductAction.PASS_SAMPLE,
+        ProductAction.REQUEST_REVISION,
+        ProductAction.COMPLETE_PROFILE,
+        ProductAction.CONFIRM_WITH_SUPPLIER,
+    }
+)
+# The steps whose paper belongs to the current sample round, counted from
+# when the round opened; every other paper step's counts from when the case
+# reached that step. The round steps record their paper on the round; the
+# others on their history row (`ProductCaseStep.document_id`).
+ROUND_DOCUMENT_ACTIONS = frozenset(
+    {ProductAction.PASS_SAMPLE, ProductAction.REQUEST_REVISION, ProductAction.REJECT_SAMPLE}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +203,9 @@ class ProductActionOption:
     takes_supplier: bool
     document_type: DocumentType | None
     document_required: bool
+    # The earliest upload the step accepts as its paper; None when it takes
+    # none, or when the bound is not known yet (then no paper qualifies).
+    documents_since: datetime | None = None
 
 
 class SampleResult(StrEnum):
@@ -201,6 +241,9 @@ class ProductCaseStep:
     reason: str | None
     opens_round: int | None = None
     closes_round: RoundClosure | None = None
+    # The paper of a step outside the sample rounds (BM04, the supplier's
+    # email), written on its history row; a round's paper is on the round.
+    document_id: uuid.UUID | None = None
 
 
 def document_refusal(case_id: uuid.UUID, action: ProductAction) -> DWError:
@@ -214,8 +257,13 @@ def document_refusal(case_id: uuid.UUID, action: ProductAction) -> DWError:
     expected = ACTION_DOCUMENT_TYPE.get(action)
     if expected is None:
         return DomainError("this action takes no document", details={"action": action.value})
+    when = (
+        "của vòng mẫu hiện tại"
+        if action in ROUND_DOCUMENT_ACTIONS
+        else "tải lên từ khi hồ sơ tới bước này"
+    )
     return ConflictError(
-        f"{action.value} cần {expected.value} của vòng mẫu hiện tại, thuộc hồ sơ này",
+        f"{action.value} cần {expected.value} {when}, thuộc hồ sơ này",
         details={
             "case_id": str(case_id),
             "action": action.value,
@@ -243,7 +291,12 @@ class ProductDevelopmentCase:
 
     `round_opened_at` is when the CURRENT sample round's row was written, read
     back by the repository; None before the first sample and for a round
-    opened in this instance and not yet saved."""
+    opened in this instance and not yet saved.
+
+    `stage_entered_at` is when the case reached its current state by a step,
+    read back by the repository from the history; a resume returns the case
+    to a step it already reached and does not count. None for a state reached
+    in this instance and not yet saved."""
 
     id: ProductDevelopmentCaseId
     tenant_id: TenantId
@@ -258,6 +311,7 @@ class ProductDevelopmentCase:
     interrupted_state: ProductDevState | None = None
     sample_round: int = 0
     round_opened_at: datetime | None = None
+    stage_entered_at: datetime | None = None
     version: int = 1
     created_at: datetime | None = None
     _pending_steps: list[ProductCaseStep] = field(default_factory=list, compare=False, repr=False)
@@ -334,10 +388,16 @@ class ProductDevelopmentCase:
                 takes_supplier=action is ProductAction.REQUEST_SAMPLE,
                 document_type=ACTION_DOCUMENT_TYPE.get(action),
                 document_required=action in DOCUMENT_REQUIRED_ACTIONS,
+                documents_since=self._documents_since(action),
             )
             for action in ProductAction
             if action in available
         ]
+
+    def _documents_since(self, action: ProductAction) -> datetime | None:
+        if action not in ACTION_DOCUMENT_TYPE:
+            return None
+        return self.round_opened_at if action in ROUND_DOCUMENT_ACTIONS else self.stage_entered_at
 
     # -- the guard every step goes through ---------------------------------------
 
@@ -350,6 +410,7 @@ class ProductDevelopmentCase:
         reason: str | None = None,
         opens_round: int | None = None,
         closes_round: RoundClosure | None = None,
+        document_id: uuid.UUID | None = None,
     ) -> None:
         self._pending_steps.append(
             ProductCaseStep(
@@ -360,10 +421,15 @@ class ProductDevelopmentCase:
                 reason=reason,
                 opens_round=opens_round,
                 closes_round=closes_round,
+                document_id=document_id,
             )
         )
         self.state = target
         self.version += 1
+        if action in _FORWARD:
+            # Reached anew: when exactly is the database's, read back on load.
+            # A pause and a resume return to a step already reached.
+            self.stage_entered_at = None
 
     def _expect(self, action: ProductAction) -> ProductDevState:
         source, target = _FORWARD[action]
@@ -379,22 +445,24 @@ class ProductDevelopmentCase:
             )
         return target
 
-    def _round_document(
+    def _step_document(
         self, action: ProductAction, document: CaseDocument | None
     ) -> uuid.UUID | None:
-        """The id of `document` if it is this round's paper for `action`."""
+        """The id of `document` if it is this case's paper for `action`,
+        uploaded since the round opened or the case reached the step."""
         if document is None:
             if action in DOCUMENT_REQUIRED_ACTIONS:
                 raise document_refusal(self.id.value, action)
             return None
+        since = self._documents_since(action)
         belongs = (
             document.case_kind is CaseKind.PRODUCT
             and document.case_id == self.id.value
             and document.tenant_id == self.tenant_id.value
             and document.workspace_id == self.workspace_id.value
             and document.doc_type is ACTION_DOCUMENT_TYPE[action]
-            and self.round_opened_at is not None
-            and document.uploaded_at >= self.round_opened_at
+            and since is not None
+            and document.uploaded_at >= since
         )
         if not belongs:
             raise document_refusal(self.id.value, action)
@@ -430,7 +498,7 @@ class ProductDevelopmentCase:
     def pass_sample(self, *, actor_id: uuid.UUID, evaluation: CaseDocument | None) -> None:
         """Step 3, Đạt: closes the round on this round's Biên bản đánh giá mẫu."""
         target = self._expect(ProductAction.PASS_SAMPLE)
-        document_id = self._round_document(ProductAction.PASS_SAMPLE, evaluation)
+        document_id = self._step_document(ProductAction.PASS_SAMPLE, evaluation)
         self._move(
             ProductAction.PASS_SAMPLE,
             target,
@@ -445,7 +513,7 @@ class ProductDevelopmentCase:
         sửa; the reason is what the supplier is asked to change."""
         changes = _reason(ProductAction.REQUEST_REVISION, reason)
         target = self._expect(ProductAction.REQUEST_REVISION)
-        document_id = self._round_document(ProductAction.REQUEST_REVISION, revision_request)
+        document_id = self._step_document(ProductAction.REQUEST_REVISION, revision_request)
         self._move(
             ProductAction.REQUEST_REVISION,
             target,
@@ -466,7 +534,7 @@ class ProductDevelopmentCase:
         """Step 3, Hủy: closes the round as rejected and cancels the case."""
         why = _reason(ProductAction.REJECT_SAMPLE, reason)
         target = self._expect(ProductAction.REJECT_SAMPLE)
-        document_id = self._round_document(ProductAction.REJECT_SAMPLE, evaluation)
+        document_id = self._step_document(ProductAction.REJECT_SAMPLE, evaluation)
         self._move(
             ProductAction.REJECT_SAMPLE,
             target,
@@ -489,6 +557,28 @@ class ProductDevelopmentCase:
         why = _reason(ProductAction.BOD_REJECT, reason)
         target = self._expect(ProductAction.BOD_REJECT)
         self._move(ProductAction.BOD_REJECT, target, actor_id=actor_id, reason=why)
+
+    # -- steps 7-8 ---------------------------------------------------------------
+
+    def complete_profile(self, *, actor_id: uuid.UUID, profile: CaseDocument | None) -> None:
+        """Step 7: R&D completes the Profile SP (BM04) of this case."""
+        target = self._expect(ProductAction.COMPLETE_PROFILE)
+        document_id = self._step_document(ProductAction.COMPLETE_PROFILE, profile)
+        self._move(
+            ProductAction.COMPLETE_PROFILE, target, actor_id=actor_id, document_id=document_id
+        )
+
+    def confirm_with_supplier(
+        self, *, actor_id: uuid.UUID, confirmation: CaseDocument | None
+    ) -> None:
+        """Step 8: TP Cung ứng confirms the product is agreed with the
+        supplier, on the supplier's confirmation email uploaded to this case
+        (QE-09: in the app, no mailbox read). Item coding comes next."""
+        target = self._expect(ProductAction.CONFIRM_WITH_SUPPLIER)
+        document_id = self._step_document(ProductAction.CONFIRM_WITH_SUPPLIER, confirmation)
+        self._move(
+            ProductAction.CONFIRM_WITH_SUPPLIER, target, actor_id=actor_id, document_id=document_id
+        )
 
     # -- interrupts, resume, cancel ----------------------------------------------
 
@@ -600,6 +690,12 @@ _STEPS: dict[ProductAction, Callable[[ProductDevelopmentCase, ProductActionInput
     ProductAction.BOD_REJECT: lambda case, given: case.bod_reject(
         actor_id=given.actor_id, reason=given.reason
     ),
+    ProductAction.COMPLETE_PROFILE: lambda case, given: case.complete_profile(
+        actor_id=given.actor_id, profile=given.document
+    ),
+    ProductAction.CONFIRM_WITH_SUPPLIER: lambda case, given: case.confirm_with_supplier(
+        actor_id=given.actor_id, confirmation=given.document
+    ),
 }
 
 
@@ -636,6 +732,8 @@ class ProductCaseTransition:
     reason: str | None
     actor_id: uuid.UUID
     occurred_at: datetime
+    # The paper of a step outside the rounds (BM04, the supplier's email).
+    document_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)

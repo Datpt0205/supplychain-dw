@@ -382,7 +382,7 @@ export type CaseDocument = z.infer<typeof caseDocumentSchema>;
 
 // ---- product-development cases (stage 1, ADR 0016) ---------------------------
 
-/** The API's `ProductDevState`: the states stage-1 ticket 01 reaches. */
+/** The API's `ProductDevState`: the states stage-1 tickets 01-03 reach. */
 export const productDevStateSchema = z.enum([
   "proposed",
   "sample_requested",
@@ -390,6 +390,8 @@ export const productDevStateSchema = z.enum([
   "revision_requested",
   "pending_bod_review",
   "profile_in_progress",
+  "supplier_confirmation",
+  "item_coding",
   "waiting_external",
   "blocked",
   "manual_review",
@@ -406,6 +408,9 @@ export const productActionSchema = z.enum([
   "request_revision",
   "receive_revised_sample",
   "reject_sample",
+  // Steps 7-8: R&D completes the BM04; TP Cung ứng confirms with the supplier.
+  "complete_profile",
+  "confirm_with_supplier",
   "wait_for_external",
   "flag_blocked",
   "flag_manual_review",
@@ -465,6 +470,8 @@ export const productActionOptionSchema = z.object({
   takes_supplier: z.boolean(),
   document_type: documentTypeSchema.nullable(),
   document_required: z.boolean(),
+  /** The earliest upload the step takes as its paper; null: none qualifies. */
+  documents_since: z.string().nullable(),
 });
 export type ProductActionOption = z.infer<typeof productActionOptionSchema>;
 
@@ -511,6 +518,8 @@ export const productCaseTransitionSchema = z.object({
   reason: z.string().nullable(),
   actor_id: z.string(),
   occurred_at: z.string(),
+  /** The paper of step 7 or 8; a round's paper is on the round. */
+  document_id: z.string().nullable(),
 });
 export type ProductCaseTransition = z.infer<typeof productCaseTransitionSchema>;
 
@@ -523,6 +532,7 @@ export const caseDutySchema = z.enum([
   "warehouse",
   "exceptions",
   "rnd",
+  "supply_lead",
 ]);
 export type CaseDuty = z.infer<typeof caseDutySchema>;
 

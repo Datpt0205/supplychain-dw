@@ -84,7 +84,7 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
     {
         "schema_version": "1.0",
         "policy_id": PRODUCT_ACTION_DUTIES_POLICY_ID,
-        "policy_version": "1.0.0",
+        "policy_version": "1.1.0",
         "action_duties": {
             "propose": "ordering",
             "request_sample": "ordering",
@@ -98,6 +98,8 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
             "flag_manual_review": "exceptions",
             "resume": "exceptions",
             "cancel": "ordering",
+            "complete_profile": "rnd",
+            "confirm_with_supplier": "supply_lead",
         },
     }
 )

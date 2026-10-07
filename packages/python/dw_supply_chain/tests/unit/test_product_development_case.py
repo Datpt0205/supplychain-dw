@@ -1,4 +1,4 @@
-"""Unit: the product-development case, steps 1-5 (stage-1 ticket 01, ADR 0016).
+"""Unit: the product-development case, steps 1-8 (stage-1 tickets 01-03, ADR 0016).
 
 Every legal step, every step refused from the wrong state, a reason where one
 is required, the sample round counting each revision, an interrupt returning
@@ -9,6 +9,7 @@ CURRENT round for a pass, a revision request for a revision, each of this case.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -22,6 +23,8 @@ from dw_supply_chain.domain.case_document import (
     DocumentType,
 )
 from dw_supply_chain.domain.product_development_case import (
+    ACTION_DOCUMENT_TYPE,
+    DOCUMENT_REQUIRED_ACTIONS,
     GRAPH_ONLY_ACTIONS,
     PRODUCT_REASON_REQUIRED_ACTIONS,
     ProductAction,
@@ -211,6 +214,8 @@ _FORWARD_FROM: dict[ProductAction, ProductDevState] = {
     ProductAction.REJECT_SAMPLE: ProductDevState.SAMPLE_TESTING,
     ProductAction.BOD_APPROVE: ProductDevState.PENDING_BOD_REVIEW,
     ProductAction.BOD_REJECT: ProductDevState.PENDING_BOD_REVIEW,
+    ProductAction.COMPLETE_PROFILE: ProductDevState.PROFILE_IN_PROGRESS,
+    ProductAction.CONFIRM_WITH_SUPPLIER: ProductDevState.SUPPLIER_CONFIRMATION,
 }
 
 
@@ -220,6 +225,7 @@ def _in_state(state: ProductDevState) -> ProductDevelopmentCase:
     case.state = state
     case.sample_round = 1
     case.round_opened_at = OPENED
+    case.stage_entered_at = OPENED
     if state in {
         ProductDevState.WAITING_EXTERNAL,
         ProductDevState.BLOCKED,
@@ -233,6 +239,8 @@ def _input(case: ProductDevelopmentCase, action: ProductAction) -> ProductAction
     document_type = {
         ProductAction.PASS_SAMPLE: DocumentType.SAMPLE_EVALUATION,
         ProductAction.REQUEST_REVISION: DocumentType.SAMPLE_REVISION_REQUEST,
+        ProductAction.COMPLETE_PROFILE: DocumentType.PRODUCT_PROFILE_BM04,
+        ProductAction.CONFIRM_WITH_SUPPLIER: DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
     }.get(action)
     return ProductActionInput(
         actor_id=RND,
@@ -388,6 +396,8 @@ def test_an_action_without_a_document_type_refuses_a_document() -> None:
         ProductDevState.SAMPLE_TESTING,
         ProductDevState.REVISION_REQUESTED,
         ProductDevState.PROFILE_IN_PROGRESS,
+        ProductDevState.SUPPLIER_CONFIRMATION,
+        ProductDevState.ITEM_CODING,
     ],
 )
 def test_an_interrupt_then_resume_returns_to_where_it_paused(
@@ -469,6 +479,8 @@ def test_cancel_while_a_sample_is_in_test_closes_its_round(paused_first: bool) -
         ProductDevState.REVISION_REQUESTED,
         ProductDevState.PENDING_BOD_REVIEW,
         ProductDevState.PROFILE_IN_PROGRESS,
+        ProductDevState.SUPPLIER_CONFIRMATION,
+        ProductDevState.ITEM_CODING,
         ProductDevState.WAITING_EXTERNAL,
     ],
 )
@@ -613,6 +625,198 @@ def test_reject_refuses_an_evaluation_from_another_case() -> None:
         )
 
 
+# --- steps 7-8: BM04 and the supplier's confirmation, each on its own paper --------
+
+R_AND_D = uuid.uuid4()
+SUPPLY_LEAD = uuid.uuid4()
+_STAGE_PAPER = {
+    ProductAction.COMPLETE_PROFILE: (
+        ProductDevState.PROFILE_IN_PROGRESS,
+        DocumentType.PRODUCT_PROFILE_BM04,
+        ProductDevState.SUPPLIER_CONFIRMATION,
+    ),
+    ProductAction.CONFIRM_WITH_SUPPLIER: (
+        ProductDevState.SUPPLIER_CONFIRMATION,
+        DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
+        ProductDevState.ITEM_CODING,
+    ),
+}
+
+
+@pytest.mark.parametrize("action", list(_STAGE_PAPER))
+def test_steps_seven_and_eight_move_on_and_record_their_paper(action: ProductAction) -> None:
+    source, doc_type, target = _STAGE_PAPER[action]
+    case = _in_state(source)
+    paper = _document(case, doc_type)
+
+    apply_product_action(case, action=action, given=ProductActionInput(R_AND_D, document=paper))
+
+    assert_state(case, target)
+    (step,) = case.pop_pending_steps()
+    assert (step.action, step.from_state, step.to_state, step.actor_id) == (
+        action,
+        source,
+        target,
+        R_AND_D,
+    )
+    # The paper sits on the history row; no sample round is touched.
+    assert step.document_id == paper.id.value
+    assert (step.opens_round, step.closes_round, step.reason) == (None, None, None)
+
+
+def test_bm04_then_the_suppliers_email_reach_item_coding() -> None:
+    case = _in_state(ProductDevState.PROFILE_IN_PROGRESS)
+    case.complete_profile(
+        actor_id=R_AND_D, profile=_document(case, DocumentType.PRODUCT_PROFILE_BM04)
+    )
+    case.pop_pending_steps()
+    # Read back: the case reached supplier_confirmation when that step was saved.
+    case.stage_entered_at = OPENED + timedelta(days=1)
+    case.confirm_with_supplier(
+        actor_id=SUPPLY_LEAD,
+        confirmation=_document(
+            case,
+            DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
+            uploaded_at=OPENED + timedelta(days=2),
+        ),
+    )
+    assert_state(case, ProductDevState.ITEM_CODING)
+
+
+@pytest.mark.parametrize("action", list(_STAGE_PAPER))
+def test_steps_seven_and_eight_without_their_paper_name_the_missing_type(
+    action: ProductAction,
+) -> None:
+    source, doc_type, _ = _STAGE_PAPER[action]
+    case = _in_state(source)
+    with pytest.raises(ConflictError) as raised:
+        apply_product_action(case, action=action, given=ProductActionInput(R_AND_D))
+    assert raised.value.details["missing_document_type"] == doc_type.value
+    assert_state(case, source)
+    assert case.pop_pending_steps() == []
+
+
+@pytest.mark.parametrize("action", list(_STAGE_PAPER))
+@pytest.mark.parametrize(
+    "wrong",
+    [
+        "another_case",
+        "a_po_case",
+        "wrong_type",
+        "another_tenant",
+        "another_workspace",
+        "before_the_case_reached_this_step",
+    ],
+)
+def test_steps_seven_and_eight_refuse_paper_that_is_not_this_steps(
+    action: ProductAction, wrong: str
+) -> None:
+    source, doc_type, _ = _STAGE_PAPER[action]
+    case = _in_state(source)
+    other_type = (
+        DocumentType.SUPPLIER_CONFIRMATION_EMAIL
+        if doc_type is DocumentType.PRODUCT_PROFILE_BM04
+        else DocumentType.PRODUCT_PROFILE_BM04
+    )
+    paper = {
+        "another_case": lambda: _document(case, doc_type, case_id=uuid.uuid4()),
+        "a_po_case": lambda: _document(case, doc_type, case_kind=CaseKind.PO),
+        "wrong_type": lambda: _document(case, other_type),
+        "another_tenant": lambda: replace(_document(case, doc_type), tenant_id=uuid.uuid4()),
+        "another_workspace": lambda: replace(_document(case, doc_type), workspace_id=uuid.uuid4()),
+        "before_the_case_reached_this_step": lambda: _document(
+            case, doc_type, uploaded_at=OPENED - timedelta(seconds=1)
+        ),
+    }[wrong]()
+    with pytest.raises(ConflictError) as raised:
+        apply_product_action(case, action=action, given=ProductActionInput(R_AND_D, document=paper))
+    assert raised.value.details["missing_document_type"] == doc_type.value
+    assert_state(case, source)
+
+
+@pytest.mark.parametrize("action", list(_STAGE_PAPER))
+def test_a_step_reached_in_this_instance_and_not_yet_saved_accepts_no_paper(
+    action: ProductAction,
+) -> None:
+    """When the case reached the step is the database's; until it is read
+    back no paper can be shown to have come after it, so none is accepted."""
+    source, doc_type, _ = _STAGE_PAPER[action]
+    case = _in_state(source)
+    case.stage_entered_at = None
+    with pytest.raises(ConflictError):
+        apply_product_action(
+            case,
+            action=action,
+            given=ProductActionInput(R_AND_D, document=_document(case, doc_type)),
+        )
+
+
+def test_a_step_reached_by_a_step_in_this_instance_forgets_the_old_bound() -> None:
+    """Completing the BM04 in memory reaches step 8 anew: the bound step 7
+    was read with must not admit an email uploaded before step 8 was saved."""
+    case = _in_state(ProductDevState.PROFILE_IN_PROGRESS)
+    case.complete_profile(
+        actor_id=R_AND_D, profile=_document(case, DocumentType.PRODUCT_PROFILE_BM04)
+    )
+    assert case.stage_entered_at is None
+    with pytest.raises(ConflictError):
+        case.confirm_with_supplier(
+            actor_id=SUPPLY_LEAD,
+            confirmation=_document(case, DocumentType.SUPPLIER_CONFIRMATION_EMAIL),
+        )
+
+
+def test_the_paper_steps_and_their_types_are_the_tickets() -> None:
+    assert ACTION_DOCUMENT_TYPE == {
+        ProductAction.PASS_SAMPLE: DocumentType.SAMPLE_EVALUATION,
+        ProductAction.REQUEST_REVISION: DocumentType.SAMPLE_REVISION_REQUEST,
+        ProductAction.REJECT_SAMPLE: DocumentType.SAMPLE_EVALUATION,
+        ProductAction.COMPLETE_PROFILE: DocumentType.PRODUCT_PROFILE_BM04,
+        ProductAction.CONFIRM_WITH_SUPPLIER: DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
+    }
+    assert {
+        ProductAction.PASS_SAMPLE,
+        ProductAction.REQUEST_REVISION,
+        ProductAction.COMPLETE_PROFILE,
+        ProductAction.CONFIRM_WITH_SUPPLIER,
+    } == DOCUMENT_REQUIRED_ACTIONS
+
+
+def test_each_paper_option_says_since_when_its_paper_counts() -> None:
+    """The page offers papers from the bound the step will check, read from
+    the case: a round's paper since the round opened, a stage's since the
+    case reached that step. One owner; the page holds no copy of the rule."""
+    testing = _in_state(ProductDevState.SAMPLE_TESTING)
+    testing.round_opened_at = OPENED + timedelta(hours=3)
+    testing.stage_entered_at = OPENED
+    since = {o.action: o.documents_since for o in testing.action_options()}
+    assert since[ProductAction.PASS_SAMPLE] == OPENED + timedelta(hours=3)
+    assert since[ProductAction.CANCEL] is None
+
+    for action, (source, doc_type, _) in _STAGE_PAPER.items():
+        case = _in_state(source)
+        case.stage_entered_at = OPENED + timedelta(days=4)
+        (option,) = [o for o in case.action_options() if o.action is action]
+        assert (option.document_type, option.document_required, option.documents_since) == (
+            doc_type,
+            True,
+            OPENED + timedelta(days=4),
+        )
+
+
+def test_pausing_at_a_step_does_not_move_the_bound_its_paper_counts_from() -> None:
+    """A resume returns the case to a step it already reached: a BM04
+    uploaded before the pause still counts. The bound is read back by the
+    repository; the domain never resets it on a resume."""
+    case = _in_state(ProductDevState.PROFILE_IN_PROGRESS)
+    paper = _document(case, DocumentType.PRODUCT_PROFILE_BM04)
+    case.flag_blocked(actor_id=PIC, reason="Chờ thông số NCC")
+    case.resume(actor_id=PIC)
+    assert case.stage_entered_at == OPENED
+    case.complete_profile(actor_id=R_AND_D, profile=paper)
+    assert_state(case, ProductDevState.SUPPLIER_CONFIRMATION)
+
+
 # --- what a person may do next ---------------------------------------------------
 
 
@@ -630,8 +834,10 @@ def test_reject_refuses_an_evaluation_from_another_case() -> None:
             },
         ),
         (ProductDevState.REVISION_REQUESTED, {ProductAction.RECEIVE_REVISED_SAMPLE}),
-        # Step 7 (complete_profile) is S3's.
-        (ProductDevState.PROFILE_IN_PROGRESS, set()),
+        (ProductDevState.PROFILE_IN_PROGRESS, {ProductAction.COMPLETE_PROFILE}),
+        (ProductDevState.SUPPLIER_CONFIRMATION, {ProductAction.CONFIRM_WITH_SUPPLIER}),
+        # Step 9 (item code, SKU, sign-off) is S4's.
+        (ProductDevState.ITEM_CODING, set()),
     ],
 )
 def test_available_actions_are_the_states_own_steps_plus_the_exceptions(

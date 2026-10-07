@@ -85,8 +85,8 @@ class ProposeProductCaseRequest(BaseModel):
 class AdvanceProductCaseRequest(BaseModel):
     """One step. Each step reads the fields it takes and refuses the others:
     `supplier_name` for `request_sample`, `document_id` for `pass_sample`,
-    `request_revision` and (optionally) `reject_sample`, `reason` where the
-    step needs one."""
+    `request_revision`, `complete_profile`, `confirm_with_supplier` and
+    (optionally) `reject_sample`, `reason` where the step needs one."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -133,7 +133,10 @@ class SampleRoundView(BaseModel):
 class ProductActionOptionView(BaseModel):
     """A step the case accepts from its state, what it must carry, and the
     scope its duty needs under the tenant's policy. The page draws its button
-    and form from this; the server checks all of it again on the step."""
+    and form from this; the server checks all of it again on the step.
+    `documents_since` is the earliest upload the step takes as its paper
+    (when the round opened, or when the case reached the step); null when it
+    takes none or the bound is not known, and then no paper qualifies."""
 
     action: ProductAction
     required_scope: str
@@ -141,6 +144,7 @@ class ProductActionOptionView(BaseModel):
     takes_supplier: bool
     document_type: DocumentType | None
     document_required: bool
+    documents_since: datetime | None
 
 
 class PendingReviewView(BaseModel):
@@ -168,12 +172,16 @@ class ProductCaseStepView(ProductCaseView):
 
 
 class ProductCaseTransitionView(BaseModel):
+    """One history row. `document_id` is the paper of a step outside the
+    sample rounds (BM04, the supplier's email); a round's is on the round."""
+
     action: ProductAction
     from_state: ProductDevState | None
     to_state: ProductDevState
     reason: str | None
     actor_id: uuid.UUID
     occurred_at: datetime
+    document_id: uuid.UUID | None
 
 
 def _fields(case: ProductDevelopmentCase) -> dict[str, object]:
@@ -229,6 +237,7 @@ def _transition_view(transition: ProductCaseTransition) -> ProductCaseTransition
         reason=transition.reason,
         actor_id=transition.actor_id,
         occurred_at=transition.occurred_at,
+        document_id=transition.document_id,
     )
 
 
@@ -300,6 +309,7 @@ def build_product_cases_router(
                         takes_supplier=option.takes_supplier,
                         document_type=option.document_type,
                         document_required=option.document_required,
+                        documents_since=option.documents_since,
                     )
                     for option in detail.case.action_options()
                 ],

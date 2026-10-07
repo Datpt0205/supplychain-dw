@@ -75,6 +75,7 @@ from dw_supply_chain.domain.case_document import (
     DocumentType,
 )
 from dw_supply_chain.domain.product_development_case import (
+    ProductAction,
     ProductCaseTransition,
     ProductDevelopmentCase,
     ProductDevelopmentCaseId,
@@ -114,7 +115,7 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
     {
         "schema_version": "1.0",
         "policy_id": PRODUCT_ACTION_DUTIES_POLICY_ID,
-        "policy_version": "1.0.0",
+        "policy_version": "1.1.0",
         "action_duties": {
             "propose": "ordering",
             "request_sample": "ordering",
@@ -128,6 +129,8 @@ DUTIES = SupplyChainProductActionDuties.model_validate(
             "flag_manual_review": "exceptions",
             "resume": "exceptions",
             "cancel": "ordering",
+            "complete_profile": "rnd",
+            "confirm_with_supplier": "supply_lead",
         },
     }
 )
@@ -183,6 +186,7 @@ class FakeCases:
                     reason=step.reason,
                     actor_id=step.actor_id,
                     occurred_at=NOW,
+                    document_id=step.document_id,
                 )
             )
             if step.opens_round is not None:
@@ -223,6 +227,14 @@ class FakeCases:
         case.created_at = case.created_at or NOW
         current = next((r for r in rounds if r.round_no == case.sample_round), None)
         case.round_opened_at = current.opened_at if current else None
+        case.stage_entered_at = max(
+            (
+                t.occurred_at
+                for t in self.history.get(case.id.value, [])
+                if t.to_state is case.state and t.action is not ProductAction.RESUME
+            ),
+            default=None,
+        )
         self.rows[case.id.value] = case
         return case
 
@@ -536,7 +548,10 @@ class World:
         tenant: uuid.UUID = TENANT,
         workspace: uuid.UUID = WORKSPACE,
         testing: bool = False,
+        at: ProductDevState | None = None,
     ) -> ProductDevelopmentCase:
+        """A new case; `testing` takes it to its first round. `at` puts it at
+        step 7 or 8 as the earlier steps would have, history row included."""
         case = ProductDevelopmentCase.propose(
             id=ProductDevelopmentCaseId(uuid.uuid4()),
             tenant_id=TenantId(tenant),
@@ -549,6 +564,19 @@ class World:
         if testing:
             case.request_sample(actor_id=uuid.uuid4(), supplier_name="NCC")
             case.receive_sample(actor_id=uuid.uuid4())
+        if at is not None:
+            case.pop_pending_steps()
+            self.cases.history.setdefault(case.id.value, []).append(
+                ProductCaseTransition(
+                    action=ProductAction.BOD_APPROVE,
+                    from_state=ProductDevState.PENDING_BOD_REVIEW,
+                    to_state=at,
+                    reason=None,
+                    actor_id=uuid.uuid4(),
+                    occurred_at=NOW,
+                )
+            )
+            case.state = at
         return self.cases.put(case)
 
     def document(self, case: ProductDevelopmentCase, doc_type: DocumentType) -> CaseDocument:
@@ -665,7 +693,9 @@ async def test_the_detail_offers_each_step_with_what_it_takes_and_its_scope() ->
         "takes_supplier": False,
         "document_type": "sample_evaluation",
         "document_required": True,
+        "documents_since": NOW.isoformat().replace("+00:00", "Z"),
     }
+    assert options["cancel"]["documents_since"] is None
     assert options["request_revision"]["reason_required"] is True
     assert options["request_revision"]["document_type"] == "sample_revision_request"
     assert options["reject_sample"]["document_required"] is False
@@ -1055,3 +1085,191 @@ async def test_the_product_router_mounts_on_its_own_guard() -> None:
     world = World()
     (unmounted,) = await _send(world.container(SC_OPERATOR, mount=False), [_get("/product-cases")])
     assert unmounted.status_code == 404
+
+
+# --- steps 7-8: BM04 and the supplier's confirmation (ticket 03) ------------------------
+
+SC_SUPPLY_LEAD = frozenset({PRODUCT_CASE_READ, "supply_chain.duty.supply_lead"})
+
+
+@pytest.mark.parametrize(
+    ("at", "action", "doc_type", "scope"),
+    [
+        (
+            ProductDevState.PROFILE_IN_PROGRESS,
+            "complete_profile",
+            "product_profile_bm04",
+            "supply_chain.duty.rnd",
+        ),
+        (
+            ProductDevState.SUPPLIER_CONFIRMATION,
+            "confirm_with_supplier",
+            "supplier_confirmation_email",
+            "supply_chain.duty.supply_lead",
+        ),
+    ],
+)
+async def test_the_detail_offers_step_seven_or_eight_with_its_paper_and_scope(
+    at: ProductDevState, action: str, doc_type: str, scope: str
+) -> None:
+    world = World()
+    case = world.case(testing=True, at=at)
+    (response,) = await _send(world.container(SC_RND), [_get(f"/product-cases/{case.id}")])
+    assert response.status_code == 200, response.text
+    options = {o["action"]: o for o in response.json()["actions"]}
+    # The step first: declaration order, steps before the exceptions.
+    assert list(options) == [
+        action,
+        "wait_for_external",
+        "flag_blocked",
+        "flag_manual_review",
+        "cancel",
+    ]
+    assert options[action] == {
+        "action": action,
+        "required_scope": scope,
+        "reason_required": False,
+        "takes_supplier": False,
+        "document_type": doc_type,
+        "document_required": True,
+        # Since the case reached the step (BGĐ's approval, or the BM04).
+        "documents_since": NOW.isoformat().replace("+00:00", "Z"),
+    }
+
+
+async def test_rnd_completes_the_bm04_and_the_supply_lead_confirms_over_http() -> None:
+    world = World()
+    case = world.case(testing=True, at=ProductDevState.PROFILE_IN_PROGRESS)
+    bm04 = world.document(case, DocumentType.PRODUCT_PROFILE_BM04)
+    email = world.document(case, DocumentType.SUPPLIER_CONFIRMATION_EMAIL)
+    path = f"/product-cases/{case.id}/transitions"
+
+    (profiled,) = await _send(
+        world.container(SC_RND),
+        [_post(path, {"action": "complete_profile", "document_id": str(bm04.id)})],
+    )
+    (confirmed, history) = await _send(
+        world.container(SC_SUPPLY_LEAD),
+        [
+            _post(path, {"action": "confirm_with_supplier", "document_id": str(email.id)}),
+            _get(path),
+        ],
+    )
+    assert profiled.status_code == 200, profiled.text
+    assert (profiled.json()["state"], profiled.json()["review"]) == ("supplier_confirmation", None)
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["state"] == "item_coding"
+    assert [(t["action"], t["document_id"]) for t in history.json()[-2:]] == [
+        ("complete_profile", str(bm04.id)),
+        ("confirm_with_supplier", str(email.id)),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("at", "action", "doc_type", "wrong_role"),
+    [
+        (
+            ProductDevState.PROFILE_IN_PROGRESS,
+            "complete_profile",
+            DocumentType.PRODUCT_PROFILE_BM04,
+            SC_SUPPLY_LEAD,
+        ),
+        (
+            ProductDevState.SUPPLIER_CONFIRMATION,
+            "confirm_with_supplier",
+            DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
+            SC_RND,
+        ),
+    ],
+)
+async def test_step_seven_or_eight_by_the_wrong_duty_is_403(
+    at: ProductDevState, action: str, doc_type: DocumentType, wrong_role: frozenset[str]
+) -> None:
+    world = World()
+    case = world.case(testing=True, at=at)
+    paper = world.document(case, doc_type)
+    (response,) = await _send(
+        world.container(wrong_role),
+        [
+            _post(
+                f"/product-cases/{case.id}/transitions",
+                {"action": action, "document_id": str(paper.id)},
+            )
+        ],
+    )
+    assert response.status_code == 403, response.text
+    assert world.cases.rows[case.id.value].state is at
+
+
+@pytest.mark.parametrize(
+    ("at", "action", "doc_type", "role"),
+    [
+        (
+            ProductDevState.PROFILE_IN_PROGRESS,
+            "complete_profile",
+            DocumentType.PRODUCT_PROFILE_BM04,
+            SC_RND,
+        ),
+        (
+            ProductDevState.SUPPLIER_CONFIRMATION,
+            "confirm_with_supplier",
+            DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
+            SC_SUPPLY_LEAD,
+        ),
+    ],
+)
+async def test_step_seven_or_eight_without_its_paper_or_on_anothers_is_409_naming_it(
+    at: ProductDevState, action: str, doc_type: DocumentType, role: frozenset[str]
+) -> None:
+    world = World()
+    case = world.case(testing=True, at=at)
+    foreign = world.document(world.case(testing=True, at=at), doc_type)
+    other_tenants = world.document(world.case(tenant=OTHER_TENANT, testing=True, at=at), doc_type)
+    path = f"/product-cases/{case.id}/transitions"
+    responses = await _send(
+        world.container(role),
+        [
+            _post(path, {"action": action}),
+            _post(path, {"action": action, "document_id": str(foreign.id)}),
+            _post(path, {"action": action, "document_id": str(other_tenants.id)}),
+        ],
+    )
+    for response in responses:
+        assert response.status_code == 409, response.text
+        assert response.json()["details"]["missing_document_type"] == doc_type.value
+    assert world.cases.rows[case.id.value].state is at
+
+
+@pytest.mark.parametrize("owner", [(OTHER_TENANT, WORKSPACE), (TENANT, OTHER_WORKSPACE)])
+@pytest.mark.parametrize(
+    ("at", "action", "doc_type"),
+    [
+        (
+            ProductDevState.PROFILE_IN_PROGRESS,
+            "complete_profile",
+            DocumentType.PRODUCT_PROFILE_BM04,
+        ),
+        (
+            ProductDevState.SUPPLIER_CONFIRMATION,
+            "confirm_with_supplier",
+            DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
+        ),
+    ],
+)
+async def test_step_seven_or_eight_on_another_tenants_or_workspaces_case_is_404(
+    owner: tuple[uuid.UUID, uuid.UUID], at: ProductDevState, action: str, doc_type: DocumentType
+) -> None:
+    world = World()
+    case = world.case(tenant=owner[0], workspace=owner[1], testing=True, at=at)
+    paper = world.document(case, doc_type)
+    (response,) = await _send(
+        world.container(SC_RND | SC_SUPPLY_LEAD),
+        [
+            _post(
+                f"/product-cases/{case.id}/transitions",
+                {"action": action, "document_id": str(paper.id)},
+            )
+        ],
+    )
+    assert response.status_code == 404, response.text
+    assert world.cases.rows[case.id.value].state is at

@@ -590,8 +590,8 @@ export interface components {
          * AdvanceProductCaseRequest
          * @description One step. Each step reads the fields it takes and refuses the others:
          *     `supplier_name` for `request_sample`, `document_id` for `pass_sample`,
-         *     `request_revision` and (optionally) `reject_sample`, `reason` where the
-         *     step needs one.
+         *     `request_revision`, `complete_profile`, `confirm_with_supplier` and
+         *     (optionally) `reject_sample`, `reason` where the step needs one.
          */
         AdvanceProductCaseRequest: {
             action: components["schemas"]["ProductAction"];
@@ -738,7 +738,7 @@ export interface components {
          * CaseDuty
          * @enum {string}
          */
-        CaseDuty: "ordering" | "finance" | "qc" | "logistics" | "warehouse" | "exceptions" | "rnd";
+        CaseDuty: "ordering" | "finance" | "qc" | "logistics" | "warehouse" | "exceptions" | "rnd" | "supply_lead";
         /**
          * CaseKind
          * @description Which kind of case a document belongs to; the key's fourth segment, and
@@ -1055,18 +1055,23 @@ export interface components {
          *     PO policy or approval keyed by one of them must not reach this case.
          * @enum {string}
          */
-        ProductAction: "propose" | "request_sample" | "receive_sample" | "pass_sample" | "request_revision" | "receive_revised_sample" | "reject_sample" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "resume" | "cancel" | "bod_approve" | "bod_reject";
+        ProductAction: "propose" | "request_sample" | "receive_sample" | "pass_sample" | "request_revision" | "receive_revised_sample" | "reject_sample" | "complete_profile" | "confirm_with_supplier" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "resume" | "cancel" | "bod_approve" | "bod_reject";
         /**
          * ProductActionOptionView
          * @description A step the case accepts from its state, what it must carry, and the
          *     scope its duty needs under the tenant's policy. The page draws its button
          *     and form from this; the server checks all of it again on the step.
+         *     `documents_since` is the earliest upload the step takes as its paper
+         *     (when the round opened, or when the case reached the step); null when it
+         *     takes none or the bound is not known, and then no paper qualifies.
          */
         ProductActionOptionView: {
             action: components["schemas"]["ProductAction"];
             /** Document Required */
             document_required: boolean;
             document_type: components["schemas"]["DocumentType"] | null;
+            /** Documents Since */
+            documents_since: string | null;
             /** Reason Required */
             reason_required: boolean;
             /** Required Scope */
@@ -1153,7 +1158,11 @@ export interface components {
             /** Version */
             version: number;
         };
-        /** ProductCaseTransitionView */
+        /**
+         * ProductCaseTransitionView
+         * @description One history row. `document_id` is the paper of a step outside the
+         *     sample rounds (BM04, the supplier's email); a round's is on the round.
+         */
         ProductCaseTransitionView: {
             action: components["schemas"]["ProductAction"];
             /**
@@ -1161,6 +1170,8 @@ export interface components {
              * Format: uuid
              */
             actor_id: string;
+            /** Document Id */
+            document_id: string | null;
             from_state: components["schemas"]["ProductDevState"] | null;
             /**
              * Occurred At
@@ -1211,7 +1222,7 @@ export interface components {
          *     web, in one table beside the product-case pages.
          * @enum {string}
          */
-        ProductDevState: "proposed" | "sample_requested" | "sample_testing" | "revision_requested" | "pending_bod_review" | "profile_in_progress" | "waiting_external" | "blocked" | "manual_review" | "cancelled";
+        ProductDevState: "proposed" | "sample_requested" | "sample_testing" | "revision_requested" | "pending_bod_review" | "profile_in_progress" | "supplier_confirmation" | "item_coding" | "waiting_external" | "blocked" | "manual_review" | "cancelled";
         /**
          * ProposeProductCaseRequest
          * @description Step 1. JSON only: product images are uploaded after the case exists,

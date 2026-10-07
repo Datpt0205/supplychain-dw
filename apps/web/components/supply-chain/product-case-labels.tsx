@@ -22,6 +22,8 @@ export const PRODUCT_DEV_STATE_LABEL: Record<ProductDevState, string> = {
   revision_requested: "Chờ mẫu chỉnh sửa",
   pending_bod_review: "Chờ BGĐ duyệt",
   profile_in_progress: "Đang làm BM04",
+  supplier_confirmation: "Chờ thống nhất với NCC",
+  item_coding: "Đang tạo mã hàng",
   waiting_external: "Chờ bên ngoài",
   blocked: "Đang bị chặn",
   manual_review: "Cần xem xét thủ công",
@@ -44,6 +46,8 @@ export const PRODUCT_DEV_STATE_META: Record<
   revision_requested: { step: 4, tone: "gold" },
   pending_bod_review: { step: 6, tone: "geek" },
   profile_in_progress: { step: 7, tone: "pri" },
+  supplier_confirmation: { step: 8, tone: "pri" },
+  item_coding: { step: 9, tone: "pri" },
   waiting_external: { step: null, tone: "gold" },
   blocked: { step: null, tone: "err" },
   manual_review: { step: null, tone: "warn" },
@@ -70,6 +74,8 @@ export const PRODUCT_ACTION_LABEL: Record<ProductAction, string> = {
   request_revision: "Yêu cầu chỉnh sửa",
   receive_revised_sample: "Đã nhận mẫu chỉnh sửa",
   reject_sample: "Hủy mẫu",
+  complete_profile: "Hoàn tất BM04",
+  confirm_with_supplier: "Đã thống nhất với NCC",
   wait_for_external: "Chờ bên ngoài",
   flag_blocked: "Báo bị chặn",
   flag_manual_review: "Cần xem xét thủ công",
@@ -112,6 +118,7 @@ export const CASE_DUTY_LABEL: Record<CaseDuty, string> = {
   warehouse: "Kho",
   exceptions: "xử lý ngoại lệ",
   rnd: "R&D",
+  supply_lead: "TP Cung ứng",
 };
 
 // `supply_chain.duty.<duty>`: the scope a role grants for a duty. A second

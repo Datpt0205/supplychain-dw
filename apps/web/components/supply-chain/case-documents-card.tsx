@@ -79,8 +79,8 @@ const DOCUMENTS_API: Record<
 };
 
 // What the API accepts; it decides by content, this only narrows the picker.
-const ACCEPT = ".pdf,.jpg,.jpeg,.png,.xlsx,.docx,.eml,.msg";
-const NO_WRITE_REASON =
+export const ACCEPT = ".pdf,.jpg,.jpeg,.png,.xlsx,.docx,.eml,.msg";
+export const NO_WRITE_REASON =
   "Chỉ người có quyền tải chứng từ lên (vai vận hành Supply Chain) mới thêm được chứng từ.";
 const OFFLINE_REASON = "Không có kết nối mạng. Kết nối lại rồi thử lại.";
 
@@ -113,6 +113,49 @@ interface Attempt {
 }
 
 /**
+ * Uploading one document to one case: the one place a press becomes an
+ * `Idempotency-Key` (reused on a retry of the same type and file, replaced
+ * after either changes) and a failure becomes the server's sentence. The
+ * documents card and a step's form both upload through it.
+ */
+export function useCaseDocumentUpload(caseKind: CaseKind, caseId: string) {
+  const api = DOCUMENTS_API[caseKind];
+  const [attempt, setAttempt] = useState<Attempt | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const upload = async (
+    docType: DocumentType,
+    file: File,
+  ): Promise<CaseDocument | null> => {
+    if (uploading) return null;
+    const current =
+      attempt && attempt.docType === docType && attempt.file === file
+        ? attempt
+        : { key: newIdempotencyKey(), docType, file };
+    setAttempt(current);
+    setUploading(true);
+    setError(null);
+    try {
+      const created = await api.upload(caseId, {
+        docType,
+        file,
+        idempotencyKey: current.key,
+      });
+      setAttempt(null);
+      return created;
+    } catch (caught) {
+      setError(errorMessage(caught));
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return { upload, uploading, error, clearError: () => setError(null) };
+}
+
+/**
  * "Chứng từ" of one case: the documents attached to it, uploading the next
  * version of a type, and downloading one. The server decides who may and what
  * is accepted; the card draws what it said and locks upload with the reason
@@ -123,12 +166,15 @@ export function CaseDocumentsCard({
   caseId,
   canUpload,
   onUploaded,
+  refreshTick = 0,
 }: {
   caseKind: CaseKind;
   caseId: string;
   canUpload: boolean;
   /** Told after a document is stored, so a page can refresh what reads them. */
   onUploaded?: (document: CaseDocument) => void;
+  /** Bumped by the page when a document was stored elsewhere (a step's form). */
+  refreshTick?: number;
 }) {
   const { message } = App.useApp();
   const online = useOnline();
@@ -136,9 +182,12 @@ export function CaseDocumentsCard({
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [docType, setDocType] = useState<DocumentType | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [attempt, setAttempt] = useState<Attempt | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const {
+    upload: send,
+    uploading,
+    error: uploadError,
+    clearError,
+  } = useCaseDocumentUpload(caseKind, caseId);
   const [downloading, setDownloading] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -152,35 +201,18 @@ export function CaseDocumentsCard({
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshTick]);
 
   const upload = async () => {
-    if (!docType || !file || uploading) return;
-    const current =
-      attempt && attempt.docType === docType && attempt.file === file
-        ? attempt
-        : { key: newIdempotencyKey(), docType, file };
-    setAttempt(current);
-    setUploading(true);
-    setUploadError(null);
-    try {
-      const created = await api.upload(caseId, {
-        docType,
-        file,
-        idempotencyKey: current.key,
-      });
-      setFile(null);
-      setAttempt(null);
-      void message.success(
-        `Đã tải lên ${DOC_TYPE_LABEL[created.doc_type]}, phiên bản ${created.version}.`,
-      );
-      onUploaded?.(created);
-      await load();
-    } catch (error) {
-      setUploadError(errorMessage(error));
-    } finally {
-      setUploading(false);
-    }
+    if (!docType || !file) return;
+    const created = await send(docType, file);
+    if (!created) return;
+    setFile(null);
+    void message.success(
+      `Đã tải lên ${DOC_TYPE_LABEL[created.doc_type]}, phiên bản ${created.version}.`,
+    );
+    onUploaded?.(created);
+    await load();
   };
 
   const download = async (document_: CaseDocument) => {
@@ -323,7 +355,7 @@ export function CaseDocumentsCard({
             disabled={lockReason !== null}
             beforeUpload={(chosen) => {
               setFile(chosen);
-              setUploadError(null);
+              clearError();
               return false;
             }}
             onRemove={() => {

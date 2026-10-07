@@ -15,11 +15,14 @@ Usage (reads `.env`; `make` exports it, a plain shell needs `set -a; source .env
     - Giang: `sc_qc`, who passes or fails QC;
     - Hà: `sc_logistics` and `sc_warehouse`, port arrival and receiving;
     - Chi keeps `platform_admin`, the administrator;
-- two personas the platform roster has no user for, created in Alpha's main
-  workspace, so stage 1 steps 1-6 can be clicked through:
-    - Linh: `sc_rnd`, who receives, tests and passes samples (steps 2-5);
+- three personas the platform roster has no user for, created in Alpha's main
+  workspace, so stage 1 steps 1-8 can be clicked through:
+    - Linh: `sc_rnd`, who receives, tests and passes samples (steps 2-5) and
+      completes the BM04 (step 7);
     - Khánh: BGĐ, `sc_bod` beside the platform `approver` role, which is
       where `approvals.decide` comes from; decides step 6 at /approvals;
+    - Tuấn: TP Cung ứng, `sc_supply_lead`, who confirms the product with the
+      supplier on its email (step 8);
 - four PO cases, backdated so each signal is already due:
     - PO-DEMO-001: opened 25 hours ago, no supplier update (a reminder);
     - PO-DEMO-002: opened 73 hours ago, no supplier update (an escalation);
@@ -81,6 +84,13 @@ COORDINATOR = "dev|an.nguyen"
 PERSONAS = (
     ("dev|linh.phan", "linh.phan@alpha.local", "Phan Thùy Linh", "rnd", ["member", "sc_rnd"]),
     ("dev|khanh.ngo", "khanh.ngo@alpha.local", "Ngô Minh Khánh", "bgd", ["approver", "sc_bod"]),
+    (
+        "dev|tuan.le",
+        "tuan.le@alpha.local",
+        "Lê Anh Tuấn",
+        "supply",
+        ["member", "sc_supply_lead"],
+    ),
 )
 # po_reference, supplier, hours since opened, hours in WAITING_DEPOSIT, fresh update
 CASES = (

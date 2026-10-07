@@ -185,3 +185,37 @@ test ở Comments của `.claude/plans/supply-chain/stage-1/issues/02-bod-review
 9. **Trang hồ sơ** hiện approval đang chờ (id, lúc tạo, scope đã đóng dấu) và liên kết
    `/approvals`; không tên người, không nút quyết. Đọc bằng `PendingApprovalsPort` (thêm
    đúng một phương thức), lọc theo workspace của người gọi.
+
+## Sửa đổi 2026-10-07 (tạm, lát S3; Đạt ủy quyền quyết các điểm mở)
+
+Các quyết định tạm khi làm lát S3 (ticket 03 giai đoạn 1, bước 7–8). Chi tiết và test ở
+Comments của `.claude/plans/supply-chain/stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md`.
+
+1. **Chứng từ của bước nằm trên dòng lịch sử.** `product_dev_case_state_transitions`
+   thêm `document_id`, FK ghép `(tenant_id, workspace_id, product_dev_case_id,
+document_id)` tới `case_documents`, `ON DELETE NO ACTION` như chứng từ của vòng mẫu,
+   có index riêng; CHECK `ck_product_dev_case_state_transitions_document_steps`:
+   `complete_profile` và `confirm_with_supplier` có chứng từ, mọi dòng khác không có
+   (chứng từ của vòng mẫu vẫn nằm trên vòng). Migration `3fc6599ecd5e`.
+2. **Mốc của chứng từ là lúc hồ sơ tới bước đó**, đọc từ lịch sử: dòng mới nhất vào trạng
+   thái hiện tại mà không phải `resume` (tạm dừng rồi tiếp tục không tới lại bước, nên
+   BM04 tải lên trước khi tạm dừng vẫn được). BM04 tải lên khi mẫu còn test bị từ chối.
+   Domain `ProductDevelopmentCase._step_document` là chủ duy nhất; `action_options` trả
+   cùng mốc (`documents_since`) cho trang, nên trang không giữ bản sao của luật.
+3. **Policy duty 1.1.0** thêm `complete_profile: rnd`, `confirm_with_supplier:
+supply_lead`. Override của tenant lưu ở 1.0.0 vẫn hợp lệ: hai bước thêm sau 1.0.0
+   (`STEPS_ADDED_AFTER_1_0_0`) lấy duty của nền tảng khi override không nêu, mọi bước
+   khác giữ lựa chọn của tenant; override 1.0.0 thiếu một bước ĐÃ có thì vẫn bị từ chối.
+   Override ghi mới (PUT) và override khai 1.1.0 phải nêu đủ.
+4. **Vai `sc_supply_lead`** (TP Cung ứng) = `sc_viewer` + `supply_chain.duty.supply_lead`
+    - `supply_chain.document.write`, không có `duty.exceptions` (như `sc_rnd`). Duty ở phía
+      vận hành của `sod_sc_rules_vs_operations`. Chưa có luật R&D–TP Cung ứng hay
+      Cung ứng–TP Cung ứng (QE-16).
+5. **Bước 7 do R&D** (duty `rnd`) dù bảng của Elmich ghi "R&D và Cung ứng": một người bấm,
+   công ty muốn khác thì ghi đè trong policy. **Bước 8** giữ QE-09: xác nhận trong ứng
+   dụng kèm file email (EML, MSG hoặc PDF theo danh sách của lát D), không đọc hộp thư.
+6. **`item_coding`** ở S3 chỉ có bước ngoại lệ và hủy; mã hàng, SKU là S4. Cả ba trạng
+   thái `profile_in_progress`, `supplier_confirmation`, `item_coding` tạm dừng và hủy
+   được như các bước đang chạy khác.
+7. **Downgrade từ chối** khi còn hồ sơ ở hoặc dừng từ hai trạng thái mới, dòng lịch sử
+   nêu chúng, hoặc membership giữ `sc_supply_lead`.

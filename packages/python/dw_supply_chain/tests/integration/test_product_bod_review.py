@@ -87,6 +87,7 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevelopmentCaseId,
     ProductDevState,
 )
+from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE
 from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.product_approvals import (
     PRODUCT_APPROVALS_POLICY_ID,
@@ -107,7 +108,7 @@ pytestmark = pytest.mark.integration
 STALE_AFTER_SECONDS_LOCAL = 3600
 _CONFIGS = REPO_ROOT / "configs"
 _WORKER_CONFIG = _CONFIGS / "workers" / "supply_chain_advance_product_case.yaml"
-_DUTIES = _CONFIGS / "policies" / "supply_chain_product_action_duties@1.0.0.yaml"
+_DUTIES = _CONFIGS / "policies" / PRODUCT_ACTION_DUTIES_POLICY_FILE
 _APPROVALS = _CONFIGS / "policies" / "supply_chain_product_approvals@1.0.0.yaml"
 # The seeded tenant (`seed_test_env`): active, on a plan, so scope holders and
 # the tenant's plan are real rows.

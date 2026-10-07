@@ -71,6 +71,10 @@ import ProductCasePage from "../product-cases/[id]/page";
 const ORDERING = "supply_chain.duty.ordering";
 const RND = "supply_chain.duty.rnd";
 const EXCEPTIONS = "supply_chain.duty.exceptions";
+const SUPPLY_LEAD = "supply_chain.duty.supply_lead";
+const DOCUMENT_WRITE = "supply_chain.document.write";
+// When round 1 opened, the bound the server gives a round step's paper.
+const ROUND_OPENED = "2026-10-05T03:00:00Z";
 // Opening a case (lead decision 9); proposing also needs the ordering duty.
 const PRODUCT_CASE_WRITE = "supply_chain.product_case.write";
 
@@ -103,6 +107,7 @@ function option(
     takes_supplier: false,
     document_type: null,
     document_required: false,
+    documents_since: null,
     ...overrides,
   };
 }
@@ -112,12 +117,14 @@ const TESTING_ACTIONS: ProductActionOption[] = [
     required_scope: RND,
     document_type: "sample_evaluation",
     document_required: true,
+    documents_since: ROUND_OPENED,
   }),
   option("request_revision", {
     required_scope: RND,
     reason_required: true,
     document_type: "sample_revision_request",
     document_required: true,
+    documents_since: ROUND_OPENED,
   }),
   option("cancel", { required_scope: ORDERING, reason_required: true }),
 ];
@@ -132,7 +139,7 @@ function detail(overrides: Partial<ProductCaseDetail> = {}): ProductCaseDetail {
     rounds: [
       {
         round_no: 1,
-        opened_at: "2026-10-05T03:00:00Z",
+        opened_at: ROUND_OPENED,
         opened_by: ME,
         result: null,
         evaluation_document_id: null,
@@ -499,7 +506,7 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
     const dialog = await screen.findByRole("dialog");
     expect(
       await within(dialog).findByText(
-        /Chưa có Biên bản đánh giá mẫu nào cho vòng mẫu này/,
+        /Chưa có Biên bản đánh giá mẫu nào cho bước này/,
       ),
     ).toBeTruthy();
   });
@@ -611,5 +618,184 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
     ).toBeTruthy();
     expect(screen.getByText("Giá vốn vượt mục tiêu")).toBeTruthy();
     expect(screen.getByText(/người 8888/)).toBeTruthy();
+  });
+
+  // --- steps 7-8 (ticket 03) ---------------------------------------------------
+
+  // When BGĐ approved: the bound the server gives step 7's paper.
+  const APPROVED = "2026-10-06T05:00:00Z";
+  const BM04_ID = "66666666-6666-4666-8666-666666666666";
+
+  function atStep(
+    state: "profile_in_progress" | "supplier_confirmation",
+    since = APPROVED,
+  ): ProductCaseDetail {
+    const step =
+      state === "profile_in_progress"
+        ? option("complete_profile", {
+            required_scope: RND,
+            document_type: "product_profile_bm04",
+            document_required: true,
+            documents_since: since,
+          })
+        : option("confirm_with_supplier", {
+            required_scope: SUPPLY_LEAD,
+            document_type: "supplier_confirmation_email",
+            document_required: true,
+            documents_since: since,
+          });
+    return detail({
+      state,
+      actions: [
+        step,
+        option("cancel", { required_scope: ORDERING, reason_required: true }),
+      ],
+    });
+  }
+
+  it("uploads the BM04 inside the step, chooses it and completes the profile", async () => {
+    scopes = new Set([RND, DOCUMENT_WRITE]);
+    getProductCase.mockResolvedValue(atStep("profile_in_progress"));
+    renderDetail();
+    uploadProductCaseDocument.mockResolvedValue(
+      evaluation({
+        id: BM04_ID,
+        doc_type: "product_profile_bm04",
+        filename: "bm04.xlsx",
+        uploaded_at: "2026-10-06T06:00:00Z",
+      }),
+    );
+    takeProductCaseStep.mockResolvedValue({
+      ...productCase({ state: "supplier_confirmation" }),
+      review: null,
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Hoàn tất BM04" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      await within(dialog).findByText(
+        /Chưa có Profile SP \(BM04\) nào cho bước này/,
+      ),
+    ).toBeTruthy();
+    const input = dialog.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["x"], "bm04.xlsx")] },
+    });
+    fireEvent.click(
+      await within(dialog).findByRole("button", {
+        name: /Tải lên Profile SP \(BM04\)/,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(uploadProductCaseDocument).toHaveBeenCalledTimes(1),
+    );
+    const [uploadCase, uploaded] = uploadProductCaseDocument.mock.calls[0]!;
+    expect(uploadCase).toBe(CASE_ID);
+    expect(uploaded).toMatchObject({ docType: "product_profile_bm04" });
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: "Hoàn tất BM04" }),
+    );
+    await waitFor(() => expect(takeProductCaseStep).toHaveBeenCalledTimes(1));
+    expect(takeProductCaseStep.mock.calls[0]![1]).toMatchObject({
+      action: "complete_profile",
+      documentId: BM04_ID,
+    });
+  });
+
+  it("offers the supplier's email only from when the case reached step 8", async () => {
+    scopes = new Set([SUPPLY_LEAD]);
+    getProductCase.mockResolvedValue(atStep("supplier_confirmation"));
+    renderDetail();
+    listProductCaseDocuments.mockResolvedValue([
+      evaluation({
+        doc_type: "supplier_confirmation_email",
+        filename: "ncc-xac-nhan.eml",
+        uploaded_at: "2026-10-06T07:00:00Z",
+      }),
+      evaluation({
+        id: "77777777-7777-4777-8777-777777777777",
+        doc_type: "supplier_confirmation_email",
+        filename: "ncc-cu.eml",
+        uploaded_at: "2026-10-06T04:00:00Z",
+      }),
+    ]);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Đã thống nhất với NCC" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.mouseDown(within(dialog).getByRole("combobox"));
+    expect(await screen.findByTitle(/ncc-xac-nhan\.eml/)).toBeTruthy();
+    expect(screen.queryByTitle(/ncc-cu\.eml/)).toBeNull();
+  });
+
+  it("locks step 8 for R&D with the duty it needs, in words", async () => {
+    scopes = new Set([RND, DOCUMENT_WRITE]);
+    getProductCase.mockResolvedValue(atStep("supplier_confirmation"));
+    renderDetail();
+
+    const confirm = await screen.findByRole("button", {
+      name: "Đã thống nhất với NCC",
+    });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      screen.getByText(
+        /Đã thống nhất với NCC: Bước này cần nhiệm vụ TP Cung ứng/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("locks uploading inside the step for a viewer without the document write", async () => {
+    scopes = new Set([SUPPLY_LEAD]);
+    getProductCase.mockResolvedValue(atStep("supplier_confirmation"));
+    renderDetail();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Đã thống nhất với NCC" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const upload = await within(dialog).findByRole("button", {
+      name: /Tải lên Email xác nhận của NCC/,
+    });
+    expect((upload as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      within(dialog).getByText(/Chỉ người có quyền tải chứng từ lên/),
+    ).toBeTruthy();
+  });
+
+  it("offers no paper when the server gives no bound", async () => {
+    scopes = new Set([RND, DOCUMENT_WRITE]);
+    getProductCase.mockResolvedValue(
+      detail({
+        state: "profile_in_progress",
+        actions: [
+          option("complete_profile", {
+            required_scope: RND,
+            document_type: "product_profile_bm04",
+            document_required: true,
+            documents_since: null,
+          }),
+        ],
+      }),
+    );
+    renderDetail();
+    listProductCaseDocuments.mockResolvedValue([
+      evaluation({ doc_type: "product_profile_bm04", filename: "bm04.xlsx" }),
+    ]);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Hoàn tất BM04" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      await within(dialog).findByText(
+        /Chưa có Profile SP \(BM04\) nào cho bước này/,
+      ),
+    ).toBeTruthy();
   });
 });

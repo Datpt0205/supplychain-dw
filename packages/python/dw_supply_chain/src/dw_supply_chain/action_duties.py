@@ -50,6 +50,9 @@ class CaseDuty(StrEnum):
     # `product_action_duties`). No PO step needs it; the PO policy requires
     # every PO step a duty, not every duty a step, so PO overrides are untouched.
     RND = "rnd"
+    # TP Cung ứng: confirming the product with the supplier (step 8, S3).
+    # Like `rnd`, no PO step needs it.
+    SUPPLY_LEAD = "supply_lead"
 
 
 class SupplyChainActionDuties(BaseModel):

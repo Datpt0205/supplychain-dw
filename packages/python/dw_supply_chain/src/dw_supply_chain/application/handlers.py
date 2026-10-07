@@ -1432,14 +1432,14 @@ async def resolve_product_action_duties(
 ) -> SupplyChainProductActionDuties:
     """The tenant's own product step-to-duty mapping if it has set one, the
     platform's otherwise: what a product step is authorized against and what
-    `GetProductActionDuties` shows, from one place."""
-    return await _resolve_policy(
-        context,
-        policy_override_repo,
-        policy_id=PRODUCT_ACTION_DUTIES_POLICY_ID,
-        schema=SupplyChainProductActionDuties,
-        platform_default=platform_default_duties,
-    )
+    `GetProductActionDuties` shows, from one place. A stored override is
+    re-validated whole, as `_resolve_policy` does; one stored before steps 7
+    and 8 existed takes the platform's duty for those two only
+    (`SupplyChainProductActionDuties.from_stored`)."""
+    override = await policy_override_repo.get(context, PRODUCT_ACTION_DUTIES_POLICY_ID)
+    if override is None:
+        return platform_default_duties
+    return SupplyChainProductActionDuties.from_stored(override, platform_default_duties)
 
 
 async def resolve_product_approvals(

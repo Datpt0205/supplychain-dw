@@ -35,7 +35,7 @@ _PO_OPERATING_ROLES = (
     "sc_logistics",
     "sc_warehouse",
 )
-_OPERATING_ROLES = (*_PO_OPERATING_ROLES, "sc_rnd")
+_OPERATING_ROLES = (*_PO_OPERATING_ROLES, "sc_rnd", "sc_supply_lead")
 _SC_ROLES = ("sc_viewer", *_OPERATING_ROLES, "sc_bod", "sc_process_admin")
 # The scope BGĐ's review is stamped with under the platform policy (step 6).
 _APPROVE_BOD = load_supply_chain_product_approvals(
@@ -190,6 +190,21 @@ async def test_rnd_holds_exactly_the_viewer_its_duty_and_the_document_write(
     }
 
 
+async def test_the_supply_lead_holds_exactly_the_viewer_its_duty_and_the_document_write(
+    engine: AsyncEngine,
+) -> None:
+    """Step 8 (ticket 03): TP Cung ứng confirms the product with the supplier
+    and uploads the supplier's email, built like `sc_rnd`; nobody else holds
+    the duty, and no `duty.exceptions` (shared with PO cases)."""
+    catalogue = await _catalogue(engine)
+    supply_lead = handlers.duty_scope(CaseDuty.SUPPLY_LEAD)
+    assert catalogue["sc_supply_lead"] == catalogue["sc_viewer"] | {
+        supply_lead,
+        handlers.DOCUMENT_WRITE,
+    }
+    assert {key for key, scopes in catalogue.items() if supply_lead in scopes} == {"sc_supply_lead"}
+
+
 async def test_bgd_holds_exactly_the_viewer_and_the_bgd_review_scope(
     engine: AsyncEngine,
 ) -> None:
@@ -274,6 +289,9 @@ async def test_conflicting_roles_cannot_meet_in_one_membership(
         ("sc_rnd", "sc_operator"),
         ("sc_rnd", "sc_qc"),
         ("sc_bod", "sc_viewer"),
+        # No R&D-vs-TP Cung ứng or ordering-vs-TP Cung ứng rule (QE-16).
+        ("sc_supply_lead", "sc_rnd"),
+        ("sc_supply_lead", "sc_operator"),
     ],
 )
 async def test_roles_without_a_conflict_can_be_held_together(

@@ -6,10 +6,16 @@ workspace's case reads as absent exactly as another tenant's does. The
 statements also name the tenant and workspace themselves, a second layer
 where RLS is the first, as `SqlCaseDocumentRepository` does.
 
-One transaction per command: the case row, one history row per pending step,
-the round a step opens (INSERT) or closes (a guarded UPDATE that touches only
-a still-open round), the revision request a step records, and the audit
-event. A refusal from the database comes back as a `ConflictError` by the
+One transaction per command: the case row, one history row per pending step
+(with the paper of a step outside the rounds), the round a step opens
+(INSERT) or closes (a guarded UPDATE that touches only a still-open round),
+the revision request a step records, and the audit event.
+
+Read back with the case: when its current round opened, and when it reached
+its current state (`stage_entered_at`, from the history; a resume does not
+count), the two bounds the domain checks a step's paper against.
+
+A refusal from the database comes back as a `ConflictError` by the
 constraint's name, never by parsing its message.
 """
 
@@ -62,6 +68,8 @@ _DOCUMENT_CONSTRAINTS = frozenset(
         "ck_product_sample_rounds_passed_on_an_evaluation",
         "fk_sample_revision_requests_tenant_id_case_documents",
         "uq_sample_revision_requests_revision_document_id",
+        "fk_product_dev_case_state_transitions_tenant_id_case_documents",
+        "ck_product_dev_case_state_transitions_document_steps",
     }
 )
 
@@ -119,15 +127,37 @@ def _case(row: Row[tuple[object, ...]]) -> ProductDevelopmentCase:
         interrupted_state=ProductDevState(interrupted) if interrupted else None,
         sample_round=m[_c.c.sample_round],
         round_opened_at=m.get("round_opened_at"),
+        stage_entered_at=m.get("stage_entered_at"),
         version=m[_c.c.version],
         created_at=m[_c.c.created_at],
     )
 
 
+def _stage_entered_at() -> sa.ScalarSelect[object]:
+    """When the case reached its current state by a step: its latest history
+    row into that state that is not a resume (a resume returns to a step
+    already reached). Served by the history's (tenant, case, occurred_at)
+    index."""
+    return (
+        sa.select(sa.func.max(_t.c.occurred_at))
+        .where(
+            _t.c.tenant_id == _c.c.tenant_id,
+            _t.c.product_dev_case_id == _c.c.id,
+            _t.c.to_state == _c.c.state,
+            _t.c.action != ProductAction.RESUME.value,
+        )
+        .scalar_subquery()
+    )
+
+
 def _with_current_round() -> sa.Select[tuple[object, ...]]:
-    """The case with its current round's opening time: what the domain
-    compares a document's upload time against."""
-    return sa.select(_c, _r.c.opened_at.label("round_opened_at")).select_from(
+    """The case with its current round's opening time and when it reached its
+    current state: what the domain compares a document's upload time against."""
+    return sa.select(
+        _c,
+        _r.c.opened_at.label("round_opened_at"),
+        _stage_entered_at().label("stage_entered_at"),
+    ).select_from(
         _c.outerjoin(
             _r,
             sa.and_(
@@ -183,6 +213,7 @@ class SqlProductCaseRepository:
                 to_state=step.to_state.value,
                 reason=step.reason,
                 actor_id=step.actor_id,
+                document_id=step.document_id,
             )
         )
         if step.opens_round is not None:
@@ -405,6 +436,7 @@ class SqlProductCaseRepository:
                 reason=row.reason,
                 actor_id=row.actor_id,
                 occurred_at=row.occurred_at,
+                document_id=row.document_id,
             )
             for row in rows
         ]

@@ -131,7 +131,7 @@
       },
       "AdvanceProductCaseRequest": {
         "additionalProperties": false,
-        "description": "One step. Each step reads the fields it takes and refuses the others:\n`supplier_name` for `request_sample`, `document_id` for `pass_sample`,\n`request_revision` and (optionally) `reject_sample`, `reason` where the\nstep needs one.",
+        "description": "One step. Each step reads the fields it takes and refuses the others:\n`supplier_name` for `request_sample`, `document_id` for `pass_sample`,\n`request_revision`, `complete_profile`, `confirm_with_supplier` and\n(optionally) `reject_sample`, `reason` where the step needs one.",
         "properties": {
           "action": {
             "$ref": "#/components/schemas/ProductAction"
@@ -912,7 +912,8 @@
           "logistics",
           "warehouse",
           "exceptions",
-          "rnd"
+          "rnd",
+          "supply_lead"
         ],
         "title": "CaseDuty",
         "type": "string"
@@ -2954,6 +2955,8 @@
           "request_revision",
           "receive_revised_sample",
           "reject_sample",
+          "complete_profile",
+          "confirm_with_supplier",
           "wait_for_external",
           "flag_blocked",
           "flag_manual_review",
@@ -2966,7 +2969,7 @@
         "type": "string"
       },
       "ProductActionOptionView": {
-        "description": "A step the case accepts from its state, what it must carry, and the\nscope its duty needs under the tenant's policy. The page draws its button\nand form from this; the server checks all of it again on the step.",
+        "description": "A step the case accepts from its state, what it must carry, and the\nscope its duty needs under the tenant's policy. The page draws its button\nand form from this; the server checks all of it again on the step.\n`documents_since` is the earliest upload the step takes as its paper\n(when the round opened, or when the case reached the step); null when it\ntakes none or the bound is not known, and then no paper qualifies.",
         "properties": {
           "action": {
             "$ref": "#/components/schemas/ProductAction"
@@ -2984,6 +2987,18 @@
                 "type": "null"
               }
             ]
+          },
+          "documents_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documents Since"
           },
           "reason_required": {
             "title": "Reason Required",
@@ -3004,7 +3019,8 @@
           "reason_required",
           "takes_supplier",
           "document_type",
-          "document_required"
+          "document_required",
+          "documents_since"
         ],
         "title": "ProductActionOptionView",
         "type": "object"
@@ -3231,6 +3247,7 @@
         "type": "object"
       },
       "ProductCaseTransitionView": {
+        "description": "One history row. `document_id` is the paper of a step outside the\nsample rounds (BM04, the supplier's email); a round's is on the round.",
         "properties": {
           "action": {
             "$ref": "#/components/schemas/ProductAction"
@@ -3239,6 +3256,18 @@
             "format": "uuid",
             "title": "Actor Id",
             "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
           },
           "from_state": {
             "anyOf": [
@@ -3276,7 +3305,8 @@
           "to_state",
           "reason",
           "actor_id",
-          "occurred_at"
+          "occurred_at",
+          "document_id"
         ],
         "title": "ProductCaseTransitionView",
         "type": "object"
@@ -3381,6 +3411,8 @@
           "revision_requested",
           "pending_bod_review",
           "profile_in_progress",
+          "supplier_confirmation",
+          "item_coding",
           "waiting_external",
           "blocked",
           "manual_review",
