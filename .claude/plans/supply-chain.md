@@ -72,11 +72,11 @@ means platform code, an upstream candidate (ADR 0011).
 | S7    | `stage-1/issues/07-stage-1-evals.md`                                      | partly  | resolved        | S6                                  |
 | S8    | `stage-1/issues/08-stage-1-brief-and-command-bar.md`                      | no      | resolved        | S7; QE-19 provisional               |
 | PK    | `packaging-design/issues/01-colour-packaging-and-pre-production.md`       | no      | resolved        | P, D                                |
-| W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md` (E-HSDT v3 look)     | no      | ready-for-agent | P; Playwright viewports owed        |
+| W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md` (E-HSDT v3 look)     | no      | resolved        | P                                   |
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | resolved        | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** W (Playwright viewports), H2 (the domain the webhook needs; runbook `docs/deploy/host.md`);
+**Next:** H2 (the domain the webhook needs; runbook `docs/deploy/host.md`);
 Z4p when a real photo update exists; ZL measures the webhook header (Z3).
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
@@ -106,6 +106,7 @@ email as a second channel.
 | S2     | `446083e` | BGĐ review at step 6: graph-only approve/reject, decider as actor, idempotent start plus a reconcile lane, `sc_bod`.                                                                                                                                                                                                                                                              |
 | A2     | `ae4202b` | A stamped `required_scope` is not satisfied by `platform_admin`; the server computes `can_decide` for `/approvals`.                                                                                                                                                                                                                                                               |
 | W      | `82b5c13` | Supply Chain pages on antd in the E-HSDT v3 look: theme, `StatusTag`, `PageHeader`, `RegionState`, context navbar; Playwright viewports owed.                                                                                                                                                                                                                                     |
+| W-e2e  | e2e       | Playwright for W: `sc-320`/`sc-991`/`sc-992` projects (Tokyo zone on 992), Keycloak sign-in, one product case per width to BGĐ's Zalo code; seven UI defects fixed (labels, clipped titles, lock reasons, nav at 992).                                                                                                                                                            |
 | PM-1   | `6d6459a` | Merge `platform/main` (`c16857c`): hosted rerank (TEI gone), memory/compaction/retrieval hardening, run-less decided event, dev-harness gate.                                                                                                                                                                                                                                     |
 | PM-2   | `c596a4b` | Merge `platform/main` (`9cc47cf`), upstreamed approval work back as one copy; `96c57d5`: twin migrations idempotent, head `57ca5f1df964`.                                                                                                                                                                                                                                         |
 | PM-3   | merge     | Merge `platform/main` (`96f95ad`): a stamped approval is seen only by its deciders and requester (ADR 0020 sửa đổi 2026-10-07); `raised_by_payload` for the BGĐ dedupe; head unchanged.                                                                                                                                                                                           |

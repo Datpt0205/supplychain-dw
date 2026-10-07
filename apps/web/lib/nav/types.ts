@@ -1,8 +1,12 @@
 import type { ComponentType } from "react";
 
 /** An icon component: lucide's for the platform's pages, antd's for a
- * context's. Either takes a class name. */
-export type NavIcon = ComponentType<{ className?: string }>;
+ * context's. Either takes a class name, and is hidden from assistive tech
+ * beside its item's label. */
+export type NavIcon = ComponentType<{
+  className?: string;
+  "aria-hidden"?: boolean;
+}>;
 
 /** The bounded context a page belongs to, declared by the context's own
  * manifest (see `barNav`). */

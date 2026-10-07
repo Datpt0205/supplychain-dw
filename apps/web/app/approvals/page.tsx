@@ -34,6 +34,10 @@ import { errorMessage } from "../../lib/error-message";
 import { apiClient } from "../../lib/session";
 import { useCachedPages } from "../../lib/use-cached-pages";
 
+/** Why Duyệt and Từ chối wait on a strict type with no comment yet. */
+const COMMENT_REQUIRED_REASON =
+  "Loại yêu cầu này cần nhận xét: nhập nhận xét rồi mới quyết được.";
+
 export default function ApprovalsPage() {
   const { hasScope } = useAuth();
   const [comments, setComments] = useState<Record<string, string>>({});
@@ -173,12 +177,17 @@ export default function ApprovalsPage() {
           // too.
           const approveLocked = lacking !== null;
           const rejectLocked = lacking !== null && !approval.requested_by_me;
+          // A strict type waits for its comment; the buttons say so rather
+          // than sit greyed out with only a placeholder to explain them.
+          const commentLock = missingComment(approval)
+            ? COMMENT_REQUIRED_REASON
+            : null;
           // A disabled button takes no pointer events, so the tooltip hangs
           // on a wrapper; the same sentence also sits beside the buttons as
           // text.
-          const withLock = (locked: boolean, button: ReactNode) =>
-            locked ? (
-              <Tooltip title={lockReason}>
+          const withLock = (reason: string | null, button: ReactNode) =>
+            reason ? (
+              <Tooltip title={reason}>
                 <span className="inline-flex">{button}</span>
               </Tooltip>
             ) : (
@@ -233,7 +242,7 @@ export default function ApprovalsPage() {
                     />
                     <Flex wrap gap="small" align="center">
                       {withLock(
-                        approveLocked,
+                        approveLocked ? lockReason : commentLock,
                         <Button
                           type="primary"
                           icon={<CheckOutlined aria-hidden />}
@@ -249,7 +258,7 @@ export default function ApprovalsPage() {
                         </Button>,
                       )}
                       {withLock(
-                        rejectLocked,
+                        rejectLocked ? lockReason : commentLock,
                         <Button
                           danger
                           icon={<CloseOutlined aria-hidden />}
@@ -263,12 +272,16 @@ export default function ApprovalsPage() {
                           Từ chối
                         </Button>,
                       )}
-                      {lockReason !== null && (
+                      {lockReason !== null ? (
                         <Typography.Text>
                           {lockReason}
                           {approval.requested_by_me &&
                             ". Bạn vẫn rút được yêu cầu của mình."}
                         </Typography.Text>
+                      ) : (
+                        commentLock !== null && (
+                          <Typography.Text>{commentLock}</Typography.Text>
+                        )
                       )}
                     </Flex>
                   </Flex>

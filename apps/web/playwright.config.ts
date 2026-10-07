@@ -32,7 +32,32 @@ export default defineConfig({
     screenshot: "only-on-failure",
     locale: "vi-VN",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // The viewport list has one owner, here (ui-quality.md 12): 320 px is WCAG
+  // reflow, 991/992 the two sides of antd's `lg`, where the navbar becomes a
+  // drawer. The 992 one runs outside Vietnam's zone, so "giờ Việt Nam" is
+  // tested rather than trusted.
+  projects: [
+    {
+      name: "chromium",
+      testIgnore: /supply-chain\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    ...(
+      [
+        ["sc-320", 320, undefined],
+        ["sc-991", 991, undefined],
+        ["sc-992", 992, "Asia/Tokyo"],
+      ] as const
+    ).map(([name, width, timezoneId]) => ({
+      name,
+      testMatch: /supply-chain\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width, height: 800 },
+        ...(timezoneId ? { timezoneId } : {}),
+      },
+    })),
+  ],
   webServer: {
     command: "pnpm dev --port 3000",
     // Same URL the tests target, so a server the runner started by hand (e.g.

@@ -127,7 +127,9 @@ export function AppFrame({ children }: { children: ReactNode }) {
     const count = item.badgeKey ? badges[item.badgeKey] : undefined;
     return {
       key: item.href,
-      icon: <Icon className="size-4" />,
+      // aria-hidden: antd names an icon after its glyph, so the item read
+      // "read Bản tin hôm nay" to a screen reader.
+      icon: <Icon className="size-4" aria-hidden />,
       label: (
         // Out of the tab order: the menu is the keyboard's way in (AppShellItem).
         <Link href={item.href} title={item.hint} tabIndex={-1}>
@@ -182,8 +184,8 @@ export function AppFrame({ children }: { children: ReactNode }) {
             <SessionChip />
           </>
         }
-        navLabel="Main navigation"
-        menuLabel="Open menu"
+        navLabel="Điều hướng chính"
+        menuLabel="Mở menu"
       >
         {children}
       </AppShell>

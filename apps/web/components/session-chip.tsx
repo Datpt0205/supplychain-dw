@@ -67,17 +67,25 @@ export function SessionChip() {
     <div className="relative flex items-center gap-1.5" ref={ref}>
       <button
         type="button"
+        // Named in words: below `sm`, and between `lg` and `xl`, the chip is
+        // its initial alone, and a button called "N" names nobody.
+        aria-label={`Tài khoản: ${displayName || "User"}${roleText ? `, ${roleText}` : ""}`}
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 rounded-full border bg-card py-1 pl-1 pr-2.5 text-sm shadow-sm transition-colors hover:bg-accent/50"
       >
         <span className="flex size-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
           {(displayName || "?").charAt(0).toUpperCase()}
         </span>
-        <span className="hidden max-w-[9rem] truncate font-medium sm:inline">
+        {/* Not between lg and xl: the horizontal menu needs that width, and
+            at 992 px every item had overflowed into "…". */}
+        <span className="hidden max-w-[9rem] truncate font-medium sm:inline lg:hidden xl:inline">
           {displayName || "User"}
         </span>
         {roleText && (
-          <Badge variant={roleVariant} className="hidden md:inline-flex">
+          <Badge
+            variant={roleVariant}
+            className="hidden md:inline-flex lg:hidden xl:inline-flex"
+          >
             {roleText}
           </Badge>
         )}

@@ -5,6 +5,7 @@ import { Alert, Button, Card, Flex, Skeleton, Tag, Typography } from "antd";
 import type { ReactNode } from "react";
 import { ReloadOutlined } from "@ant-design/icons";
 import type { Me } from "@dw/api-client";
+import { PageHeader } from "@dw/ui";
 import { useAuth } from "../../lib/auth/auth-context";
 import { AUTH_MODE, KEYCLOAK_REALM, KEYCLOAK_URL } from "../../lib/auth/config";
 import { errorMessage } from "../../lib/error-message";
@@ -47,9 +48,7 @@ export function PersonalSettings() {
 
   return (
     <Flex vertical gap="large" className="mx-auto w-full max-w-3xl">
-      <Typography.Title level={2} className="!mb-0">
-        Cài đặt cá nhân
-      </Typography.Title>
+      <PageHeader title="Cài đặt cá nhân" />
 
       <Card title="Hồ sơ">
         {/* A definition list, not antd Descriptions: that one is a <table>, and

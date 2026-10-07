@@ -173,3 +173,15 @@ export function dutyLock(requiredScope: string): string {
     : `quyền ${requiredScope}`;
   return `Bước này cần ${who}; vai của bạn chưa có. Người có nhiệm vụ đó làm được bước này.`;
 }
+
+/**
+ * What the person deciding is asked, by approval type: the headline of the
+ * card in Duyệt and of /approvals/<id>, read through the approvals inbox's
+ * plug-in point (`components/tool-approval.tsx`). Without it both of Supply
+ * Chain's types read "Yêu cầu phê duyệt", and two pending reviews were two
+ * links of the same name.
+ */
+export const PRODUCT_APPROVAL_TITLE: Record<string, string> = {
+  "supply_chain.product_action.bod_review": "BGĐ duyệt mẫu",
+  "supply_chain.product_action.signoff": "Ký duyệt hồ sơ sản phẩm",
+};

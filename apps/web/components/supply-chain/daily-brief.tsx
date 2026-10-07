@@ -166,6 +166,9 @@ function GroupCard({
       id={`brief-${group.key}`}
       size="small"
       title={groupHeadline(group)}
+      // The headline is the signal itself; antd's head cuts it to one line,
+      // which at 320 px left "1 case cần nhắc nhà c…" with nothing to hover.
+      styles={{ title: { whiteSpace: "normal" } }}
       extra={link ? <Link href={link.href}>{link.label}</Link> : null}
     >
       <Flex vertical gap="small" role="list">

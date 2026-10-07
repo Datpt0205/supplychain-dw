@@ -21,7 +21,7 @@ import {
   Typography,
 } from "antd";
 import type { TableColumnsType } from "antd";
-import { CloseOutlined, PlusOutlined } from "@ant-design/icons";
+import { CloseOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { PageHeader, RegionState, type RegionFailure } from "@dw/ui";
 import {
   productDevStateSchema,
@@ -591,8 +591,12 @@ function ProductCaseResults({
   );
   return (
     <Flex vertical gap="small">
-      <Input.Search
+      {/* Not Input.Search: the list filters as you type, so its button did
+          nothing, and it was named "search" in English. */}
+      <Input
+        type="search"
         allowClear
+        prefix={<SearchOutlined aria-hidden />}
         aria-label="Tìm theo mã đề xuất, tên sản phẩm hoặc Category"
         placeholder="Ví dụ: noi inox"
         className="max-w-md"

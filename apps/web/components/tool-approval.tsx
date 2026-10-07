@@ -1,5 +1,6 @@
 import type { Approval } from "@dw/contracts";
 import { cn } from "@dw/ui";
+import { PRODUCT_APPROVAL_TITLE } from "./supply-chain/product-case-labels";
 
 /**
  * How a tool approval is shown to the person deciding it.
@@ -37,7 +38,7 @@ const PREVIEW_KEY = "preview";
  * generic title below — the card still shows every argument, so nothing about
  * the decision is hidden, only its headline is less specific.
  */
-const APPROVAL_TITLE: Record<string, string> = {};
+const APPROVAL_TITLE: Record<string, string> = { ...PRODUCT_APPROVAL_TITLE };
 
 /**
  * PLUG-IN POINT: field names as the person deciding knows them. An unmapped

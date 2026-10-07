@@ -17,7 +17,7 @@ import {
   Typography,
   type TableColumnsType,
 } from "antd";
-import { CloseOutlined } from "@ant-design/icons";
+import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
 import { caseStateSchema, type CaseState, type POCase } from "@dw/contracts";
 import { PageHeader, RegionState } from "@dw/ui";
 import {
@@ -276,8 +276,12 @@ function POCaseResults({
 
   return (
     <Flex vertical gap="small">
-      <Input.Search
+      {/* Not Input.Search: the list filters as you type, so its button did
+          nothing, and it was named "search" in English. */}
+      <Input
+        type="search"
         allowClear
+        prefix={<SearchOutlined aria-hidden />}
         aria-label="Tìm theo số PO hoặc NCC"
         placeholder="Ví dụ: PO-2026-007 hoặc tên NCC"
         className="max-w-md"

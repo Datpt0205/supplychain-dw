@@ -5,6 +5,7 @@ Usage (reads `.env`; `make` exports it, a plain shell needs `set -a; source .env
     uv run python scripts/seed_supply_chain_demo.py supplier-update PO-DEMO-001
     uv run python scripts/seed_supply_chain_demo.py elmich-sla
     uv run python scripts/seed_supply_chain_demo.py elmich-packaging
+    uv run python scripts/seed_supply_chain_demo.py e2e-fixtures
 
 `seed` is idempotent:
 - the platform demo roster (tenants, workspaces, users, memberships, plans),
@@ -50,6 +51,13 @@ one. Run it again after editing the file; a later `PUT` replaces it whole.
 after R&D passes the pre-production test; slice PK) for tenant Alpha, as Bình,
 through `SetPackagingPolicyOverride`, the handler behind `PUT
 /packaging-policy`, for the same reasons as `elmich-sla`.
+
+`e2e-fixtures` is what the browser suite (`apps/web/e2e/supply-chain.spec.ts`)
+needs beyond `seed`: Khánh linked to a Zalo chat that does not exist
+(`e2e-chat-khanh`), so /approvals/<id> offers a code once a comment is
+written, and a second Alpha workspace ("Kho Hưng Yên") he is also BGĐ of, so
+/settings shows the "Workspace dùng cho Zalo" select. A worker polling a real
+bot would fail to deliver to that chat and say so; nothing else reads it.
 
 Refuses to run unless DW_API_PROFILE is explicitly `local` (unset is refused):
 it writes through the migrator role and backdates rows, which no deployed
@@ -332,6 +340,57 @@ async def elmich_packaging(migrator: AsyncEngine, app: AsyncEngine) -> None:
     )
 
 
+# A second Alpha workspace, only for the browser suite (`e2e-fixtures`).
+E2E_WS = uuid.uuid5(ALPHA, "e2e-second-workspace")
+E2E_BOD = "dev|khanh.ngo"
+E2E_CHAT = "e2e-chat-khanh"
+
+
+async def e2e_fixtures(migrator: AsyncEngine) -> None:
+    bod = await _user_id(migrator, E2E_BOD)
+    async with migrator.begin() as conn:
+        await conn.execute(
+            sa.text(
+                "INSERT INTO platform.workspaces (id, tenant_id, slug, name)"
+                " VALUES (:id, :tenant, 'kho-hung-yen', 'Kho Hưng Yên')"
+                " ON CONFLICT (id) DO NOTHING"
+            ),
+            {"id": E2E_WS, "tenant": ALPHA},
+        )
+        await conn.execute(
+            sa.text(
+                "INSERT INTO platform.memberships"
+                " (id, tenant_id, workspace_id, user_id, role_keys, department)"
+                " VALUES (:id, :tenant, :workspace, :user, CAST(:roles AS jsonb), 'bgd')"
+                " ON CONFLICT ON CONSTRAINT uq_memberships_scope_user DO NOTHING"
+            ),
+            {
+                "id": uuid.uuid4(),
+                "tenant": ALPHA,
+                "workspace": E2E_WS,
+                "user": bod,
+                "roles": json.dumps(["approver", "sc_bod"]),
+            },
+        )
+        linked = await conn.scalar(
+            sa.text(
+                "SELECT count(*) FROM platform.external_identities"
+                " WHERE user_id = :u AND provider = 'zalo'"
+            ),
+            {"u": bod},
+        )
+        if not linked:
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO platform.external_identities"
+                    " (id, user_id, issuer, subject, provider)"
+                    " VALUES (:id, :u, 'zalo', :chat, 'zalo')"
+                ),
+                {"id": uuid.uuid4(), "u": bod, "chat": E2E_CHAT},
+            )
+    print(f"e2e fixtures: {E2E_BOD} linked to Zalo, member of workspace Kho Hưng Yên")
+
+
 async def main(argv: list[str]) -> None:
     migrator_url, app_url = _urls()
     migrator = create_async_engine(migrator_url, poolclass=NullPool)
@@ -345,6 +404,8 @@ async def main(argv: list[str]) -> None:
             await elmich_sla(migrator, app)
         elif argv == ["elmich-packaging"]:
             await elmich_packaging(migrator, app)
+        elif argv == ["e2e-fixtures"]:
+            await e2e_fixtures(migrator)
         else:
             sys.exit(__doc__)
     finally:
