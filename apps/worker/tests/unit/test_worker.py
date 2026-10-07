@@ -131,6 +131,10 @@ def test_only_the_platform_lanes_are_wired() -> None:
     `channel_inbound_messages_retention` is the ninth: inbound chat message ids
     kept seven days for the dedupe (`INBOUND_MESSAGE_RETENTION`), its own lane
     because each pruner is.
+    `channel_deliveries_retention` is the tenth: notifications sent (or not)
+    through a linked chat, 90 days and never a pending one, the database's
+    constant (`platform.prune_channel_deliveries()`). Wired without a bot
+    token too: rows are queued for anyone linked whether or not this host sends.
 
     `supply_chain_follow_ups` is the first context lane: Supply Chain's sweep
     that turns due reminders, escalations and SLA breaches into follow-ups
@@ -157,6 +161,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "checkpoint_retention",
         "channel_link_nonces_retention",
         "channel_inbound_messages_retention",
+        "channel_deliveries_retention",
         "supply_chain_follow_ups",
         "supply_chain_product_review_reconcile",
         "supply_chain_proposal_drafts_retention",
@@ -244,3 +249,25 @@ def test_the_pinned_retention_policy_promises_only_classes_code_can_assign() -> 
     from dw_worker.main import RETENTION_POLICY_PATH
 
     assert set(load_retention_policy(RETENTION_POLICY_PATH).classes) == {RETENTION_CLASS}
+
+
+def test_the_channel_delivery_lane_needs_a_bot_token_and_runs_on_its_own_cadence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wired with a database and a bot token, whatever ZALO_UPDATES_MODE says:
+    a webhook host sends the same way. Thirty seconds unless configured."""
+    monkeypatch.delenv("DW_WORKER_CHANNEL_DELIVERY_INTERVAL_SECONDS", raising=False)
+    db = "postgresql+asyncpg://dw:dw@localhost/dw"
+    assert "channel_delivery" not in build_registry(bare_settings(database_url=db)).all()
+
+    webhook = build_registry(
+        bare_settings(database_url=db, zalo_bot_token="t", zalo_updates_mode="webhook")
+    )
+    assert "channel_delivery" in webhook.all()
+    assert "zalo_link_poll" not in webhook.all()
+    assert webhook.interval_for("channel_delivery", 1.0) == 30.0
+
+    quick = build_registry(
+        bare_settings(database_url=db, zalo_bot_token="t", channel_delivery_interval_seconds=5)
+    )
+    assert quick.interval_for("channel_delivery", 1.0) == 5.0

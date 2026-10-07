@@ -466,6 +466,38 @@ notifications = sa.Table(
     sa.Column("read_at", sa.TIMESTAMP(timezone=True), nullable=True),
 )
 
+# A notification on its way out through a linked chat (migration 4a865a1c97aa,
+# ADR 0013). Rows are created only by `platform.deliver_notification`; the
+# application updates the delivery's own state and nothing else.
+channel_deliveries = sa.Table(
+    "channel_deliveries",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), sa.ForeignKey("workspaces.id"), nullable=False),
+    sa.Column("recipient_user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+    sa.Column("channel", sa.Text, nullable=False),
+    sa.Column("source_key", sa.Text, nullable=False),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("link", sa.Text, nullable=True),
+    sa.Column("status", sa.Text, nullable=False, server_default="pending"),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column(
+        "next_attempt_at",
+        sa.TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column("external_message_id", sa.Text, nullable=True),
+    sa.Column("last_error", sa.Text, nullable=True),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+    sa.Column(
+        "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
 # Tables whose rows belong to exactly one tenant → RLS enabled + forced.
 TENANT_SCOPED_TABLES = (
     "workspaces",

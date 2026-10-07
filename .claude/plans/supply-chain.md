@@ -50,7 +50,7 @@ means platform code, an upstream candidate (ADR 0011).
 | ENV   | `env/issues/01-env-example-and-init-env.md`                               | yes     | resolved        | P                                   |
 | Z1    | `zalo-channel/issues/01-zalo-link.md`                                     | yes     | resolved        | P, ENV                              |
 | U     | `personal-settings/issues/01-settings-page-and-login.md`                  | yes     | resolved        | Z1, ENV, web-ui antd-shell 03/05    |
-| Z2    | `zalo-channel/issues/02-channel-delivery.md`                              | yes     | ready-for-agent | Z1                                  |
+| Z2    | `zalo-channel/issues/02-channel-delivery.md`                              | yes     | resolved        | Z1                                  |
 | Z3    | `zalo-channel/issues/03-zalo-webhook.md`                                  | yes     | ready-for-agent | Z1                                  |
 | Z4a   | `zalo-channel/issues/04-chat-proposal.md` (steps 1–3, `/settings` select) | yes     | resolved        | Z1, U                               |
 | Z4b   | `zalo-channel/issues/04-chat-proposal.md` (steps 4–7, 9, 10)              | no      | resolved        | Z4a, S1, D                          |
@@ -73,7 +73,7 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** S4 (S3 in); Z5 after Z2 (Z4 in); Z6; Z4p when a real photo update exists.
+**Next:** S4 (S3 in); Z5 (Z2 and Z4 in); Z6; Z4p when a real photo update exists.
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 

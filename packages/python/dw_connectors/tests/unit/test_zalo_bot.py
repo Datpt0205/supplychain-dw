@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from dw_connectors.adapters.zalo_bot import ZaloBotClient, _split_for_zalo
+from dw_connectors.ports import ChatRecipientUnreachableError
 
 pytestmark = pytest.mark.unit
 
@@ -86,6 +87,46 @@ async def test_send_message_sends_every_part_and_returns_the_last_id(monkeypatch
     message_id = await ZaloBotClient(bot_token=TOKEN).send_message("chat-1", "z" * 4000)
     assert len(sent) == 3
     assert message_id == "m3"
+
+
+# ---- a chat that will never be reached, told apart from a passing failure ---------
+
+
+@pytest.mark.parametrize("code", [400, 403, 404])
+async def test_a_refused_chat_is_unreachable_in_the_body_or_the_status(monkeypatch, code) -> None:
+    """The outbox stops retrying on this (zalo-channel ticket 02): the chat does
+    not exist or blocked the bot. Both shapes, the dialect's ``ok: false`` body
+    and a bare HTTP status, and the token is scrubbed from the description."""
+
+    def in_body(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"ok": False, "error_code": code, "description": f"no chat {TOKEN}"}
+        )
+
+    def in_status(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(code, json={"ok": False})
+
+    for handler in (in_body, in_status):
+        _patch_client(monkeypatch, handler)
+        with pytest.raises(ChatRecipientUnreachableError) as caught:
+            await ZaloBotClient(bot_token=TOKEN).send_message("chat-1", "hi")
+        assert TOKEN not in str(caught.value)
+
+
+@pytest.mark.parametrize("code", [401, 429, 500, 502])
+async def test_any_other_failure_stays_retryable(monkeypatch, code) -> None:
+    """401 is this deployment's token, not the person's chat; 429 and 5xx pass."""
+
+    def in_body(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": False, "error_code": code, "description": "x"})
+
+    def in_status(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(code, text="nope")
+
+    for handler in (in_body, in_status):
+        _patch_client(monkeypatch, handler)
+        with pytest.raises(RuntimeError):
+            await ZaloBotClient(bot_token=TOKEN).send_message("chat-1", "hi")
 
 
 # ---- the token never leaves in an error or a log line (SEC-20) -------------------

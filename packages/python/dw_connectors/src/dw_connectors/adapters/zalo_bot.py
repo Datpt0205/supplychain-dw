@@ -20,12 +20,23 @@ from typing import Any
 
 import httpx
 
+from dw_connectors.ports import ChatRecipientUnreachableError
+
 _BASE = "https://bot-api.zaloplatforms.com"
 _REDACTED = "bot***"
 
 # Zalo hard-caps one message at 2000 characters; stay under it with room to
 # spare. Without the split a long message is refused and never delivered.
 _MAX_CHARS = 1900
+
+# Codes on which ``sendMessage`` will never succeed for this chat, whether they
+# come as the HTTP status or as ``error_code`` in an ``ok: false`` body: the
+# Telegram dialect answers 400 "chat not found" and 403 "blocked by the user".
+# PROVISIONAL (zalo-channel ticket 02): taken from the dialect, not measured
+# against Zalo; the live run (ticket 07) confirms or corrects it. Everything
+# else - 401 included, which is this deployment's token and not the person's
+# chat - is retried, up to the outbox's ceiling.
+_UNREACHABLE = frozenset({400, 403, 404})
 
 
 def _split_for_zalo(text: str) -> list[str]:
@@ -148,9 +159,18 @@ class ZaloBotClient:
     async def _send_one(self, chat_id: str, text: str) -> str:
         async with self._client(15) as client:
             response = await client.post("/sendMessage", json={"chat_id": chat_id, "text": text})
+            if response.status_code in _UNREACHABLE:
+                raise ChatRecipientUnreachableError(
+                    f"zalo sendMessage refused: HTTP {response.status_code}"
+                )
             response.raise_for_status()
             data = response.json()
         if not data.get("ok"):
+            if data.get("error_code") in _UNREACHABLE:
+                raise ChatRecipientUnreachableError(
+                    f"zalo sendMessage refused: {data.get('error_code')} "
+                    f"{self._scrub(str(data.get('description')))}"
+                )
             raise RuntimeError(
                 f"zalo sendMessage failed: {self._scrub(str(data.get('description')))}"
             )

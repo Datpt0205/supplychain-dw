@@ -60,6 +60,10 @@ class WorkerSettings(BaseSettings):
     supply_chain_product_review_reconcile_interval_seconds: float = Field(
         default=300.0, ge=10, le=86400
     )
+    # How often the `channel_delivery` lane looks for notifications to send
+    # through a linked chat (zalo-channel ticket 02). Thirty seconds: a Zalo
+    # message trails its in-app notification by at most that.
+    channel_delivery_interval_seconds: float = Field(default=30.0, ge=5, le=3600)
 
     # Prometheus scrape target for this process (Ops hardening Phase 5). 9464
     # is the OTel/Prometheus exporter's own convention default; dw-api has no
@@ -269,6 +273,12 @@ class WorkerSettings(BaseSettings):
             and bool(self.zalo_bot_token.get_secret_value())
             and bool(self.zalo_link_secret.get_secret_value())
         )
+
+    @property
+    def zalo_send_enabled(self) -> bool:
+        """Send through the bot whenever there is a token to send with, polled
+        or webhooked: a webhook host's notifications go out the same way."""
+        return bool(self.zalo_bot_token.get_secret_value())
 
     @field_validator("embedding_provider", mode="before")
     @classmethod

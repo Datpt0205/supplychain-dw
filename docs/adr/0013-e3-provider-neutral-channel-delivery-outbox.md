@@ -66,3 +66,24 @@ gửi một thông báo tới một người qua một kênh.
   nhận; ghi ở đây để không ai coi đó là lỗi mới.
 - Thêm kênh (email) là một giá trị CHECK và một adapter, không đổi bảng.
 - Context không gửi Zalo trực tiếp; nó gửi thông báo, và thông báo đi ra kênh.
+
+## Sửa đổi 2026-10-07 (Z2, lead theo ủy quyền của Đạt)
+
+Trạng thái: Accepted (tạm; xem lại khi Elmich trả lời QE-20 và khi ticket 07 đo lỗi của Zalo).
+
+- **Dòng mang `title` và `link`**, chép từ thông báo trong cùng câu lệnh xếp hàng; không
+  mang `body`. Thông báo không bao giờ bị ứng dụng sửa, nên đây là dấu đóng lúc tạo, không
+  phải bản sao có thể lệch; lane cũng không phải đọc hộp thư của người khác (RLS của
+  `notifications` hẹp theo `app.user_id`). Tin chỉ có tên tenant, workspace, tiêu đề và
+  liên kết: QE-20 tạm thời, không mã quyết định, không bí mật (ADR 0014).
+- **Mỗi lần gửi một giao dịch**, gắn tenant và workspace (bảng hẹp theo cả hai), claim
+  `FOR UPDATE SKIP LOCKED` một dòng; hàm SECURITY DEFINER
+  `platform.channel_delivery_scopes_due(channel)` trả cặp (tenant, workspace). Worker chết
+  giữa chừng gửi lại nhiều nhất một tin.
+- **Lúc gửi kiểm lại** liên kết (`zalo_id_for`), membership trong workspace và tenant
+  `active`; thiếu một trong ba thì `cancelled` với lý do trên dòng.
+- **Lỗi vĩnh viễn** là `ChatRecipientUnreachableError` (`dw_connectors.ports`); Zalo: HTTP
+  hoặc `error_code` 400/403/404, suy từ dialect Telegram, chưa đo. Còn lại thử lại sau 1, 2,
+  4, 8 phút, lần thứ 5 lỗi thì `failed`.
+- **Dọn** qua lane riêng `channel_deliveries_retention`, như mỗi pruner khác.
+- `dw_app` không có INSERT và DELETE trên bảng: một cửa vào là grant.

@@ -468,6 +468,8 @@ services:
       ZALO_BOT_LINK: ${ZALO_BOT_LINK:-}
       ZALO_UPDATES_MODE: ${ZALO_UPDATES_MODE:-poll}
       DW_PRODUCT_NAME: ${DW_PRODUCT_NAME:-Digital Worker}
+      # The `channel_delivery` lane: notifications to linked Zalo chats.
+      DW_WORKER_CHANNEL_DELIVERY_INTERVAL_SECONDS: ${DW_WORKER_CHANNEL_DELIVERY_INTERVAL_SECONDS:-30}
     networks: [dw-internal, dw-edge]
     depends_on:
       migrate:

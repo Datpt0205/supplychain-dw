@@ -24,6 +24,16 @@ class TaskConnectorPort(Protocol):
     ) -> ExternalTaskRef: ...
 
 
+class ChatRecipientUnreachableError(Exception):
+    """The channel will never deliver to this conversation: it does not exist,
+    or the person blocked the bot. Retrying cannot help, so a sender that keeps
+    an outbox marks the delivery failed instead of trying again.
+
+    Any other exception from ``send_message`` is treated as transient. The
+    message carries no address and no credential.
+    """
+
+
 class ChatSenderPort(Protocol):
     """Sends one plain-text message into a conversation.
 
@@ -36,6 +46,9 @@ class ChatSenderPort(Protocol):
     The id is whatever the channel calls a conversation - a Zalo chat, a Teams
     thread. The return is the provider's message id, best effort, for code
     that later edits or deletes what it sent.
+
+    Raises ``ChatRecipientUnreachableError`` when the provider says the
+    conversation cannot be reached; anything else it raises may be retried.
     """
 
     async def send_message(self, conversation_id: str, text: str) -> str: ...

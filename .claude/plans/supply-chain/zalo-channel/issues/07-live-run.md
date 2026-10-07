@@ -39,3 +39,7 @@ tên miền. Tách khỏi Z1–Z6 để các ticket agent đóng được trung 
   mục 9 (chạy cục bộ và host công khai).
 
 ## Comments
+
+- 2026-10-07, từ Z2: đo và ghi ở đây mã lỗi thật của Zalo `sendMessage` khi chat không tồn
+  tại và khi người dùng chặn bot. Z2 tạm coi HTTP hoặc `error_code` 400/403/404 là vĩnh viễn
+  (`_UNREACHABLE` trong `zalo_bot.py`, suy từ dialect Telegram); sai thì sửa ở đó.

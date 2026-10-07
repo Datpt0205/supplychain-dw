@@ -49,6 +49,10 @@ from dw_memory.retention import SqlMemoryRetention
 from dw_memory.service import MemoryService
 from dw_observability.otel import build_telemetry
 from dw_observability.telemetry import TelemetryPort
+from dw_platform.adapters.persistence.channel_deliveries import (
+    SqlChannelDeliveryRetention,
+    SqlChannelOutbox,
+)
 from dw_platform.adapters.persistence.channel_inbound import (
     SqlChannelInboundLedger,
     SqlChannelInboundRetention,
@@ -80,6 +84,7 @@ from dw_worker.composition import (
     build_vector_index,
 )
 from dw_worker.consumers import ConsumerRegistry
+from dw_worker.consumers.channel_delivery import build_channel_delivery_consumer
 from dw_worker.consumers.ingest import build_ingest_consumer
 from dw_worker.consumers.memory import memory_handlers
 from dw_worker.consumers.offboarding import INTERVAL_SECONDS as OFFBOARDING_INTERVAL_SECONDS
@@ -300,6 +305,11 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     # The Zalo self-link poll: only with a database, a bot token, a link secret
     # and ZALO_UPDATES_MODE=poll.
     zalo_poll_consumer: Callable[[], Awaitable[None]] | None = None
+    # Notifications out through linked Zalo chats (ADR 0013): a database and a
+    # bot token, polled or webhooked alike.
+    channel_delivery_consumer: Callable[[], Awaitable[None]] | None = None
+    # Channel deliveries: 90 days, never a pending one, the database's constant.
+    channel_deliveries_retention: RetentionPrunePort | None = None
     # Ops hardening Phase 4. Needs object storage too, not just a database -
     # export/purge touch four buckets and the vector index alongside Postgres.
     offboarding_consumer: Callable[[], Awaitable[None]] | None = None
@@ -377,6 +387,17 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         channel_link_nonces_retention = SqlChannelLinkNonceRetention(session_factory=sessions)
         channel_inbound_messages_retention = SqlChannelInboundRetention(session_factory=sessions)
         proposal_drafts_retention = build_proposal_draft_retention(sessions)
+        # Rows are queued whether or not this host sends them, so they are
+        # pruned whether or not it does.
+        channel_deliveries_retention = SqlChannelDeliveryRetention(session_factory=sessions)
+        if settings.zalo_send_enabled:
+            channel_delivery_consumer = build_channel_delivery_consumer(
+                SqlChannelOutbox(sessions),
+                channel="zalo",
+                address_of=SqlZaloLink(sessions).zalo_id_for,
+                sender=ZaloBotClient(bot_token=settings.zalo_bot_token.get_secret_value()),
+                web_url=settings.public_web_url,
+            )
         if settings.zalo_poll_enabled:
             bot = ZaloBotClient(bot_token=settings.zalo_bot_token.get_secret_value())
             commands = build_channel_commands(
@@ -497,6 +518,15 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     if zalo_poll_consumer is not None:
         registry.register("zalo_link_poll", zalo_poll_consumer)
         logger.info("zalo link poll registered")
+    # In-app notifications out through linked chats. Claims rows with
+    # SKIP LOCKED and holds no lease, so it needs no ReapTarget: a row a dead
+    # worker held is pending again the moment its transaction ends.
+    if channel_delivery_consumer is not None:
+        registry.register(
+            "channel_delivery",
+            channel_delivery_consumer,
+            interval_seconds=settings.channel_delivery_interval_seconds,
+        )
 
     # ---- periodic repair --------------------------------------------------
     # Registered last because both sweeps act on what everything above created,
@@ -553,6 +583,12 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         registry.register(
             "channel_inbound_messages_retention",
             build_retention_consumer(channel_inbound_messages_retention),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
+    if channel_deliveries_retention is not None:
+        registry.register(
+            "channel_deliveries_retention",
+            build_retention_consumer(channel_deliveries_retention),
             interval_seconds=RETENTION_INTERVAL_SECONDS,
         )
     if offboarding_consumer is not None:
