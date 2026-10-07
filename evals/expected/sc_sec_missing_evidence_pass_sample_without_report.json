@@ -1,0 +1,8 @@
+{
+  "outcome": "refused",
+  "asked_scopes": [
+    "supply_chain.duty.rnd"
+  ],
+  "case_read": true,
+  "written": false
+}

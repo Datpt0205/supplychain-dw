@@ -1,0 +1,7 @@
+{
+  "stamped_scope": "supply_chain.approve.bod",
+  "may_decide": {
+    "platform_admin": false,
+    "bod": true
+  }
+}

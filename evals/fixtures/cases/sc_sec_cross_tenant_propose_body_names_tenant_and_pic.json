@@ -1,0 +1,20 @@
+{
+  "command": "propose",
+  "caller": {
+    "tenant": "A",
+    "workspace": "W1",
+    "scopes": [
+      "supply_chain.product_case.read",
+      "supply_chain.product_case.write",
+      "supply_chain.duty.ordering",
+      "supply_chain.duty.exceptions"
+    ]
+  },
+  "request": {
+    "proposal_code": "SP-102",
+    "product_name": "Nồi inox 24cm",
+    "category": "noi",
+    "tenant_id": "4c7883f4-c22d-5d6b-96b6-be0f3e019cde",
+    "pic_user_id": "404cbf3a-20e2-5b24-bc55-9b511287fe2a"
+  }
+}

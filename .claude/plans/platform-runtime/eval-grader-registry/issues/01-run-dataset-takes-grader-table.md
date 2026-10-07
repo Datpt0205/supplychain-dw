@@ -1,6 +1,6 @@
 # 01 — `run_dataset` nhận bảng grader; seam đăng ký ở `run_evals.py`
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: —
 Area: platform-runtime
 
@@ -57,3 +57,14 @@ REPO_ROOT, grader_table())`.
 - `.claude/rules/failure-modes.md` #2 (một bảng, một chủ), #7.
 
 ## Comments
+
+- **2026-10-07, làm ở repo Elmich (`supplychain-dw`, lát S7), chưa đưa lên platform.**
+  Như mô tả, trừ: `merge_graders` ở `dw_evals.graders` (nền tảng, test được trong
+  package), `grader_table()` ở script gọi nó; grader của context ở
+  `dw_<name>.testing.eval_graders` (miễn kiểm phụ thuộc như `dw_platform.testing`, image
+  không đổi); contract "Platform packages do not import a bounded context" thêm
+  `dw_evals` vào `source_modules`, và `new_context.py` thêm `dw_evals` khi sinh contract
+  mới. Test đỏ khi gỡ: `_grade` đọc `GRADERS` (test bảng truyền vào), bỏ kiểm trùng
+  (`merge_graders`), bỏ đăng ký context (test ở `apps/api`), `import dw_supply_chain` ở
+  `dw_evals` (`lint-imports`). `CLAUDE.md` bước 5 sửa (câu hỏi mở 1 của spec). Chi tiết:
+  `.claude/plans/supply-chain/stage-1/issues/07-stage-1-evals.md`, Comments S7.

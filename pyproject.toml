@@ -266,8 +266,9 @@ forbidden_modules = ["dw_api", "dw_worker", "dw_docgen"]
 [[tool.importlinter.contracts]]
 # The other half of the comment above, which the scaffold's contract does not
 # check on its own: a platform package reaching into a context is the platform
-# becoming that product. `dw_evals` is deliberately absent — it grades a
-# context's refusals in that context's own code.
+# becoming that product. `dw_evals` included: a context's graders live in the
+# context (`<context>.testing.eval_graders`) and join the platform's in the eval
+# composition root, `scripts/run_evals.py` (platform-runtime eval-grader-registry).
 name = "Platform packages do not import a bounded context"
 type = "forbidden"
 source_modules = [
@@ -278,6 +279,7 @@ source_modules = [
     "dw_memory",
     "dw_connectors",
     "dw_observability",
+    "dw_evals",
 ]
 forbidden_modules = ["dw_supply_chain"]
 

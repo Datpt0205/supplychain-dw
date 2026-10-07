@@ -5,7 +5,7 @@
 
 ## Why this is a script and not a checklist
 
-A context joins the platform at FOURTEEN places across eight files, and twelve
+A context joins the platform at FIFTEEN places across nine files, and twelve
 of them are configuration:
 
     packages/python/dw_<name>/            the package, five layers
@@ -21,6 +21,7 @@ of them are configuration:
     apps/api/.../main.py                  mount the router
     apps/api/pyproject.toml               declare the dependency
     apps/worker/.../main.py               register the consumer
+    scripts/run_evals.py                  register the context's eval graders
     infra/docker/api.Dockerfile           two COPY lines
     infra/docker/worker.Dockerfile        two COPY lines
     scripts/verify_architecture.py        IMPORT_TO_DIST
@@ -533,11 +534,11 @@ def _guard_contexts(text: str, ctx: Context) -> str:
         text += (
             "\n[[tool.importlinter.contracts]]\n"
             "# A platform package reaching into a context is the platform becoming that\n"
-            "# product. `dw_evals` is deliberately absent: it grades a context's refusals\n"
-            "# in that context's own code. scripts/new_context.py extends this list.\n"
+            "# product. `dw_evals` included: a context registers its graders in\n"
+            "# scripts/run_evals.py. scripts/new_context.py extends this list.\n"
             f'name = "{_PLATFORM_CONTRACT}"\n'
             'type = "forbidden"\n'
-            + _toml_list("source_modules", list(sources["source_modules"]))
+            + _toml_list("source_modules", [*sources["source_modules"], "dw_evals"])
             + _toml_list("forbidden_modules", contexts)
         )
     else:
@@ -644,6 +645,32 @@ def _patch_worker(ctx: Context) -> None:
     _write(path, text)
 
 
+def _patch_run_evals(ctx: Context) -> None:
+    """The eval composition root, where a context's graders join the
+    platform's. COMMENTED, like the worker lane: grading is a judgement about
+    the product (module docstring), so a generated context has no graders and
+    no dataset to register."""
+    path = REPO_ROOT / "scripts" / "run_evals.py"
+    text = _read(path)
+    text = _insert_after(
+        text,
+        "    # ---- BOUNDED CONTEXT GRADERS REGISTER HERE ----------------------------\n",
+        f"""    # {ctx.title} registers its graders here once a dataset needs them: a
+    # table keyed "{ctx.name}.<gate>" in `{ctx.package}.testing`, which `dw_evals`
+    # must never import (import-linter). A name two tables claim stops the run.
+    #
+    #     from {ctx.package}.testing.eval_graders import (
+    #         {ctx.name.upper()}_GRADERS,
+    #     )
+    #
+    #     tables.append({ctx.name.upper()}_GRADERS)
+
+""",
+        what="eval grader seam",
+    )
+    _write(path, text)
+
+
 def _patch_api_pyproject(ctx: Context) -> None:
     """The API declares what it imports.
 
@@ -707,6 +734,7 @@ def scaffold(ctx: Context) -> None:
     _patch_root_pyproject(ctx)
     _patch_api(ctx)
     _patch_worker(ctx)
+    _patch_run_evals(ctx)
     _patch_api_pyproject(ctx)
     _patch_verify_architecture(ctx)
     _patch_dockerfiles(ctx)
@@ -746,6 +774,7 @@ def _TOUCHED_PYTHON(ctx: Context) -> list[Path]:  # noqa: N802 - reads as a cons
         REPO_ROOT / "apps" / "api" / "src" / "dw_api" / "bootstrap" / "wiring.py",
         REPO_ROOT / "apps" / "api" / "src" / "dw_api" / "bootstrap" / "container.py",
         REPO_ROOT / "apps" / "worker" / "src" / "dw_worker" / "main.py",
+        REPO_ROOT / "scripts" / "run_evals.py",
         REPO_ROOT / "scripts" / "verify_architecture.py",
     ]
 
@@ -765,7 +794,7 @@ def main() -> None:
         raise SystemExit(f"scaffold refused: {exc}") from exc
 
     formatted = _format(ctx)
-    print(f"created packages/python/{ctx.package} and wired 14 seams", file=sys.stderr)
+    print(f"created packages/python/{ctx.package} and wired 15 seams", file=sys.stderr)
     if not formatted:
         print("ruff not on PATH — run `ruff format` over the new files", file=sys.stderr)
     print(

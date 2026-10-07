@@ -47,6 +47,11 @@ lời khác thì sửa ticket trước khi làm, hoặc mở ticket sửa nếu 
 Bảy ticket `resolved`; test đầu-cuối của ticket 05 chạy một sản phẩm từ bước 1 tới
 `completed` của Hồ sơ PO; eval smoke có các ca an ninh của ticket 07.
 
+Trạng thái (7/10/2026): **đạt.** Ticket 01–07 `resolved`; test đầu-cuối của 05 xanh;
+eval smoke `supply_chain@1.4.0` 43/43 với 11 ca giai đoạn 1 (S7), mỗi ca an ninh đỏ khi gỡ
+lớp chặn. Daily brief, tóm tắt brief và command bar cho hồ sơ phát triển tách sang ticket
+08 (tính năng mới, việc brief chờ QE-19), ngoài bảy ticket của tiêu chí này.
+
 ## Danh sách ticket
 
 | #   | Ticket                                                                                        | Status          | Blocked by                                                                                                                                            |
@@ -57,4 +62,5 @@ Bảy ticket `resolved`; test đầu-cuối của ticket 05 chạy một sản p
 | 04  | [Mã hàng, SKU, trình ký, bước 9](issues/04-item-code-sku-signoff-step-9.md)                   | resolved        | .claude/plans/supply-chain/stage-1/issues/03-bm04-and-supplier-confirmation-steps-7-8.md                                                              |
 | 05  | [ĐẶT HÀNG: bàn giao 9 → 10](issues/05-place-order-hand-off.md)                                | resolved        | .claude/plans/supply-chain/stage-1/issues/04-item-code-sku-signoff-step-9.md                                                                          |
 | 06  | [SLA theo Category, thông báo cho PIC](issues/06-sla-by-category-and-pic-routing.md)          | resolved        | .claude/plans/supply-chain/stage-1/issues/05-place-order-hand-off.md                                                                                  |
-| 07  | [Eval giai đoạn 1: injection, xuyên tenant, thiếu bằng chứng](issues/07-stage-1-evals.md)     | ready-for-agent | .claude/plans/supply-chain/stage-1/issues/06-sla-by-category-and-pic-routing.md                                                                       |
+| 07  | [Eval giai đoạn 1: injection, xuyên tenant, thiếu bằng chứng](issues/07-stage-1-evals.md)     | resolved        | .claude/plans/supply-chain/stage-1/issues/06-sla-by-category-and-pic-routing.md                                                                       |
+| 08  | [Giai đoạn 1 trong daily brief và command bar](issues/08-stage-1-brief-and-command-bar.md)   | ready-for-agent | .claude/plans/supply-chain/stage-1/issues/07-stage-1-evals.md; QE-19 (việc 1)                                                                         |

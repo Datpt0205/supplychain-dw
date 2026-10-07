@@ -12,7 +12,7 @@ record a decision instead.
 ## Adding a bounded context (the plug-in points)
 
 Run `make new-context NAME=<name>` rather than working the list by hand:
-`scripts/new_context.py` owns all fourteen places, and the `scaffold-smoke` CI
+`scripts/new_context.py` owns all fifteen places, and the `scaffold-smoke` CI
 job generates a throwaway context on every push so a seam that moves fails there
 instead of in someone's first week. The list below is what it does, kept because
 a generator whose steps nobody can read is a different kind of unchecked claim.
@@ -32,7 +32,9 @@ a generator whose steps nobody can read is a different kind of unchecked claim.
    a toolset under `configs/toolsets`, and policies under `configs/policies`.
 5. Add an eval dataset under `evals/datasets/` with FULL security coverage
    (prompt injection, cross-tenant attack, missing evidence) and graders keyed
-   `<name>.<gate>` in `dw_evals`.
+   `<name>.<gate>` in the context's own `dw_<name>.testing` package, registered
+   at the marked seam in `scripts/run_evals.py` (the eval composition root).
+   `dw_evals` never imports a context; import-linter forbids it.
 6. Add Alembic migrations continuing from the baseline (`0001`).
 7. Update `scripts/verify_architecture.py` (`IMPORT_TO_DIST`) and the Dockerfile
    COPY lists.

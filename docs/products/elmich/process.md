@@ -153,7 +153,7 @@ một lần thấy ở đó; tin Zalo không mang mã
 SLA theo Category và thông báo cho PIC: `stage-1/issues/06`. Chứng từ của mọi bước:
 `case-documents/issues/01`; ảnh SP ở bước 1 là `product_image`, nhận tùy chọn lúc
 `propose` (S1 bước 4). Báo cáo hằng ngày cho TP Cung ứng ở bước 3 là một nhóm của
-daily brief (`stage-1/issues/07`, dạng và kênh chờ QE-19). Bước 13–17 có trên `main`
+daily brief (`stage-1/issues/08`, dạng và kênh chờ QE-19). Bước 13–17 có trên `main`
 qua lát port (`port/issues/01`). Đóng cont thành bước riêng (bước 14) hoãn tới khi
 Elmich trả lời QE-15 (QO-6). Đường dẫn ticket tính từ `.claude/plans/supply-chain/`.
 

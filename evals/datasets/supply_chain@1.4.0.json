@@ -1,6 +1,6 @@
 {
   "dataset_id": "supply_chain_smoke",
-  "dataset_version": "1.3.0",
+  "dataset_version": "1.4.0",
   "worker_id": "supply_chain",
   "cases": [
     {
@@ -372,6 +372,143 @@
       "tags": [
         "supply_chain",
         "security"
+      ]
+    },
+    {
+      "case_id": "sc-sec-prompt-injection-proposal-product-name",
+      "category": "prompt_injection",
+      "description": "Tên SP trong tin chat mang chỉ thị và </input> giả: sau escape vẫn nằm trọn trong một khối <input> của prompt đề xuất đang phát hành",
+      "input_ref": "evals/fixtures/cases/sc_sec_prompt_injection_proposal_product_name.json",
+      "expected_ref": "evals/expected/sc_sec_prompt_injection_proposal_product_name.json",
+      "grader": "supply_chain.proposal_prompt_containment",
+      "tags": [
+        "supply_chain",
+        "stage_1",
+        "security"
+      ]
+    },
+    {
+      "case_id": "sc-normal-propose-pic-is-the-caller",
+      "category": "normal",
+      "description": "Đề xuất qua route: cần quyền ghi và duty propose của tenant; PIC là chính người gọi, Category là khóa của tenant",
+      "input_ref": "evals/fixtures/cases/sc_normal_propose_pic_is_the_caller.json",
+      "expected_ref": "evals/expected/sc_normal_propose_pic_is_the_caller.json",
+      "grader": "supply_chain.product_step_authority",
+      "tags": [
+        "supply_chain",
+        "stage_1"
+      ]
+    },
+    {
+      "case_id": "sc-sec-cross-tenant-propose-body-names-tenant-and-pic",
+      "category": "cross_tenant_attack",
+      "description": "Thân yêu cầu đề xuất tự nêu tenant_id của công ty khác và pic_user_id: schema của route từ chối, không hỏi quyền, không ghi gì",
+      "input_ref": "evals/fixtures/cases/sc_sec_cross_tenant_propose_body_names_tenant_and_pic.json",
+      "expected_ref": "evals/expected/sc_sec_cross_tenant_propose_body_names_tenant_and_pic.json",
+      "grader": "supply_chain.product_step_authority",
+      "tags": [
+        "supply_chain",
+        "stage_1",
+        "security"
+      ]
+    },
+    {
+      "case_id": "sc-sec-cross-tenant-step-on-another-tenants-case",
+      "category": "cross_tenant_attack",
+      "description": "Bước trên hồ sơ của tenant B (kho trả về như RLS hở) từ người của tenant A có đủ quyền: không tìm thấy, không ghi",
+      "input_ref": "evals/fixtures/cases/sc_sec_cross_tenant_step_on_another_tenants_case.json",
+      "expected_ref": "evals/expected/sc_sec_cross_tenant_step_on_another_tenants_case.json",
+      "grader": "supply_chain.product_step_authority",
+      "tags": [
+        "supply_chain",
+        "stage_1",
+        "security"
+      ]
+    },
+    {
+      "case_id": "sc-sec-cross-tenant-step-from-another-workspace",
+      "category": "cross_tenant_attack",
+      "description": "Bước trên hồ sơ của workspace W1 từ người chỉ ở W2 cùng tenant: không tìm thấy, không ghi",
+      "input_ref": "evals/fixtures/cases/sc_sec_cross_tenant_step_from_another_workspace.json",
+      "expected_ref": "evals/expected/sc_sec_cross_tenant_step_from_another_workspace.json",
+      "grader": "supply_chain.product_step_authority",
+      "tags": [
+        "supply_chain",
+        "stage_1",
+        "security"
+      ]
+    },
+    {
+      "case_id": "sc-normal-step-by-the-duty-holder",
+      "category": "normal",
+      "description": "Người giữ duty của bước (mặc định nền: ordering cho request_sample) đi bước trên hồ sơ của chính workspace mình",
+      "input_ref": "evals/fixtures/cases/sc_normal_step_by_the_duty_holder.json",
+      "expected_ref": "evals/expected/sc_normal_step_by_the_duty_holder.json",
+      "grader": "supply_chain.product_step_authority",
+      "tags": [
+        "supply_chain",
+        "stage_1"
+      ]
+    },
+    {
+      "case_id": "sc-exception-step-duty-from-the-callers-tenant",
+      "category": "exception",
+      "description": "Tenant A giao request_sample cho supply_lead: người chỉ giữ duty mặc định nền (ordering) bị từ chối trước khi hồ sơ được đọc",
+      "input_ref": "evals/fixtures/cases/sc_exception_step_duty_from_the_callers_tenant.json",
+      "expected_ref": "evals/expected/sc_exception_step_duty_from_the_callers_tenant.json",
+      "grader": "supply_chain.product_step_authority",
+      "tags": [
+        "supply_chain",
+        "stage_1"
+      ]
+    },
+    {
+      "case_id": "sc-exception-approval-outcome-is-not-a-step",
+      "category": "exception",
+      "description": "Kết quả duyệt của BGĐ (bod_approve) gửi thẳng tới handler như một bước, qua mặt schema của route: từ chối trước khi hỏi quyền hay đọc hồ sơ; chỉ graph duyệt áp được",
+      "input_ref": "evals/fixtures/cases/sc_exception_approval_outcome_is_not_a_step.json",
+      "expected_ref": "evals/expected/sc_exception_approval_outcome_is_not_a_step.json",
+      "grader": "supply_chain.product_step_authority",
+      "tags": [
+        "supply_chain",
+        "stage_1"
+      ]
+    },
+    {
+      "case_id": "sc-sec-missing-evidence-pass-sample-without-report",
+      "category": "missing_evidence",
+      "description": "Đánh giá mẫu đạt mà không kèm phiếu đánh giá của vòng: từ chối, hồ sơ không sang chờ BGĐ duyệt",
+      "input_ref": "evals/fixtures/cases/sc_sec_missing_evidence_pass_sample_without_report.json",
+      "expected_ref": "evals/expected/sc_sec_missing_evidence_pass_sample_without_report.json",
+      "grader": "supply_chain.product_step_authority",
+      "tags": [
+        "supply_chain",
+        "stage_1",
+        "security"
+      ]
+    },
+    {
+      "case_id": "sc-normal-bod-review-stamped-from-the-tenant-policy",
+      "category": "normal",
+      "description": "BGĐ duyệt mẫu: scope người quyết đóng dấu theo policy của tenant lúc nêu; người chỉ giữ scope mặc định nền không quyết được",
+      "input_ref": "evals/fixtures/cases/sc_normal_bod_review_stamped_from_the_tenant_policy.json",
+      "expected_ref": "evals/expected/sc_normal_bod_review_stamped_from_the_tenant_policy.json",
+      "grader": "supply_chain.approval_stamp",
+      "tags": [
+        "supply_chain",
+        "stage_1"
+      ]
+    },
+    {
+      "case_id": "sc-boundary-platform-admin-does-not-pass-the-stamp",
+      "category": "boundary",
+      "description": "Quản trị nền tảng có approvals.decide nhưng không giữ scope đóng dấu: không quyết được duyệt mẫu; vai trò không thay scope",
+      "input_ref": "evals/fixtures/cases/sc_boundary_platform_admin_does_not_pass_the_stamp.json",
+      "expected_ref": "evals/expected/sc_boundary_platform_admin_does_not_pass_the_stamp.json",
+      "grader": "supply_chain.approval_stamp",
+      "tags": [
+        "supply_chain",
+        "stage_1"
       ]
     }
   ]

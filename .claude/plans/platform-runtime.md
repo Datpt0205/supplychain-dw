@@ -152,6 +152,9 @@ Mốc 6 (running many customers) is half done:
   menu item shown for any of several scopes), `support-access` (support access
   the customer grants, ADR 0008), `tenant-members-and-invitations` (tenant-wide
   users, per-workspace roles, invitations).
+  `eval-grader-registry` ticket 01 done here product-side on 2026-10-07 (Elmich
+  S7): `run_dataset` takes the table, `grader_table()` in `scripts/run_evals.py`,
+  `dw_evals` forbidden from importing a context. Upstream candidate.
 - **A missing bearer token answers 403, not 401** (2026-10-05,
   `platform-runtime/unauthenticated-401/`, ticket 01 `needs-triage`):
   `bearer_token` raises `PermissionDeniedError` on every route. Found by Elmich

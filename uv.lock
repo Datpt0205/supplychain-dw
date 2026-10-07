@@ -1089,7 +1089,6 @@ dependencies = [
     { name = "dw-knowledge" },
     { name = "dw-memory" },
     { name = "dw-platform" },
-    { name = "dw-supply-chain" },
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
@@ -1102,7 +1101,6 @@ requires-dist = [
     { name = "dw-knowledge", editable = "packages/python/dw_knowledge" },
     { name = "dw-memory", editable = "packages/python/dw_memory" },
     { name = "dw-platform", editable = "packages/python/dw_platform" },
-    { name = "dw-supply-chain", editable = "packages/python/dw_supply_chain" },
     { name = "pydantic", specifier = ">=2.10,<3" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
 ]

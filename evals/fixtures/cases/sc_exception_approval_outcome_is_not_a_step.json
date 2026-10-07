@@ -1,0 +1,28 @@
+{
+  "via": "handler",
+  "command": "step",
+  "caller": {
+    "tenant": "A",
+    "workspace": "W1",
+    "scopes": [
+      "supply_chain.product_case.read",
+      "supply_chain.product_case.write",
+      "supply_chain.duty.ordering",
+      "supply_chain.duty.exceptions",
+      "supply_chain.duty.rnd",
+      "supply_chain.duty.supply_lead",
+      "approvals.decide",
+      "supply_chain.approve.bod"
+    ]
+  },
+  "stored_case": {
+    "tenant": "A",
+    "workspace": "W1",
+    "state": "pending_bod_review",
+    "supplier_name": "NCC Mẫu",
+    "sample_round": 1
+  },
+  "request": {
+    "action": "bod_approve"
+  }
+}

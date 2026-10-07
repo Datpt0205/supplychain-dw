@@ -103,7 +103,7 @@ jobs:
   scaffold-smoke:
     # The skeleton's central claim is that a product can plug a bounded context
     # in and inherit everything. Nothing tested that claim: this repo ships no
-    # context on purpose, so the fourteen seams `scripts/new_context.py` wires
+    # context on purpose, so the fifteen seams `scripts/new_context.py` wires
     # had never been walked end to end. Walking them found one the documented
     # list missed — `apps/api/pyproject.toml` — which is what a claim nobody
     # executes looks like. A throwaway context, generated and discarded on every

@@ -10,9 +10,6 @@ dependencies = [
     "dw-knowledge",
     "dw-memory",
     "dw-connectors",
-    # Graded because the command bar's refusals live in its grounding and
-    # planning code, which must hold whatever the model answers.
-    "dw-supply-chain",
     # Graded because the rules live in its code, not in its prompts: which URL
     # may become an account's portal, and when a compiled recipe is trustworthy.
     "pydantic>=2.10,<3",

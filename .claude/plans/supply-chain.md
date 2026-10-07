@@ -20,8 +20,8 @@ This repo is the Elmich product: bounded context
 
 - **Steps 10–17 (PO case)** are on `main` (slice P, `c2f04dc`).
 - **Steps 1–17 run as one flow** (S1 steps 1–5, S2 step 6, S3 steps 7–8, S4 step 9,
-  S5 ĐẶT HÀNG and step 10, S6 SLA by Category and PIC routing); the stage-1 evals
-  (S7) are ticketed. Approvals carry `required_scope` (A); cases carry
+  S5 ĐẶT HÀNG and step 10, S6 SLA by Category and PIC routing, S7 stage-1 evals);
+  stage 1 in the brief and command bar (S8) is ticketed. Approvals carry `required_scope` (A); cases carry
   documents (D).
 - **Channels:** in-app inbox only. The Zalo pieces on `main` are built and
   tested but wired into nothing; the API client calls `/api/v1/zalo/*` routes
@@ -68,13 +68,14 @@ means platform code, an upstream candidate (ADR 0011).
 | S4    | `stage-1/issues/04-item-code-sku-signoff-step-9.md`                       | no      | resolved        | S3                                  |
 | S5    | `stage-1/issues/05-place-order-hand-off.md`                               | no      | resolved        | S4                                  |
 | S6    | `stage-1/issues/06-sla-by-category-and-pic-routing.md`                    | no      | resolved        | S5                                  |
-| S7    | `stage-1/issues/07-stage-1-evals.md`                                      | no      | ready-for-agent | S6                                  |
+| S7    | `stage-1/issues/07-stage-1-evals.md`                                      | partly  | resolved        | S6                                  |
+| S8    | `stage-1/issues/08-stage-1-brief-and-command-bar.md`                      | no      | ready-for-agent | S7; QE-19 (brief group)             |
 | PK    | `packaging-design/issues/01-colour-packaging-and-pre-production.md`       | no      | ready-for-agent | P, D                                |
 | W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md` (E-HSDT v3 look)     | no      | ready-for-agent | P; Playwright viewports owed        |
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** S7 (S6 in: SLA by Category, follow-ups to the PIC, reassign_pic); Z6; Z4p when a real photo update exists.
+**Next:** Z6, S8 (S7 in: stage-1 evals, context graders registered from `scripts/run_evals.py`); Z4p when a real photo update exists.
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 
