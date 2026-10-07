@@ -17,7 +17,7 @@ from dw_agent_runtime.ports import ModelGateway, ModelRequest
 from dw_supply_chain.domain.case_query import CaseQueryIntent
 
 PROMPT_ID = "supply_chain.case_query_understanding"
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.1.0"
 
 
 async def understand_case_query(

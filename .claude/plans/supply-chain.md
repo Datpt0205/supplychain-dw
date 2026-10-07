@@ -20,8 +20,8 @@ This repo is the Elmich product: bounded context
 
 - **Steps 10–17 (PO case)** are on `main` (slice P, `c2f04dc`).
 - **Steps 1–17 run as one flow** (S1 steps 1–5, S2 step 6, S3 steps 7–8, S4 step 9,
-  S5 ĐẶT HÀNG and step 10, S6 SLA by Category and PIC routing, S7 stage-1 evals);
-  stage 1 in the brief and command bar (S8) is ticketed. Approvals carry `required_scope` (A); cases carry
+  S5 ĐẶT HÀNG and step 10, S6 SLA by Category and PIC routing, S7 stage-1 evals,
+  S8 stage 1 in the brief, the command bar, Zalo questions and the daily report). Approvals carry `required_scope` (A); cases carry
   documents (D).
 - **Channels:** in-app inbox only. The Zalo pieces on `main` are built and
   tested but wired into nothing; the API client calls `/api/v1/zalo/*` routes
@@ -70,14 +70,14 @@ means platform code, an upstream candidate (ADR 0011).
 | S5    | `stage-1/issues/05-place-order-hand-off.md`                               | no      | resolved        | S4                                  |
 | S6    | `stage-1/issues/06-sla-by-category-and-pic-routing.md`                    | no      | resolved        | S5                                  |
 | S7    | `stage-1/issues/07-stage-1-evals.md`                                      | partly  | resolved        | S6                                  |
-| S8    | `stage-1/issues/08-stage-1-brief-and-command-bar.md`                      | no      | ready-for-agent | S7; QE-19 (brief group)             |
+| S8    | `stage-1/issues/08-stage-1-brief-and-command-bar.md`                      | no      | resolved        | S7; QE-19 provisional               |
 | PK    | `packaging-design/issues/01-colour-packaging-and-pre-production.md`       | no      | ready-for-agent | P, D                                |
 | W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md` (E-HSDT v3 look)     | no      | ready-for-agent | P; Playwright viewports owed        |
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | ready-for-agent | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 
-**Next:** S8 (Z6 and P4 in: PO cases are read only in their own workspace);
-Z4p when a real photo update exists.
+**Next:** P2, P3 or PK (S8 in: stage 1 in the brief, command bar, Zalo and the
+daily report); Z4p when a real photo update exists.
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 
@@ -252,7 +252,8 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
   được NCC chưa nhắn trước)?
 - **QE-18** PIC vắng hoặc nghỉ thì ai đổi PIC? TP Cung ứng có thấy hồ sơ của mọi PIC?
 - **QE-19** Báo cáo hằng ngày cho TP Cung ứng ở bước 3: mỗi lần đánh giá hay một bản
-  mỗi ngày; trong ứng dụng, Zalo hay email?
+  mỗi ngày; trong ứng dụng, Zalo hay email? (Tạm ở S8: một thông báo mỗi ngày từ 17:00,
+  trong app và Zalo qua Z2, nội dung trên trang brief.)
 - **QE-20** Tóm tắt trong tin duyệt, câu trả lời hỏi đáp và ảnh đề xuất đi qua máy chủ
   Zalo. Dữ liệu nào được đi qua (mã, tên SP, trạng thái, tên NCC, giá, chứng từ)? Có quy
   định nội bộ nào cấm không?

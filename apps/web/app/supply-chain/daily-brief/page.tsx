@@ -9,6 +9,7 @@ import { BriefSummaryPanel } from "../../../components/supply-chain/brief-summar
 import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
 import { DailyBriefView } from "../../../components/supply-chain/daily-brief";
 import { useAuth } from "../../../lib/auth/auth-context";
+import { useWorkspaceMembers } from "../../../lib/directory";
 import { errorMessage, regionFailure } from "../../../lib/error-message";
 import { apiClient } from "../../../lib/session";
 import { useCachedResource } from "../../../lib/use-cached-resource";
@@ -25,6 +26,7 @@ import { useCachedResource } from "../../../lib/use-cached-resource";
  */
 export default function DailyBriefPage() {
   const { active } = useAuth();
+  const members = useWorkspaceMembers();
   const {
     data: brief,
     loading,
@@ -114,7 +116,7 @@ export default function DailyBriefPage() {
               title={errorMessage(summaryError)}
             />
           )}
-          <DailyBriefView brief={shown} />
+          <DailyBriefView brief={shown} members={members} />
         </Flex>
       )}
     </div>

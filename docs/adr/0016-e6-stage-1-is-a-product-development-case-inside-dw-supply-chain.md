@@ -251,3 +251,28 @@ Comments của `.claude/plans/supply-chain/stage-1/issues/04-item-code-sku-signo
 Hồ sơ PO mà ĐẶT HÀNG mở giờ cũng hẹp theo workspace (ADR 0017, sửa đổi P4, migration
 `62cdcf3bf2d2`): hồ sơ phát triển và Hồ sơ PO nó sinh ra đọc được ở cùng một workspace,
 không còn trường hợp người workspace khác thấy Hồ sơ PO mà không thấy hồ sơ cha.
+
+## Sửa đổi 2026-10-07 (tạm, lát S8; Đạt ủy quyền quyết các điểm mở)
+
+Trạng thái: Proposed (lead theo ủy quyền của Đạt; Đạt duyệt hoặc chỉnh). Chi tiết, đột
+biến và kết quả model thật ở Comments của
+`.claude/plans/supply-chain/stage-1/issues/08-stage-1-brief-and-command-bar.md`.
+
+1. **Giai đoạn 1 trong daily brief** (`supply_chain_brief@1.1.0`): bốn nhóm tất định trên
+   chính các bản ghi trang hồ sơ và sweep đọc: quá hạn giai đoạn 1 (cùng
+   `evaluate_product_sla` với sweep, qua `assess_active_product_cases`), chờ BGĐ duyệt, chờ
+   trình ký, mẫu đã đánh giá hôm nay theo kết quả và PIC ("hôm nay" là ngày Việt Nam). Chỉ
+   hiện với `supply_chain.product_case.read`. Override 1.0.0 vẫn hợp lệ: tín hiệu mới đặt
+   đúng chỗ của bản nền, chỗ tenant chọn giữ nguyên.
+2. **Báo cáo hằng ngày cho TP Cung ứng (QE-19, tạm):** không phải bản thứ hai của brief.
+   Lane worker gửi từ 17:00 giờ Việt Nam một thông báo trong app mỗi ngày cho mỗi người
+   giữ `supply_chain.duty.supply_lead` và `product_case.read` trong workspace; tiêu đề chỉ
+   nêu ngày (QE-20), thân là số theo nhóm, nội dung ở trang brief; Z2 đưa tiêu đề và liên
+   kết sang Zalo. Không có gì thì không gửi.
+3. **Hỏi về hồ sơ phát triển** (command bar và Zalo, một handler `AnswerCaseQuery`):
+   danh sách theo trạng thái, Category (danh sách của tenant), PIC (người trong workspace,
+   hoặc người hỏi); mở theo mã đề xuất trong workspace. Trường của loại hồ sơ kia làm câu
+   bị từ chối, không bị bỏ qua. Cần `product_case.read`.
+4. **Ghi chú của R&D không vào mô hình:** dữ liệu tóm tắt chỉ có mã, tên SP, trạng thái, số
+   ngày; tên SP trong `<input>`, escape. Bộ kiểm câu coi mã đề xuất và tên SP là định danh
+   phải thuộc nhóm được dẫn.

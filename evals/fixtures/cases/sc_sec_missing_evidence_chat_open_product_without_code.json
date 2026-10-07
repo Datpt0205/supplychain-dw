@@ -1,0 +1,17 @@
+{
+  "question": "mở hồ sơ phát triển",
+  "model_answer": {
+    "kind": "open_product_case",
+    "proposal_code_mention": "SP-001"
+  },
+  "product_cases": [
+    {
+      "proposal_code": "SP-001",
+      "product_name": "Nồi gang"
+    }
+  ],
+  "must_not_contain": [
+    "SP-001",
+    "Nồi gang"
+  ]
+}

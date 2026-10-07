@@ -1,0 +1,7 @@
+{
+  "question": "hồ sơ SP-028-A tới đâu rồi?",
+  "model_answer": {
+    "kind": "open_product_case",
+    "proposal_code_mention": "SP-028"
+  }
+}

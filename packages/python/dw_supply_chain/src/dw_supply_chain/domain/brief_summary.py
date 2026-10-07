@@ -8,9 +8,11 @@ The model interprets, code decides — split literally:
 - Code keeps a sentence only if it checks out against the brief it cites:
   - every cited key is a group of THIS brief;
   - every number in the sentence is a count or a day figure of a cited
-    group, or a digit inside one of its cases' PO reference or supplier name;
-  - every PO reference or supplier name of the brief the sentence mentions
-    belongs to a cited group.
+    group, or a digit inside one of its cases' identifiers or names;
+  - every identifier or name of the brief the sentence mentions belongs to a
+    cited group: a PO reference or supplier name, and for a stage-1 group a
+    proposal code or product name (ticket 08) — so "mẫu X đạt" citing a group
+    that does not hold X is dropped.
 
 A sentence that fails a check is dropped, never repaired; the reader is told
 how many were. Words without figures ("đáng lo nhất", "nên xử lý trước") are
@@ -99,14 +101,18 @@ def _mentions(text: str, name: str) -> bool:
 
 
 def _names(groups: Iterable[BriefGroup]) -> set[str]:
-    return {
-        name
-        for group in groups
-        for entry in group.entries
-        for name in (entry.case.po_reference, entry.case.supplier_name)
-        # A case awaiting its PO has no reference to cite.
-        if name is not None
-    }
+    """Every identifier and name the groups' cases carry: what a sentence may
+    mention only by citing a group that holds it."""
+    names: set[str] = set()
+    for group in groups:
+        for entry in group.entries:
+            names.add(entry.case.supplier_name)
+            # A case awaiting its PO has no reference to cite.
+            if entry.case.po_reference is not None:
+                names.add(entry.case.po_reference)
+        for product in group.product_entries:
+            names.update((product.case.proposal_code, product.case.product_name))
+    return names
 
 
 def _allowed_numbers(groups: Sequence[BriefGroup]) -> set[str]:
@@ -120,6 +126,10 @@ def _allowed_numbers(groups: Sequence[BriefGroup]) -> set[str]:
             allowed.update(str(v) for v in (entry.days, entry.limit_days) if v is not None)
             allowed.update(_NUMBER.findall(entry.case.po_reference or ""))
             allowed.update(_NUMBER.findall(entry.case.supplier_name))
+        for product in group.product_entries:
+            allowed.update(str(v) for v in (product.days, product.limit_days) if v is not None)
+            allowed.update(_NUMBER.findall(product.case.proposal_code))
+            allowed.update(_NUMBER.findall(product.case.product_name))
     return allowed
 
 

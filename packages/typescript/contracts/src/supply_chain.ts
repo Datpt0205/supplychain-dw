@@ -199,11 +199,57 @@ export const portfolioSummarySchema = z.object({
 });
 export type PortfolioSummary = z.infer<typeof portfolioSummarySchema>;
 
+// -- Product-development cases where they are named in passing ------------------
+
+/** The API's `ProductDevState`: the states stage-1 tickets 01-04 reach. */
+export const productDevStateSchema = z.enum([
+  "proposed",
+  "sample_requested",
+  "sample_testing",
+  "revision_requested",
+  "pending_bod_review",
+  "profile_in_progress",
+  "supplier_confirmation",
+  "item_coding",
+  // Step 9: submitted for sign-off; every sign-off step approved.
+  "pending_signoff",
+  "ready_to_order",
+  // ĐẶT HÀNG: terminal; the PO case it opened carries the order on.
+  "ordered",
+  "waiting_external",
+  "blocked",
+  "manual_review",
+  "cancelled",
+]);
+export type ProductDevState = z.infer<typeof productDevStateSchema>;
+
+export const sampleResultSchema = z.enum([
+  "passed",
+  "needs_revision",
+  "rejected",
+]);
+export type SampleResult = z.infer<typeof sampleResultSchema>;
+
+/** `ProductCaseRefView`: a product case named in a brief group or a
+ * command-bar answer — what identifies it and where it stands. */
+export const productCaseRefSchema = z.object({
+  id: z.string(),
+  proposal_code: z.string(),
+  product_name: z.string(),
+  /** The Category key it was stamped with; the label is the tenant's list's. */
+  category: z.string(),
+  pic_user_id: z.string(),
+  state: productDevStateSchema,
+});
+export type ProductCaseRef = z.infer<typeof productCaseRefSchema>;
+
 // -- Command bar: the structured AI answer -------------------------------------
 
 export const caseQueryKindSchema = z.enum([
   "list_cases",
   "open_case",
+  "list_product_cases",
+  "open_product_case",
   "unsupported",
 ]);
 
@@ -216,6 +262,16 @@ export const caseQueryOutcomeSchema = z.enum([
   "po_reference_missing",
   "po_not_found",
   "po_ambiguous",
+  // Product-development cases (stage-1 ticket 08).
+  "product_list",
+  "product_open",
+  "proposal_code_missing",
+  "category_not_found",
+  "category_ambiguous",
+  "pic_not_found",
+  "pic_ambiguous",
+  "product_not_found",
+  "product_ambiguous",
 ]);
 export type CaseQueryOutcome = z.infer<typeof caseQueryOutcomeSchema>;
 
@@ -224,6 +280,11 @@ export const groundedFieldSchema = z.enum([
   "po_reference",
   "state",
   "active_only",
+  "proposal_code",
+  "product_state",
+  "category",
+  "pic",
+  "mine",
 ]);
 export type GroundedField = z.infer<typeof groundedFieldSchema>;
 
@@ -238,11 +299,24 @@ export const caseLinkDataViewSchema = z.object({
   case: poCaseSchema,
 });
 
+export const productCaseTableDataViewSchema = z.object({
+  type: z.literal("product_case_table"),
+  rows: z.array(productCaseRefSchema),
+  has_more: z.boolean(),
+});
+
+export const productCaseLinkDataViewSchema = z.object({
+  type: z.literal("product_case_link"),
+  case: productCaseRefSchema,
+});
+
 /** The closed set of views an answer may carry. An unknown `type` fails the
  * whole response — it is never rendered as raw data or guessed at. */
 export const dataViewSchema = z.discriminatedUnion("type", [
   caseTableDataViewSchema,
   caseLinkDataViewSchema,
+  productCaseTableDataViewSchema,
+  productCaseLinkDataViewSchema,
 ]);
 export type DataView = z.infer<typeof dataViewSchema>;
 
@@ -257,6 +331,12 @@ export const aiWorkResponseSchema = z.object({
     supplier_name: z.string().nullable(),
     active_only: z.boolean(),
     po_reference: z.string().nullable(),
+    product_state: productDevStateSchema.nullable(),
+    /** A key of the tenant's Category list. */
+    category: z.string().nullable(),
+    /** A person of the workspace, or the asker for "mine". */
+    pic_user_id: z.string().nullable(),
+    proposal_code: z.string().nullable(),
   }),
   citations: z.array(
     z.object({ field: groundedFieldSchema, quote: z.string() }),
@@ -285,6 +365,11 @@ export const briefSignalSchema = z.enum([
   "rework",
   "waiting_on_us",
   "changed_recently",
+  // Stage 1 (ticket 08): product-development cases.
+  "product_sla_breached",
+  "product_awaiting_bod",
+  "product_awaiting_signoff",
+  "sample_evaluated_today",
 ]);
 export type BriefSignal = z.infer<typeof briefSignalSchema>;
 
@@ -298,6 +383,17 @@ export const briefEntrySchema = z.object({
 });
 export type BriefEntry = z.infer<typeof briefEntrySchema>;
 
+/** One product case in one stage-1 group: days in its state (with the SLA
+ * it overran), or, for a sample evaluated today, the round and its result. */
+export const productBriefEntrySchema = z.object({
+  case: productCaseRefSchema,
+  days: z.number().nullable(),
+  limit_days: z.number().nullable(),
+  round_no: z.number().nullable(),
+  sample_result: sampleResultSchema.nullable(),
+});
+export type ProductBriefEntry = z.infer<typeof productBriefEntrySchema>;
+
 /** Every case one deterministic signal holds for. `total` counts them all;
  * `entries` carries at most ten, longest-standing first. `state` is set when
  * a state defines the group — the list it drills down to. */
@@ -306,8 +402,12 @@ export const briefGroupSchema = z.object({
   signal: briefSignalSchema,
   qualifier: z.string().nullable(),
   state: caseStateSchema.nullable(),
+  /** The product state that defines a stage-1 group, when one does. */
+  product_state: productDevStateSchema.nullable(),
   total: z.number(),
   entries: z.array(briefEntrySchema),
+  /** A stage-1 group's cases; `entries` is then empty. */
+  product_entries: z.array(productBriefEntrySchema),
 });
 export type BriefGroup = z.infer<typeof briefGroupSchema>;
 
@@ -319,6 +419,11 @@ export const dailyBriefSchema = z.object({
   active_case_count: z.number(),
   flagged_case_count: z.number(),
   approvals_visible: z.boolean(),
+  /** False when product cases were not looked at (no read scope); the two
+   * counts are then 0. */
+  product_cases_visible: z.boolean(),
+  active_product_case_count: z.number(),
+  flagged_product_case_count: z.number(),
   groups: z.array(briefGroupSchema),
 });
 export type DailyBrief = z.infer<typeof dailyBriefSchema>;
@@ -423,28 +528,6 @@ export type CaseDocument = z.infer<typeof caseDocumentSchema>;
 
 // ---- product-development cases (stage 1, ADR 0016) ---------------------------
 
-/** The API's `ProductDevState`: the states stage-1 tickets 01-04 reach. */
-export const productDevStateSchema = z.enum([
-  "proposed",
-  "sample_requested",
-  "sample_testing",
-  "revision_requested",
-  "pending_bod_review",
-  "profile_in_progress",
-  "supplier_confirmation",
-  "item_coding",
-  // Step 9: submitted for sign-off; every sign-off step approved.
-  "pending_signoff",
-  "ready_to_order",
-  // ĐẶT HÀNG: terminal; the PO case it opened carries the order on.
-  "ordered",
-  "waiting_external",
-  "blocked",
-  "manual_review",
-  "cancelled",
-]);
-export type ProductDevState = z.infer<typeof productDevStateSchema>;
-
 /** The API's `ProductAction`. Its own set, never `CaseAction`'s. */
 export const productActionSchema = z.enum([
   "propose",
@@ -479,13 +562,6 @@ export const productActionSchema = z.enum([
   "signoff_reject",
 ]);
 export type ProductAction = z.infer<typeof productActionSchema>;
-
-export const sampleResultSchema = z.enum([
-  "passed",
-  "needs_revision",
-  "rejected",
-]);
-export type SampleResult = z.infer<typeof sampleResultSchema>;
 
 /** Mirrors `ProductCategoryView`: one Category of the tenant's list. `key`
  * is what a case is stamped with; `label` is what a person reads. A case
@@ -660,6 +736,8 @@ export type ProductActionDuties = z.infer<typeof productActionDutiesSchema>;
 export interface ProductCaseListFilter {
   state?: ProductDevState;
   picUserId?: string;
+  /** A Category key of the tenant's list. */
+  category?: string;
 }
 
 /** The body of `POST /product-cases/{id}/transitions`. */

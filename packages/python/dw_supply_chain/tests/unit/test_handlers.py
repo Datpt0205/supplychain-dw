@@ -35,10 +35,10 @@ from dw_supply_chain.action_duties import (
     load_supply_chain_action_duties,
 )
 from dw_supply_chain.adapters.persistence import po_case_repository
+from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.handlers import (
     AdvancePOCase,
     AnalyzeDelayImpact,
-    AnswerCaseQuery,
     CaseActionApplied,
     CaseActionPendingApproval,
     CloseFollowUp,
@@ -76,6 +76,7 @@ from dw_supply_chain.application.ports import (
     FollowUpRecord,
     POCaseListFilter,
 )
+from dw_supply_chain.application.product_cases import ListProductCases
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.brief_policy import SupplyChainBriefPolicy
 from dw_supply_chain.domain.brief_summary import BriefSummaryDraft, BriefSummaryStatus
@@ -115,6 +116,7 @@ from dw_supply_chain.sla_policy import (
     SupplierUpdateCadence,
     SupplyChainSLAPolicy,
 )
+from dw_supply_chain.testing.product_cases import InMemoryDirectory, InMemoryProductCases
 
 pytestmark = pytest.mark.unit
 
@@ -2109,9 +2111,18 @@ class _IntentGateway:
 
 def _answer_case_query(repo: FakePOCaseRepository, gateway: _IntentGateway) -> AnswerCaseQuery:
     authz = ScopeAuthorizationService()
+    products = InMemoryProductCases()
     return AnswerCaseQuery(
         po_case_repo=repo,
         list_cases=ListPOCases(repo=repo, authz=authz),
+        product_cases=products,
+        list_product_cases=ListProductCases(repo=products, authz=authz),
+        categories=ListProductCategories(
+            policy_override_repo=FakePolicyOverrideRepository(),
+            platform_default_sla_policy=_sla_policy(),
+            authz=authz,
+        ),
+        directory=InMemoryDirectory(),
         gateway=gateway,
         authz=authz,
         ids=Uuid4Generator(),
@@ -2420,6 +2431,7 @@ def _daily_brief_handler(
     return GetDailyBrief(
         po_case_repo=po_case_repo,
         supplier_update_repo=supplier_update_repo or FakeSupplierUpdateRepository(),
+        product_case_repo=InMemoryProductCases(),
         policy_override_repo=policy_override_repo or FakePolicyOverrideRepository(),
         platform_default_policy=_sla_policy(),
         platform_default_brief_policy=_brief_policy(),

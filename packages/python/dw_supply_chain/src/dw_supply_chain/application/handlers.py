@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import timedelta
 
 from pydantic import BaseModel
@@ -27,6 +27,7 @@ from dw_platform.application.ports import AuthorizationPort, PolicyOverridePort
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.action_duties import CaseDuty, SupplyChainActionDuties
 from dw_supply_chain.application.ports import (
+    ActiveProductCasesPort,
     DelayImpactAnalysisRepositoryPort,
     FollowUpRecord,
     FollowUpRepositoryPort,
@@ -36,32 +37,27 @@ from dw_supply_chain.application.ports import (
     POCaseRepositoryPort,
     ReviewNotifierPort,
     ScopeHoldersPort,
+    StageOneReadsPort,
     SupplierUpdateRepositoryPort,
     WorkspaceMembersPort,
 )
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
-from dw_supply_chain.brief_policy import SupplyChainBriefPolicy
+from dw_supply_chain.brief_policy import BRIEF_POLICY_ID, SupplyChainBriefPolicy
 from dw_supply_chain.domain.brief_summary import (
     BriefSummary,
     BriefSummaryStatus,
     ground_summary,
-)
-from dw_supply_chain.domain.case_query import (
-    CaseQueryKind,
-    CaseQueryOutcome,
-    CaseQueryPlan,
-    GroundedField,
-    ground,
-    ignored_fields,
-    plan_case_query,
 )
 from dw_supply_chain.domain.daily_brief import (
     CHANGE_WINDOW_HOURS,
     DailyBrief,
     PendingApprovalsSeen,
     PendingCaseApproval,
+    ProductHealth,
     RecentChange,
+    StageOneSnapshot,
     compose_brief,
+    local_day_start,
 )
 from dw_supply_chain.domain.delay_impact import (
     DelayImpactAnalysis,
@@ -82,7 +78,11 @@ from dw_supply_chain.domain.po_case import (
     apply_action,
 )
 from dw_supply_chain.domain.portfolio import CaseHealth, PortfolioSummary, summarize_portfolio
-from dw_supply_chain.domain.sla_evaluation import SLAEvaluation, evaluate_sla
+from dw_supply_chain.domain.sla_evaluation import (
+    SLAEvaluation,
+    evaluate_product_sla,
+    evaluate_sla,
+)
 from dw_supply_chain.domain.supplier_update import (
     SupplierUpdate,
     SupplierUpdateId,
@@ -100,7 +100,6 @@ from dw_supply_chain.product_approvals import (
 from dw_supply_chain.sla_policy import ProductCategory, SupplyChainSLAPolicy
 from dw_supply_chain.workflows.advance_case_graph import APPROVAL_TYPE_PREFIX
 from dw_supply_chain.workflows.brief_summary import summarize_brief
-from dw_supply_chain.workflows.case_query_understanding import understand_case_query
 from dw_supply_chain.workflows.delay_impact_analysis import analyze_delay_impact
 from dw_supply_chain.workflows.supplier_update_understanding import understand_supplier_update
 
@@ -205,8 +204,6 @@ _FOLLOW_UP_RESOURCE = "follow_up"
 BRIEF_POLICY_READ = "supply_chain.brief_policy.read"
 BRIEF_POLICY_WRITE = "supply_chain.brief_policy.write"
 _BRIEF_POLICY_RESOURCE = "brief_policy"
-# Matches configs/policies/supply_chain_brief@1.0.0.yaml's own policy_id.
-_BRIEF_POLICY_ID = "supply_chain_brief"
 
 # The platform approval inbox's own read scope (`GET /api/v1/approvals`). The
 # brief shows pending approvals only to a caller who could open that inbox.
@@ -221,9 +218,10 @@ _BRIEF_APPROVALS_READ = 50
 # to be a valid RunContext. See each workflow module's own docstring.
 _SUPPLIER_UPDATE_WORKER_ID = "supply_chain.supplier_update_understanding"
 _DELAY_IMPACT_WORKER_ID = "supply_chain.delay_impact_analysis"
-_CASE_QUERY_WORKER_ID = "supply_chain.case_query_understanding"
 _BRIEF_SUMMARY_WORKER_ID = "supply_chain.daily_brief_summary"
-_WORKER_VERSION = "1.0.0"
+# The version every one-call worker id above (and `application.case_query`'s)
+# is traced under.
+WORKER_VERSION = "1.0.0"
 
 
 @dataclass(frozen=True)
@@ -552,7 +550,7 @@ class SubmitSupplierUpdate:
             workspace_id=context.workspace_id,
             actor_id=context.principal_id,
             worker_id=_SUPPLIER_UPDATE_WORKER_ID,
-            worker_version=_WORKER_VERSION,
+            worker_version=WORKER_VERSION,
             channel="web",
             plan_id=context.plan_id,
             roles=context.roles,
@@ -661,7 +659,7 @@ class AnalyzeDelayImpact:
             workspace_id=context.workspace_id,
             actor_id=context.principal_id,
             worker_id=_DELAY_IMPACT_WORKER_ID,
-            worker_version=_WORKER_VERSION,
+            worker_version=WORKER_VERSION,
             channel="web",
             plan_id=context.plan_id,
             roles=context.roles,
@@ -1277,6 +1275,65 @@ class GetPortfolioSummary:
         return summarize_portfolio(healths)
 
 
+async def assess_active_product_cases(
+    context: AccessContext,
+    *,
+    product_case_repo: ActiveProductCasesPort,
+    policy_override_repo: PolicyOverridePort,
+    platform_default_policy: SupplyChainSLAPolicy,
+    clock: UtcClock,
+) -> list[ProductHealth]:
+    """Every active product case of the context's workspace with its stage-1
+    SLA evaluation, under the tenant's SLA policy and the case's own stamped
+    Category — what the follow-up sweep opens work from and the daily brief
+    groups, so the two cannot evaluate one case two ways."""
+    cases = await product_case_repo.list_active(context)
+    if not cases:
+        return []
+    entered = await product_case_repo.state_entered_at(context, [case.id.value for case in cases])
+    policy = await resolve_sla_policy(context, policy_override_repo, platform_default_policy)
+    now = clock.now()
+    healths: list[ProductHealth] = []
+    for case in cases:
+        assert case.created_at is not None  # read back from a row
+        healths.append(
+            ProductHealth(
+                case=case,
+                sla=evaluate_product_sla(
+                    state=case.state,
+                    category=case.category,
+                    entered_current_state_at=entered.get(case.id.value, case.created_at),
+                    now=now,
+                    policy=policy,
+                ),
+            )
+        )
+    return healths
+
+
+async def read_stage_one(
+    context: AccessContext,
+    *,
+    product_case_repo: StageOneReadsPort,
+    policy_override_repo: PolicyOverridePort,
+    platform_default_policy: SupplyChainSLAPolicy,
+    clock: UtcClock,
+) -> StageOneSnapshot:
+    """What the brief and the daily report read of stage 1 in the context's
+    workspace: the active cases, assessed, and the sample rounds closed since
+    00:00 of the Vietnamese day. No authorization here: the brief checks the
+    caller's, the report lane is a system process."""
+    active = await assess_active_product_cases(
+        context,
+        product_case_repo=product_case_repo,
+        policy_override_repo=policy_override_repo,
+        platform_default_policy=platform_default_policy,
+        clock=clock,
+    )
+    closed = await product_case_repo.closed_rounds_since(context, local_day_start(clock.now()))
+    return StageOneSnapshot(active=tuple(active), closed_today=tuple(closed))
+
+
 def _approval_case_id(approval: PendingApprovalRecord) -> uuid.UUID | None:
     """The case an approval names — the `po_case_id` that
     `workflows.advance_case_graph` wrote into its payload when it raised it —
@@ -1317,15 +1374,18 @@ class GetDailyBrief:
     are the same `CaseHealth` the Attention Queue and the Control Tower use,
     so the brief cannot report a case those views do not.
 
-    Reuses `PO_CASE_READ`, tenant-wide like `GetAttentionQueue`. Pending
+    Reuses `PO_CASE_READ`, like `GetAttentionQueue`. Pending
     approvals are shown only to a caller who also holds the approval
     inbox's own `approvals.read`: the brief must not become a way to see
     approvals the inbox would refuse. Without it the group is absent and the
     brief says so (`approvals_visible=False`) rather than reading as "none
-    pending"."""
+    pending". The stage-1 groups (ticket 08) follow the same rule with
+    `PRODUCT_CASE_READ`, the product case list's own scope
+    (`product_cases_visible=False`)."""
 
     po_case_repo: POCaseRepositoryPort
     supplier_update_repo: SupplierUpdateRepositoryPort
+    product_case_repo: StageOneReadsPort
     policy_override_repo: PolicyOverridePort
     platform_default_policy: SupplyChainSLAPolicy
     platform_default_brief_policy: SupplyChainBriefPolicy
@@ -1343,13 +1403,10 @@ class GetDailyBrief:
             platform_default_policy=self.platform_default_policy,
             clock=self.clock,
         )
-        brief_policy = await _resolve_policy(
-            context,
-            self.policy_override_repo,
-            policy_id=_BRIEF_POLICY_ID,
-            schema=SupplyChainBriefPolicy,
-            platform_default=self.platform_default_brief_policy,
+        brief_policy = await resolve_brief_policy(
+            context, self.policy_override_repo, self.platform_default_brief_policy
         )
+        stage_one = await self._stage_one(context)
         now = self.clock.now()
         changed = await self.po_case_repo.list_latest_transitions_since(
             context, now - timedelta(hours=CHANGE_WINDOW_HOURS)
@@ -1386,6 +1443,22 @@ class GetDailyBrief:
             ),
             signal_order=brief_policy.signal_order,
             now=now,
+            stage_one=stage_one,
+        )
+
+    async def _stage_one(self, context: AccessContext) -> StageOneSnapshot | None:
+        try:
+            await self.authz.require(
+                context=context, action=PRODUCT_CASE_READ, resource_type="product_dev_case"
+            )
+        except PermissionDeniedError:
+            return None
+        return await read_stage_one(
+            context,
+            product_case_repo=self.product_case_repo,
+            policy_override_repo=self.policy_override_repo,
+            platform_default_policy=self.platform_default_policy,
+            clock=self.clock,
         )
 
     async def _pending_approvals(
@@ -1402,6 +1475,20 @@ class GetDailyBrief:
         )
 
 
+async def resolve_brief_policy(
+    context: AccessContext,
+    policy_override_repo: PolicyOverridePort,
+    platform_default: SupplyChainBriefPolicy,
+) -> SupplyChainBriefPolicy:
+    """The tenant's brief order: its own override if it has one, the
+    platform's otherwise. One stored before the stage-1 signals existed gets
+    them where the platform puts them (`SupplyChainBriefPolicy.from_stored`)."""
+    override = await policy_override_repo.get(context, BRIEF_POLICY_ID)
+    if override is None:
+        return platform_default
+    return SupplyChainBriefPolicy.from_stored(override, platform_default)
+
+
 @dataclass(frozen=True)
 class GetBriefPolicy:
     """The effective brief order for the caller's own tenant — their own
@@ -1415,12 +1502,8 @@ class GetBriefPolicy:
         await self.authz.require(
             context=context, action=BRIEF_POLICY_READ, resource_type=_BRIEF_POLICY_RESOURCE
         )
-        return await _resolve_policy(
-            context,
-            self.policy_override_repo,
-            policy_id=_BRIEF_POLICY_ID,
-            schema=SupplyChainBriefPolicy,
-            platform_default=self.platform_default_policy,
+        return await resolve_brief_policy(
+            context, self.policy_override_repo, self.platform_default_policy
         )
 
 
@@ -1443,151 +1526,12 @@ class SetBriefPolicyOverride:
         await _put_policy_override(
             context,
             self.policy_override_repo,
-            policy_id=_BRIEF_POLICY_ID,
+            policy_id=BRIEF_POLICY_ID,
             policy=policy,
             resource_type=_BRIEF_POLICY_RESOURCE,
             ids=self.ids,
             clock=self.clock,
         )
-
-
-# How many rows a command-bar answer carries. The answer is a work surface,
-# not the list itself: `has_more` offers the full, paged list instead.
-_ANSWER_ROWS = 20
-
-
-@dataclass(frozen=True, slots=True)
-class CaseQueryAnswer:
-    """What one question came to — every part of it decided by code.
-
-    `plan.outcome` says which fields mean anything: `cases`/`has_more` for a
-    LIST (and the matching cases for a PO_AMBIGUOUS), `opened` for an OPEN.
-    `citations` are the question's own spans behind every field that was
-    grounded, whatever the outcome. A refusal's two reasons are kept apart:
-    `ignored` holds fields the model claimed that the question gave no
-    grounds for; `unusable` holds fields the question did state but that
-    this kind of answer cannot apply.
-    """
-
-    intent: CaseQueryKind
-    plan: CaseQueryPlan
-    citations: tuple[tuple[GroundedField, str], ...] = ()
-    ignored: tuple[GroundedField, ...] = ()
-    unusable: tuple[GroundedField, ...] = ()
-    cases: tuple[POCase, ...] = ()
-    has_more: bool = False
-    opened: POCase | None = None
-
-
-@dataclass(frozen=True)
-class AnswerCaseQuery:
-    """The command bar: a question in, a structured answer out.
-
-    The model interprets and code decides, end to end: it reads the question into a typed
-    intent (`workflows.case_query_understanding`); `domain.case_query`
-    grounds it in the question and plans against the caller's real supplier
-    names; the lookups run through `ListPOCases` and the repository, under
-    the caller's own authorization and RLS. Nothing the model returned is
-    used as an identifier until code has resolved it.
-
-    Authorization comes first — before a token is spent. A model whose every
-    answer failed the schema degrades to NOT_UNDERSTOOD; any other failure
-    (a budget refusal, an unavailable provider) is raised as what it is,
-    never dressed up as a misunderstanding.
-    """
-
-    po_case_repo: POCaseRepositoryPort
-    list_cases: ListPOCases
-    gateway: ModelGateway
-    authz: AuthorizationPort
-    ids: IdGenerator
-
-    async def handle(
-        self, context: AccessContext, question: str, *, channel: str = "web"
-    ) -> CaseQueryAnswer:
-        """`channel` is where the question came from (the command bar, a linked
-        chat), carried into the run's trace; it decides nothing."""
-        await self.authz.require(context=context, action=PO_CASE_READ, resource_type=_RESOURCE)
-
-        run_id = self.ids.new_uuid()
-        run_context = RunContext(
-            run_id=run_id,
-            tenant_id=context.tenant_id,
-            workspace_id=context.workspace_id,
-            actor_id=context.principal_id,
-            worker_id=_CASE_QUERY_WORKER_ID,
-            worker_version=_WORKER_VERSION,
-            channel=channel,
-            plan_id=context.plan_id,
-            roles=context.roles,
-            scopes=context.scopes,
-            trace_id=str(run_id),
-        )
-        try:
-            intent = await understand_case_query(self.gateway, run_context, question)
-        except ModelOutputInvalidError:
-            return CaseQueryAnswer(
-                intent=CaseQueryKind.UNSUPPORTED,
-                plan=CaseQueryPlan(outcome=CaseQueryOutcome.NOT_UNDERSTOOD),
-            )
-
-        grounded = ground(intent, question)
-        # The caller's own names, read only for a list that names a supplier
-        # — the one reading that resolves against them. The model never sees
-        # them either way.
-        known_suppliers = (
-            await self.po_case_repo.list_supplier_names(context)
-            if grounded.kind is CaseQueryKind.LIST_CASES and grounded.supplier_mention is not None
-            else []
-        )
-        plan = plan_case_query(grounded, known_suppliers)
-        answered = CaseQueryAnswer(
-            intent=grounded.kind,
-            plan=plan,
-            citations=grounded.citations,
-            ignored=ignored_fields(grounded),
-            unusable=plan.unused,
-        )
-
-        if plan.outcome is CaseQueryOutcome.LIST:
-            page = await self.list_cases.handle(
-                context,
-                POCaseListFilter(
-                    state=plan.state,
-                    supplier_name=plan.supplier_name,
-                    active_only=plan.active_only,
-                ),
-                limit=_ANSWER_ROWS,
-                cursor=None,
-            )
-            return replace(answered, cases=page.items, has_more=page.next_cursor is not None)
-
-        if plan.outcome is CaseQueryOutcome.OPEN:
-            assert plan.po_reference is not None  # OPEN always carries one
-            matches = await self.po_case_repo.find_by_reference(context, plan.po_reference)
-            if len(matches) == 1:
-                # The stored reference, not the model's spelling of it.
-                return replace(
-                    answered,
-                    plan=replace(plan, po_reference=matches[0].po_reference),
-                    opened=matches[0],
-                )
-            return replace(
-                answered,
-                plan=replace(
-                    plan,
-                    outcome=(
-                        CaseQueryOutcome.PO_AMBIGUOUS if matches else CaseQueryOutcome.PO_NOT_FOUND
-                    ),
-                    # `find_by_reference` never matches a case without one.
-                    candidates=tuple(
-                        case.po_reference for case in matches if case.po_reference is not None
-                    ),
-                ),
-                cases=tuple(matches),
-            )
-
-        return answered
 
 
 @dataclass(frozen=True, slots=True)
@@ -1630,7 +1574,7 @@ class SummarizeDailyBrief:
             workspace_id=context.workspace_id,
             actor_id=context.principal_id,
             worker_id=_BRIEF_SUMMARY_WORKER_ID,
-            worker_version=_WORKER_VERSION,
+            worker_version=WORKER_VERSION,
             channel="web",
             plan_id=context.plan_id,
             roles=context.roles,

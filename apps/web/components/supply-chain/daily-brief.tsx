@@ -1,10 +1,20 @@
 import Link from "next/link";
 import { Card, Empty, Flex, Typography } from "antd";
-import type { BriefEntry, BriefGroup, DailyBrief } from "@dw/contracts";
+import type {
+  BriefEntry,
+  BriefGroup,
+  DailyBrief,
+  ProductBriefEntry,
+  SampleResult,
+  WorkspaceMember,
+} from "@dw/contracts";
 import { formatDateTimeFull } from "../../lib/dates";
+import { memberName } from "../../lib/directory";
 import { poCasesHref } from "../../lib/supply-chain/po-case-filter";
+import { productCasesHref } from "../../lib/supply-chain/product-case-filter";
 import { CASE_STATE_LABEL, CaseStateTag } from "./case-state-badge";
 import { PoReferenceText } from "./po-reference";
+import { SAMPLE_RESULT_LABEL } from "./product-case-labels";
 import { milestoneLabel } from "./sla-status-badge";
 
 /** "Chờ tạo PO" inside a sentence: only the first letter lowered, so "PO"
@@ -41,6 +51,18 @@ export function groupHeadline(group: BriefGroup): string {
         : `${n} case chờ phía mình`;
     case "changed_recently":
       return `${n} case vừa đổi trạng thái trong 24 giờ qua`;
+    case "product_sla_breached":
+      return `${n} hồ sơ phát triển quá hạn ${milestoneLabel(group.qualifier)}`.trim();
+    case "product_awaiting_bod":
+      return `${n} hồ sơ phát triển chờ BGĐ duyệt`;
+    case "product_awaiting_signoff":
+      return `${n} hồ sơ phát triển chờ trình ký`;
+    case "sample_evaluated_today": {
+      const result = group.qualifier as SampleResult | null;
+      return result && result in SAMPLE_RESULT_LABEL
+        ? `${n} mẫu đánh giá hôm nay: ${SAMPLE_RESULT_LABEL[result]}`
+        : `${n} mẫu đánh giá hôm nay`;
+    }
     default: {
       const unreachable: never = group.signal;
       return unreachable;
@@ -73,11 +95,29 @@ function entryDetail(group: BriefGroup, entry: BriefEntry): string {
     case "rework":
     case "waiting_on_us":
       return `${days} ngày ở trạng thái này`;
+    // Stage-1 groups carry product entries, rendered by `productDetail`.
+    case "product_sla_breached":
+    case "product_awaiting_bod":
+    case "product_awaiting_signoff":
+    case "sample_evaluated_today":
+      return "";
     default: {
       const unreachable: never = group.signal;
       return unreachable;
     }
   }
+}
+
+/** The figure that put this product case in this stage-1 group, in words. */
+function productDetail(group: BriefGroup, entry: ProductBriefEntry): string {
+  const days = entry.days ?? 0;
+  if (group.signal === "sample_evaluated_today")
+    return entry.round_no !== null ? `vòng mẫu ${entry.round_no}` : "";
+  if (group.signal === "product_sla_breached")
+    return entry.limit_days != null
+      ? `${days} ngày, hạn ${entry.limit_days} ngày`
+      : `${days} ngày`;
+  return `chờ ${days} ngày`;
 }
 
 /** Where the whole group can be read: the case list filtered to the group's
@@ -87,6 +127,12 @@ function groupLink(group: BriefGroup): { href: string; label: string } | null {
   if (group.state) {
     return {
       href: poCasesHref({ state: group.state, activeOnly: true }),
+      label: "Mở danh sách",
+    };
+  }
+  if (group.product_state) {
+    return {
+      href: productCasesHref({ state: group.product_state }),
       label: "Mở danh sách",
     };
   }
@@ -102,9 +148,19 @@ function groupLink(group: BriefGroup): { href: string; label: string } | null {
   }
 }
 
-function GroupCard({ group }: { group: BriefGroup }) {
+function GroupCard({
+  group,
+  members,
+}: {
+  group: BriefGroup;
+  members: WorkspaceMember[];
+}) {
   const link = groupLink(group);
-  const hidden = group.total - group.entries.length;
+  const hidden =
+    group.total - group.entries.length - group.product_entries.length;
+  // Samples evaluated today read by PIC (the server sorts them so); a group
+  // of cases waiting reads by how long.
+  const byPic = group.signal === "sample_evaluated_today";
   return (
     <Card
       id={`brief-${group.key}`}
@@ -137,9 +193,32 @@ function GroupCard({ group }: { group: BriefGroup }) {
             <Typography.Text>{entryDetail(group, entry)}</Typography.Text>
           </Flex>
         ))}
+        {group.product_entries.map((entry) => (
+          <Flex
+            key={`${entry.case.id}-${entry.round_no ?? ""}`}
+            role="listitem"
+            wrap
+            gap="small"
+            align="center"
+          >
+            <Link href={`/supply-chain/product-cases/${entry.case.id}`}>
+              {entry.case.proposal_code}
+            </Link>
+            <Typography.Text type="secondary" ellipsis={{ tooltip: true }}>
+              {entry.case.product_name}
+            </Typography.Text>
+            {byPic && (
+              <Typography.Text>
+                PIC: {memberName(members, entry.case.pic_user_id)}
+              </Typography.Text>
+            )}
+            <Typography.Text>{productDetail(group, entry)}</Typography.Text>
+          </Flex>
+        ))}
         {hidden > 0 && (
           <Typography.Text type="secondary">
-            và {hidden} case khác.
+            và {hidden} {group.product_entries.length > 0 ? "hồ sơ" : "case"}{" "}
+            khác.
           </Typography.Text>
         )}
       </Flex>
@@ -153,8 +232,18 @@ function GroupCard({ group }: { group: BriefGroup }) {
  * policy). Every sentence and link is composed here from structured fields;
  * nothing in the brief is text a model wrote.
  */
-export function DailyBriefView({ brief }: { brief: DailyBrief }) {
-  const tasks = brief.groups.filter((g) => g.signal !== "changed_recently");
+export function DailyBriefView({
+  brief,
+  members = [],
+}: {
+  brief: DailyBrief;
+  /** The workspace roster, for PIC names; ids show until it arrives. */
+  members?: WorkspaceMember[];
+}) {
+  const tasks = brief.groups.filter(
+    (g) =>
+      g.signal !== "changed_recently" && g.signal !== "sample_evaluated_today",
+  );
   return (
     <Flex vertical gap="middle">
       <Typography.Text>
@@ -164,6 +253,20 @@ export function DailyBriefView({ brief }: { brief: DailyBrief }) {
         trong {brief.active_case_count} case đang chạy · lập lúc{" "}
         {formatDateTimeFull(brief.generated_at)}
       </Typography.Text>
+      {brief.product_cases_visible ? (
+        <Typography.Text>
+          <Typography.Text strong>
+            {brief.flagged_product_case_count} hồ sơ phát triển cần xử lý
+          </Typography.Text>{" "}
+          trong {brief.active_product_case_count} hồ sơ đang chạy
+        </Typography.Text>
+      ) : (
+        // Not looked at is not "nothing in stage 1": say which.
+        <Typography.Text>
+          Bản tin không hiển thị hồ sơ phát triển sản phẩm vì bạn không có quyền
+          xem hồ sơ phát triển.
+        </Typography.Text>
+      )}
       {!brief.approvals_visible && (
         // Not looked at is not "none pending": say which.
         <Typography.Text>
@@ -178,7 +281,7 @@ export function DailyBriefView({ brief }: { brief: DailyBrief }) {
         />
       )}
       {brief.groups.map((group) => (
-        <GroupCard key={group.key} group={group} />
+        <GroupCard key={group.key} group={group} members={members} />
       ))}
     </Flex>
   );

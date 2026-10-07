@@ -675,7 +675,7 @@ export interface components {
             /** Citations */
             citations: components["schemas"]["CitationView"][];
             /** Data View */
-            data_view: (components["schemas"]["CaseTableDataView"] | components["schemas"]["CaseLinkDataView"]) | null;
+            data_view: (components["schemas"]["CaseTableDataView"] | components["schemas"]["CaseLinkDataView"] | components["schemas"]["ProductCaseTableDataView"] | components["schemas"]["ProductCaseLinkDataView"]) | null;
             /** Ignored Fields */
             ignored_fields: components["schemas"]["GroundedField"][];
             intent: components["schemas"]["CaseQueryKind"];
@@ -747,6 +747,9 @@ export interface components {
             entries: components["schemas"]["BriefEntryView"][];
             /** Key */
             key: string;
+            /** Product Entries */
+            product_entries: components["schemas"]["ProductBriefEntryView"][];
+            product_state: components["schemas"]["ProductDevState"] | null;
             /** Qualifier */
             qualifier: string | null;
             signal: components["schemas"]["BriefSignal"];
@@ -758,7 +761,7 @@ export interface components {
          * BriefSignal
          * @enum {string}
          */
-        BriefSignal: "update_escalation_due" | "sla_breached" | "case_blocked" | "approval_pending" | "manual_review" | "supplier_reported_delay" | "update_reminder_due" | "waiting_external" | "rework" | "waiting_on_us" | "changed_recently";
+        BriefSignal: "update_escalation_due" | "sla_breached" | "case_blocked" | "approval_pending" | "manual_review" | "supplier_reported_delay" | "update_reminder_due" | "waiting_external" | "rework" | "waiting_on_us" | "changed_recently" | "product_sla_breached" | "product_awaiting_bod" | "product_awaiting_signoff" | "sample_evaluated_today";
         /** BriefSummarySentenceView */
         BriefSummarySentenceView: {
             /** Group Keys */
@@ -869,7 +872,7 @@ export interface components {
          * CaseQueryKind
          * @enum {string}
          */
-        CaseQueryKind: "list_cases" | "open_case" | "unsupported";
+        CaseQueryKind: "list_cases" | "open_case" | "list_product_cases" | "open_product_case" | "unsupported";
         /**
          * CaseQueryOutcome
          * @description What the reply to one question turned out to be. The first two run a
@@ -877,7 +880,7 @@ export interface components {
          *     guessed answer.
          * @enum {string}
          */
-        CaseQueryOutcome: "list" | "open" | "not_understood" | "supplier_not_found" | "supplier_ambiguous" | "po_reference_missing" | "po_not_found" | "po_ambiguous";
+        CaseQueryOutcome: "list" | "open" | "not_understood" | "supplier_not_found" | "supplier_ambiguous" | "po_reference_missing" | "po_not_found" | "po_ambiguous" | "product_list" | "product_open" | "proposal_code_missing" | "category_not_found" | "category_ambiguous" | "pic_not_found" | "pic_ambiguous" | "product_not_found" | "product_ambiguous";
         /** CaseQueryRequest */
         CaseQueryRequest: {
             /** Question */
@@ -974,10 +977,14 @@ export interface components {
         DailyBriefView: {
             /** Active Case Count */
             active_case_count: number;
+            /** Active Product Case Count */
+            active_product_case_count: number;
             /** Approvals Visible */
             approvals_visible: boolean;
             /** Flagged Case Count */
             flagged_case_count: number;
+            /** Flagged Product Case Count */
+            flagged_product_case_count: number;
             /**
              * Generated At
              * Format: date-time
@@ -985,6 +992,8 @@ export interface components {
             generated_at: string;
             /** Groups */
             groups: components["schemas"]["BriefGroupView"][];
+            /** Product Cases Visible */
+            product_cases_visible: boolean;
         };
         /** DelayImpactAnalysisView */
         DelayImpactAnalysisView: {
@@ -1074,7 +1083,7 @@ export interface components {
          *     that the chosen kind of answer cannot apply.
          * @enum {string}
          */
-        GroundedField: "supplier" | "po_reference" | "state" | "active_only";
+        GroundedField: "supplier" | "po_reference" | "state" | "active_only" | "proposal_code" | "product_state" | "category" | "pic" | "mine";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1363,6 +1372,17 @@ export interface components {
             /** Unmet */
             unmet: string[];
         };
+        /** ProductBriefEntryView */
+        ProductBriefEntryView: {
+            case: components["schemas"]["ProductCaseRefView"];
+            /** Days */
+            days: number | null;
+            /** Limit Days */
+            limit_days: number | null;
+            /** Round No */
+            round_no: number | null;
+            sample_result: components["schemas"]["SampleResult"] | null;
+        };
         /** ProductCaseDetailView */
         ProductCaseDetailView: {
             /** Actions */
@@ -1410,6 +1430,41 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** ProductCaseLinkDataView */
+        ProductCaseLinkDataView: {
+            case: components["schemas"]["ProductCaseRefView"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "product_case_link";
+        };
+        /**
+         * ProductCaseRefView
+         * @description A product-development case where it is named in passing (a brief
+         *     group, a command-bar answer): what identifies it and where it stands.
+         *     The case page's own view (`product_case_routes.ProductCaseView`) carries
+         *     the rest.
+         */
+        ProductCaseRefView: {
+            /** Category */
+            category: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Pic User Id
+             * Format: uuid
+             */
+            pic_user_id: string;
+            /** Product Name */
+            product_name: string;
+            /** Proposal Code */
+            proposal_code: string;
+            state: components["schemas"]["ProductDevState"];
+        };
         /**
          * ProductCaseStepView
          * @description A step taken. `review` is set only for a step that left the case
@@ -1452,6 +1507,18 @@ export interface components {
             supplier_name: string | null;
             /** Version */
             version: number;
+        };
+        /** ProductCaseTableDataView */
+        ProductCaseTableDataView: {
+            /** Has More */
+            has_more: boolean;
+            /** Rows */
+            rows: components["schemas"]["ProductCaseRefView"][];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "product_case_table";
         };
         /**
          * ProductCaseTransitionView
@@ -1867,15 +1934,23 @@ export interface components {
         /**
          * UnderstoodView
          * @description What the answer applied, each value decided by code: a supplier is
-         *     always a stored name, never the model's mention; a PO reference is the
-         *     stored one once the case was found (the question's own spelling when it
-         *     was not).
+         *     always a stored name, never the model's mention; a PO reference or a
+         *     proposal code is the stored one once the case was found (the question's
+         *     own spelling when it was not); a Category is a key of the tenant's list
+         *     and a PIC a person of the workspace (or the asker, for "mine").
          */
         UnderstoodView: {
             /** Active Only */
             active_only: boolean;
+            /** Category */
+            category: string | null;
+            /** Pic User Id */
+            pic_user_id: string | null;
             /** Po Reference */
             po_reference: string | null;
+            product_state: components["schemas"]["ProductDevState"] | null;
+            /** Proposal Code */
+            proposal_code: string | null;
             state: components["schemas"]["CaseState"] | null;
             /** Supplier Name */
             supplier_name: string | null;
@@ -2889,6 +2964,8 @@ export interface operations {
                 state?: components["schemas"]["ProductDevState"] | null;
                 /** @description Only cases this person is PIC of. */
                 pic_user_id?: string | null;
+                /** @description Only cases stamped with this Category key. */
+                category?: string | null;
             };
             header?: never;
             path?: never;

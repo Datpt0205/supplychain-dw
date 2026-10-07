@@ -24,7 +24,9 @@
                 "discriminator": {
                   "mapping": {
                     "case_link": "#/components/schemas/CaseLinkDataView",
-                    "case_table": "#/components/schemas/CaseTableDataView"
+                    "case_table": "#/components/schemas/CaseTableDataView",
+                    "product_case_link": "#/components/schemas/ProductCaseLinkDataView",
+                    "product_case_table": "#/components/schemas/ProductCaseTableDataView"
                   },
                   "propertyName": "type"
                 },
@@ -34,6 +36,12 @@
                   },
                   {
                     "$ref": "#/components/schemas/CaseLinkDataView"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProductCaseTableDataView"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProductCaseLinkDataView"
                   }
                 ]
               },
@@ -761,6 +769,23 @@
             "title": "Key",
             "type": "string"
           },
+          "product_entries": {
+            "items": {
+              "$ref": "#/components/schemas/ProductBriefEntryView"
+            },
+            "title": "Product Entries",
+            "type": "array"
+          },
+          "product_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductDevState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "qualifier": {
             "anyOf": [
               {
@@ -795,8 +820,10 @@
           "signal",
           "qualifier",
           "state",
+          "product_state",
           "total",
-          "entries"
+          "entries",
+          "product_entries"
         ],
         "title": "BriefGroupView",
         "type": "object"
@@ -813,7 +840,11 @@
           "waiting_external",
           "rework",
           "waiting_on_us",
-          "changed_recently"
+          "changed_recently",
+          "product_sla_breached",
+          "product_awaiting_bod",
+          "product_awaiting_signoff",
+          "sample_evaluated_today"
         ],
         "title": "BriefSignal",
         "type": "string"
@@ -1065,6 +1096,8 @@
         "enum": [
           "list_cases",
           "open_case",
+          "list_product_cases",
+          "open_product_case",
           "unsupported"
         ],
         "title": "CaseQueryKind",
@@ -1080,7 +1113,16 @@
           "supplier_ambiguous",
           "po_reference_missing",
           "po_not_found",
-          "po_ambiguous"
+          "po_ambiguous",
+          "product_list",
+          "product_open",
+          "proposal_code_missing",
+          "category_not_found",
+          "category_ambiguous",
+          "pic_not_found",
+          "pic_ambiguous",
+          "product_not_found",
+          "product_ambiguous"
         ],
         "title": "CaseQueryOutcome",
         "type": "string"
@@ -1378,12 +1420,20 @@
             "title": "Active Case Count",
             "type": "integer"
           },
+          "active_product_case_count": {
+            "title": "Active Product Case Count",
+            "type": "integer"
+          },
           "approvals_visible": {
             "title": "Approvals Visible",
             "type": "boolean"
           },
           "flagged_case_count": {
             "title": "Flagged Case Count",
+            "type": "integer"
+          },
+          "flagged_product_case_count": {
+            "title": "Flagged Product Case Count",
             "type": "integer"
           },
           "generated_at": {
@@ -1397,6 +1447,10 @@
             },
             "title": "Groups",
             "type": "array"
+          },
+          "product_cases_visible": {
+            "title": "Product Cases Visible",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1404,6 +1458,9 @@
           "active_case_count",
           "flagged_case_count",
           "approvals_visible",
+          "product_cases_visible",
+          "active_product_case_count",
+          "flagged_product_case_count",
           "groups"
         ],
         "title": "DailyBriefView",
@@ -1899,7 +1956,12 @@
           "supplier",
           "po_reference",
           "state",
-          "active_only"
+          "active_only",
+          "proposal_code",
+          "product_state",
+          "category",
+          "pic",
+          "mine"
         ],
         "title": "GroundedField",
         "type": "string"
@@ -3657,6 +3719,65 @@
         "title": "ProductActionOptionView",
         "type": "object"
       },
+      "ProductBriefEntryView": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/ProductCaseRefView"
+          },
+          "days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days"
+          },
+          "limit_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Days"
+          },
+          "round_no": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Round No"
+          },
+          "sample_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SampleResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "case",
+          "days",
+          "limit_days",
+          "round_no",
+          "sample_result"
+        ],
+        "title": "ProductBriefEntryView",
+        "type": "object"
+      },
       "ProductCaseDetailView": {
         "properties": {
           "actions": {
@@ -3816,6 +3937,64 @@
         "title": "ProductCaseDetailView",
         "type": "object"
       },
+      "ProductCaseLinkDataView": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/ProductCaseRefView"
+          },
+          "type": {
+            "const": "product_case_link",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "case"
+        ],
+        "title": "ProductCaseLinkDataView",
+        "type": "object"
+      },
+      "ProductCaseRefView": {
+        "description": "A product-development case where it is named in passing (a brief\ngroup, a command-bar answer): what identifies it and where it stands.\nThe case page's own view (`product_case_routes.ProductCaseView`) carries\nthe rest.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "pic_user_id": {
+            "format": "uuid",
+            "title": "Pic User Id",
+            "type": "string"
+          },
+          "product_name": {
+            "title": "Product Name",
+            "type": "string"
+          },
+          "proposal_code": {
+            "title": "Proposal Code",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProductDevState"
+          }
+        },
+        "required": [
+          "id",
+          "proposal_code",
+          "product_name",
+          "category",
+          "pic_user_id",
+          "state"
+        ],
+        "title": "ProductCaseRefView",
+        "type": "object"
+      },
       "ProductCaseStepView": {
         "description": "A step taken. `review` is set only for a step that left the case\nwaiting on an approval (BGĐ's review, the sign-off): `not_raised` means\nthe step is recorded and the approval is not raised yet (the worker\nretries it).",
         "properties": {
@@ -3922,6 +4101,33 @@
           "review"
         ],
         "title": "ProductCaseStepView",
+        "type": "object"
+      },
+      "ProductCaseTableDataView": {
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ProductCaseRefView"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "type": {
+            "const": "product_case_table",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "rows",
+          "has_more"
+        ],
+        "title": "ProductCaseTableDataView",
         "type": "object"
       },
       "ProductCaseTransitionView": {
@@ -5409,11 +5615,34 @@
         "type": "object"
       },
       "UnderstoodView": {
-        "description": "What the answer applied, each value decided by code: a supplier is\nalways a stored name, never the model's mention; a PO reference is the\nstored one once the case was found (the question's own spelling when it\nwas not).",
+        "description": "What the answer applied, each value decided by code: a supplier is\nalways a stored name, never the model's mention; a PO reference or a\nproposal code is the stored one once the case was found (the question's\nown spelling when it was not); a Category is a key of the tenant's list\nand a PIC a person of the workspace (or the asker, for \"mine\").",
         "properties": {
           "active_only": {
             "title": "Active Only",
             "type": "boolean"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "pic_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pic User Id"
           },
           "po_reference": {
             "anyOf": [
@@ -5425,6 +5654,27 @@
               }
             ],
             "title": "Po Reference"
+          },
+          "product_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductDevState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Code"
           },
           "state": {
             "anyOf": [
@@ -5452,7 +5702,11 @@
           "state",
           "supplier_name",
           "active_only",
-          "po_reference"
+          "po_reference",
+          "product_state",
+          "category",
+          "pic_user_id",
+          "proposal_code"
         ],
         "title": "UnderstoodView",
         "type": "object"
@@ -9725,6 +9979,26 @@
               ],
               "description": "Only cases this person is PIC of.",
               "title": "Pic User Id"
+            }
+          },
+          {
+            "description": "Only cases stamped with this Category key.",
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only cases stamped with this Category key.",
+              "title": "Category"
             }
           }
         ],

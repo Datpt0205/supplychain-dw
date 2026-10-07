@@ -46,10 +46,10 @@ from dw_platform.application.identity import DbAccessContextFactory, MembershipA
 from dw_platform.domain.approval import ApprovalRequest, ApprovalStatus
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.action_duties import CaseDuty, load_supply_chain_action_duties
+from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.handlers import (
     AdvancePOCase,
     AnalyzeDelayImpact,
-    AnswerCaseQuery,
     CloseFollowUp,
     CreatePO,
     CreatePOCase,
@@ -68,6 +68,7 @@ from dw_supply_chain.application.handlers import (
     ListDelayImpactAnalyses,
     ListFollowUps,
     ListPOCases,
+    ListProductCategories,
     ListSupplierUpdates,
     ReassignPOCasePic,
     SetActionDutiesOverride,
@@ -84,6 +85,7 @@ from dw_supply_chain.application.ports import (
     FollowUpRecord,
     POCaseListFilter,
 )
+from dw_supply_chain.application.product_cases import ListProductCases
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.brief_policy import SupplyChainBriefPolicy, load_supply_chain_brief_policy
 from dw_supply_chain.domain.brief_summary import BriefSummaryDraft
@@ -104,6 +106,11 @@ from dw_supply_chain.domain.po_case import (
     POCaseId,
     POCaseLine,
 )
+from dw_supply_chain.domain.product_development_case import (
+    ProductDevelopmentCase,
+    ProductDevelopmentCaseId,
+    ProductDevState,
+)
 from dw_supply_chain.domain.supplier_update import (
     SupplierEventType,
     SupplierUpdate,
@@ -118,6 +125,7 @@ from dw_supply_chain.sla_policy import (
     SupplierUpdateCadence,
     SupplyChainSLAPolicy,
 )
+from dw_supply_chain.testing.product_cases import InMemoryDirectory, InMemoryProductCases
 
 pytestmark = pytest.mark.unit
 
@@ -631,6 +639,7 @@ def make_container(
     holders: FakeHolders | None = None,
     notifier: FakeNotifier | None = None,
     members: FakeMembers | None = None,
+    product_cases: InMemoryProductCases | None = None,
 ) -> ApiContainer:
     async def ok_probe() -> CheckState:
         return "ok"
@@ -655,9 +664,11 @@ def make_container(
     resolved_brief_policy = brief_policy or load_supply_chain_brief_policy(
         SUPPLY_CHAIN_BRIEF_POLICY
     )
+    product_cases = product_cases or InMemoryProductCases()
     get_daily_brief = GetDailyBrief(
         po_case_repo=repo,
         supplier_update_repo=resolved_supplier_update_repo,
+        product_case_repo=product_cases,
         policy_override_repo=resolved_policy_override_repo,
         platform_default_policy=resolved_sla_policy,
         platform_default_brief_policy=resolved_brief_policy,
@@ -789,6 +800,14 @@ def make_container(
         supply_chain_answer_case_query=AnswerCaseQuery(
             po_case_repo=repo,
             list_cases=ListPOCases(repo=repo, authz=authz),
+            product_cases=product_cases,
+            list_product_cases=ListProductCases(repo=product_cases, authz=authz),
+            categories=ListProductCategories(
+                policy_override_repo=resolved_policy_override_repo,
+                platform_default_sla_policy=resolved_sla_policy,
+                authz=authz,
+            ),
+            directory=InMemoryDirectory(),
             gateway=resolved_case_query_gateway,
             authz=authz,
             ids=Uuid4Generator(),
@@ -3060,3 +3079,106 @@ async def test_tp_cung_ung_reassigns_a_po_cases_pic_over_http() -> None:
 
     assert (refused.status_code, no_reason.status_code, done.status_code) == (403, 422, 200)
     assert done.json()["pic_user_id"] == str(new_pic)
+
+
+# -- stage 1 in the brief and the command bar (ticket 08) ---------------------------
+
+PRODUCT_READ_SCOPE = "supply_chain.product_case.read"
+
+
+def _product_case(code: str, state: ProductDevState) -> ProductDevelopmentCase:
+    return ProductDevelopmentCase(
+        id=ProductDevelopmentCaseId(uuid.uuid4()),
+        tenant_id=TenantId(TENANT),
+        workspace_id=WorkspaceId(WORKSPACE),
+        proposal_code=code,
+        product_name="Chảo 28",
+        category="chao",
+        pic_user_id=PRINCIPAL,
+        created_by=PRINCIPAL,
+        state=state,
+        created_at=datetime.now(UTC) - timedelta(days=1),
+    )
+
+
+async def test_daily_brief_carries_stage_one_groups_to_a_product_reader() -> None:
+    products = InMemoryProductCases()
+    case = _product_case("SP-028", ProductDevState.PENDING_BOD_REVIEW)
+    products.seed([case])
+
+    async def get(scopes: frozenset[str]) -> httpx.Response:
+        return await _request(
+            make_container(FakePOCaseRepository(), scopes, product_cases=products),
+            "GET",
+            "/api/v1/supply-chain/daily-brief",
+        )
+
+    without = (await get(frozenset({READ_SCOPE}))).json()
+    body = (await get(frozenset({READ_SCOPE, PRODUCT_READ_SCOPE}))).json()
+
+    assert without["product_cases_visible"] is False
+    assert all(group["product_entries"] == [] for group in without["groups"])
+    assert body["product_cases_visible"] is True
+    assert body["active_product_case_count"] == 1
+    (group,) = [g for g in body["groups"] if g["key"] == "product_awaiting_bod"]
+    assert group["entries"] == []
+    assert group["product_state"] == "pending_bod_review"
+    (entry,) = group["product_entries"]
+    assert entry["case"] == {
+        "id": str(case.id.value),
+        "proposal_code": "SP-028",
+        "product_name": "Chảo 28",
+        "category": "chao",
+        "pic_user_id": str(PRINCIPAL),
+        "state": "pending_bod_review",
+    }
+    assert entry["round_no"] is None and entry["sample_result"] is None
+
+
+async def test_a_question_about_a_product_case_comes_back_as_a_link_to_it() -> None:
+    products = InMemoryProductCases()
+    case = _product_case("SP-028", ProductDevState.SAMPLE_TESTING)
+    products.seed([case])
+    gateway = FakeModelGateway(
+        CaseQueryIntent(kind=CaseQueryKind.OPEN_PRODUCT_CASE, proposal_code_mention="SP-028")
+    )
+    container = make_container(
+        FakePOCaseRepository(),
+        frozenset({READ_SCOPE, PRODUCT_READ_SCOPE}),
+        case_query_gateway=gateway,
+        product_cases=products,
+    )
+
+    response = await _request(
+        container,
+        "POST",
+        "/api/v1/supply-chain/case-query",
+        json={"question": "hồ sơ SP-028 tới đâu rồi?"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outcome"] == "product_open"
+    assert body["understood"]["proposal_code"] == "SP-028"
+    assert body["data_view"] == {
+        "type": "product_case_link",
+        "case": {
+            "id": str(case.id.value),
+            "proposal_code": "SP-028",
+            "product_name": "Chảo 28",
+            "category": "chao",
+            "pic_user_id": str(PRINCIPAL),
+            "state": "sample_testing",
+        },
+    }
+
+
+async def test_a_product_question_without_the_product_read_scope_is_forbidden() -> None:
+    gateway = FakeModelGateway(CaseQueryIntent(kind=CaseQueryKind.LIST_PRODUCT_CASES))
+    container = make_container(
+        FakePOCaseRepository(), frozenset({READ_SCOPE}), case_query_gateway=gateway
+    )
+    response = await _request(
+        container, "POST", "/api/v1/supply-chain/case-query", json={"question": "các hồ sơ"}
+    )
+    assert response.status_code == 403

@@ -31,6 +31,8 @@ function group(overrides: Partial<BriefGroup> = {}): BriefGroup {
     qualifier: "deposit",
     state: null,
     total: 1,
+    product_state: null,
+    product_entries: [],
     entries: [
       {
         case: poCase(),
@@ -50,6 +52,9 @@ function brief(overrides: Partial<DailyBrief> = {}): DailyBrief {
     active_case_count: 5,
     flagged_case_count: 1,
     approvals_visible: true,
+    product_cases_visible: true,
+    active_product_case_count: 0,
+    flagged_product_case_count: 0,
     groups: [group()],
     ...overrides,
   };

@@ -428,10 +428,18 @@ def build_product_cases_router(
         pic_user_id: Annotated[
             uuid.UUID | None, Query(description="Only cases this person is PIC of.")
         ] = None,
+        category: Annotated[
+            str | None,
+            Query(
+                min_length=1,
+                max_length=64,
+                description="Only cases stamped with this Category key.",
+            ),
+        ] = None,
     ) -> Page[ProductCaseView]:
         page = await list_cases.handle(
             context,
-            ProductCaseListFilter(state=state, pic_user_id=pic_user_id),
+            ProductCaseListFilter(state=state, pic_user_id=pic_user_id, category=category),
             limit=limit,
             cursor=cursor,
         )

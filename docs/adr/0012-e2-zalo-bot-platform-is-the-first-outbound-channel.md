@@ -163,6 +163,21 @@ Trạng thái: Proposed (2026-10-07, lead theo ủy quyền của Đạt; Đạt
   nào đọc (Hồ sơ PO không hẹp theo người ở cả hai kênh), nên hai kênh trả cùng hồ sơ
   (test so hai kênh). Hẹp hơn là hướng an toàn; ghi lại để ai thêm lọc theo người biết.
 
+## Bổ sung 7/10/2026 (S8): hỏi về hồ sơ phát triển
+
+Trạng thái: Proposed (2026-10-07, lead theo ủy quyền của Đạt; Đạt duyệt hoặc chỉnh).
+
+- `QA_CEILING = {supply_chain.po_case.read, supply_chain.product_case.read}`: đường đọc hồ
+  sơ phát triển đã có (`ListProductCases`, `ListProductCategories`, tra mã đề xuất), nên
+  scope đọc vào trần đúng lúc có người đọc nó. Vẫn không scope ghi, không duty, không role.
+- Câu trả lời do code dựng như với PO: tối đa 10 hồ sơ (mã đề xuất, tên SP, nhãn trạng
+  thái, liên kết tuyệt đối), "còn nữa" kèm liên kết danh sách có cùng bộ lọc (`state`,
+  `pic`, `category`); mã chỉ có ở tenant hay workspace khác đọc như không tồn tại. Người
+  không có `product_case.read` nhận "chưa có quyền xem". Câu "hồ sơ phát triển sản phẩm
+  chưa hỗ trợ" bỏ.
+- Tên SP đi qua máy chủ Zalo trong câu trả lời cho chính người hỏi có quyền đọc; thông báo
+  báo cáo giai đoạn 1 chỉ có ngày ở tiêu đề (QE-20 tạm).
+
 ## Phương án đã cân nhắc
 
 - **Zalo OA cùng ZNS.** Gửi được tới người chưa nhắn trước, nhưng cần tài khoản doanh

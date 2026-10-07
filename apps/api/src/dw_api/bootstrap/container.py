@@ -77,10 +77,10 @@ from dw_supply_chain.application.case_documents import (
     ListCaseDocuments,
     UploadCaseDocument,
 )
+from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.handlers import (
     AdvancePOCase,
     AnalyzeDelayImpact,
-    AnswerCaseQuery,
     CloseFollowUp,
     CreatePO,
     CreatePOCase,

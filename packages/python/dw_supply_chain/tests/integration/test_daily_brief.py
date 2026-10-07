@@ -29,6 +29,9 @@ from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
+from dw_supply_chain.adapters.persistence.product_case_repository import (
+    SqlProductCaseRepository,
+)
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
@@ -139,6 +142,7 @@ def _handler(sessions: async_sessionmaker[AsyncSession], *, now: datetime) -> Ge
     return GetDailyBrief(
         po_case_repo=SqlPOCaseRepository(sessions),
         supplier_update_repo=SqlSupplierUpdateRepository(sessions),
+        product_case_repo=SqlProductCaseRepository(sessions),
         policy_override_repo=_NoOverrides(),
         # A 0-day deposit SLA: any case waiting on its deposit is over it,
         # so the test needs no clock far enough ahead to leave the change

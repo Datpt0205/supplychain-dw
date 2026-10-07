@@ -43,10 +43,10 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import PolicyOverridePort
 from dw_supply_chain.application.handlers import (
     assess_active_cases,
+    assess_active_product_cases,
     po_case_link,
     product_case_link,
     resolve_follow_up_policy,
-    resolve_sla_policy,
 )
 from dw_supply_chain.application.ports import (
     ActiveProductCasesPort,
@@ -67,7 +67,6 @@ from dw_supply_chain.domain.follow_up import (
     follow_ups_due,
     product_follow_ups_due,
 )
-from dw_supply_chain.domain.sla_evaluation import evaluate_product_sla
 from dw_supply_chain.follow_up_policy import SupplyChainFollowUpPolicy
 from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
 
@@ -159,25 +158,14 @@ class SweepFollowUps:
             if health.case.workspace_id.value == context.workspace_id
             for item in follow_ups_due(health)
         ]
-        products = await self.product_case_repo.list_active(context)
-        if products:
-            entered = await self.product_case_repo.state_entered_at(
-                context, [case.id.value for case in products]
-            )
-            policy = await resolve_sla_policy(
-                context, self.policy_override_repo, self.platform_default_sla_policy
-            )
-            now = self.clock.now()
-            for case in products:
-                assert case.created_at is not None  # read back from a row
-                sla = evaluate_product_sla(
-                    state=case.state,
-                    category=case.category,
-                    entered_current_state_at=entered.get(case.id.value, case.created_at),
-                    now=now,
-                    policy=policy,
-                )
-                due.extend(product_follow_ups_due(case, sla))
+        for product in await assess_active_product_cases(
+            context,
+            product_case_repo=self.product_case_repo,
+            policy_override_repo=self.policy_override_repo,
+            platform_default_policy=self.platform_default_sla_policy,
+            clock=self.clock,
+        ):
+            due.extend(product_follow_ups_due(product.case, product.sla))
         return due
 
     async def sweep_workspace(self, context: AccessContext) -> SweepOutcome:

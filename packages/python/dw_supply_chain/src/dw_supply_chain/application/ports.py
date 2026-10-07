@@ -23,6 +23,7 @@ from dw_supply_chain.domain.case_document import (
     CaseKind,
     DocumentType,
 )
+from dw_supply_chain.domain.daily_brief import ClosedRound
 from dw_supply_chain.domain.delay_impact import DelayImpactAnalysis
 from dw_supply_chain.domain.follow_up import (
     FollowUpDue,
@@ -531,6 +532,50 @@ class ActiveProductCasesPort(Protocol):
         ...
 
 
+class StageOneReadsPort(ActiveProductCasesPort, Protocol):
+    """What the daily brief and the stage-1 daily report read of product
+    cases (ticket 08): the active ones, as the sweep reads them, and the
+    sample rounds closed since a moment, each with its case (a rejected
+    sample's case is cancelled, no longer active)."""
+
+    async def closed_rounds_since(
+        self, context: AccessContext, since: datetime
+    ) -> list[ClosedRound]:
+        """Rounds of `context`'s workspace closed at or after `since`, oldest
+        first."""
+        ...
+
+
+class ProductCaseLookupPort(Protocol):
+    """Opening a product case by its proposal code from a question."""
+
+    async def find_by_proposal_code(
+        self, context: AccessContext, proposal_code: str
+    ) -> list[ProductDevelopmentCase]:
+        """The cases of `context`'s workspace whose code equals
+        `proposal_code`, case-insensitively and ignoring surrounding spaces; a
+        case of another tenant or workspace is never returned."""
+        ...
+
+
+class NamedMember(Protocol):
+    """One person of a workspace, as a question names them."""
+
+    @property
+    def user_id(self) -> uuid.UUID: ...
+
+    @property
+    def display_name(self) -> str: ...
+
+
+class WorkspaceDirectoryPort(Protocol):
+    """The people of the caller's workspace, so a PIC named in a question
+    resolves to one of them. Declared here, satisfied by `dw_platform`'s
+    workspace directory."""
+
+    async def list_members(self, context: AccessContext) -> Sequence[NamedMember]: ...
+
+
 class FollowUpNotifierPort(Protocol):
     """Delivers one in-app message to people in `context`'s workspace, once
     per `source_key`. Declared here, satisfied by `dw_platform`'s inbox."""
@@ -637,6 +682,9 @@ class ProductCaseListFilter:
 
     state: ProductDevState | None = None
     pic_user_id: uuid.UUID | None = None
+    # A Category key of the tenant's list, as cases are stamped (ticket 08:
+    # what a question narrows by).
+    category: str | None = None
 
     def page_query(self, tenant_id: uuid.UUID, workspace_id: uuid.UUID) -> PageQuery:
         """The cursor identity for listing with THIS filter, in this workspace:

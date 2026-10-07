@@ -1,0 +1,46 @@
+{
+  "brief": {
+    "active_case_count": 0,
+    "groups": [
+      {
+        "signal": "product_awaiting_bod",
+        "qualifier": null,
+        "total": 1,
+        "product_entries": [
+          {
+            "proposal_code": "SP-002",
+            "product_name": "Chảo 28",
+            "days": 4
+          }
+        ]
+      },
+      {
+        "signal": "sample_evaluated_today",
+        "qualifier": "passed",
+        "total": 1,
+        "product_entries": [
+          {
+            "proposal_code": "SP-007",
+            "product_name": "Nồi gang 24"
+          }
+        ]
+      }
+    ]
+  },
+  "model_answer": {
+    "sentences": [
+      {
+        "text": "Mẫu SP-007 Nồi gang 24 đạt hôm nay.",
+        "group_keys": [
+          "sample_evaluated_today:passed"
+        ]
+      },
+      {
+        "text": "SP-002 Chảo 28 chờ BGĐ duyệt 4 ngày.",
+        "group_keys": [
+          "product_awaiting_bod"
+        ]
+      }
+    ]
+  }
+}

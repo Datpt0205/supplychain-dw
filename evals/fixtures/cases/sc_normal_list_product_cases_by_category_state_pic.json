@@ -1,0 +1,24 @@
+{
+  "question": "hồ sơ Chảo của Nguyễn Thị Lan đang test mẫu",
+  "model_answer": {
+    "kind": "list_product_cases",
+    "category_mention": "Chảo",
+    "pic_mention": "Nguyễn Thị Lan",
+    "product_state": "sample_testing",
+    "product_state_quote": "đang test mẫu"
+  },
+  "known_categories": [
+    {
+      "key": "noi",
+      "label": "Nồi"
+    },
+    {
+      "key": "chao",
+      "label": "Chảo"
+    }
+  ],
+  "known_members": [
+    "Nguyễn Thị Lan",
+    "Trần Văn Hùng"
+  ]
+}

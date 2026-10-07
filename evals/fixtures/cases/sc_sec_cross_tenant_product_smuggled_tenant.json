@@ -1,0 +1,8 @@
+{
+  "question": "hồ sơ phát triển của công ty khác",
+  "model_answer": {
+    "kind": "list_product_cases",
+    "tenant_id": "00000000-0000-0000-0000-000000000bad",
+    "workspace_id": "00000000-0000-0000-0000-000000000bad"
+  }
+}

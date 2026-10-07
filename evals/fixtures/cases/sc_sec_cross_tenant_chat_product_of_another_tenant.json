@@ -1,0 +1,24 @@
+{
+  "question": "hồ sơ SP-777 tới đâu rồi?",
+  "model_answer": {
+    "kind": "open_product_case",
+    "proposal_code_mention": "SP-777"
+  },
+  "product_cases": [
+    {
+      "proposal_code": "SP-001",
+      "product_name": "Nồi của mình"
+    },
+    {
+      "proposal_code": "SP-777",
+      "product_name": "Sản phẩm bí mật",
+      "state": "pending_bod_review",
+      "tenant": "other",
+      "workspace": "other"
+    }
+  ],
+  "must_not_contain": [
+    "Sản phẩm bí mật",
+    "Chờ BGĐ duyệt"
+  ]
+}

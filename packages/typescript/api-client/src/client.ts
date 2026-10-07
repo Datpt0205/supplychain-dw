@@ -1317,6 +1317,7 @@ export class ApiClient {
       cursor: params.cursor || undefined,
       state: params.state,
       pic_user_id: params.picUserId,
+      category: params.category,
     };
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) {

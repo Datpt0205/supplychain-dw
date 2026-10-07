@@ -22,14 +22,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from dw_kernel.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Page
 from dw_platform.application.access_context import AccessContext
 from dw_supply_chain.action_duties import SupplyChainActionDuties
+from dw_supply_chain.application.case_query import AnswerCaseQuery, CaseQueryAnswer
 from dw_supply_chain.application.handlers import (
     AdvancePOCase,
     AdvancePOCaseResult,
     AnalyzeDelayImpact,
-    AnswerCaseQuery,
     AttentionItem,
     CaseActionApplied,
-    CaseQueryAnswer,
     CloseFollowUp,
     CreatePO,
     CreatePOCase,
@@ -65,7 +64,13 @@ from dw_supply_chain.brief_policy import SupplyChainBriefPolicy
 from dw_supply_chain.domain.brief_summary import BriefSummary, BriefSummaryStatus
 from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.case_query import CaseQueryKind, CaseQueryOutcome, GroundedField
-from dw_supply_chain.domain.daily_brief import BriefEntry, BriefGroup, BriefSignal, DailyBrief
+from dw_supply_chain.domain.daily_brief import (
+    BriefEntry,
+    BriefGroup,
+    BriefSignal,
+    DailyBrief,
+    ProductBriefEntry,
+)
 from dw_supply_chain.domain.delay_impact import DelayImpactAnalysis
 from dw_supply_chain.domain.follow_up import FollowUpKind
 from dw_supply_chain.domain.missing_update import MissingUpdateAssessment, MissingUpdateStatus
@@ -78,6 +83,11 @@ from dw_supply_chain.domain.po_case import (
     POCaseId,
 )
 from dw_supply_chain.domain.portfolio import PortfolioSummary
+from dw_supply_chain.domain.product_development_case import (
+    ProductDevelopmentCase,
+    ProductDevState,
+    SampleResult,
+)
 from dw_supply_chain.domain.sla_evaluation import SLAEvaluation, SLAEvaluationStatus
 from dw_supply_chain.domain.supplier_update import (
     SupplierEventType,
@@ -169,6 +179,32 @@ class POCaseView(BaseModel):
     product_dev_case_id: uuid.UUID | None
     pic_user_id: uuid.UUID | None
     category: str | None
+
+
+class ProductCaseRefView(BaseModel):
+    """A product-development case where it is named in passing (a brief
+    group, a command-bar answer): what identifies it and where it stands.
+    The case page's own view (`product_case_routes.ProductCaseView`) carries
+    the rest."""
+
+    id: uuid.UUID
+    proposal_code: str
+    product_name: str
+    # The Category key it was stamped with; the label is the tenant's list's.
+    category: str
+    pic_user_id: uuid.UUID
+    state: ProductDevState
+
+
+def _product_ref(case: ProductDevelopmentCase) -> ProductCaseRefView:
+    return ProductCaseRefView(
+        id=case.id.value,
+        proposal_code=case.proposal_code,
+        product_name=case.product_name,
+        category=case.category,
+        pic_user_id=case.pic_user_id,
+        state=case.state,
+    )
 
 
 def _view(case: POCase) -> POCaseView:
@@ -480,18 +516,34 @@ class BriefEntryView(BaseModel):
     approval_action: str | None
 
 
+class ProductBriefEntryView(BaseModel):
+    case: ProductCaseRefView
+    # Days in its state (with `limit_days`, the stage-1 SLA it overran).
+    days: int | None
+    limit_days: int | None
+    # A sample group's round, closed today: its number and result. What R&D
+    # wrote on it stays on the case page.
+    round_no: int | None
+    sample_result: SampleResult | None
+
+
 class BriefGroupView(BaseModel):
     # Stable within one brief: `signal`, or `signal:qualifier`.
     key: str
     signal: BriefSignal
-    # The SLA milestone for `sla_breached`, the state for `waiting_on_us`.
+    # The SLA milestone for `sla_breached` and `product_sla_breached`, the
+    # state for `waiting_on_us`, the result for `sample_evaluated_today`.
     qualifier: str | None
     # The one state every case in the group is in, when a state defines the
     # group — what the PO case list can be filtered to for the whole group.
     state: CaseState | None
+    # The same for a stage-1 group, for the product case list.
+    product_state: ProductDevState | None
     total: int
-    # Longest-standing first, at most ten; `total` counts every case.
+    # Longest-standing first, at most ten; `total` counts every case. A
+    # stage-1 group's cases are `product_entries`, and `entries` is empty.
     entries: list[BriefEntryView]
+    product_entries: list[ProductBriefEntryView]
 
 
 class DailyBriefView(BaseModel):
@@ -501,8 +553,24 @@ class DailyBriefView(BaseModel):
     # False when the caller may not read the approval inbox: pending
     # approvals were not looked at, which is not the same as "none pending".
     approvals_visible: bool
+    # The same for product-development cases (stage 1); the two counts are
+    # 0 when they were not looked at.
+    product_cases_visible: bool
+    active_product_case_count: int
+    flagged_product_case_count: int
     # In the tenant's own `signal_order`; a client renders them as given.
     groups: list[BriefGroupView]
+
+
+def _product_brief_entry_view(entry: ProductBriefEntry) -> ProductBriefEntryView:
+    sample_round = entry.sample_round
+    return ProductBriefEntryView(
+        case=_product_ref(entry.case),
+        days=entry.days,
+        limit_days=entry.limit_days,
+        round_no=sample_round.round_no if sample_round is not None else None,
+        sample_result=sample_round.result if sample_round is not None else None,
+    )
 
 
 def _brief_entry_view(entry: BriefEntry) -> BriefEntryView:
@@ -521,8 +589,10 @@ def _brief_group_view(group: BriefGroup) -> BriefGroupView:
         signal=group.signal,
         qualifier=group.qualifier,
         state=group.state,
+        product_state=group.product_state,
         total=group.total,
         entries=[_brief_entry_view(entry) for entry in group.shown_entries],
+        product_entries=[_product_brief_entry_view(entry) for entry in group.shown_product_entries],
     )
 
 
@@ -532,6 +602,9 @@ def _daily_brief_view(brief: DailyBrief) -> DailyBriefView:
         active_case_count=brief.active_case_count,
         flagged_case_count=brief.flagged_case_count,
         approvals_visible=brief.approvals_visible,
+        product_cases_visible=brief.product_cases_visible,
+        active_product_case_count=brief.active_product_case_count,
+        flagged_product_case_count=brief.flagged_product_case_count,
         groups=[_brief_group_view(group) for group in brief.groups],
     )
 
@@ -610,14 +683,19 @@ class CitationView(BaseModel):
 
 class UnderstoodView(BaseModel):
     """What the answer applied, each value decided by code: a supplier is
-    always a stored name, never the model's mention; a PO reference is the
-    stored one once the case was found (the question's own spelling when it
-    was not)."""
+    always a stored name, never the model's mention; a PO reference or a
+    proposal code is the stored one once the case was found (the question's
+    own spelling when it was not); a Category is a key of the tenant's list
+    and a PIC a person of the workspace (or the asker, for "mine")."""
 
     state: CaseState | None
     supplier_name: str | None
     active_only: bool
     po_reference: str | None
+    product_state: ProductDevState | None
+    category: str | None
+    pic_user_id: uuid.UUID | None
+    proposal_code: str | None
 
 
 class CaseTableDataView(BaseModel):
@@ -631,6 +709,25 @@ class CaseTableDataView(BaseModel):
 class CaseLinkDataView(BaseModel):
     type: Literal["case_link"]
     case: POCaseView
+
+
+class ProductCaseTableDataView(BaseModel):
+    type: Literal["product_case_table"]
+    rows: list[ProductCaseRefView]
+    # More matched than the answer carries — the client offers the product
+    # case list for the same `understood` filter.
+    has_more: bool
+
+
+class ProductCaseLinkDataView(BaseModel):
+    type: Literal["product_case_link"]
+    case: ProductCaseRefView
+
+
+_DataView = Annotated[
+    CaseTableDataView | CaseLinkDataView | ProductCaseTableDataView | ProductCaseLinkDataView,
+    Field(discriminator="type"),
+]
 
 
 class AIWorkResponseView(BaseModel):
@@ -653,21 +750,38 @@ class AIWorkResponseView(BaseModel):
     # Fields the question did state that this kind of answer cannot apply
     # (a list cannot narrow to one PO) — the other reason a reading is refused.
     unusable_fields: list[GroundedField]
-    # Supplier names or PO references the question matched more than one
-    # of — shown to the person, never picked from.
+    # Supplier names, PO references, Category labels, people's names or
+    # proposal codes the question matched more than one of — shown to the
+    # person, never picked from.
     candidates: list[str]
-    data_view: Annotated[CaseTableDataView | CaseLinkDataView, Field(discriminator="type")] | None
+    data_view: _DataView | None
 
 
 def _ai_work_response_view(answer: CaseQueryAnswer) -> AIWorkResponseView:
     plan = answer.plan
-    data_view: CaseTableDataView | CaseLinkDataView | None = None
+    data_view: (
+        CaseTableDataView
+        | CaseLinkDataView
+        | ProductCaseTableDataView
+        | ProductCaseLinkDataView
+        | None
+    ) = None
     if answer.opened is not None:
         data_view = CaseLinkDataView(type="case_link", case=_view(answer.opened))
+    elif answer.opened_product is not None:
+        data_view = ProductCaseLinkDataView(
+            type="product_case_link", case=_product_ref(answer.opened_product)
+        )
     elif plan.outcome in (CaseQueryOutcome.LIST, CaseQueryOutcome.PO_AMBIGUOUS):
         data_view = CaseTableDataView(
             type="case_table",
             rows=[_view(case) for case in answer.cases],
+            has_more=answer.has_more,
+        )
+    elif plan.outcome in (CaseQueryOutcome.PRODUCT_LIST, CaseQueryOutcome.PRODUCT_AMBIGUOUS):
+        data_view = ProductCaseTableDataView(
+            type="product_case_table",
+            rows=[_product_ref(case) for case in answer.product_cases],
             has_more=answer.has_more,
         )
     return AIWorkResponseView(
@@ -678,6 +792,10 @@ def _ai_work_response_view(answer: CaseQueryAnswer) -> AIWorkResponseView:
             supplier_name=plan.supplier_name,
             active_only=plan.active_only,
             po_reference=plan.po_reference,
+            product_state=plan.product_state,
+            category=plan.category,
+            pic_user_id=plan.pic_user_id,
+            proposal_code=plan.proposal_code,
         ),
         citations=[CitationView(field=field, quote=quote) for field, quote in answer.citations],
         ignored_fields=list(answer.ignored),

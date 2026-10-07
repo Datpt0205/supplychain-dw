@@ -52,6 +52,7 @@ from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence import tables
 from dw_supply_chain.adapters.persistence.po_case_repository import insert_po_case
 from dw_supply_chain.application.ports import ProductCaseListFilter
+from dw_supply_chain.domain.daily_brief import ClosedRound
 from dw_supply_chain.domain.po_case import POCase
 from dw_supply_chain.domain.product_development_case import (
     PRODUCT_TERMINAL_STATES,
@@ -611,6 +612,8 @@ class SqlProductCaseRepository:
             query = query.where(_c.c.state == case_filter.state.value)
         if case_filter.pic_user_id is not None:
             query = query.where(_c.c.pic_user_id == case_filter.pic_user_id)
+        if case_filter.category is not None:
+            query = query.where(_c.c.category == case_filter.category)
         async with tenant_session(
             self.session_factory, TenantScope.from_access_context(context)
         ) as session:
@@ -693,35 +696,96 @@ class SqlProductCaseRepository:
         ) as session:
             rows = (
                 await session.execute(
-                    sa.select(_r, _q.c.revision_document_id, _q.c.requested_changes)
-                    .select_from(
-                        _r.outerjoin(
-                            _q,
-                            sa.and_(
-                                _q.c.tenant_id == _r.c.tenant_id,
-                                _q.c.product_dev_case_id == _r.c.product_dev_case_id,
-                                _q.c.round_no == _r.c.round_no,
-                            ),
-                        )
-                    )
+                    _rounds()
                     .where(*_in_scope(_r, context), _r.c.product_dev_case_id == case_id.value)
                     .order_by(_r.c.round_no.asc())
                 )
             ).all()
+        return [_round(row) for row in rows]
+
+    async def closed_rounds_since(
+        self, context: AccessContext, since: datetime
+    ) -> list[ClosedRound]:
+        """Served by `ix_product_sample_rounds_closed_at` (fd285c0433c4)."""
+        async with tenant_session(
+            self.session_factory, TenantScope.from_access_context(context)
+        ) as session:
+            rows = (
+                await session.execute(
+                    _rounds()
+                    .where(*_in_scope(_r, context), _r.c.closed_at >= since)
+                    .order_by(_r.c.closed_at.asc(), _r.c.id.asc())
+                )
+            ).all()
+            if not rows:
+                return []
+            case_rows = (
+                await session.execute(
+                    _with_current_round().where(
+                        *_in_scope(_c, context),
+                        _c.c.id.in_({row.product_dev_case_id for row in rows}),
+                    )
+                )
+            ).all()
+            cases = {
+                case.id.value: case
+                for case in await _with_skus(session, context, [_case(r) for r in case_rows])
+            }
         return [
-            SampleRound(
-                round_no=row.round_no,
-                opened_at=row.opened_at,
-                opened_by=row.opened_by,
-                result=SampleResult(row.result) if row.result else None,
-                evaluation_document_id=row.evaluation_document_id,
-                closed_at=row.closed_at,
-                closed_by=row.closed_by,
-                revision_document_id=row.revision_document_id,
-                requested_changes=row.requested_changes,
-            )
+            ClosedRound(case=cases[row.product_dev_case_id], sample_round=_round(row))
             for row in rows
         ]
+
+    async def find_by_proposal_code(
+        self, context: AccessContext, proposal_code: str
+    ) -> list[ProductDevelopmentCase]:
+        """Case-insensitive equality on the trimmed code; the tenant-wide
+        UNIQUE on the code makes this at most one in practice, but two codes
+        differing only in case are both returned rather than one guessed."""
+        wanted = proposal_code.strip().lower()
+        async with tenant_session(
+            self.session_factory, TenantScope.from_access_context(context)
+        ) as session:
+            rows = (
+                await session.execute(
+                    _with_current_round()
+                    .where(
+                        *_in_scope(_c, context),
+                        sa.func.lower(sa.func.btrim(_c.c.proposal_code)) == wanted,
+                    )
+                    .order_by(_c.c.proposal_code.asc())
+                )
+            ).all()
+            return await _with_skus(session, context, [_case(row) for row in rows])
+
+
+def _rounds() -> sa.Select[tuple[object, ...]]:
+    """A round with the revision request that closed it, if one did."""
+    return sa.select(_r, _q.c.revision_document_id, _q.c.requested_changes).select_from(
+        _r.outerjoin(
+            _q,
+            sa.and_(
+                _q.c.tenant_id == _r.c.tenant_id,
+                _q.c.product_dev_case_id == _r.c.product_dev_case_id,
+                _q.c.round_no == _r.c.round_no,
+            ),
+        )
+    )
+
+
+def _round(row: Row[tuple[object, ...]]) -> SampleRound:
+    m = row._mapping
+    return SampleRound(
+        round_no=m[_r.c.round_no],
+        opened_at=m[_r.c.opened_at],
+        opened_by=m[_r.c.opened_by],
+        result=SampleResult(m[_r.c.result]) if m[_r.c.result] else None,
+        evaluation_document_id=m[_r.c.evaluation_document_id],
+        closed_at=m[_r.c.closed_at],
+        closed_by=m[_r.c.closed_by],
+        revision_document_id=m[_q.c.revision_document_id],
+        requested_changes=m[_q.c.requested_changes],
+    )
 
 
 @dataclass(frozen=True)

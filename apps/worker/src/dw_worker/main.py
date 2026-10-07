@@ -115,6 +115,8 @@ from dw_worker.consumers.supply_chain import (
     build_product_review_reconcile_consumer,
     build_product_review_runner,
     build_proposal_draft_retention,
+    build_stage_one_report,
+    build_stage_one_report_consumer,
     build_zalo_case_query_command,
     build_zalo_proposal_command,
     register_product_approvals,
@@ -293,7 +295,11 @@ def build_channel_commands(
     commands.register(
         "supply_chain.case_query",
         build_zalo_case_query_command(
-            sessions, gateway=gateway, ids=ids, web_url=settings.public_web_url
+            sessions,
+            configs_dir=REPO_ROOT / "configs",
+            gateway=gateway,
+            ids=ids,
+            web_url=settings.public_web_url,
         ),
     )
     return commands
@@ -394,6 +400,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     offboarding_consumer: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's follow-up sweep: a database is all it needs.
     follow_up_consumer: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's stage-1 daily report to TP Cung ứng: a database too.
+    stage_one_report: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's BGĐ review reconcile: a database is all it needs too.
     product_review_reconcile: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's case-document orphan sweep: a database and the bucket.
@@ -518,6 +526,11 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                 clock=clock,
             )
         )
+        stage_one_report = build_stage_one_report_consumer(
+            build_stage_one_report(
+                sessions, policies_dir=REPO_ROOT / "configs" / "policies", clock=clock
+            )
+        )
         product_review_reconcile = build_product_review_reconcile_consumer(
             build_product_review_reconcile(
                 sessions, runner=review_runner, configs_dir=REPO_ROOT / "configs", ids=ids
@@ -570,6 +583,15 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         registry.register(
             "supply_chain_follow_ups",
             follow_up_consumer,
+            interval_seconds=settings.supply_chain_follow_up_interval_seconds,
+        )
+    # The stage-1 daily report (ticket 08): on the sweep's cadence, since it
+    # reads what the sweep reads; once a day per workspace comes from the
+    # inbox's once-per-key delivery, not from the cadence.
+    if stage_one_report is not None:
+        registry.register(
+            "supply_chain_stage_one_report",
+            stage_one_report,
             interval_seconds=settings.supply_chain_follow_up_interval_seconds,
         )
     # BGĐ's review for a product case waiting without one (stage-1 ticket

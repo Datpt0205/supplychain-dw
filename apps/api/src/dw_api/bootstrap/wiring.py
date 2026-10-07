@@ -310,13 +310,16 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     )
     from dw_supply_chain.adapters.persistence.follow_up_repository import SqlFollowUpRepository
     from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
+    from dw_supply_chain.adapters.persistence.product_case_repository import (
+        SqlProductCaseRepository,
+    )
     from dw_supply_chain.adapters.persistence.supplier_update_repository import (
         SqlSupplierUpdateRepository,
     )
+    from dw_supply_chain.application.case_query import AnswerCaseQuery
     from dw_supply_chain.application.handlers import (
         AdvancePOCase,
         AnalyzeDelayImpact,
-        AnswerCaseQuery,
         CloseFollowUp,
         CreatePO,
         CreatePOCase,
@@ -335,6 +338,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         ListDelayImpactAnalyses,
         ListFollowUps,
         ListPOCases,
+        ListProductCategories,
         ListSupplierUpdates,
         ReassignPOCasePic,
         SetActionDutiesOverride,
@@ -345,6 +349,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         SubmitSupplierUpdate,
         SummarizeDailyBrief,
     )
+    from dw_supply_chain.application.product_cases import ListProductCases
     from dw_supply_chain.approval_matrix import load_supply_chain_approval_matrix
     from dw_supply_chain.brief_policy import load_supply_chain_brief_policy
     from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
@@ -357,6 +362,9 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     )
 
     po_case_repo = SqlPOCaseRepository(wiring.seam.session_factory)
+    # Product-development cases are read here by the brief and the command bar
+    # (ticket 08); their steps and documents are wired below, with storage.
+    product_case_repo = SqlProductCaseRepository(wiring.seam.session_factory)
     policy_override_repo = SqlPolicyOverrideRepository(wiring.seam.session_factory)
     platform_default_sla_policy = load_supply_chain_sla_policy(SUPPLY_CHAIN_SLA_POLICY)
     platform_default_approval_matrix = load_supply_chain_approval_matrix(
@@ -502,11 +510,22 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         authz=authorization,
         clock=wiring.seam.clock,
     )
+    # The SAME list handlers the routes use: one place decides what a filter
+    # means and who may read the result.
+    list_product_cases = ListProductCases(repo=product_case_repo, authz=authorization)
+    list_product_categories = ListProductCategories(
+        policy_override_repo=policy_override_repo,
+        platform_default_sla_policy=platform_default_sla_policy,
+        authz=authorization,
+    )
     container.supply_chain_answer_case_query = AnswerCaseQuery(
         po_case_repo=po_case_repo,
-        # The SAME list handler the route uses: one place decides what a
-        # filter means and who may read the result.
         list_cases=list_po_cases,
+        product_cases=product_case_repo,
+        list_product_cases=list_product_cases,
+        categories=list_product_categories,
+        # The platform's directory: who a PIC named in a question may be.
+        directory=SqlWorkspaceDirectory(wiring.seam.session_factory),
         gateway=one_call_gateway,
         authz=authorization,
         ids=wiring.seam.ids,
@@ -522,6 +541,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     get_daily_brief = GetDailyBrief(
         po_case_repo=po_case_repo,
         supplier_update_repo=supplier_update_repo,
+        product_case_repo=product_case_repo,
         policy_override_repo=policy_override_repo,
         platform_default_policy=platform_default_sla_policy,
         platform_default_brief_policy=platform_default_brief_policy,
@@ -589,9 +609,6 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     from dw_supply_chain.adapters.persistence.case_document_repository import (
         SqlCaseDocumentRepository,
     )
-    from dw_supply_chain.adapters.persistence.product_case_repository import (
-        SqlProductCaseRepository,
-    )
     from dw_supply_chain.adapters.storage.minio_case_documents import (
         MinioCaseDocumentStorage,
     )
@@ -604,13 +621,11 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     )
     from dw_supply_chain.application.handlers import (
         GetProductActionDuties,
-        ListProductCategories,
         SetProductActionDutiesOverride,
     )
     from dw_supply_chain.application.product_cases import (
         AdvanceProductCase,
         GetProductCase,
-        ListProductCases,
         ListProductCaseTransitions,
         PlaceOrder,
         ProposeProductCase,
@@ -625,7 +640,6 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
 
     document_repo = SqlCaseDocumentRepository(wiring.seam.session_factory)
     document_storage = MinioCaseDocumentStorage(client=minio, bucket=settings.case_documents_bucket)
-    product_case_repo = SqlProductCaseRepository(wiring.seam.session_factory)
     # Each kind of case answers "which workspace is this case in" for its own
     # documents; the document handlers pick by kind.
     case_lookups: dict[CaseKind, CaseLookupPort] = {
@@ -723,14 +737,8 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
     )
-    container.supply_chain_list_product_categories = ListProductCategories(
-        policy_override_repo=policy_override_repo,
-        platform_default_sla_policy=platform_default_sla_policy,
-        authz=authorization,
-    )
-    container.supply_chain_list_product_cases = ListProductCases(
-        repo=product_case_repo, authz=authorization
-    )
+    container.supply_chain_list_product_categories = list_product_categories
+    container.supply_chain_list_product_cases = list_product_cases
     container.supply_chain_advance_product_case = AdvanceProductCase(
         repo=product_case_repo,
         documents=document_repo,

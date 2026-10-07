@@ -30,12 +30,12 @@
       "version": "1.1.0"
     },
     {
-      "checksum": "d0fd7aeb5fb05de75f721fe6eb2441d34d39cd51f387ecb169652472757cf3c7",
+      "checksum": "e38262fe0a51791c815925c7a8302dccdb48ae92fef4a736bb7d501fedc71da1",
       "dataset_id": "supply_chain_smoke",
-      "version": "1.6.0"
+      "version": "1.7.0"
     }
   ],
-  "git_sha": "f7412bf8f275925cfba22174c1f50a44c10cb17e",
+  "git_sha": "9c7285959d129319e3c0debd037a04b41dcfd1d4",
   "knowledge_index_version": "2026-07-25.structure-1",
   "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
@@ -61,9 +61,9 @@
       "version": "1.0.0"
     },
     {
-      "checksum": "8b904a49ab3b86ccd57ea75fe72c5dda421762bb0c42f2f94fad674685f3c92c",
+      "checksum": "8a7bf667086d70714ffe91755a38a25042515c8f9bd5d0b8f5694f10ebff5f39",
       "policy_id": "supply_chain_brief",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "checksum": "e02553a42b3fd03cafdd3ccbf01795e7fcf08fe3ee2392990fa85cddd9e782ec",
@@ -103,9 +103,19 @@
       "version": "1.0.0"
     },
     {
+      "checksum": "850844d4c299d97a324b6adc088a71e4d4be464f1f1bf5d3c8080c4eef9305a3",
+      "prompt_id": "supply_chain.case_query_understanding",
+      "version": "1.1.0"
+    },
+    {
       "checksum": "51e58dd4c4a0329f370a688dcffd48cd9ca0e468f4bfadd9c236c5a69b9a544e",
       "prompt_id": "supply_chain.daily_brief_summary",
       "version": "1.0.0"
+    },
+    {
+      "checksum": "7bf911f07b22f023e084c5b7435426ef6539c787f79c0b6061baf0b36582a141",
+      "prompt_id": "supply_chain.daily_brief_summary",
+      "version": "1.1.0"
     },
     {
       "checksum": "cf05a993c4810ad65a18a98dba7e630ab957825ae38c221b3119e4bad22d1a99",

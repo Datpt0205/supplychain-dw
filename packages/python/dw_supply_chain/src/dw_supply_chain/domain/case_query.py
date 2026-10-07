@@ -1,6 +1,12 @@
 """Natural-language case query — what a model may claim about one
 question, and how code decides what that claim is worth.
 
+Two kinds of case are asked about: PO cases (list, open by PO number) and,
+since stage-1 ticket 08, product-development cases (list by state, PIC or
+Category; open by proposal code). Each kind of answer applies only its own
+fields (`_APPLIES`); a field of the other kind is reported as unusable and
+the reading refused, never quietly dropped.
+
 The model interprets, code decides — split literally:
 
 - The model turns the question into `CaseQueryIntent` and nothing else. It
@@ -11,8 +17,10 @@ The model interprets, code decides — split literally:
   trusted. A model asked to fill a slot fills it even when the question named
   nothing; the quote is what makes that visible.
 - Code resolves the grounded mentions against the tenant's REAL data
-  (`resolve_supplier`, and the repository's own lookup for a PO reference).
-  Zero or several matches is reported back to the user, never guessed.
+  (`resolve_name` for a supplier or a person of the workspace,
+  `product_proposal.resolve_category` for a Category, and the repository's
+  own lookup for a PO reference or a proposal code). Zero or several matches
+  is reported back to the user, never guessed.
 
 One rule runs through all of it: an answer is never broader than the
 question. A supplier that does not resolve, a field that could not be
@@ -25,7 +33,8 @@ as if it had not. That is the fail-open shape.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+import uuid
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -33,6 +42,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from dw_supply_chain.domain.evidence import fold, is_verbatim, names_whole_words
 from dw_supply_chain.domain.po_case import CaseState
+from dw_supply_chain.domain.product_development_case import ProductDevState
+from dw_supply_chain.domain.product_proposal import CategoryOption, resolve_category
 
 _QUOTE = Field(default=None, min_length=1, max_length=200)
 
@@ -40,6 +51,9 @@ _QUOTE = Field(default=None, min_length=1, max_length=200)
 class CaseQueryKind(StrEnum):
     LIST_CASES = "list_cases"
     OPEN_CASE = "open_case"
+    # Product-development cases (Hồ sơ phát triển sản phẩm), stage 1.
+    LIST_PRODUCT_CASES = "list_product_cases"
+    OPEN_PRODUCT_CASE = "open_product_case"
     # Anything else — including a question this feature does not answer yet.
     # The honest reply is "not understood", never a nearest guess.
     UNSUPPORTED = "unsupported"
@@ -57,6 +71,16 @@ class CaseQueryIntent(BaseModel):
     state: CaseState | None = None
     state_quote: str | None = _QUOTE
     active_only_quote: str | None = _QUOTE
+    # Product-development cases. A state of the product case's own enum,
+    # never a PO state: the two lists share words ("Đã hủy") but not meaning.
+    proposal_code_mention: str | None = _QUOTE
+    product_state: ProductDevState | None = None
+    product_state_quote: str | None = _QUOTE
+    category_mention: str | None = _QUOTE
+    # A person named as the PIC, as typed; or the asker's own words for
+    # "mine" ("của tôi"), which code turns into the asker, never a name.
+    pic_mention: str | None = _QUOTE
+    mine_quote: str | None = _QUOTE
 
     @field_validator(
         "supplier_mention",
@@ -64,6 +88,12 @@ class CaseQueryIntent(BaseModel):
         "state",
         "state_quote",
         "active_only_quote",
+        "proposal_code_mention",
+        "product_state",
+        "product_state_quote",
+        "category_mention",
+        "pic_mention",
+        "mine_quote",
         mode="before",
     )
     @classmethod
@@ -86,6 +116,11 @@ class GroundedField(StrEnum):
     PO_REFERENCE = "po_reference"
     STATE = "state"
     ACTIVE_ONLY = "active_only"
+    PROPOSAL_CODE = "proposal_code"
+    PRODUCT_STATE = "product_state"
+    CATEGORY = "category"
+    PIC = "pic"
+    MINE = "mine"
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +134,26 @@ class GroundedQuery:
     # shows as "understood from", so a person can see why a filter applied.
     citations: tuple[tuple[GroundedField, str], ...]
     dropped: tuple[GroundedField, ...]
+    proposal_code_mention: str | None = None
+    product_state: ProductDevState | None = None
+    category_mention: str | None = None
+    pic_mention: str | None = None
+    mine: bool = False
+
+    def present(self) -> frozenset[GroundedField]:
+        """The fields this reading kept."""
+        values = {
+            GroundedField.SUPPLIER: self.supplier_mention is not None,
+            GroundedField.PO_REFERENCE: self.po_reference_mention is not None,
+            GroundedField.STATE: self.state is not None,
+            GroundedField.ACTIVE_ONLY: self.active_only,
+            GroundedField.PROPOSAL_CODE: self.proposal_code_mention is not None,
+            GroundedField.PRODUCT_STATE: self.product_state is not None,
+            GroundedField.CATEGORY: self.category_mention is not None,
+            GroundedField.PIC: self.pic_mention is not None,
+            GroundedField.MINE: self.mine,
+        }
+        return frozenset(field for field, kept in values.items() if kept)
 
 
 def ground(intent: CaseQueryIntent, question: str) -> GroundedQuery:
@@ -149,6 +204,22 @@ def ground(intent: CaseQueryIntent, question: str) -> GroundedQuery:
         GroundedField.ACTIVE_ONLY,
         claimed=intent.active_only_quote is not None,
     )
+    code = intent.proposal_code_mention
+    keep_code = grounded(
+        code, GroundedField.PROPOSAL_CODE, claimed=code is not None, whole_words=True
+    )
+    keep_product_state = grounded(
+        intent.product_state_quote if intent.product_state is not None else None,
+        GroundedField.PRODUCT_STATE,
+        claimed=intent.product_state is not None or intent.product_state_quote is not None,
+    )
+    category = intent.category_mention
+    keep_category = grounded(
+        category, GroundedField.CATEGORY, claimed=category is not None, whole_words=True
+    )
+    pic = intent.pic_mention
+    keep_pic = grounded(pic, GroundedField.PIC, claimed=pic is not None, whole_words=True)
+    mine = grounded(intent.mine_quote, GroundedField.MINE, claimed=intent.mine_quote is not None)
     return GroundedQuery(
         kind=intent.kind,
         supplier_mention=supplier if keep_supplier else None,
@@ -157,20 +228,25 @@ def ground(intent: CaseQueryIntent, question: str) -> GroundedQuery:
         active_only=active_only,
         citations=tuple(citations),
         dropped=tuple(dropped),
+        proposal_code_mention=code if keep_code else None,
+        product_state=intent.product_state if keep_product_state else None,
+        category_mention=category if keep_category else None,
+        pic_mention=pic if keep_pic else None,
+        mine=mine,
     )
 
 
 @dataclass(frozen=True, slots=True)
-class SupplierResolution:
-    """`name` is the one stored supplier name the mention resolved to, or
-    `None`; then `candidates` tells the two failures apart — empty means no
-    supplier matched, several means the mention was ambiguous."""
+class NameResolution:
+    """`name` is the one stored name (a supplier's, a person's) the mention
+    resolved to, or `None`; then `candidates` tells the two failures apart —
+    empty means nothing matched, several means the mention was ambiguous."""
 
     name: str | None
     candidates: tuple[str, ...]
 
 
-def resolve_supplier(mention: str, known_names: Iterable[str]) -> SupplierResolution:
+def resolve_name(mention: str, known_names: Iterable[str]) -> NameResolution:
     """One stored name for `mention`, or the reason there is not one.
 
     An equal name (after `fold`) wins outright; failing that, a name that
@@ -182,19 +258,19 @@ def resolve_supplier(mention: str, known_names: Iterable[str]) -> SupplierResolu
     folded = fold(mention)
     names = sorted(set(known_names))
     if not any(ch.isalnum() for ch in folded):
-        return SupplierResolution(name=None, candidates=())
+        return NameResolution(name=None, candidates=())
     equal = [name for name in names if fold(name) == folded]
     if equal:
         return (
-            SupplierResolution(name=equal[0], candidates=())
+            NameResolution(name=equal[0], candidates=())
             if len(equal) == 1
-            else SupplierResolution(name=None, candidates=tuple(equal))
+            else NameResolution(name=None, candidates=tuple(equal))
         )
     whole_words = re.compile(rf"(?<!\w){re.escape(folded)}(?!\w)")
     containing = [name for name in names if whole_words.search(fold(name))]
     if len(containing) == 1:
-        return SupplierResolution(name=containing[0], candidates=())
-    return SupplierResolution(name=None, candidates=tuple(containing))
+        return NameResolution(name=containing[0], candidates=())
+    return NameResolution(name=None, candidates=tuple(containing))
 
 
 class CaseQueryOutcome(StrEnum):
@@ -212,14 +288,27 @@ class CaseQueryOutcome(StrEnum):
     # `plan_case_query` — a PO reference resolves against rows, not a list.
     PO_NOT_FOUND = "po_not_found"
     PO_AMBIGUOUS = "po_ambiguous"
+    # Product-development cases. The two lookups run; the rest refuse.
+    PRODUCT_LIST = "product_list"
+    PRODUCT_OPEN = "product_open"
+    PROPOSAL_CODE_MISSING = "proposal_code_missing"
+    CATEGORY_NOT_FOUND = "category_not_found"
+    CATEGORY_AMBIGUOUS = "category_ambiguous"
+    PIC_NOT_FOUND = "pic_not_found"
+    PIC_AMBIGUOUS = "pic_ambiguous"
+    # Decided by the handler after its lookup, as for a PO reference.
+    PRODUCT_NOT_FOUND = "product_not_found"
+    PRODUCT_AMBIGUOUS = "product_ambiguous"
 
 
 @dataclass(frozen=True, slots=True)
 class CaseQueryPlan:
     """What code decided to do with one grounded question. `supplier_name`
-    is always a STORED name (resolved), never the model's mention. `state`/
-    `active_only` travel with a supplier refusal too, so a person picking
-    among the candidates keeps the rest of what they asked."""
+    is always a STORED name (resolved), never the model's mention; so are
+    `category` (a key of the tenant's list) and `pic_user_id` (a member of
+    the workspace, or the asker). `state`/`active_only` travel with a
+    supplier refusal too, so a person picking among the candidates keeps the
+    rest of what they asked."""
 
     outcome: CaseQueryOutcome
     state: CaseState | None = None
@@ -230,29 +319,132 @@ class CaseQueryPlan:
     # Grounded fields this kind of answer could not apply — reported, and
     # the reason the reading was refused.
     unused: tuple[GroundedField, ...] = ()
+    product_state: ProductDevState | None = None
+    category: str | None = None
+    pic_user_id: uuid.UUID | None = None
+    proposal_code: str | None = None
+
+
+# Which fields each kind of answer applies. A grounded field outside its
+# kind's set is one the answer cannot honour: a PO list cannot narrow by a
+# Category, opening one case applies no list filter. Answering anyway would
+# present it as understood.
+_APPLIES: dict[CaseQueryKind, frozenset[GroundedField]] = {
+    CaseQueryKind.LIST_CASES: frozenset(
+        {GroundedField.SUPPLIER, GroundedField.STATE, GroundedField.ACTIVE_ONLY}
+    ),
+    CaseQueryKind.OPEN_CASE: frozenset({GroundedField.PO_REFERENCE}),
+    CaseQueryKind.LIST_PRODUCT_CASES: frozenset(
+        {
+            GroundedField.PRODUCT_STATE,
+            GroundedField.CATEGORY,
+            GroundedField.PIC,
+            GroundedField.MINE,
+        }
+    ),
+    CaseQueryKind.OPEN_PRODUCT_CASE: frozenset({GroundedField.PROPOSAL_CODE}),
+}
+
+PRODUCT_KINDS = frozenset({CaseQueryKind.LIST_PRODUCT_CASES, CaseQueryKind.OPEN_PRODUCT_CASE})
 
 
 def _unused_by(grounded: GroundedQuery) -> tuple[GroundedField, ...]:
-    """Fields the question grounded that the chosen kind cannot apply. A
-    list cannot narrow by one PO reference; opening one case applies no
-    list filter. Answering anyway would present them as understood."""
-    if grounded.kind is CaseQueryKind.LIST_CASES:
-        return (GroundedField.PO_REFERENCE,) if grounded.po_reference_mention else ()
-    present = (
-        (GroundedField.SUPPLIER, grounded.supplier_mention is not None),
-        (GroundedField.STATE, grounded.state is not None),
-        (GroundedField.ACTIVE_ONLY, grounded.active_only),
+    """Fields the question grounded that the chosen kind cannot apply, in
+    `GroundedField` order. A person named AND "mine" is two PICs: neither is
+    applied."""
+    present = grounded.present()
+    unused = present - _APPLIES.get(grounded.kind, frozenset())
+    if {GroundedField.PIC, GroundedField.MINE} <= present:
+        unused |= {GroundedField.PIC, GroundedField.MINE}
+    return tuple(field for field in GroundedField if field in unused)
+
+
+def _resolve_category(
+    mention: str, categories: Sequence[CategoryOption]
+) -> tuple[str | None, tuple[str, ...]]:
+    found = resolve_category(mention, categories)
+    if len(found) == 1:
+        return found[0].key, ()
+    return None, tuple(option.label for option in found)
+
+
+def _resolve_member(
+    mention: str, members: Sequence[tuple[uuid.UUID, str]]
+) -> tuple[uuid.UUID | None, tuple[str, ...]]:
+    """A person of the workspace by display name: one name, held by exactly
+    one member. Two members sharing the name are as ambiguous as two names."""
+    resolution = resolve_name(mention, (name for _, name in members))
+    if resolution.name is None:
+        return None, resolution.candidates
+    holders = [user_id for user_id, name in members if name == resolution.name]
+    if len(holders) == 1:
+        return holders[0], ()
+    return None, (resolution.name,)
+
+
+def _plan_product_list(
+    grounded: GroundedQuery,
+    categories: Sequence[CategoryOption],
+    members: Sequence[tuple[uuid.UUID, str]],
+    caller: uuid.UUID | None,
+) -> CaseQueryPlan:
+    """A product-case list narrowed by every field the question named, each
+    resolved against the caller's own data; one that does not resolve stops
+    the list, as an unresolved supplier stops a PO list."""
+    category: str | None = None
+    if grounded.category_mention is not None:
+        category, candidates = _resolve_category(grounded.category_mention, categories)
+        if category is None:
+            return CaseQueryPlan(
+                outcome=(
+                    CaseQueryOutcome.CATEGORY_AMBIGUOUS
+                    if candidates
+                    else CaseQueryOutcome.CATEGORY_NOT_FOUND
+                ),
+                product_state=grounded.product_state,
+                candidates=candidates,
+            )
+    pic: uuid.UUID | None = None
+    if grounded.pic_mention is not None:
+        pic, candidates = _resolve_member(grounded.pic_mention, members)
+        if pic is None:
+            return CaseQueryPlan(
+                outcome=(
+                    CaseQueryOutcome.PIC_AMBIGUOUS if candidates else CaseQueryOutcome.PIC_NOT_FOUND
+                ),
+                product_state=grounded.product_state,
+                category=category,
+                candidates=candidates,
+            )
+    elif grounded.mine:
+        if caller is None:
+            # "Mine" with nobody asking narrows to nobody; never to everyone.
+            return CaseQueryPlan(outcome=CaseQueryOutcome.NOT_UNDERSTOOD)
+        pic = caller
+    return CaseQueryPlan(
+        outcome=CaseQueryOutcome.PRODUCT_LIST,
+        product_state=grounded.product_state,
+        category=category,
+        pic_user_id=pic,
     )
-    return tuple(field for field, is_present in present if is_present)
 
 
-def plan_case_query(grounded: GroundedQuery, known_suppliers: Iterable[str]) -> CaseQueryPlan:
+def plan_case_query(
+    grounded: GroundedQuery,
+    known_suppliers: Iterable[str],
+    *,
+    categories: Sequence[CategoryOption] = (),
+    members: Sequence[tuple[uuid.UUID, str]] = (),
+    caller: uuid.UUID | None = None,
+) -> CaseQueryPlan:
     """The one decision both the handler and the eval graders run.
 
     `known_suppliers` is the caller's own tenant's stored names — the only
-    names a supplier mention may become. A mention that resolves to none of
-    them, or to several, stops the query: running it without that filter
-    would answer MORE than was asked.
+    names a supplier mention may become; `categories` the tenant's own
+    Category list, `members` the people of the caller's workspace (id,
+    display name) and `caller` the asker, for "mine". A mention that resolves
+    to none of them, or to several, stops the query: running it without that
+    filter would answer MORE than was asked.
     """
     if grounded.kind is CaseQueryKind.UNSUPPORTED:
         return CaseQueryPlan(outcome=CaseQueryOutcome.NOT_UNDERSTOOD)
@@ -265,6 +457,8 @@ def plan_case_query(grounded: GroundedQuery, known_suppliers: Iterable[str]) -> 
         return CaseQueryPlan(outcome=CaseQueryOutcome.NOT_UNDERSTOOD)
     if grounded.kind is CaseQueryKind.OPEN_CASE and grounded.po_reference_mention is None:
         return CaseQueryPlan(outcome=CaseQueryOutcome.PO_REFERENCE_MISSING)
+    if grounded.kind is CaseQueryKind.OPEN_PRODUCT_CASE and grounded.proposal_code_mention is None:
+        return CaseQueryPlan(outcome=CaseQueryOutcome.PROPOSAL_CODE_MISSING)
     unused = _unused_by(grounded)
     if unused:
         return CaseQueryPlan(outcome=CaseQueryOutcome.NOT_UNDERSTOOD, unused=unused)
@@ -272,10 +466,16 @@ def plan_case_query(grounded: GroundedQuery, known_suppliers: Iterable[str]) -> 
         return CaseQueryPlan(
             outcome=CaseQueryOutcome.OPEN, po_reference=grounded.po_reference_mention
         )
+    if grounded.kind is CaseQueryKind.OPEN_PRODUCT_CASE:
+        return CaseQueryPlan(
+            outcome=CaseQueryOutcome.PRODUCT_OPEN, proposal_code=grounded.proposal_code_mention
+        )
+    if grounded.kind is CaseQueryKind.LIST_PRODUCT_CASES:
+        return _plan_product_list(grounded, categories, members, caller)
 
     supplier_name: str | None = None
     if grounded.supplier_mention is not None:
-        resolution = resolve_supplier(grounded.supplier_mention, known_suppliers)
+        resolution = resolve_name(grounded.supplier_mention, known_suppliers)
         if resolution.name is None:
             return CaseQueryPlan(
                 outcome=(

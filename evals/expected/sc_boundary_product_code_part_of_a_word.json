@@ -1,0 +1,7 @@
+{
+  "outcome": "not_understood",
+  "ignored_fields": [
+    "proposal_code"
+  ],
+  "proposal_code": null
+}

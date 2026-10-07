@@ -16,6 +16,11 @@ const api = {
   getDailyBrief: vi.fn(),
 };
 vi.mock("../../../lib/session", () => ({ apiClient: () => api }));
+// The roster is the page's own fetch; these tests are about the brief.
+vi.mock("../../../lib/directory", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/directory")>()),
+  useWorkspaceMembers: () => [],
+}));
 
 import AttentionQueuePage from "../attention-queue/page";
 import ControlTowerPage from "../control-tower/page";

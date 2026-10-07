@@ -1,0 +1,10 @@
+{
+  "question": "hồ sơ phát triển của NCC Sunhouse",
+  "model_answer": {
+    "kind": "list_product_cases",
+    "supplier_mention": "Sunhouse"
+  },
+  "known_suppliers": [
+    "Sunhouse Co."
+  ]
+}

@@ -10,7 +10,7 @@ import { apiClient } from "../../lib/session";
 import { CaseQueryAnswer } from "./case-query-answer";
 
 /**
- * The command bar: ask about PO cases in words, get
+ * The command bar: ask about PO cases and product-development cases in words, get
  * the answer as structured work rendered by `CaseQueryAnswer`.
  *
  * Asks on submit only, never per keystroke — every question is a model
@@ -63,8 +63,8 @@ export function CaseQueryBar() {
       <Flex vertical gap="middle">
         <form onSubmit={submit} className="flex gap-2" role="search">
           <Input
-            aria-label="Hỏi về PO case"
-            placeholder="Ví dụ: PO của NCC Sunhouse đang chờ đặt cọc"
+            aria-label="Hỏi về PO case hoặc hồ sơ phát triển"
+            placeholder="Ví dụ: PO của NCC Sunhouse đang chờ đặt cọc; hồ sơ SP-028 tới đâu rồi"
             value={question}
             maxLength={500}
             onChange={(event) => setQuestion(event.target.value)}

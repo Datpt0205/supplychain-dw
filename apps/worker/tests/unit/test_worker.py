@@ -149,6 +149,8 @@ def test_only_the_platform_lanes_are_wired() -> None:
     `supply_chain_proposal_drafts_retention` is the third: chat proposal
     drafts nobody answered within `DRAFT_TTL`, deleted on the retention
     cadence whether or not this process polls Zalo.
+    `supply_chain_stage_one_report` is the fourth: the stage-1 daily report to
+    TP Cung ứng (stage-1 ticket 08), on the sweep's cadence.
 
     Naming the whole set is the point: a context's lane arriving in this process
     becomes a visible change rather than a silent one.
@@ -169,6 +171,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "supply_chain_follow_ups",
         "supply_chain_product_review_reconcile",
         "supply_chain_proposal_drafts_retention",
+        "supply_chain_stage_one_report",
     }
 
 

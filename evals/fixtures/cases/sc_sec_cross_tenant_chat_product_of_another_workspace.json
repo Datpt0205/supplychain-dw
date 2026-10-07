@@ -1,0 +1,19 @@
+{
+  "question": "hồ sơ SP-555 tới đâu rồi?",
+  "model_answer": {
+    "kind": "open_product_case",
+    "proposal_code_mention": "SP-555"
+  },
+  "product_cases": [
+    {
+      "proposal_code": "SP-555",
+      "product_name": "Sản phẩm của W1",
+      "state": "pending_signoff",
+      "workspace": "other"
+    }
+  ],
+  "must_not_contain": [
+    "Sản phẩm của W1",
+    "Chờ trình ký"
+  ]
+}

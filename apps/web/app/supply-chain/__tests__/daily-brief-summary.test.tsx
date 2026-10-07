@@ -21,7 +21,9 @@ function group(key: string, total: number): BriefGroup {
     signal,
     qualifier: qualifier ?? null,
     state: null,
+    product_state: null,
     total,
+    product_entries: [],
     entries: [
       {
         case: {
@@ -52,6 +54,9 @@ function brief(groups: BriefGroup[]): DailyBrief {
     active_case_count: 9,
     flagged_case_count: 3,
     approvals_visible: true,
+    product_cases_visible: true,
+    active_product_case_count: 0,
+    flagged_product_case_count: 0,
     groups,
   };
 }
@@ -61,6 +66,11 @@ const getDailyBrief = vi.fn(async () => LOADED);
 const summarizeDailyBrief = vi.fn();
 vi.mock("../../../lib/session", () => ({
   apiClient: () => ({ getDailyBrief, summarizeDailyBrief }),
+}));
+// The roster is the page's own fetch; these tests are about the brief.
+vi.mock("../../../lib/directory", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/directory")>()),
+  useWorkspaceMembers: () => [],
 }));
 
 import DailyBriefPage from "../daily-brief/page";

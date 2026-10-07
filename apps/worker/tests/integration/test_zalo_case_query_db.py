@@ -490,7 +490,7 @@ async def test_the_question_command_never_holds_more_than_the_read_scope(
     sessions: async_sessionmaker[AsyncSession], migrator: AsyncEngine
 ) -> None:
     """The context the router builds for it from a membership that holds
-    writes, duties and approvals.decide: the read scope, no role."""
+    writes, duties and approvals.decide: the two read scopes, no role."""
     lane = _Lane(sessions)
     tenant, ws = await _tenant(migrator)
     operator = await _linked(lane, migrator, tenant, ws, ["sc_operator", "approver"])
@@ -499,5 +499,92 @@ async def test_the_question_command_never_holds_more_than_the_read_scope(
     )
     assert access is not None
     context: AccessContext = context_from(access)
-    assert context.scopes == {"supply_chain.po_case.read"}
+    assert context.scopes == {"supply_chain.po_case.read", "supply_chain.product_case.read"}
     assert context.roles == frozenset()
+
+
+# ---- product-development cases (stage-1 ticket 08) ------------------------------------
+
+
+async def _product(
+    migrator: AsyncEngine,
+    tenant: uuid.UUID,
+    workspace: uuid.UUID,
+    code: str,
+    *,
+    pic: uuid.UUID,
+    name: str = "Chảo chống dính 28",
+) -> uuid.UUID:
+    case_id = uuid.uuid4()
+    async with migrator.begin() as conn:
+        await conn.execute(
+            sa.insert(sc_tables.product_dev_cases).values(
+                id=case_id,
+                tenant_id=tenant,
+                workspace_id=workspace,
+                proposal_code=code,
+                product_name=name,
+                category="chao",
+                pic_user_id=pic,
+                created_by=pic,
+                state="sample_testing",
+            )
+        )
+    return case_id
+
+
+async def test_a_product_case_is_found_only_in_the_askers_own_workspace(
+    sessions: async_sessionmaker[AsyncSession], migrator: AsyncEngine
+) -> None:
+    """Over RLS: the asker's own code is answered; the same tenant's other
+    workspace and another tenant (sharing the asker's workspace id is not
+    possible, so its own) read as codes that do not exist."""
+    lane = _Lane(sessions)
+    tenant, w1 = await _tenant(migrator)
+    w2 = await _workspace(migrator, tenant)
+    other_tenant, other_ws = await _tenant(migrator)
+    asker = await _linked(lane, migrator, tenant, w1, _READER)
+    mine, next_door, foreign = (f"SP-{uuid.uuid4().hex[:6]}" for _ in range(3))
+    own_id = await _product(migrator, tenant, w1, mine, pic=asker.user)
+    await _product(migrator, tenant, w2, next_door, pic=asker.user, name="Bí mật W2")
+    await _product(migrator, other_tenant, other_ws, foreign, pic=asker.user, name="Bí mật B")
+    for code in (mine, next_door, foreign):
+        lane.readings[f"hồ sơ {code} tới đâu?"] = {
+            "kind": "open_product_case",
+            "proposal_code_mention": code,
+        }
+
+    own = await lane.send(asker.chat, f"hồ sơ {mine} tới đâu?")
+    assert f"- {mine} — Chảo chống dính 28: Đang test mẫu" in own
+    assert f"/supply-chain/product-cases/{own_id}" in own
+    for code in (next_door, foreign):
+        reply = await lane.send(asker.chat, f"hồ sơ {code} tới đâu?")
+        assert reply == f"Không tìm thấy hồ sơ phát triển «{code}»."
+        assert "Bí mật" not in reply
+
+
+async def test_a_named_pic_resolves_through_the_platform_directory(
+    sessions: async_sessionmaker[AsyncSession], migrator: AsyncEngine
+) -> None:
+    lane = _Lane(sessions)
+    tenant, ws = await _tenant(migrator)
+    asker = await _linked(lane, migrator, tenant, ws, _READER)
+    colleague = await _linked(lane, migrator, tenant, ws, ["sc_operator"])
+    async with migrator.begin() as conn:
+        await conn.execute(
+            sa.update(tables.users)
+            .where(tables.users.c.id == colleague.user)
+            .values(display_name="Nguyễn Thị Lan")
+        )
+    theirs = f"SP-{uuid.uuid4().hex[:6]}"
+    mine = f"SP-{uuid.uuid4().hex[:6]}"
+    await _product(migrator, tenant, ws, theirs, pic=colleague.user)
+    await _product(migrator, tenant, ws, mine, pic=asker.user)
+    lane.readings["hồ sơ của Nguyễn Thị Lan"] = {
+        "kind": "list_product_cases",
+        "pic_mention": "Nguyễn Thị Lan",
+    }
+
+    reply = await lane.send(asker.chat, "hồ sơ của Nguyễn Thị Lan")
+
+    assert theirs in reply and mine not in reply

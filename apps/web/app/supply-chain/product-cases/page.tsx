@@ -28,6 +28,11 @@ import {
   type ProductCase,
   type ProductDevState,
 } from "@dw/contracts";
+import {
+  productCasesHref,
+  readProductCaseFilter,
+  type ProductListFilter,
+} from "../../../lib/supply-chain/product-case-filter";
 import { stepLabel } from "../../../components/supply-chain/case-state-badge";
 import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
 import {
@@ -53,8 +58,9 @@ import { apiClient } from "../../../lib/session";
 /**
  * Hồ sơ phát triển sản phẩm: every product proposed in this workspace, newest
  * first, narrowed by state or by "mine" (the PIC filter only narrows: everyone
- * with the read sees every case, QE-18). The filter lives in the URL, so a
- * filtered view can be sent to a colleague. Proposing opens a short form; the
+ * with the read sees every case, QE-18), and, arriving from a command-bar or
+ * Zalo answer (ticket 08), by a named PIC or a Category. The filter lives in
+ * the URL, so a filtered view can be sent to a colleague. Proposing opens a short form; the
  * product's images are uploaded on the case page once it exists.
  */
 export default function ProductCasesPage() {
@@ -64,26 +70,6 @@ export default function ProductCasesPage() {
       <ProductCasesView />
     </Suspense>
   );
-}
-
-interface ListFilter {
-  state?: ProductDevState;
-  mine: boolean;
-}
-
-function readFilter(params: URLSearchParams): ListFilter {
-  return {
-    state: productDevStateSchema.safeParse(params.get("state")).data,
-    mine: params.get("mine") === "1",
-  };
-}
-
-function hrefFor(filter: ListFilter): string {
-  const search = new URLSearchParams();
-  if (filter.state) search.set("state", filter.state);
-  if (filter.mine) search.set("mine", "1");
-  const rendered = search.toString();
-  return `/supply-chain/product-cases${rendered ? `?${rendered}` : ""}`;
 }
 
 const STATE_OPTIONS = productDevStateSchema.options.map((value) => ({
@@ -104,17 +90,26 @@ type ListState =
 
 function ProductCasesView() {
   const searchParams = useSearchParams();
-  const filter = readFilter(searchParams);
+  const filter = readProductCaseFilter(searchParams);
   const { principalId } = useAuth();
+  const members = useWorkspaceMembers();
+  const categories = useProductCategories().data;
   const [proposing, setProposing] = useState(false);
 
   // The URL is the filter's only home, so back/forward and a shared link land
   // on the same view; `replaceState` keeps Next's params in sync without a
   // server round trip.
-  const apply = (next: ListFilter) => {
-    window.history.replaceState(null, "", hrefFor(next));
+  const apply = (next: ProductListFilter) => {
+    window.history.replaceState(null, "", productCasesHref(next));
   };
-  const filtered = filter.state !== undefined || filter.mine;
+  const filtered =
+    filter.state !== undefined ||
+    filter.mine ||
+    filter.pic !== undefined ||
+    filter.category !== undefined;
+  // A named PIC narrows as "mine" does; with both, the named one.
+  const picUserId =
+    filter.pic ?? (filter.mine ? (principalId ?? undefined) : undefined);
 
   const refocus = () => document.getElementById(STATE_SELECT_ID)?.focus();
   const clearAll = () => {
@@ -166,6 +161,24 @@ function ProductCasesView() {
                 }}
               />
             )}
+            {filter.pic && (
+              <FilterChip
+                label={`PIC: ${memberName(members, filter.pic)}`}
+                onRemove={() => {
+                  apply({ ...filter, pic: undefined });
+                  refocus();
+                }}
+              />
+            )}
+            {filter.category && (
+              <FilterChip
+                label={`Category: ${categoryLabel(categories, filter.category)}`}
+                onRemove={() => {
+                  apply({ ...filter, category: undefined });
+                  refocus();
+                }}
+              />
+            )}
             {filter.state && (
               <FilterChip
                 label={`Trạng thái: ${PRODUCT_DEV_STATE_LABEL[filter.state]}`}
@@ -184,9 +197,10 @@ function ProductCasesView() {
         {/* Keyed on the filter: a new filter is a fresh list, never page two
             of the old one spliced on. */}
         <ProductCaseResults
-          key={JSON.stringify([filter.state, filter.mine, principalId])}
+          key={JSON.stringify([filter.state, picUserId, filter.category])}
           state={filter.state}
-          picUserId={filter.mine ? (principalId ?? undefined) : undefined}
+          picUserId={picUserId}
+          category={filter.category}
           filtered={filtered}
           onClearFilters={clearAll}
           onPropose={() => setProposing(true)}
@@ -430,12 +444,14 @@ function ProposeModal({
 function ProductCaseResults({
   state,
   picUserId,
+  category,
   filtered,
   onClearFilters,
   onPropose,
 }: {
   state?: ProductDevState;
   picUserId?: string;
+  category?: string;
   filtered: boolean;
   onClearFilters: () => void;
   onPropose: () => void;
@@ -449,7 +465,11 @@ function ProductCaseResults({
   const loadFirst = useCallback(async () => {
     setList({ kind: "loading" });
     try {
-      const page = await apiClient().listProductCases({ state, picUserId });
+      const page = await apiClient().listProductCases({
+        state,
+        picUserId,
+        category,
+      });
       setList({
         kind: "ready",
         items: [...page.items],
@@ -460,7 +480,7 @@ function ProductCaseResults({
     } catch (error) {
       setList({ kind: "error", failure: regionFailure(error) });
     }
-  }, [state, picUserId]);
+  }, [state, picUserId, category]);
 
   useEffect(() => {
     void loadFirst();
@@ -473,6 +493,7 @@ function ProductCaseResults({
       const page = await apiClient().listProductCases({
         state,
         picUserId,
+        category,
         cursor: list.nextCursor,
       });
       setList({

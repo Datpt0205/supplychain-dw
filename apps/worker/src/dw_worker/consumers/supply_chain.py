@@ -1,10 +1,16 @@
-"""Supply Chain's lanes: the follow-up sweep, the case-document orphan sweep,
-and the product approval reconcile (BGĐ's review, the step-9 sign-off).
+"""Supply Chain's lanes: the follow-up sweep, the stage-1 daily report, the
+case-document orphan sweep, and the product approval reconcile (BGĐ's review,
+the step-9 sign-off).
 
 The sweep (`dw_supply_chain.application.follow_up_sweep`) opens follow-ups for
 due reminders, escalations and SLA breaches, resolves the ones whose signal is
 gone, and notifies the people who must act. It is idempotent end to end, so
 this lane only has to call it; a failed tick is finished by the next one.
+
+The daily report (`dw_supply_chain.application.daily_report`, stage-1 ticket
+08, QE-19 provisional) tells each TP Cung ứng of a workspace, once a day from
+17:00 Vietnam time, what the brief's stage-1 groups hold; the notification
+inbox's once-per-key delivery makes the lane's cadence irrelevant to that.
 
 The reconcile (`dw_supply_chain.application.product_reviews.
 ReconcileProductApprovals`) raises the approval a product case waits on with
@@ -22,8 +28,9 @@ what `wiring.py` gives the API's: the strict prefix and the case-version port.
 The Zalo proposal command (zalo-channel ticket 04, Z4b) is built here too: the
 chat's "Đồng ý" creates a product case through the same `ProposeProductCase`
 the API's route calls, over the same tables and the same duty policy file.
-So is the read-only question command (ticket 06, Z6): the same `AnswerCaseQuery`
-and `ListPOCases` the API's `POST /case-query` runs.
+So is the read-only question command (ticket 06, Z6): the same `AnswerCaseQuery`,
+`ListPOCases`, `ListProductCases` and `ListProductCategories` the API's
+`POST /case-query` runs.
 
 Built here, at this process's composition root: the concrete adapters are
 imported only here, the policies are the shipped files the API also loads
@@ -51,6 +58,7 @@ from dw_agent_runtime.registry import GraphRegistry, WorkerRegistry
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_observability.telemetry import TelemetryPort
 from dw_platform.adapters.persistence.approval_queries import SqlPendingApprovalQuery
+from dw_platform.adapters.persistence.directory import SqlWorkspaceDirectory
 from dw_platform.adapters.persistence.notifications import SqlNotificationRepository
 from dw_platform.adapters.persistence.policy_overrides import SqlPolicyOverrideRepository
 from dw_platform.adapters.persistence.scope_holders import SqlScopeHolders
@@ -80,11 +88,13 @@ from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
 from dw_supply_chain.application.approval_subject import ProductCaseApprovalSubject
+from dw_supply_chain.application.case_query import AnswerCaseQuery
+from dw_supply_chain.application.daily_report import SendStageOneReport
 from dw_supply_chain.application.document_orphan_sweep import SweepOrphanDocuments
 from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
-from dw_supply_chain.application.handlers import AnswerCaseQuery, ListPOCases
+from dw_supply_chain.application.handlers import ListPOCases, ListProductCategories
 from dw_supply_chain.application.ports import CaseDocumentObjectListingPort
-from dw_supply_chain.application.product_cases import ProposeProductCase
+from dw_supply_chain.application.product_cases import ListProductCases, ProposeProductCase
 from dw_supply_chain.application.product_reviews import (
     EnsureProductApproval,
     ReconcileProductApprovals,
@@ -133,6 +143,33 @@ def build_follow_up_sweep(
         ids=ids,
         clock=clock,
     )
+
+
+def build_stage_one_report(
+    sessions: async_sessionmaker[AsyncSession], *, policies_dir: Path, clock: UtcClock
+) -> SendStageOneReport:
+    return SendStageOneReport(
+        workspaces=SqlWorkspacesWithCases(sessions),
+        product_case_repo=SqlProductCaseRepository(sessions),
+        policy_override_repo=SqlPolicyOverrideRepository(sessions),
+        platform_default_sla_policy=load_supply_chain_sla_policy(policies_dir / SLA_POLICY_FILE),
+        holders=SqlScopeHolders(sessions),
+        notifier=SqlNotificationRepository(sessions),
+        clock=clock,
+    )
+
+
+def build_stage_one_report_consumer(lane: SendStageOneReport) -> Callable[[], Awaitable[None]]:
+    async def consume() -> None:
+        outcome = await lane.run()
+        if outcome.sent or outcome.failed_workspaces:
+            logger.info(
+                "stage-1 report: sent=%d failed_workspaces=%d",
+                outcome.sent,
+                outcome.failed_workspaces,
+            )
+
+    return consume
 
 
 def build_document_orphan_sweep(
@@ -286,18 +323,31 @@ def build_zalo_proposal_command(
 def build_zalo_case_query_command(
     sessions: async_sessionmaker[AsyncSession],
     *,
+    configs_dir: Path,
     gateway: ModelGateway,
     ids: IdGenerator,
     web_url: str,
 ) -> ZaloCaseQueryCommand:
     """The chat's read-only questions. `gateway` is the process's one-call
-    gateway, as for the proposal command; the handler is the API's own."""
+    gateway, as for the proposal command; the handler is the API's own, over
+    the same Category list file the API loads."""
     repo = SqlPOCaseRepository(sessions)
+    product_cases = SqlProductCaseRepository(sessions)
     authz = ScopeAuthorizationService()
     return ZaloCaseQueryCommand(
         answer=AnswerCaseQuery(
             po_case_repo=repo,
             list_cases=ListPOCases(repo=repo, authz=authz),
+            product_cases=product_cases,
+            list_product_cases=ListProductCases(repo=product_cases, authz=authz),
+            categories=ListProductCategories(
+                policy_override_repo=SqlPolicyOverrideRepository(sessions),
+                platform_default_sla_policy=load_supply_chain_sla_policy(
+                    configs_dir / "policies" / SLA_POLICY_FILE
+                ),
+                authz=authz,
+            ),
+            directory=SqlWorkspaceDirectory(sessions),
             gateway=gateway,
             authz=authz,
             ids=ids,

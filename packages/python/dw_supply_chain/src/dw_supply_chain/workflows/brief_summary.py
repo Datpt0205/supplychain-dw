@@ -17,20 +17,26 @@ import json
 from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.ports import ModelGateway, ModelRequest
 from dw_supply_chain.domain.brief_summary import BriefSummaryDraft
-from dw_supply_chain.domain.daily_brief import DailyBrief
+from dw_supply_chain.domain.daily_brief import PRODUCT_SIGNALS, DailyBrief
 
 PROMPT_ID = "supply_chain.daily_brief_summary"
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.1.0"
 
 
 def brief_as_data(brief: DailyBrief) -> str:
     """The brief as JSON for the prompt's `<input>` block — the groups and
     the cases a reader is shown, in the brief's own order.
 
-    Supplier names and PO references were typed by people, so they are data
-    the model must not obey. `<` and `>` are written as `\\u003c`/`\\u003e`,
-    which JSON reads back as the same characters: no value can spell the
-    prompt's own `</input>` and close the data block early."""
+    A stage-1 group carries its product cases' proposal code, product name,
+    state and figures, never a note: what R&D wrote on a sample round (the
+    requested changes, a rejection's reason) stays on the case page, so no
+    free text a person wrote about a sample reaches the model at all.
+
+    Supplier names, PO references, proposal codes and product names were
+    typed by people, so they are data the model must not obey. `<` and `>`
+    are written as `\\u003c`/`\\u003e`, which JSON reads back as the same
+    characters: no value can spell the prompt's own `</input>` and close the
+    data block early."""
     groups = [
         {
             "key": group.key,
@@ -47,6 +53,22 @@ def brief_as_data(brief: DailyBrief) -> str:
                 }
                 for entry in group.shown_entries
             ],
+            **(
+                {
+                    "product_cases": [
+                        {
+                            "proposal_code": entry.case.proposal_code,
+                            "product_name": entry.case.product_name,
+                            "state": entry.case.state.value,
+                            "days": entry.days,
+                            "limit_days": entry.limit_days,
+                        }
+                        for entry in group.shown_product_entries
+                    ]
+                }
+                if group.signal in PRODUCT_SIGNALS
+                else {}
+            ),
         }
         for group in brief.groups
     ]

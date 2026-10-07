@@ -109,5 +109,5 @@ mutation ở Comments của
    vậy. Follow-up đã mở giữ người đã đóng dấu.
 10. **Tiêu đề thông báo chỉ nêu định danh** (QE-20): số PO hoặc mã đề xuất, không tên SP,
     không NCC; thân tin trong ứng dụng giữ NCC như trước.
-11. **Chưa làm ở S6:** báo cáo hằng ngày cho TP Cung ứng (QE-19, không thuộc ticket); giao
-    diện đổi PIC (API có, trang chưa có nút).
+11. **Chưa làm ở S6:** báo cáo hằng ngày cho TP Cung ứng (QE-19, không thuộc ticket; làm
+    tạm ở S8, ADR 0016 sửa đổi S8); giao diện đổi PIC (API có, trang chưa có nút).

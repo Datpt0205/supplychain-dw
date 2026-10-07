@@ -9,6 +9,13 @@ here is inferred, weighted or scored. Which kind of signal reads first is
 the tenant's call (`brief_policy.SupplyChainBriefPolicy.signal_order`);
 within a kind, the larger group reads first.
 
+Stage 1 (ticket 08) adds four groups of product-development cases, read from
+the same records the case page and the follow-up sweep read: a stage-1 SLA
+overrun, a case waiting for BGĐ's review, one waiting for its sign-off, and
+the sample rounds closed today (Đạt, Cần chỉnh sửa, Hủy), "today" being the
+Vietnamese calendar day. They are shown only to a caller who may read product
+cases; otherwise the brief says it did not look (`product_cases_visible`).
+
 Pure computation, no I/O — the handler loads, this module groups.
 """
 
@@ -16,11 +23,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
 from dw_supply_chain.domain.po_case import CaseState, CaseTransition, POCase
 from dw_supply_chain.domain.portfolio import CaseHealth
+from dw_supply_chain.domain.product_development_case import (
+    ProductDevelopmentCase,
+    ProductDevState,
+    SampleRound,
+)
+from dw_supply_chain.domain.sla_evaluation import SLAEvaluation, SLAEvaluationStatus
 
 # How far back "changed recently" looks. A daily brief covers a day; this is
 # the meaning of the word, not a tunable threshold.
@@ -31,6 +44,15 @@ CHANGE_WINDOW_HOURS = 24
 # to the full list. What the page shows and what a summary is written from
 # are the same cases, so this is the one place that says how many.
 ENTRIES_SHOWN = 10
+
+# Vietnam keeps one offset all year (no daylight saving), so a fixed offset is
+# the calendar day Elmich works in: "evaluated today" starts at 00:00 here.
+VIETNAM = timezone(timedelta(hours=7))
+
+
+def local_day_start(now: datetime) -> datetime:
+    """00:00 of `now`'s day in Vietnam, as an aware datetime."""
+    return now.astimezone(VIETNAM).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 class BriefSignal(StrEnum):
@@ -45,6 +67,31 @@ class BriefSignal(StrEnum):
     REWORK = "rework"
     WAITING_ON_US = "waiting_on_us"
     CHANGED_RECENTLY = "changed_recently"
+    # Stage 1 (ticket 08): product-development cases.
+    PRODUCT_SLA_BREACHED = "product_sla_breached"
+    PRODUCT_AWAITING_BOD = "product_awaiting_bod"
+    PRODUCT_AWAITING_SIGNOFF = "product_awaiting_signoff"
+    SAMPLE_EVALUATED_TODAY = "sample_evaluated_today"
+
+
+# The groups whose cases are product-development cases (`product_entries`).
+PRODUCT_SIGNALS = frozenset(
+    {
+        BriefSignal.PRODUCT_SLA_BREACHED,
+        BriefSignal.PRODUCT_AWAITING_BOD,
+        BriefSignal.PRODUCT_AWAITING_SIGNOFF,
+        BriefSignal.SAMPLE_EVALUATED_TODAY,
+    }
+)
+# News, not a task: what changed, not what someone has to act on. Neither
+# counts towards the flagged figures.
+NEWS_SIGNALS = frozenset({BriefSignal.CHANGED_RECENTLY, BriefSignal.SAMPLE_EVALUATED_TODAY})
+
+# A product case waiting on an approval, by the approval it waits on.
+_AWAITING_SIGNAL: dict[ProductDevState, BriefSignal] = {
+    ProductDevState.PENDING_BOD_REVIEW: BriefSignal.PRODUCT_AWAITING_BOD,
+    ProductDevState.PENDING_SIGNOFF: BriefSignal.PRODUCT_AWAITING_SIGNOFF,
+}
 
 
 # Exception states a person has to act on, each its own signal so a tenant
@@ -109,11 +156,51 @@ class BriefEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class ProductBriefEntry:
+    """One product-development case in one stage-1 group. `days` is how long
+    it has been in its state (with `limit_days`, the SLA it overran); a sample
+    group's entry carries the round that closed today instead."""
+
+    case: ProductDevelopmentCase
+    days: int | None = None
+    limit_days: int | None = None
+    sample_round: SampleRound | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProductHealth:
+    """An active product case with its stage-1 SLA evaluation, under its own
+    stamped Category (`sla_evaluation.evaluate_product_sla`)."""
+
+    case: ProductDevelopmentCase
+    sla: SLAEvaluation
+
+
+@dataclass(frozen=True, slots=True)
+class ClosedRound:
+    """A sample round closed in the window, with the case it belongs to."""
+
+    case: ProductDevelopmentCase
+    sample_round: SampleRound
+
+
+@dataclass(frozen=True, slots=True)
+class StageOneSnapshot:
+    """What the brief reads of stage 1 in one workspace: its active cases and
+    the sample rounds closed since the start of the Vietnamese day."""
+
+    active: tuple[ProductHealth, ...]
+    closed_today: tuple[ClosedRound, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BriefGroup:
     signal: BriefSignal
-    # The SLA milestone for `SLA_BREACHED`, the state for `WAITING_ON_US`,
-    # otherwise None.
+    # The SLA milestone for `SLA_BREACHED` and `PRODUCT_SLA_BREACHED`, the
+    # state for `WAITING_ON_US`, the round's result for
+    # `SAMPLE_EVALUATED_TODAY`, otherwise None.
     qualifier: str | None
+    # PO cases; empty for a stage-1 group, whose cases are `product_entries`.
     entries: tuple[BriefEntry, ...]
     # Every case the signal holds for. Equal to `len(entries)` except for
     # approvals, where only the newest are read.
@@ -123,11 +210,20 @@ class BriefGroup:
     # can open exactly that list without restating which signal means which
     # state.
     state: CaseState | None = None
+    # A stage-1 group's cases (`PRODUCT_SIGNALS`), and the one product state
+    # that defines it when one does.
+    product_entries: tuple[ProductBriefEntry, ...] = ()
+    product_state: ProductDevState | None = None
 
     @property
     def shown_entries(self) -> tuple[BriefEntry, ...]:
         """The longest-standing `ENTRIES_SHOWN` cases — what a reader sees."""
         return self.entries[:ENTRIES_SHOWN]
+
+    @property
+    def shown_product_entries(self) -> tuple[ProductBriefEntry, ...]:
+        """The first `ENTRIES_SHOWN` product cases, in the group's order."""
+        return self.product_entries[:ENTRIES_SHOWN]
 
     @property
     def key(self) -> str:
@@ -141,13 +237,18 @@ class BriefGroup:
 class DailyBrief:
     generated_at: datetime
     active_case_count: int
-    # Distinct cases in any group that asks for action — every group except
-    # CHANGED_RECENTLY, which is news, not a task.
+    # Distinct PO cases in any group that asks for action — every group but
+    # the news ones (`NEWS_SIGNALS`).
     flagged_case_count: int
     groups: tuple[BriefGroup, ...]
     # False when the caller may not read approvals: the group is then absent
     # because it was not shown, not because nothing is pending.
     approvals_visible: bool
+    # The same for stage 1: False when the caller may not read product cases;
+    # the two counts below are then 0 because nothing was looked at.
+    product_cases_visible: bool = False
+    active_product_case_count: int = 0
+    flagged_product_case_count: int = 0
 
     def group(self, key: str) -> BriefGroup | None:
         return next((group for group in self.groups if group.key == key), None)
@@ -235,6 +336,73 @@ def _health_groups(healths: Sequence[CaseHealth]) -> list[BriefGroup]:
     ]
 
 
+def _product_by_days(entries: list[ProductBriefEntry]) -> tuple[ProductBriefEntry, ...]:
+    """Longest-standing first, then by proposal code."""
+    return tuple(
+        sorted(
+            entries,
+            key=lambda entry: (
+                -(entry.days if entry.days is not None else -1),
+                entry.case.proposal_code,
+            ),
+        )
+    )
+
+
+def _by_pic(entries: list[ProductBriefEntry]) -> tuple[ProductBriefEntry, ...]:
+    """Together by PIC (Elmich's report reads "theo PIC"), then by code."""
+    return tuple(
+        sorted(
+            entries,
+            key=lambda entry: (
+                str(entry.case.pic_user_id),
+                entry.case.proposal_code,
+                entry.sample_round.round_no if entry.sample_round is not None else 0,
+            ),
+        )
+    )
+
+
+def stage_one_groups(snapshot: StageOneSnapshot) -> list[BriefGroup]:
+    """The stage-1 groups of one workspace, unordered: what `compose_brief`
+    places among the PO groups, and what the daily report counts."""
+    buckets: dict[tuple[BriefSignal, str | None], list[ProductBriefEntry]] = {}
+    for health in snapshot.active:
+        case, sla = health.case, health.sla
+        if sla.status is SLAEvaluationStatus.BREACHED:
+            buckets.setdefault((BriefSignal.PRODUCT_SLA_BREACHED, sla.milestone), []).append(
+                ProductBriefEntry(case=case, days=sla.age_days, limit_days=sla.threshold_days)
+            )
+        awaiting = _AWAITING_SIGNAL.get(case.state)
+        if awaiting is not None:
+            buckets.setdefault((awaiting, None), []).append(
+                ProductBriefEntry(case=case, days=sla.age_days)
+            )
+    for closed in snapshot.closed_today:
+        result = closed.sample_round.result
+        # Only closed rounds are read, and closing a round sets its result.
+        assert result is not None
+        buckets.setdefault((BriefSignal.SAMPLE_EVALUATED_TODAY, result.value), []).append(
+            ProductBriefEntry(case=closed.case, sample_round=closed.sample_round)
+        )
+    awaited_state = {signal: state for state, signal in _AWAITING_SIGNAL.items()}
+    return [
+        BriefGroup(
+            signal=signal,
+            qualifier=qualifier,
+            entries=(),
+            total=len(entries),
+            product_entries=(
+                _by_pic(entries)
+                if signal is BriefSignal.SAMPLE_EVALUATED_TODAY
+                else _product_by_days(entries)
+            ),
+            product_state=awaited_state.get(signal),
+        )
+        for (signal, qualifier), entries in buckets.items()
+    ]
+
+
 def compose_brief(
     healths: Sequence[CaseHealth],
     *,
@@ -242,10 +410,14 @@ def compose_brief(
     approvals: PendingApprovalsSeen | None,
     signal_order: Sequence[BriefSignal],
     now: datetime,
+    stage_one: StageOneSnapshot | None = None,
 ) -> DailyBrief:
     """`approvals` is None when the caller may not read approvals — never
-    the same as "none pending", and the brief says which."""
+    the same as "none pending", and the brief says which. `stage_one` is
+    None, the same way, when the caller may not read product cases."""
     groups = _health_groups(healths)
+    if stage_one is not None:
+        groups.extend(stage_one_groups(stage_one))
 
     if approvals is not None and approvals.total > 0:
         groups.append(
@@ -294,16 +466,16 @@ def compose_brief(
             group.qualifier or "",
         ),
     )
-    flagged = {
-        entry.case.id.value
-        for group in ordered
-        if group.signal is not BriefSignal.CHANGED_RECENTLY
-        for entry in group.entries
-    }
+    asking = [group for group in ordered if group.signal not in NEWS_SIGNALS]
+    flagged = {entry.case.id.value for group in asking for entry in group.entries}
+    flagged_products = {entry.case.id.value for group in asking for entry in group.product_entries}
     return DailyBrief(
         generated_at=now,
         active_case_count=len(healths),
         flagged_case_count=len(flagged),
         groups=tuple(ordered),
         approvals_visible=approvals is not None,
+        product_cases_visible=stage_one is not None,
+        active_product_case_count=len(stage_one.active) if stage_one is not None else 0,
+        flagged_product_case_count=len(flagged_products),
     )

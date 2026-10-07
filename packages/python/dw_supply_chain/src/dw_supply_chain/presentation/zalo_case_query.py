@@ -1,13 +1,14 @@
-"""Read-only questions about PO cases through a linked chat — zalo-channel
-ticket 06, Z6.
+"""Read-only questions about PO cases and product-development cases through a
+linked chat — zalo-channel ticket 06 (Z6), product cases since stage-1 ticket
+08.
 
 A chat command the worker registers in its `ChannelCommandRegistry`
 (`dw_connectors.inbound`) after the decide command and the proposal
 conversation; it satisfies that registry's `ChannelCommand` structurally. The
 router has resolved the chat to a linked person, claimed the message once, and
 built the context from that person's own membership in their chosen workspace,
-cut to `QA_CEILING` — a read scope and nothing else, no role (ADR 0012
-condition 2). Nothing below reads a person, tenant, workspace or scope from the
+cut to `QA_CEILING` — the two read scopes and nothing else, no role (ADR
+0012 condition 2). Nothing below reads a person, tenant, workspace or scope from the
 message.
 
 There is no second answerer: the question goes to `AnswerCaseQuery`, the
@@ -19,8 +20,9 @@ question". What this module adds is only the reply, built by code from the
 `CaseQueryAnswer` (the model writes no sentence of it):
 
 * at most `MAX_LISTED` cases, each its PO number, supplier, state label and an
-  absolute link; more than that says so and links the portal list with the
-  same filter;
+  absolute link (a product case: its proposal code, product name, state label
+  and link); more than that says so and links the portal list with the same
+  filter;
 * the question's own words each filter came from, and what was left out
   (`ignored`, `unusable`);
 * identifiers and states only — no amount, document or free-text note leaves
@@ -30,8 +32,8 @@ question". What this module adds is only the reply, built by code from the
 
 A request to change something is not a question; the reading comes back
 unsupported and the reply says the chat only asks, with the portal's link.
-Product development cases are not answered here yet (ticket 08 owns that
-reading; this command inherits it unchanged when the prompt learns it).
+A product case the asker cannot see — another tenant's, another
+workspace's — reads exactly as one that does not exist, as a PO does.
 """
 
 from __future__ import annotations
@@ -47,9 +49,14 @@ from pydantic import ValidationError
 from dw_agent_runtime.model.budget import BudgetExceededError
 from dw_kernel.errors import InfrastructureError, PermissionDeniedError, QuotaExceededError
 from dw_platform.application.access_context import AccessContext
-from dw_supply_chain.application.handlers import PO_CASE_READ, AnswerCaseQuery, CaseQueryAnswer
+from dw_supply_chain.application.case_query import AnswerCaseQuery, CaseQueryAnswer
+from dw_supply_chain.application.handlers import PO_CASE_READ, PRODUCT_CASE_READ
 from dw_supply_chain.domain.case_query import CaseQueryOutcome, GroundedField
 from dw_supply_chain.domain.po_case import CaseState, POCase
+from dw_supply_chain.domain.product_development_case import (
+    ProductDevelopmentCase,
+    ProductDevState,
+)
 from dw_supply_chain.presentation.routes import CaseQueryRequest
 from dw_supply_chain.presentation.zalo_proposal import (
     BUDGET_SPENT,
@@ -60,9 +67,10 @@ from dw_supply_chain.presentation.zalo_proposal import (
 
 Reply = Callable[[str], Awaitable[None]]
 
-# The read scope and nothing else: no write, no duty, no approvals.decide. What
-# `AnswerCaseQuery` and the `ListPOCases` it runs require.
-QA_CEILING = frozenset({PO_CASE_READ})
+# The two read scopes and nothing else: no write, no duty, no approvals.decide.
+# What `AnswerCaseQuery` requires: `ListPOCases` for a PO question, and
+# `ListProductCases` (and the Category list) for a product-case one.
+QA_CEILING = frozenset({PO_CASE_READ, PRODUCT_CASE_READ})
 
 # How many cases one reply names (ticket 06 step 4); the rest is a link.
 MAX_LISTED = 10
@@ -73,6 +81,7 @@ QUESTION_REFUSED = (
 )
 
 _PO_CASES_PATH = "/supply-chain/po-cases"
+_PRODUCT_CASES_PATH = "/supply-chain/product-cases"
 
 # The glossary's words for each state (CONTEXT.md "Trạng thái của Hồ sơ PO",
 # itself checked against the web's `CASE_STATE_LABEL`); a unit test fails when
@@ -98,11 +107,37 @@ CASE_STATE_LABELS: Mapping[CaseState, str] = {
     CaseState.CANCELLED: "Đã hủy",
 }
 
+# The glossary's words for each product state (CONTEXT.md "Trạng thái của Hồ
+# sơ phát triển sản phẩm", itself the web's `PRODUCT_DEV_STATE_LABEL`); a unit
+# test fails when they disagree.
+PRODUCT_STATE_LABELS: Mapping[ProductDevState, str] = {
+    ProductDevState.PROPOSED: "Đề xuất",
+    ProductDevState.SAMPLE_REQUESTED: "Đang lấy mẫu",
+    ProductDevState.SAMPLE_TESTING: "Đang test mẫu",
+    ProductDevState.REVISION_REQUESTED: "Chờ mẫu chỉnh sửa",
+    ProductDevState.PENDING_BOD_REVIEW: "Chờ BGĐ duyệt",
+    ProductDevState.PROFILE_IN_PROGRESS: "Đang làm BM04",
+    ProductDevState.SUPPLIER_CONFIRMATION: "Chờ thống nhất với NCC",
+    ProductDevState.ITEM_CODING: "Đang tạo mã hàng",
+    ProductDevState.PENDING_SIGNOFF: "Chờ trình ký",
+    ProductDevState.READY_TO_ORDER: "Sẵn sàng đặt hàng",
+    ProductDevState.ORDERED: "Đã đặt hàng",
+    ProductDevState.WAITING_EXTERNAL: "Chờ bên ngoài",
+    ProductDevState.BLOCKED: "Đang bị chặn",
+    ProductDevState.MANUAL_REVIEW: "Cần xem xét thủ công",
+    ProductDevState.CANCELLED: "Đã hủy",
+}
+
 _FIELD_LABELS: Mapping[GroundedField, str] = {
     GroundedField.SUPPLIER: "nhà cung cấp",
     GroundedField.PO_REFERENCE: "mã PO",
     GroundedField.STATE: "trạng thái",
     GroundedField.ACTIVE_ONLY: "điều kiện “còn đang chạy”",
+    GroundedField.PROPOSAL_CODE: "mã đề xuất",
+    GroundedField.PRODUCT_STATE: "trạng thái hồ sơ phát triển",
+    GroundedField.CATEGORY: "Category",
+    GroundedField.PIC: "người phụ trách",
+    GroundedField.MINE: "điều kiện “của tôi”",
 }
 
 
@@ -131,6 +166,28 @@ def _case_line(case: POCase, web_url: str) -> str:
     )
 
 
+def _product_line(case: ProductDevelopmentCase, web_url: str) -> str:
+    return (
+        f"- {case.proposal_code} — {case.product_name}: {PRODUCT_STATE_LABELS[case.state]} "
+        f"{_base(web_url)}{_PRODUCT_CASES_PATH}/{case.id.value}"
+    )
+
+
+def _product_list_url(answer: CaseQueryAnswer, web_url: str) -> str:
+    """The portal's product case list narrowed exactly as the answer was
+    (`productCasesHref`)."""
+    plan = answer.plan
+    params: dict[str, str] = {}
+    if plan.product_state is not None:
+        params["state"] = plan.product_state.value
+    if plan.pic_user_id is not None:
+        params["pic"] = str(plan.pic_user_id)
+    if plan.category is not None:
+        params["category"] = plan.category
+    query = urlencode(params)
+    return f"{_base(web_url)}{_PRODUCT_CASES_PATH}" + (f"?{query}" if query else "")
+
+
 def _list_url(answer: CaseQueryAnswer, web_url: str) -> str:
     """The portal list narrowed exactly as the answer was (`poCasesHref`)."""
     plan = answer.plan
@@ -147,8 +204,8 @@ def _list_url(answer: CaseQueryAnswer, web_url: str) -> str:
 
 def read_only_hint(web_url: str) -> str:
     return (
-        "Qua Zalo chỉ hỏi được về PO (hồ sơ phát triển sản phẩm chưa hỗ trợ); "
-        f"thao tác trên cổng: {_base(web_url)}{_PO_CASES_PATH}"
+        "Qua Zalo chỉ hỏi được về PO và hồ sơ phát triển sản phẩm; thao tác trên cổng: "
+        f"{_base(web_url)}{_PO_CASES_PATH} hoặc {_base(web_url)}{_PRODUCT_CASES_PATH}"
     )
 
 
@@ -193,6 +250,8 @@ def answer_text(answer: CaseQueryAnswer, web_url: str) -> str:
         # The same sentence whether the PO does not exist or exists where the
         # asker cannot see it: the lookup ran under their context and RLS.
         return f"Không tìm thấy PO «{plan.po_reference}»."
+    if outcome in _PRODUCT_OUTCOMES:
+        return _product_answer(answer, web_url)
 
     lines: list[str] = []
     if answer.citations:
@@ -210,6 +269,66 @@ def answer_text(answer: CaseQueryAnswer, web_url: str) -> str:
     lines.extend(_case_line(case, web_url) for case in listed)
     if answer.has_more or len(answer.cases) > len(listed):
         lines.append(f"Còn nữa, xem đủ ở: {_list_url(answer, web_url)}")
+    return "\n".join(lines)
+
+
+_PRODUCT_OUTCOMES = frozenset(
+    {
+        CaseQueryOutcome.PRODUCT_LIST,
+        CaseQueryOutcome.PRODUCT_OPEN,
+        CaseQueryOutcome.PROPOSAL_CODE_MISSING,
+        CaseQueryOutcome.CATEGORY_NOT_FOUND,
+        CaseQueryOutcome.CATEGORY_AMBIGUOUS,
+        CaseQueryOutcome.PIC_NOT_FOUND,
+        CaseQueryOutcome.PIC_AMBIGUOUS,
+        CaseQueryOutcome.PRODUCT_NOT_FOUND,
+        CaseQueryOutcome.PRODUCT_AMBIGUOUS,
+    }
+)
+
+
+def _product_answer(answer: CaseQueryAnswer, web_url: str) -> str:
+    """The reply about product-development cases, in the same shape as a PO
+    reply: refusals name the question's own words, lists name at most
+    `MAX_LISTED` cases and link the rest."""
+    plan = answer.plan
+    outcome = plan.outcome
+    if outcome is CaseQueryOutcome.PROPOSAL_CODE_MISSING:
+        return "Anh/chị cho mình mã đề xuất của hồ sơ cần xem (ví dụ «hồ sơ SP-028 tới đâu rồi»)."
+    if outcome is CaseQueryOutcome.CATEGORY_NOT_FOUND:
+        return f"Không có Category «{_quoted(answer, GroundedField.CATEGORY)}» trong danh sách."
+    if outcome is CaseQueryOutcome.CATEGORY_AMBIGUOUS:
+        return (
+            f"«{_quoted(answer, GroundedField.CATEGORY)}» khớp nhiều Category: "
+            f"{', '.join(plan.candidates[:MAX_LISTED])}. Anh/chị nói rõ giúp mình."
+        )
+    if outcome is CaseQueryOutcome.PIC_NOT_FOUND:
+        return f"Không tìm thấy người «{_quoted(answer, GroundedField.PIC)}» trong workspace."
+    if outcome is CaseQueryOutcome.PIC_AMBIGUOUS:
+        return (
+            f"«{_quoted(answer, GroundedField.PIC)}» khớp nhiều người: "
+            f"{', '.join(plan.candidates[:MAX_LISTED])}. Anh/chị nói rõ tên giúp mình."
+        )
+    if outcome is CaseQueryOutcome.PRODUCT_NOT_FOUND:
+        # Not found and not visible to the asker read the same (RLS).
+        return f"Không tìm thấy hồ sơ phát triển «{plan.proposal_code}»."
+
+    lines: list[str] = []
+    if answer.citations:
+        lines.append("Hiểu từ câu hỏi: " + ", ".join(f"«{quote}»" for _, quote in answer.citations))
+    if outcome is CaseQueryOutcome.PRODUCT_OPEN:
+        assert answer.opened_product is not None  # PRODUCT_OPEN always carries the case
+        lines.append(_product_line(answer.opened_product, web_url))
+        return "\n".join(lines)
+    if outcome is CaseQueryOutcome.PRODUCT_AMBIGUOUS:
+        lines.append(f"Mã «{plan.proposal_code}» khớp nhiều hồ sơ:")
+    elif not answer.product_cases:
+        lines.append("Không có hồ sơ phát triển nào khớp.")
+        return "\n".join(lines)
+    listed = answer.product_cases[:MAX_LISTED]
+    lines.extend(_product_line(case, web_url) for case in listed)
+    if answer.has_more or len(answer.product_cases) > len(listed):
+        lines.append(f"Còn nữa, xem đủ ở: {_product_list_url(answer, web_url)}")
     return "\n".join(lines)
 
 
