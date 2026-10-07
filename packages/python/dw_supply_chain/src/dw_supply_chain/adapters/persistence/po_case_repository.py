@@ -224,12 +224,19 @@ class SqlPOCaseRepository:
             ],
         )
 
-    async def add(self, context: AccessContext, case: POCase) -> None:
+    async def add(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
+        """The case, its first transitions and `audit` in one transaction.
+        `audit` is optional here only for fixtures that seed a case; every
+        command goes through `POCaseRepositoryPort`, which requires it."""
         scope = TenantScope.from_access_context(context)
         try:
             async with tenant_session(self.session_factory, scope) as session:
                 created_at = await insert_po_case(session, case)
                 await self._insert_pending_transitions(session, case)
+                if audit is not None:
+                    await SqlAuditRepository(session).append(audit)
         except IntegrityError as exc:
             refusal = reference_refusal(exc, case)
             if refusal is None:

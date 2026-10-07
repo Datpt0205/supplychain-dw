@@ -13,18 +13,28 @@ import inspect
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
+from dw_agent_runtime.allowance import DailyAllowance
 from dw_agent_runtime.contracts import RunContext
+from dw_agent_runtime.model.budget import RunBudgetLedger
+from dw_agent_runtime.model.single_call import SingleCallModelGateway
 from dw_agent_runtime.ports import ModelOutputInvalidError, ModelRequest, OutputT
-from dw_kernel.errors import ConflictError, DomainError, NotFoundError, PermissionDeniedError
+from dw_kernel.errors import (
+    ConflictError,
+    DomainError,
+    NotFoundError,
+    PermissionDeniedError,
+    QuotaExceededError,
+)
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.pagination import CursorPosition, Page, PageRequest, build_page
-from dw_kernel.ports import FixedClock, Uuid4Generator
+from dw_kernel.ports import FixedClock, SystemClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest
@@ -154,8 +164,12 @@ class FakePOCaseRepository:
         self.transitions: dict[uuid.UUID, list[CaseTransition]] = {}
         self.audits: list[AuditEvent] = []
 
-    async def add(self, context: AccessContext, case: POCase) -> None:
+    async def add(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         self.by_id[case.id.value] = case
+        if audit is not None:
+            self.audits.append(audit)
 
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
         case = self.by_id.get(case_id.value)
@@ -295,6 +309,7 @@ async def test_create_opens_a_case_with_tenant_and_workspace_from_context() -> N
         repo=repo,
         authz=ScopeAuthorizationService(),
         ids=_FixedIdGenerator(case_id),
+        clock=SystemClock(),
     )
 
     case = await handler.handle(
@@ -315,6 +330,7 @@ async def test_create_refuses_without_the_write_scope() -> None:
         repo=repo,
         authz=ScopeAuthorizationService(),
         ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
     )
     context = _context(scopes=frozenset({"supply_chain.po_case.read"}))
 
@@ -326,6 +342,43 @@ async def test_create_refuses_without_the_write_scope() -> None:
             order_kind=OrderKind.REORDER,
         )
     assert repo.by_id == {}
+    assert repo.audits == []
+
+
+async def test_create_writes_one_audit_event_from_the_verified_context() -> None:
+    """Ticket P2: the case and its audit event go to the repository together;
+    tenant, workspace and actor are the caller's, never the request's."""
+    repo = FakePOCaseRepository()
+    context = _context()
+    case = await CreatePOCase(
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=FixedClock(_NOW),
+    ).handle(
+        context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
+
+    (audit,) = repo.audits
+    assert (audit.action, audit.resource_type, audit.resource_id) == (
+        "supply_chain.po_case.create",
+        "po_case",
+        str(case.id),
+    )
+    assert (audit.tenant_id.value, audit.workspace_id.value, audit.actor_id.value) == (
+        TENANT,
+        WORKSPACE,
+        context.principal_id,
+    )
+    assert audit.occurred_at == _NOW
+    assert audit.details == {
+        "state": "po_created",
+        "po_reference": "PO-0001",
+        "order_kind": "reorder",
+        "category": None,
+    }
 
 
 async def test_get_returns_the_case_it_was_created_with() -> None:
@@ -337,6 +390,7 @@ async def test_get_returns_the_case_it_was_created_with() -> None:
         repo=repo,
         authz=ScopeAuthorizationService(),
         ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
     ).handle(
         context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
@@ -374,6 +428,7 @@ async def test_list_returns_cases_newest_first() -> None:
         repo=repo,
         authz=ScopeAuthorizationService(),
         ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
     ).handle(
         context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
@@ -384,6 +439,7 @@ async def test_list_returns_cases_newest_first() -> None:
         repo=repo,
         authz=ScopeAuthorizationService(),
         ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
     ).handle(
         context, po_reference="PO-0002", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
@@ -413,6 +469,7 @@ async def test_list_only_returns_the_callers_tenant() -> None:
         repo=repo,
         authz=ScopeAuthorizationService(),
         ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
     ).handle(mine, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER)
     case.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     await CreatePOCase(
@@ -421,6 +478,7 @@ async def test_list_only_returns_the_callers_tenant() -> None:
         repo=repo,
         authz=ScopeAuthorizationService(),
         ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
     ).handle(
         other,
         po_reference="PO-9999",
@@ -541,9 +599,14 @@ def test_a_supplier_literally_named_none_does_not_fingerprint_like_no_filter() -
 class FakeSupplierUpdateRepository:
     def __init__(self) -> None:
         self.by_case: dict[uuid.UUID, list[SupplierUpdate]] = {}
+        self.audits: list[AuditEvent] = []
 
-    async def add(self, context: AccessContext, update: SupplierUpdate) -> None:
+    async def add(
+        self, context: AccessContext, update: SupplierUpdate, *, audit: AuditEvent | None = None
+    ) -> None:
         self.by_case.setdefault(update.po_case_id.value, []).append(update)
+        if audit is not None:
+            self.audits.append(audit)
 
     async def get(
         self, context: AccessContext, update_id: SupplierUpdateId
@@ -615,6 +678,7 @@ async def _seeded_case(repo: FakePOCaseRepository, context: AccessContext) -> PO
         repo=repo,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     ).handle(
         context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
@@ -634,6 +698,7 @@ async def test_submit_reads_the_case_first_and_persists_the_extraction() -> None
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     update = await handler.handle(
@@ -645,6 +710,23 @@ async def test_submit_reads_the_case_first_and_persists_the_extraction() -> None
     assert not update.requires_confirmation
     assert supplier_update_repo.by_case[case.id.value] == [update]
     assert len(gateway.calls) == 1
+    # Ticket P2: one audit event with the record, and none of the message.
+    (audit,) = supplier_update_repo.audits
+    assert (audit.action, audit.resource_type, audit.resource_id) == (
+        "supply_chain.supplier_update.submit",
+        "supplier_update",
+        str(update.id),
+    )
+    assert (audit.tenant_id.value, audit.workspace_id.value, audit.actor_id.value) == (
+        TENANT,
+        WORKSPACE,
+        context.principal_id,
+    )
+    assert audit.details == {
+        "po_case_id": str(case.id),
+        "event_type": "production_delay",
+        "requires_confirmation": False,
+    }
 
 
 async def test_submit_computes_requires_confirmation_from_the_real_domain_rule() -> None:
@@ -664,6 +746,7 @@ async def test_submit_computes_requires_confirmation_from_the_real_domain_rule()
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     update = await handler.handle(context, po_case_id=case.id, raw_text="delayed by 7 days")
@@ -680,6 +763,7 @@ async def test_submit_refuses_for_an_unknown_case_without_calling_the_model() ->
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     with pytest.raises(NotFoundError):
@@ -691,6 +775,7 @@ async def test_submit_refuses_for_an_unknown_case_without_calling_the_model() ->
     # The expensive/external call never happens for a case that does not exist.
     assert gateway.calls == []
     assert supplier_update_repo.by_case == {}
+    assert supplier_update_repo.audits == []
 
 
 async def test_submit_refuses_without_the_write_scope() -> None:
@@ -705,6 +790,7 @@ async def test_submit_refuses_without_the_write_scope() -> None:
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     denied_context = _context(scopes=_BOTH_SCOPES)  # no supplier_update.write
@@ -725,6 +811,7 @@ async def test_list_returns_updates_newest_first_via_the_repository() -> None:
         gateway=FakeModelGateway(_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     first = await submit.handle(context, po_case_id=case.id, raw_text="update one")
     second = await submit.handle(context, po_case_id=case.id, raw_text="update two")
@@ -755,9 +842,18 @@ async def test_list_refuses_for_an_unknown_case() -> None:
 class FakeDelayImpactAnalysisRepository:
     def __init__(self) -> None:
         self.by_case: dict[uuid.UUID, list[DelayImpactAnalysis]] = {}
+        self.audits: list[AuditEvent] = []
 
-    async def add(self, context: AccessContext, analysis: DelayImpactAnalysis) -> None:
+    async def add(
+        self,
+        context: AccessContext,
+        analysis: DelayImpactAnalysis,
+        *,
+        audit: AuditEvent | None = None,
+    ) -> None:
         self.by_case.setdefault(analysis.po_case_id.value, []).append(analysis)
+        if audit is not None:
+            self.audits.append(audit)
 
     async def list_for_case(
         self, context: AccessContext, po_case_id: POCaseId
@@ -816,6 +912,7 @@ async def _seeded_case_with_delay_update(
         repo=po_case_repo,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     ).handle(
         context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
@@ -828,6 +925,7 @@ async def _seeded_case_with_delay_update(
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     ).handle(context, po_case_id=case.id, raw_text="we will be delayed by 7 days")
     return case, update
 
@@ -845,6 +943,7 @@ async def test_analyze_persists_impacted_milestones_and_the_models_extraction() 
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     analysis = await handler.handle(context, po_case_id=case.id, supplier_update_id=update.id)
@@ -862,6 +961,23 @@ async def test_analyze_persists_impacted_milestones_and_the_models_extraction() 
     assert all(e.estimated_delay_days == 7 for e in analysis.impacted_milestones)
     assert analysis.extraction.assumptions == _delay_extraction().assumptions
     assert delay_impact_repo.by_case[case.id.value] == [analysis]
+    # Ticket P2: one audit event with the record.
+    (audit,) = delay_impact_repo.audits
+    assert (audit.action, audit.resource_type, audit.resource_id) == (
+        "supply_chain.delay_impact.analyze",
+        "delay_impact_analysis",
+        str(analysis.id),
+    )
+    assert (audit.tenant_id.value, audit.workspace_id.value, audit.actor_id.value) == (
+        TENANT,
+        WORKSPACE,
+        context.principal_id,
+    )
+    assert audit.details == {
+        "po_case_id": str(case.id),
+        "supplier_update_id": str(update.id),
+        "delay_days": 7,
+    }
 
 
 async def test_analyze_refuses_for_an_unknown_case() -> None:
@@ -872,6 +988,7 @@ async def test_analyze_refuses_for_an_unknown_case() -> None:
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     with pytest.raises(NotFoundError):
         await handler.handle(
@@ -891,6 +1008,7 @@ async def test_analyze_refuses_when_the_update_belongs_to_a_different_case() -> 
         repo=po_case_repo,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     ).handle(
         context, po_reference="PO-0002", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
     )
@@ -902,6 +1020,7 @@ async def test_analyze_refuses_when_the_update_belongs_to_a_different_case() -> 
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     with pytest.raises(NotFoundError):
         # update belongs to the FIRST case, named against other_case here.
@@ -922,6 +1041,7 @@ async def test_analyze_refuses_an_update_with_no_delay_to_analyze() -> None:
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     with pytest.raises(DomainError, match="no delay"):
         await handler.handle(context, po_case_id=case.id, supplier_update_id=update.id)
@@ -941,6 +1061,7 @@ async def test_analyze_refuses_a_case_with_no_downstream_milestones_left() -> No
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     with pytest.raises(DomainError, match="no downstream milestones"):
         await handler.handle(context, po_case_id=case.id, supplier_update_id=update.id)
@@ -959,6 +1080,7 @@ async def test_analyze_refuses_without_the_write_scope() -> None:
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     denied_context = _context(
         scopes=_BOTH_SCOPES | _SUPPLIER_UPDATE_SCOPES
@@ -981,6 +1103,7 @@ async def test_list_delay_impact_analyses_newest_first() -> None:
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     first = await analyze.handle(context, po_case_id=case.id, supplier_update_id=update.id)
     second = await analyze.handle(context, po_case_id=case.id, supplier_update_id=update.id)
@@ -1211,6 +1334,7 @@ def _advance_po_case_handler(
         or load_supply_chain_action_duties(_SHIPPED_ACTION_DUTIES),
         runner=runner or FakeWorkflowRunnerPort(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
 
@@ -1225,6 +1349,16 @@ async def test_advance_dispatches_a_no_reason_action_and_persists_it() -> None:
     assert isinstance(result, CaseActionApplied)
     assert result.case.state is CaseState.WAITING_DEPOSIT
     assert po_case_repo.by_id[case.id.value].state is CaseState.WAITING_DEPOSIT
+    # Ticket P2: the step's audit event goes to the same save as the step.
+    step_audits = [a for a in po_case_repo.audits if a.action != "supply_chain.po_case.create"]
+    assert [(a.action, a.resource_id, a.actor_id.value, a.details) for a in step_audits] == [
+        (
+            "supply_chain.po_case.request_deposit",
+            str(case.id),
+            context.principal_id,
+            {"from_state": "po_created", "to_state": "waiting_deposit", "reason": None},
+        )
+    ]
 
 
 async def test_advance_dispatches_a_reason_required_action() -> None:
@@ -1341,6 +1475,22 @@ async def test_advance_refuses_without_the_write_scope() -> None:
     with pytest.raises(PermissionDeniedError):
         await handler.handle(denied_context, po_case_id=case.id, action=CaseAction.REQUEST_DEPOSIT)
     assert po_case_repo.by_id[case.id.value].state is CaseState.PO_CREATED
+    assert [a.action for a in po_case_repo.audits] == ["supply_chain.po_case.create"]
+
+
+async def test_advance_audits_nothing_when_the_step_waits_for_approval() -> None:
+    """Nothing is applied yet, so nothing is recorded as done: the graph's
+    apply node writes the step's event once a decision lands."""
+    po_case_repo = FakePOCaseRepository()
+    context = _context()
+    case = await _seeded_case(po_case_repo, context)
+    matrix = _approval_matrix(approval_required_actions=frozenset({CaseAction.CANCEL}))
+
+    await _advance_po_case_handler(po_case_repo, platform_default_approval_matrix=matrix).handle(
+        context, po_case_id=case.id, action=CaseAction.CANCEL, reason="customer walked away"
+    )
+
+    assert [a.action for a in po_case_repo.audits] == ["supply_chain.po_case.create"]
 
 
 # -- ListCaseTransitions --------------------------------------------------------
@@ -3101,6 +3251,7 @@ async def test_create_po_case_stamps_its_caller_as_pic_and_takes_the_kind() -> N
         repo=repo,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     ).handle(caller, po_reference="PO-R-1", supplier_name="NCC", order_kind=OrderKind.REORDER)
 
     assert (case.pic_user_id, case.order_kind, case.state) == (
@@ -3144,6 +3295,7 @@ def _create_handler(repo: FakePOCaseRepository) -> CreatePOCase:
         repo=repo,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
         policy_override_repo=FakePolicyOverrideRepository(),
         platform_default_sla_policy=_sla_policy(),
     )
@@ -3463,3 +3615,99 @@ async def test_the_stamped_pic_sees_the_follow_up_as_theirs_and_may_close_it() -
         "case_id": str(row.case_id),
         "kind": "sla_breach",
     }
+
+
+# -- The plan day on the one-call door (ticket P2) ------------------------------
+
+
+@dataclass(frozen=True)
+class _PlanDay:
+    """A plan and what the tenant has used of it today."""
+
+    runs_limit: int | None = None
+    spend_limit: Decimal | None = None
+    runs_used: int = 0
+    spent: Decimal = Decimal(0)
+
+    def runs_per_day(self, plan_id: str) -> int | None:
+        return self.runs_limit
+
+    def spend_usd_per_day(self, plan_id: str) -> Decimal | None:
+        return self.spend_limit
+
+    async def started_since(self, tenant_id: uuid.UUID, since: datetime) -> int:
+        return self.runs_used
+
+    async def spend_today(self, tenant_id: uuid.UUID, day: date) -> Decimal:
+        return self.spent
+
+
+_SPENT_DAYS = [
+    pytest.param(_PlanDay(runs_limit=3, runs_used=3), "runs_per_day", id="runs"),
+    pytest.param(
+        _PlanDay(spend_limit=Decimal(2), spent=Decimal("2.01")), "spend_usd_per_day", id="spend"
+    ),
+]
+
+
+def _one_call(inner: FakeModelGateway, day: _PlanDay) -> SingleCallModelGateway:
+    """The gateway the composition root hands these handlers (`ModelStack.
+    one_call`), around a fake model that records whether it was reached."""
+    return SingleCallModelGateway(
+        inner=inner,
+        ledger=RunBudgetLedger(),
+        allowance=DailyAllowance(allowance=day, runs=day, spend=day, clock=FixedClock(_NOW)),
+    )
+
+
+@pytest.mark.parametrize(("day", "quota"), _SPENT_DAYS)
+async def test_submit_is_refused_before_the_model_once_the_plan_day_is_spent(
+    day: _PlanDay, quota: str
+) -> None:
+    po_case_repo = FakePOCaseRepository()
+    context = _context(scopes=_BOTH_SCOPES | _SUPPLIER_UPDATE_SCOPES)
+    case = await _seeded_case(po_case_repo, context)
+    inner = FakeModelGateway(_extraction())
+    supplier_update_repo = FakeSupplierUpdateRepository()
+
+    with pytest.raises(QuotaExceededError) as raised:
+        await SubmitSupplierUpdate(
+            po_case_repo=po_case_repo,
+            supplier_update_repo=supplier_update_repo,
+            gateway=_one_call(inner, day),
+            authz=ScopeAuthorizationService(),
+            ids=Uuid4Generator(),
+            clock=FixedClock(_NOW),
+        ).handle(context, po_case_id=case.id, raw_text="delayed by 7 days")
+
+    assert raised.value.details["quota"] == quota
+    assert inner.calls == []
+    assert supplier_update_repo.by_case == {}
+    assert supplier_update_repo.audits == []
+
+
+@pytest.mark.parametrize(("day", "quota"), _SPENT_DAYS)
+async def test_analyze_is_refused_before_the_model_once_the_plan_day_is_spent(
+    day: _PlanDay, quota: str
+) -> None:
+    po_case_repo, supplier_update_repo = FakePOCaseRepository(), FakeSupplierUpdateRepository()
+    context = _context(scopes=_BOTH_SCOPES | _SUPPLIER_UPDATE_SCOPES | _DELAY_IMPACT_SCOPES)
+    case, update = await _seeded_case_with_delay_update(po_case_repo, supplier_update_repo, context)
+    inner = FakeModelGateway(_delay_extraction())
+    delay_impact_repo = FakeDelayImpactAnalysisRepository()
+
+    with pytest.raises(QuotaExceededError) as raised:
+        await AnalyzeDelayImpact(
+            po_case_repo=po_case_repo,
+            supplier_update_repo=supplier_update_repo,
+            delay_impact_repo=delay_impact_repo,
+            gateway=_one_call(inner, day),
+            authz=ScopeAuthorizationService(),
+            ids=Uuid4Generator(),
+            clock=FixedClock(_NOW),
+        ).handle(context, po_case_id=case.id, supplier_update_id=update.id)
+
+    assert raised.value.details["quota"] == quota
+    assert inner.calls == []
+    assert delay_impact_repo.by_case == {}
+    assert delay_impact_repo.audits == []

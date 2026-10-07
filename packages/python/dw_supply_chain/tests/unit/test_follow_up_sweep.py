@@ -97,7 +97,9 @@ class FakeCases:
     ) -> dict[uuid.UUID, datetime]:
         return {i.value: self.entered_at[i.value] for i in case_ids if i.value in self.entered_at}
 
-    async def add(self, context: AccessContext, case: POCase) -> None:
+    async def add(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         raise NotImplementedError("not exercised by the sweep")
 
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
@@ -170,7 +172,9 @@ class FakeUpdates:
     ) -> dict[uuid.UUID, SupplierUpdate]:
         return {i.value: self.latest[i.value] for i in case_ids if i.value in self.latest}
 
-    async def add(self, context: AccessContext, update: SupplierUpdate) -> None:
+    async def add(
+        self, context: AccessContext, update: SupplierUpdate, *, audit: AuditEvent | None = None
+    ) -> None:
         raise NotImplementedError("not exercised by the sweep")
 
     async def get(

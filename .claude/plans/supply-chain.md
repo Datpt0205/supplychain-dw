@@ -46,7 +46,7 @@ means platform code, an upstream candidate (ADR 0011).
 | Slice | Ticket                                                                    | Generic | Status          | Blocked by                          |
 | ----- | ------------------------------------------------------------------------- | ------- | --------------- | ----------------------------------- |
 | P     | `port/issues/01-port-dw-supply-chain.md`                                  | no      | resolved        | —                                   |
-| P2    | `port/issues/02-audit-and-spend-on-supply-chain-writes.md`                | partly  | ready-for-agent | P                                   |
+| P2    | `port/issues/02-audit-and-spend-on-supply-chain-writes.md`                | partly  | resolved        | P                                   |
 | P3    | `port/issues/03-follow-ups-retention.md`                                  | no      | ready-for-agent | P                                   |
 | P4    | `port/issues/04-po-cases-narrowed-by-workspace.md`                        | no      | resolved        | P                                   |
 | ENV   | `env/issues/01-env-example-and-init-env.md`                               | yes     | resolved        | P                                   |

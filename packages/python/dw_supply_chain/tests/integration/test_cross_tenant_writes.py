@@ -27,7 +27,7 @@ from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.ports import ModelRequest
 from dw_kernel.errors import NotFoundError
 from dw_kernel.ids import TenantId, WorkspaceId
-from dw_kernel.ports import Uuid4Generator
+from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_supply_chain.adapters.persistence.delay_impact_repository import (
@@ -159,6 +159,7 @@ async def test_another_tenant_cannot_submit_a_supplier_update_onto_the_case(
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     with pytest.raises(NotFoundError):
@@ -182,6 +183,7 @@ async def test_another_tenant_cannot_analyze_the_case(
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     with pytest.raises(NotFoundError):

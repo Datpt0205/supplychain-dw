@@ -390,6 +390,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         repo=po_case_repo,
         authz=authorization,
         ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
         policy_override_repo=policy_override_repo,
         platform_default_sla_policy=platform_default_sla_policy,
     )
@@ -421,6 +422,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         gateway=one_call_gateway,
         authz=authorization,
         ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
     )
     container.supply_chain_list_supplier_updates = ListSupplierUpdates(
         po_case_repo=po_case_repo, supplier_update_repo=supplier_update_repo, authz=authorization
@@ -432,6 +434,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         gateway=one_call_gateway,
         authz=authorization,
         ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
     )
     container.supply_chain_list_delay_impact_analyses = ListDelayImpactAnalyses(
         po_case_repo=po_case_repo, delay_impact_repo=delay_impact_repo, authz=authorization
@@ -450,7 +453,9 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     # load_file`'s own fail-fast contract). `repo` is captured by closure,
     # never a concrete adapter imported inside the graph module itself.
     wiring.seam.graphs.register(
-        WORKER_ID, GRAPH_VERSION, lambda: build_advance_case_graph(po_case_repo)
+        WORKER_ID,
+        GRAPH_VERSION,
+        lambda: build_advance_case_graph(po_case_repo, wiring.seam.ids, wiring.seam.clock),
     )
     wiring.seam.workers.load_file(SUPPLY_CHAIN_ADVANCE_CASE_WORKER)
     # Separation of duties + a mandatory comment for every approval this
@@ -469,6 +474,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         platform_default_action_duties=platform_default_action_duties,
         runner=wiring.runner,
         ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
     )
     container.supply_chain_list_case_transitions = ListCaseTransitions(
         repo=po_case_repo, authz=authorization

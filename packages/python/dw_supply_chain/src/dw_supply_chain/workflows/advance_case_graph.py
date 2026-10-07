@@ -39,6 +39,8 @@ from langgraph.types import interrupt
 from dw_agent_runtime.context import access_context_from_run
 from dw_agent_runtime.contracts import RunContext
 from dw_kernel.errors import NotFoundError
+from dw_kernel.ports import IdGenerator, UtcClock
+from dw_supply_chain.application.po_case_audit import po_case_audit
 from dw_supply_chain.application.ports import POCaseRepositoryPort
 from dw_supply_chain.domain.po_case import CaseAction, POCaseId, apply_action
 
@@ -79,7 +81,7 @@ def _request_approval(state: AdvanceCaseState) -> AdvanceCaseState:
     }
 
 
-def _build_apply_node(repo: POCaseRepositoryPort) -> Any:
+def _build_apply_node(repo: POCaseRepositoryPort, ids: IdGenerator, clock: UtcClock) -> Any:
     # Untyped return on purpose: LangGraph's own `add_node` overloads infer
     # `NodeInputT` from a directly-passed function's real signature, and
     # mypy does not unify that inference through an explicit `Callable[...]`
@@ -101,14 +103,37 @@ def _build_apply_node(repo: POCaseRepositoryPort) -> Any:
         case = await repo.get(context, case_id)
         if case is None:
             raise NotFoundError("PO case not found", details={"case_id": str(case_id)})
-        apply_action(case, action=CaseAction(state["action"]), reason=state.get("reason"))
-        await repo.save(context, case)
+        action = CaseAction(state["action"])
+        before = case.state
+        apply_action(case, action=action, reason=state.get("reason"))
+        # The step and its audit event are one transaction (ticket P2), under
+        # the requester who asked for it; the run id ties it to the decision
+        # the approval inbox audited.
+        await repo.save(
+            context,
+            case,
+            audit=po_case_audit(
+                context,
+                ids,
+                clock,
+                case.id,
+                action.value,
+                {
+                    "from_state": before.value,
+                    "to_state": case.state.value,
+                    "reason": state.get("reason"),
+                    "run_id": str(run_context.run_id),
+                },
+            ),
+        )
         return {"applied": True}
 
     return _apply
 
 
-def build_advance_case_graph(repo: POCaseRepositoryPort) -> StateGraph:  # type: ignore[type-arg]
+def build_advance_case_graph(
+    repo: POCaseRepositoryPort, ids: IdGenerator, clock: UtcClock
+) -> StateGraph:  # type: ignore[type-arg]
     """`repo` is injected by closure, never a concrete adapter imported
     here — the same "workflow nodes take what they need by injection" rule
     every graph in this platform follows. Returns an UNCOMPILED graph on
@@ -116,7 +141,7 @@ def build_advance_case_graph(repo: POCaseRepositoryPort) -> StateGraph:  # type:
     checkpointer (`registry.GraphFactory`'s own contract)."""
     graph: StateGraph = StateGraph(AdvanceCaseState)  # type: ignore[type-arg]
     graph.add_node("request_approval", _request_approval)
-    graph.add_node("apply", _build_apply_node(repo))
+    graph.add_node("apply", _build_apply_node(repo, ids, clock))
     graph.add_edge(START, "request_approval")
     graph.add_edge("request_approval", "apply")
     graph.add_edge("apply", END)

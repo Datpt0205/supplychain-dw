@@ -26,6 +26,7 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import AuthorizationPort, PolicyOverridePort
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.action_duties import CaseDuty, SupplyChainActionDuties
+from dw_supply_chain.application.po_case_audit import po_case_audit
 from dw_supply_chain.application.ports import (
     ActiveProductCasesPort,
     DelayImpactAnalysisRepositoryPort,
@@ -234,12 +235,14 @@ class CreatePOCase:
     could create cases inside a tenant that is not theirs. The PIC is the
     caller, stamped here; `handle` has no parameter that could name another.
     A Category is optional here (stage-1 ticket 06); one that is given must be
-    in the tenant's list (`require_category`) and is stamped as given.
+    in the tenant's list (`require_category`) and is stamped as given. The
+    case and its audit event are one transaction (ticket P2).
     """
 
     repo: POCaseRepositoryPort
     authz: AuthorizationPort
     ids: IdGenerator
+    clock: UtcClock
     policy_override_repo: PolicyOverridePort
     platform_default_sla_policy: SupplyChainSLAPolicy
 
@@ -268,7 +271,23 @@ class CreatePOCase:
             pic_user_id=context.principal_id,
             category=category,
         )
-        await self.repo.add(context, case)
+        await self.repo.add(
+            context,
+            case,
+            audit=po_case_audit(
+                context,
+                self.ids,
+                self.clock,
+                case.id,
+                "create",
+                {
+                    "state": case.state.value,
+                    "po_reference": case.po_reference,
+                    "order_kind": case.order_kind.value,
+                    "category": case.category,
+                },
+            ),
+        )
         return case
 
 
@@ -326,16 +345,13 @@ class ReassignPOCasePic:
         await self.repo.save(
             context,
             case,
-            audit=AuditEvent(
-                id=self.ids.new_uuid(),
-                tenant_id=TenantId(context.tenant_id),
-                workspace_id=WorkspaceId(context.workspace_id),
-                actor_id=UserId(context.principal_id),
-                action="supply_chain.po_case.reassign_pic",
-                resource_type=_RESOURCE,
-                resource_id=str(case.id),
-                occurred_at=self.clock.now(),
-                details={
+            audit=po_case_audit(
+                context,
+                self.ids,
+                self.clock,
+                case.id,
+                "reassign_pic",
+                {
                     "from_pic_user_id": str(previous) if previous else None,
                     "to_pic_user_id": str(new_pic),
                     "reason": (reason or "").strip(),
@@ -406,16 +422,13 @@ class CreatePO:
         await self.repo.save(
             context,
             case,
-            audit=AuditEvent(
-                id=self.ids.new_uuid(),
-                tenant_id=TenantId(context.tenant_id),
-                workspace_id=WorkspaceId(context.workspace_id),
-                actor_id=UserId(context.principal_id),
-                action=f"supply_chain.po_case.{CaseAction.CREATE_PO.value}",
-                resource_type=_RESOURCE,
-                resource_id=str(case.id),
-                occurred_at=self.clock.now(),
-                details={
+            audit=po_case_audit(
+                context,
+                self.ids,
+                self.clock,
+                case.id,
+                CaseAction.CREATE_PO.value,
+                {
                     "from_state": before.value,
                     "to_state": case.state.value,
                     "po_reference": case.po_reference or "",
@@ -518,6 +531,9 @@ class SubmitSupplierUpdate:
     means understanding a message is not the same decision as acting on it;
     what (if anything) to do about a PRODUCTION_DELAY extraction is a later,
     separate step, not automatic here.
+
+    The record and its audit event are one transaction (ticket P2); the event
+    carries what was understood, never the supplier's words.
     """
 
     po_case_repo: POCaseRepositoryPort
@@ -525,6 +541,7 @@ class SubmitSupplierUpdate:
     gateway: ModelGateway
     authz: AuthorizationPort
     ids: IdGenerator
+    clock: UtcClock
 
     async def handle(
         self, context: AccessContext, *, po_case_id: POCaseId, raw_text: str
@@ -568,7 +585,26 @@ class SubmitSupplierUpdate:
             extraction=extraction,
             requires_confirmation=requires_confirmation(extraction, raw_text),
         )
-        await self.supplier_update_repo.add(context, update)
+        await self.supplier_update_repo.add(
+            context,
+            update,
+            audit=AuditEvent(
+                id=self.ids.new_uuid(),
+                tenant_id=TenantId(context.tenant_id),
+                workspace_id=WorkspaceId(context.workspace_id),
+                actor_id=UserId(context.principal_id),
+                action="supply_chain.supplier_update.submit",
+                resource_type=_SUPPLIER_UPDATE_RESOURCE,
+                resource_id=str(update.id),
+                occurred_at=self.clock.now(),
+                run_id=run_id,
+                details={
+                    "po_case_id": str(po_case_id),
+                    "event_type": extraction.event_type.value,
+                    "requires_confirmation": update.requires_confirmation,
+                },
+            ),
+        )
         return update
 
 
@@ -602,7 +638,8 @@ class AnalyzeDelayImpact:
     Takes `supplier_update_id`, not a raw delay figure the caller supplies —
     the analysis has to be grounded in a `SupplierUpdate` already on record;
     that record IS the "source evidence" the analysis must cite, not a number
-    trusted from the request body.
+    trusted from the request body. The analysis and its audit event are one
+    transaction (ticket P2).
     """
 
     po_case_repo: POCaseRepositoryPort
@@ -611,6 +648,7 @@ class AnalyzeDelayImpact:
     gateway: ModelGateway
     authz: AuthorizationPort
     ids: IdGenerator
+    clock: UtcClock
 
     async def handle(
         self,
@@ -685,7 +723,26 @@ class AnalyzeDelayImpact:
             impacted_milestones=tuple(impacted),
             extraction=extraction,
         )
-        await self.delay_impact_repo.add(context, analysis)
+        await self.delay_impact_repo.add(
+            context,
+            analysis,
+            audit=AuditEvent(
+                id=self.ids.new_uuid(),
+                tenant_id=TenantId(context.tenant_id),
+                workspace_id=WorkspaceId(context.workspace_id),
+                actor_id=UserId(context.principal_id),
+                action="supply_chain.delay_impact.analyze",
+                resource_type=_DELAY_IMPACT_RESOURCE,
+                resource_id=str(analysis.id),
+                occurred_at=self.clock.now(),
+                run_id=run_id,
+                details={
+                    "po_case_id": str(po_case_id),
+                    "supplier_update_id": str(supplier_update_id),
+                    "delay_days": delay_days,
+                },
+            ),
+        )
         return analysis
 
 
@@ -876,6 +933,10 @@ class AdvancePOCase:
     duty, not a general write. Checked before anything else, and before an
     approval run is started, so the approval path cannot carry a step past
     a requester who could not take it. The graph run starts only from here.
+
+    A step applied here and its audit event are one transaction (ticket P2);
+    a step held for approval records nothing yet — the graph's apply node
+    writes the event when the step is taken.
     """
 
     repo: POCaseRepositoryPort
@@ -885,6 +946,7 @@ class AdvancePOCase:
     platform_default_action_duties: SupplyChainActionDuties
     runner: WorkflowRunnerPort
     ids: IdGenerator
+    clock: UtcClock
 
     async def handle(
         self,
@@ -943,8 +1005,20 @@ class AdvancePOCase:
         # only entry point for an action that does NOT need approval).
         if action in REASON_REQUIRED_ACTIONS and (reason is None or not reason.strip()):
             raise DomainError("this action requires a reason", details={"action": action.value})
+        before = case.state
         apply_action(case, action=action, reason=reason)
-        await self.repo.save(context, case)
+        await self.repo.save(
+            context,
+            case,
+            audit=po_case_audit(
+                context,
+                self.ids,
+                self.clock,
+                case.id,
+                action.value,
+                {"from_state": before.value, "to_state": case.state.value, "reason": reason},
+            ),
+        )
         return CaseActionApplied(case=case)
 
 

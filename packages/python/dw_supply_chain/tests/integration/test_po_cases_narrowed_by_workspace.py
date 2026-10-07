@@ -31,7 +31,7 @@ from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.ports import ModelRequest
 from dw_kernel.errors import ConflictError, NotFoundError
 from dw_kernel.ids import TenantId, WorkspaceId
-from dw_kernel.ports import Uuid4Generator
+from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_supply_chain.adapters.persistence.delay_impact_repository import (
@@ -299,6 +299,7 @@ async def test_another_workspace_cannot_act_on_the_case(
             gateway=gateway,
             authz=ScopeAuthorizationService(),
             ids=Uuid4Generator(),
+            clock=SystemClock(),
         ).handle(w2, po_case_id=case.id, raw_text="delayed by 9 days")
     with pytest.raises(NotFoundError):
         await AnalyzeDelayImpact(
@@ -308,6 +309,7 @@ async def test_another_workspace_cannot_act_on_the_case(
             gateway=gateway,
             authz=ScopeAuthorizationService(),
             ids=Uuid4Generator(),
+            clock=SystemClock(),
         ).handle(w2, po_case_id=case.id, supplier_update_id=update.id)
     # A save that skipped the read (a stale aggregate W1 handed over): RLS
     # makes the row absent to the UPDATE, so it is the concurrency refusal.

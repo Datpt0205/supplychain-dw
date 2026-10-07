@@ -175,7 +175,9 @@ class FakePOCaseRepository:
         self.by_id: dict[uuid.UUID, POCase] = {}
         self.transitions: dict[uuid.UUID, list[CaseTransition]] = {}
 
-    async def add(self, context: AccessContext, case: POCase) -> None:
+    async def add(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         # Mirrors the real repository's own DB DEFAULT now(): the row this
         # writes gets a created_at the in-memory object handed to add()
         # doesn't carry yet, and GetMissingUpdateStatus depends on get()
@@ -289,7 +291,9 @@ class FakeSupplierUpdateRepository:
     def __init__(self) -> None:
         self.by_case: dict[uuid.UUID, list[SupplierUpdate]] = {}
 
-    async def add(self, context: AccessContext, update: SupplierUpdate) -> None:
+    async def add(
+        self, context: AccessContext, update: SupplierUpdate, *, audit: AuditEvent | None = None
+    ) -> None:
         self.by_case.setdefault(update.po_case_id.value, []).append(update)
 
     async def get(
@@ -362,7 +366,13 @@ class FakeDelayImpactAnalysisRepository:
     def __init__(self) -> None:
         self.by_case: dict[uuid.UUID, list[DelayImpactAnalysis]] = {}
 
-    async def add(self, context: AccessContext, analysis: DelayImpactAnalysis) -> None:
+    async def add(
+        self,
+        context: AccessContext,
+        analysis: DelayImpactAnalysis,
+        *,
+        audit: AuditEvent | None = None,
+    ) -> None:
         self.by_case.setdefault(analysis.po_case_id.value, []).append(analysis)
 
     async def list_for_case(
@@ -695,6 +705,7 @@ def make_container(
             repo=repo,
             authz=authz,
             ids=Uuid4Generator(),
+            clock=SystemClock(),
             policy_override_repo=resolved_policy_override_repo,
             platform_default_sla_policy=resolved_sla_policy,
         ),
@@ -725,6 +736,7 @@ def make_container(
             gateway=resolved_gateway,
             authz=authz,
             ids=Uuid4Generator(),
+            clock=SystemClock(),
         ),
         supply_chain_list_supplier_updates=ListSupplierUpdates(
             po_case_repo=repo, supplier_update_repo=resolved_supplier_update_repo, authz=authz
@@ -736,6 +748,7 @@ def make_container(
             gateway=resolved_delay_impact_gateway,
             authz=authz,
             ids=Uuid4Generator(),
+            clock=SystemClock(),
         ),
         supply_chain_list_delay_impact_analyses=ListDelayImpactAnalyses(
             po_case_repo=repo, delay_impact_repo=resolved_delay_impact_repo, authz=authz
@@ -758,6 +771,7 @@ def make_container(
             ),
             runner=resolved_runner,
             ids=Uuid4Generator(),
+            clock=SystemClock(),
         ),
         supply_chain_list_case_transitions=ListCaseTransitions(repo=repo, authz=authz),
         supply_chain_get_sla_evaluation=GetSLAEvaluation(

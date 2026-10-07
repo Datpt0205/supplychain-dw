@@ -83,7 +83,7 @@ class InMemoryPOCases:
             key=lambda c: c.po_reference or "",
         )
 
-    async def add(self, context: AccessContext, case: POCase) -> None:
+    async def add(self, context: AccessContext, case: POCase, *, audit: Any = None) -> None:
         raise NotImplementedError(_NOT_A_QUESTION)
 
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:

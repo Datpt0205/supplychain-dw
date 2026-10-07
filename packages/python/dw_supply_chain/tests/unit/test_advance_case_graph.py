@@ -23,6 +23,7 @@ from dw_agent_runtime.contracts import RunContext
 from dw_kernel.errors import ConflictError, DomainError, NotFoundError
 from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.pagination import Page, PageRequest
+from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.application.ports import POCaseListFilter
@@ -39,17 +40,17 @@ class FakePOCaseRepository:
     def __init__(self, case: POCase) -> None:
         self.case = case
         self.saved: POCase | None = None
+        self.audits: list[AuditEvent] = []
 
-    async def add(self, context: AccessContext, case: POCase) -> None:
+    async def add(self, context: AccessContext, case: POCase, *, audit: AuditEvent) -> None:
         raise NotImplementedError("not exercised by this graph")
 
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
         return self.case if case_id.value == self.case.id.value else None
 
-    async def save(
-        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
-    ) -> None:
+    async def save(self, context: AccessContext, case: POCase, *, audit: AuditEvent) -> None:
         self.saved = case
+        self.audits.append(audit)
 
     async def get_current_state_entered_at(self, context: AccessContext, case_id: POCaseId) -> None:
         raise NotImplementedError("not exercised by this graph")
@@ -127,7 +128,9 @@ def _compiled(repo: FakePOCaseRepository) -> Any:
     # this module never parameterises (same reasoning `build_advance_case_
     # graph`'s own `# type: ignore[type-arg]` already documents), not a
     # real type hole in the graph or in `RunContext` itself.
-    return build_advance_case_graph(repo).compile(checkpointer=MemorySaver())
+    return build_advance_case_graph(repo, Uuid4Generator(), SystemClock()).compile(
+        checkpointer=MemorySaver()
+    )
 
 
 async def test_starting_a_run_pauses_before_anything_is_applied() -> None:
@@ -169,6 +172,18 @@ async def test_approving_the_resume_applies_the_transition() -> None:
     assert final_state["applied"] is True
     assert repo.saved is not None
     assert repo.saved.state is CaseState.WAITING_DEPOSIT
+    # Ticket P2: the step's audit event, under the requester's own context.
+    (audit,) = repo.audits
+    assert (audit.action, audit.resource_id) == (
+        "supply_chain.po_case.request_deposit",
+        str(case.id),
+    )
+    assert (audit.tenant_id.value, audit.workspace_id.value, audit.actor_id.value) == (
+        run_context.tenant_id,
+        run_context.workspace_id,
+        run_context.actor_id,
+    )
+    assert audit.details["run_id"] == str(run_context.run_id)
 
 
 async def test_rejecting_the_resume_applies_nothing() -> None:
@@ -191,6 +206,7 @@ async def test_rejecting_the_resume_applies_nothing() -> None:
 
     assert final_state["applied"] is False
     assert repo.saved is None
+    assert repo.audits == []
     assert case.state is CaseState.PO_CREATED
 
 

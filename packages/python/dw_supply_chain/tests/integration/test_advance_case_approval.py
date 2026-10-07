@@ -25,6 +25,7 @@ import uuid
 from decimal import Decimal
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from supply_chain_harness import REPO_ROOT, DatabaseUrls
@@ -124,7 +125,9 @@ class RunnerStack:
 
         graphs = GraphRegistry()
         graphs.register(
-            WORKER_ID, GRAPH_VERSION, lambda: build_advance_case_graph(self.po_case_repo)
+            WORKER_ID,
+            GRAPH_VERSION,
+            lambda: build_advance_case_graph(self.po_case_repo, Uuid4Generator(), SystemClock()),
         )
         workers = WorkerRegistry(graph_registry=graphs)
         workers.load_file(_WORKER_CONFIG)
@@ -163,6 +166,7 @@ class RunnerStack:
             platform_default_action_duties=load_supply_chain_action_duties(_ACTION_DUTIES),
             runner=self.runner,
             ids=Uuid4Generator(),
+            clock=SystemClock(),
         )
 
     def run_context_for_read(self, tenant_id: uuid.UUID, workspace_id: uuid.UUID) -> RunContext:
@@ -257,6 +261,22 @@ async def test_pause_survives_restart_then_approval_applies_the_transition(
     assert applied.state is CaseState.WAITING_DEPOSIT
     assert applied.version == 2
     await stack2.dispose()
+    # Ticket P2: the step taken on resume is audited once, under the
+    # requester, tied to the run the decision resumed.
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    async with migrator.connect() as conn:
+        rows = (
+            await conn.execute(
+                sa.text(
+                    "SELECT tenant_id, actor_id, details->>'run_id' FROM platform.audit_events"
+                    " WHERE action = 'supply_chain.po_case.request_deposit'"
+                    " AND resource_id = :c"
+                ),
+                {"c": str(case.id)},
+            )
+        ).all()
+    await migrator.dispose()
+    assert [tuple(r) for r in rows] == [(tenant, requester, str(run_id))]
 
 
 async def test_rejecting_applies_nothing(db_urls: DatabaseUrls) -> None:

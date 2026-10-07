@@ -124,13 +124,15 @@ class POCaseRepositoryPort(Protocol):
     has to remember to write to.
     """
 
-    async def add(self, context: AccessContext, case: POCase) -> None: ...
+    async def add(self, context: AccessContext, case: POCase, *, audit: AuditEvent) -> None:
+        """`audit` commits in the same transaction as the case (ticket P2)."""
+        ...
+
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None: ...
-    async def save(
-        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
-    ) -> None:
-        """`audit`, when given, commits in the same transaction (`CreatePO`).
-        A PO reference already taken in the tenant is a `ConflictError`."""
+    async def save(self, context: AccessContext, case: POCase, *, audit: AuditEvent) -> None:
+        """`audit` commits in the same transaction as the step: every write
+        through this port names its audit event (ticket P2). A PO reference
+        already taken in the tenant is a `ConflictError`."""
         ...
 
     async def get_current_state_entered_at(
@@ -212,7 +214,12 @@ class POCaseRepositoryPort(Protocol):
 class SupplierUpdateRepositoryPort(Protocol):
     """Persists `SupplierUpdate`. Immutable records — no `save`, only `add`."""
 
-    async def add(self, context: AccessContext, update: SupplierUpdate) -> None: ...
+    async def add(
+        self, context: AccessContext, update: SupplierUpdate, *, audit: AuditEvent
+    ) -> None:
+        """`audit` commits in the same transaction as the record (ticket P2)."""
+        ...
+
     async def get(
         self, context: AccessContext, update_id: SupplierUpdateId
     ) -> SupplierUpdate | None: ...
@@ -236,7 +243,12 @@ class SupplierUpdateRepositoryPort(Protocol):
 class DelayImpactAnalysisRepositoryPort(Protocol):
     """Persists `DelayImpactAnalysis`. Immutable records — no `save`, only `add`."""
 
-    async def add(self, context: AccessContext, analysis: DelayImpactAnalysis) -> None: ...
+    async def add(
+        self, context: AccessContext, analysis: DelayImpactAnalysis, *, audit: AuditEvent
+    ) -> None:
+        """`audit` commits in the same transaction as the record (ticket P2)."""
+        ...
+
     async def list_for_case(
         self, context: AccessContext, po_case_id: POCaseId
     ) -> list[DelayImpactAnalysis]: ...

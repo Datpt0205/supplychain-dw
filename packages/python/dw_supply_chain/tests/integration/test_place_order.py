@@ -200,6 +200,7 @@ def _advance_po(stack: Stack) -> AdvancePOCase:
         platform_default_action_duties=_PO_DUTIES,
         runner=stack.runner,
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
 
@@ -522,6 +523,7 @@ async def test_create_po_sets_the_reference_and_a_taken_one_is_a_409_naming_it(d
         repo=SqlPOCaseRepository(db.sessions),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
         policy_override_repo=SqlPolicyOverrideRepository(db.sessions),
         platform_default_sla_policy=_SLA,
     ).handle(owner, po_reference=taken, supplier_name="NCC cũ", order_kind=OrderKind.REORDER)
@@ -633,6 +635,7 @@ async def test_an_override_stored_before_create_po_loads_after_the_migration(db:
         platform_default_action_duties=_PO_DUTIES,
         runner=None,  # type: ignore[arg-type]  # the matrix gates nothing: no run starts
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     exceptions = _with(owner, duty_scope(CaseDuty.EXCEPTIONS))
     with pytest.raises(ValidationError, match="create_po"):
