@@ -22,8 +22,9 @@ runner, over the same tables, checkpointer and plan allowance the API's runner
 uses; a decision then resumes the run in the API, which hosts the same graphs.
 
 A decision sent from Zalo (zalo-channel ticket 05) resumes a review on the
-same runner, so `register_product_approvals` gives the worker's approval flow
-what `wiring.py` gives the API's: the strict prefix and the case-version port.
+same runner, so `PRODUCT_STRICT_APPROVAL_PREFIXES` and `product_approval_subjects`
+give the worker's approval flow what `wiring.py` gives the API's: the strict
+prefix and the case-version port.
 
 The Zalo proposal command (zalo-channel ticket 04, Z4b) is built here too: the
 chat's "Đồng ý" creates a product case through the same `ProposeProductCase`
@@ -49,7 +50,6 @@ from dw_agent_runtime.adapters.checkpoint import SqlAlchemyCheckpointSaver
 from dw_agent_runtime.adapters.langgraph_runner import LangGraphWorkflowRunner
 from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
 from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardStore
-from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_agent_runtime.autonomy import AutonomyApprovalPolicy
 from dw_agent_runtime.model.budget import RunBudgetLedger
 from dw_agent_runtime.model.run_policy import load_worker_run_policy
@@ -266,22 +266,23 @@ def build_product_review_reconcile(
     )
 
 
-def register_product_approvals(
-    flow: ApproveAndResumeService,
-    subjects: ApprovalSubjectVersions,
+# What this context adds to the worker's approval flow, as `wiring.py` adds it
+# to the API's: its prefix is strict (the requester cannot decide, a decision
+# needs a comment). Passed to `build_channel_decision_command`.
+PRODUCT_STRICT_APPROVAL_PREFIXES = frozenset({product_review_graph.APPROVAL_TYPE_PREFIX})
+
+
+def product_approval_subjects(
     sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    """What this context adds to the worker's approval flow, as `wiring.py`
-    adds it to the API's: its prefix is strict (the requester cannot decide,
-    a decision needs a comment), and the case's version is the subject a
-    decision on Zalo must still find (ADR 0014)."""
-    flow.strict_approval_prefixes = flow.strict_approval_prefixes | frozenset(
-        {product_review_graph.APPROVAL_TYPE_PREFIX}
-    )
+) -> ApprovalSubjectVersions:
+    """The case's version as the subject a decision on Zalo must still find
+    (ADR 0007), registered under this context's prefix."""
+    subjects = ApprovalSubjectVersions()
     subjects.register(
         product_review_graph.APPROVAL_TYPE_PREFIX,
         ProductCaseApprovalSubject(SqlProductCaseRepository(sessions)),
     )
+    return subjects
 
 
 def build_zalo_proposal_command(

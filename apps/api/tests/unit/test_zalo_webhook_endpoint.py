@@ -1,6 +1,6 @@
 """``POST /api/v1/zalo/webhook``: the hosted way a Zalo update reaches the platform.
 
-ADR 0015 (amendment Z3): the route checks the ``X-Bot-Api-Secret-Token`` header
+ADR 0008: the route checks the ``X-Bot-Api-Secret-Token`` header
 in constant time, caps the body at 64 KB, validates the envelope, hands the
 update to the inbox the worker drains through the same ``ZaloInbound.handle``
 the poll lane calls, and answers 200 at once. What is pinned here:
@@ -120,7 +120,7 @@ async def test_an_update_with_the_right_secret_is_queued_unchanged_and_answered_
 
 async def test_the_poll_shape_is_accepted_too() -> None:
     """``parse_update`` reads both envelopes; the route must not refuse the one
-    it has not seen yet (the webhook's shape is measured in ticket 07)."""
+    it has not seen yet (the webhook's shape is measured in a live run)."""
     inbox = FakeInbox()
     sent = {"ok": True, "result": update()}
 

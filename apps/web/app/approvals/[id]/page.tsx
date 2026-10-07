@@ -54,7 +54,7 @@ type Load =
 
 /**
  * One approval, the page a notification and its Zalo message link to
- * (`/approvals/<id>?workspace=<id>`, ADR 0014). Opening it records a view;
+ * (`/approvals/<id>?workspace=<id>`, ADR 0007). Opening it records a view;
  * the viewer may ask for a single-use code to decide it on Zalo, bound to the
  * comment written here. The decision itself is the server's: this page offers
  * a code only when the server says one can be issued, and says why not

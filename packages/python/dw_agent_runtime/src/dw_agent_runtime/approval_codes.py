@@ -1,6 +1,6 @@
 """The portal half of a decision on Zalo: the view receipt and the code it issues.
 
-ADR 0014 with its 2026-10-06 amendment (zalo-channel ticket 05). Opening an
+ADR 0007 with its 2026-10-06 amendment (channels Z5). Opening an
 approval on the portal records a receipt; asking for a code (with the comment
 the decision will carry) records a fresh receipt and issues a code bound to it,
 but only when every one of these holds — each refusal has its own reason, which
@@ -10,7 +10,7 @@ the page says in words:
 - the viewer may decide it: `approvals.decide` and its stamped scope, the very
   checks `decide` runs (`ApproveAndResumeService.may_decide`);
 - the viewer did not ask for it (for every type: on the web this applies to
-  strict prefixes only, ADR 0014 point 3);
+  strict prefixes only, ADR 0007 point 3);
 - a context answers for the type's subject version (`ApprovalSubjectVersions`)
   and names one; otherwise the type is decided on the web only;
 - the viewer has linked a chat to decide from;

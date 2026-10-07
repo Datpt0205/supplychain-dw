@@ -311,9 +311,7 @@ async def test_the_context_holds_the_membership_cut_to_the_ceiling_and_no_role(
     ws = await _tenant(migrator)
     await _join(migrator, alice, ws, roles=["approver"], permission_sets=["approver_boost"])
 
-    context = await _access(sessions).access_for(
-        alice, *ws, _PROPOSE | {"supply_chain.product_case.write"}
-    )
+    context = await _access(sessions).access_for(alice, *ws, _PROPOSE | {"cases.write"})
 
     assert context is not None
     assert (context.principal_id, context.tenant_id, context.workspace_id) == (alice, *ws)

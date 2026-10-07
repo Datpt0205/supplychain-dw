@@ -1,15 +1,15 @@
 """platform channel link nonces
 
-Revision ID: cf66605631d7
-Revises: bc3f0c1279fd
-Create Date: 2026-10-05 08:14:15.738563+00:00
+Revision ID: 02930a73bbdf
+Revises: 6d4aed20ccf2
+Create Date: 2026-10-07 15:45:45.692558+00:00
 
-A person links their own chat (Zalo first) by sending the bot a signed
-`/start <token>`. The signature proves the app minted the token for that user;
-it cannot prove the token was not used already, and a token is easy to see over
-someone's shoulder. So each token carries a `jti`, written here when the token
-is issued and consumed by ONE conditional UPDATE in the transaction that writes
-the link:
+A person links their own chat (Zalo first, docs/adr/0005) by sending the bot a
+signed `/start <token>`. The signature proves the app minted the token for that
+user; it cannot prove the token was not used already, and a token is easy to
+see over someone's shoulder. So each token carries a `jti`, written here when
+the token is issued and consumed by ONE conditional UPDATE in the transaction
+that writes the link:
 
     UPDATE platform.channel_link_nonces SET used_at = now()
      WHERE jti = :jti AND user_id = :uid AND used_at IS NULL AND expires_at > now()
@@ -19,13 +19,14 @@ Zero rows means refused: used, expired, or never issued. Not read-then-update,
 under which two `/start` with the same token in flight would both pass.
 
 - **Identity plane, no RLS.** Like `users` and `external_identities`: a link
-  belongs to the person, not to one of their workspaces (ADR 0012), so the row
+  belongs to the person, not to one of their workspaces (ADR 0005), so the row
   has no tenant to narrow by. What stops one user touching another's nonce is
   that every statement names the `jti` — 64 random bits behind an HMAC only the
   server can produce — together with the user it was minted for.
 - **Grants ship here.** `dw_app` issues (INSERT), consumes (UPDATE of `used_at`
-  only, plus the SELECT its WHERE and RETURNING need) and prunes (DELETE). It cannot move a nonce to another user or extend
-  its expiry; no other role is granted anything. `test_privileges.py` asserts it.
+  only, plus the SELECT its WHERE and RETURNING need) and prunes (DELETE). It
+  cannot move a nonce to another user or extend its expiry; no other role is
+  granted anything. `test_privileges.py` asserts it.
 - **Bounded.** The worker's `channel_link_nonces_retention` lane deletes rows
   expired for more than a day (failure-modes #6).
 - **One chat per user, per channel.** `external_identities` already refuses one
@@ -33,14 +34,15 @@ under which two `/start` with the same token in flight would both pass.
   refuses two chats for one user, so two links racing for one person cannot both
   land. The link store clears both sides first, so a relink never trips either.
 
-**Twin.** The platform took this change back as its own revision `02930a73bbdf`
-(same names, same grants), which merging `platform/main` brings here on a
-second branch alembic may run before or after this one. So every statement is
-idempotent, written as the platform's copy writes it (objects created only if
-missing, functions and triggers `CREATE OR REPLACE`, the REVOKE/GRANT pair
-landing on the same state however often it runs), and downgrade is a no-op
-while the twin is still applied: whichever of the pair is downgraded last
-removes the objects. The platform revision does the same, mirrored.
+**Twin.** This change came back from the first product, which had already
+shipped it as its own revision `cf66605631d7` (same table, constraint and index
+names, same grants). A product that merges this platform carries both, on two
+branches alembic may run in either order, so every statement here is
+idempotent: the table and indexes are created only if missing, and the
+REVOKE/GRANT pair lands on the same privileges however often it runs.
+Downgrade is a no-op while the twin is still applied, because the objects are
+then the twin's too; whichever of the pair is downgraded last removes them.
+Where the twin does not exist (this repository) the check never matches.
 """
 
 from __future__ import annotations
@@ -48,13 +50,13 @@ from __future__ import annotations
 from alembic import context, op
 from alembic.script import ScriptDirectory
 
-revision = "cf66605631d7"
-down_revision = "bc3f0c1279fd"
+revision = "02930a73bbdf"
+down_revision = "6d4aed20ccf2"
 branch_labels = None
 depends_on = None
 
-# The platform revision that carries the same change (see docstring).
-_TWIN = "02930a73bbdf"
+# The product revision that shipped the same change first (see docstring).
+_TWIN = "cf66605631d7"
 
 
 def _twin_applied() -> bool:

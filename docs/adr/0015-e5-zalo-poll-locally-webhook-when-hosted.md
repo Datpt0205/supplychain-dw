@@ -9,6 +9,8 @@ source:
 
 # E5. Nhận tin Zalo bằng poll khi chạy máy cá nhân, bằng webhook khi có host
 
+> Phần chung đã đưa về platform (`2ebd50f`) thành ADR 0008 của platform ([`0008-chat-updates-poll-locally-webhook-when-hosted.md`](0008-chat-updates-poll-locally-webhook-when-hosted.md)); code platform ở đây trích ADR 0008, ADR này giữ phần của Elmich.
+
 Bot nhận `/start` và `/stop` theo một trong hai cách, chọn bằng
 `ZALO_UPDATES_MODE=poll|webhook`. Hai cách loại trừ nhau trên một bot: `getUpdates`
 chỉ chạy sau `deleteWebhook`. Cả hai gọi cùng `handle_update`, nên code ra trước,

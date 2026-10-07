@@ -6,7 +6,7 @@ the "one Zalo per user, one user per Zalo" rule, the single-use token and the
 row shape live here once rather than in each caller.
 
 Both tables are identity plane with no RLS (see :mod:`identity_provisioning` and
-migration ``cf66605631d7``), so their statements need no tenant GUC; only the
+migration ``02930a73bbdf``), so their statements need no tenant GUC; only the
 audit and notification writes below bind one. Every caller binds this to
 a ``dw_app`` session factory: ``dw_app`` holds SELECT/INSERT/UPDATE/DELETE on
 ``external_identities`` through the baseline grant, and on
@@ -119,7 +119,7 @@ class SqlZaloLink:
     async def user_id_for(self, zalo_id: str) -> UUID | None:
         """The user this chat is linked to, or None — read afresh for every message.
 
-        The chat-to-person step every inbound command starts from (ADR 0012
+        The chat-to-person step every inbound command starts from (ADR 0005
         condition 2). Not cached: an unlink between two messages must refuse
         the second.
         """

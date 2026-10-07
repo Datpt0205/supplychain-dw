@@ -109,6 +109,7 @@ from dw_worker.consumers.reaper import ReapTarget, build_reaper_consumer
 from dw_worker.consumers.retention import INTERVAL_SECONDS as RETENTION_INTERVAL_SECONDS
 from dw_worker.consumers.retention import RetentionPrunePort, build_retention_consumer
 from dw_worker.consumers.supply_chain import (
+    PRODUCT_STRICT_APPROVAL_PREFIXES,
     build_document_orphan_sweep,
     build_follow_up_consumer,
     build_follow_up_retention,
@@ -121,7 +122,7 @@ from dw_worker.consumers.supply_chain import (
     build_stage_one_report_consumer,
     build_zalo_case_query_command,
     build_zalo_proposal_command,
-    register_product_approvals,
+    product_approval_subjects,
 )
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
 from dw_worker.consumers.zalo_webhook import INTERVAL_SECONDS as ZALO_WEBHOOK_INTERVAL_SECONDS
@@ -216,18 +217,19 @@ def build_channel_decision_command(
     sessions: async_sessionmaker[AsyncSession],
     *,
     runner: LangGraphWorkflowRunner,
+    subjects: ApprovalSubjectVersions,
+    strict_approval_prefixes: frozenset[str] = frozenset(),
     ids: IdGenerator,
     clock: UtcClock,
 ) -> ChannelDecisionCommand:
-    """`DUYỆT <mã>` / `KHÔNG <mã> <lý do>` from a linked chat (ADR 0014,
-    zalo-channel ticket 05).
+    """`DUYỆT <mã>` / `KHÔNG <mã> <lý do>` from a linked chat (ADR 0007, channels Z5).
 
     The decision goes through this process's own `ApproveAndResumeService`,
-    over `runner`: the one that hosts the review graph, so a decided review
-    resumes here from its checkpoint. A context adds its strict prefix and its
-    subject-version port the way it does in the API's `wiring.py`; a type no
-    context answers for is never decided by chat (no version, no decision), so
-    a platform type like `memory.` needs neither here. Without
+    over `runner`: the one that hosts the graph the approval belongs to, so a
+    decided run resumes here from its checkpoint. A context passes its strict
+    prefixes and registers its subject-version port on `subjects`, the way it
+    does in the API's `wiring.py`; a type no context answers for is never
+    decided by chat (no version, no decision). Without
     `DW_APPROVAL_CODE_SECRET` the command still answers a decision, with
     "not enabled", so the words never reach a model.
     """
@@ -238,8 +240,7 @@ def build_channel_decision_command(
         clock=clock,
         id_generator=ids,
     )
-    subjects = ApprovalSubjectVersions()
-    register_product_approvals(flow, subjects, sessions)
+    flow.strict_approval_prefixes |= strict_approval_prefixes
     secret = settings.approval_code_secret.get_secret_value()
     return ChannelDecisionCommand(
         ChannelApprovalDecisionService(
@@ -396,7 +397,7 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     zalo_poll_consumer: Callable[[], Awaitable[None]] | None = None
     # The Zalo webhook drain: the same, in webhook mode, never beside the poll.
     zalo_webhook_consumer: Callable[[], Awaitable[None]] | None = None
-    # Notifications out through linked Zalo chats (ADR 0013): a database and a
+    # Notifications out through linked Zalo chats (ADR 0006): a database and a
     # bot token, polled or webhooked alike.
     channel_delivery_consumer: Callable[[], Awaitable[None]] | None = None
     # Channel deliveries: 90 days, never a pending one, the database's constant.
@@ -507,7 +508,7 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                 sender=ZaloBotClient(bot_token=settings.zalo_bot_token.get_secret_value()),
                 web_url=settings.public_web_url,
             )
-        # One bot, one reader (ADR 0015): poll mode polls, webhook mode drains
+        # One bot, one reader (ADR 0008): poll mode polls, webhook mode drains
         # what the API's webhook queued. Both feed the same inbound entry.
         if settings.zalo_poll_enabled or settings.zalo_webhook_drain_enabled:
             bot = ZaloBotClient(bot_token=settings.zalo_bot_token.get_secret_value())
@@ -523,7 +524,13 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                     clock=clock,
                 ),
                 decisions=build_channel_decision_command(
-                    settings, sessions, runner=review_runner, ids=ids, clock=clock
+                    settings,
+                    sessions,
+                    runner=review_runner,
+                    subjects=product_approval_subjects(sessions),
+                    strict_approval_prefixes=PRODUCT_STRICT_APPROVAL_PREFIXES,
+                    ids=ids,
+                    clock=clock,
                 ),
                 ids=ids,
                 clock=clock,

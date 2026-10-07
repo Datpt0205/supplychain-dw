@@ -225,7 +225,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
             bot_link=settings.zalo_bot_link,
         )
         container.channel_preferences = SqlChannelPreferences(session_factory)
-    # The hosted way updates arrive (ADR 0015): queued here, handled by the
+    # The hosted way updates arrive (ADR 0008): queued here, handled by the
     # worker's drain through the same entry the poll lane uses.
     if settings.zalo_webhook_enabled:
         container.zalo_webhook_inbox = SqlChannelUpdateQueue(session_factory)
@@ -282,10 +282,11 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     container.runtime = wiring.seam
     container.runner = wiring.runner
     container.approval_flow = wiring.approval_flow
-    # The portal half of a decision on Zalo (ADR 0014, ticket 05): the view
+    # The portal half of a decision on Zalo (ADR 0007, channels Z5): the view
     # receipt and the single-use code. A context registers who answers for its
-    # approval types' subject version on `approval_subjects` below; a type
-    # nobody answers for is decided on the web only.
+    # approval types' subject version on `approval_subjects` at the seam below
+    # (`approval_subjects.register(prefix, port)`); a type nobody answers for
+    # is decided on the web only.
     approval_subjects = ApprovalSubjectVersions()
     code_secret = settings.approval_code_secret.get_secret_value()
     container.approval_views = ApprovalViewService(

@@ -12,6 +12,8 @@ source:
 
 # E3. Hộp thư gửi kênh trung lập nhà cung cấp: `platform.channel_deliveries`
 
+> Phần chung đã đưa về platform (`2ebd50f`) thành ADR 0006 của platform ([`0006-provider-neutral-channel-delivery-outbox.md`](0006-provider-neutral-channel-delivery-outbox.md)); code platform ở đây trích ADR 0006, ADR này giữ phần của Elmich.
+
 Hôm nay thông báo chỉ tới hộp thư trong ứng dụng: `SqlNotificationRepository.deliver`
 đi qua `platform.deliver_notification`, idempotent theo `source_key`. Không có đường
 ra kênh nào. Gửi Zalo là một side effect, nên theo `CLAUDE.md` nó cần idempotency và

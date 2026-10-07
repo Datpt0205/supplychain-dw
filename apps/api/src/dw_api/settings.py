@@ -244,7 +244,7 @@ class ApiSettings(BaseSettings):
         ),
     )
 
-    # --- Zalo self-link (zalo-channel ticket 01) ---
+    # --- Zalo self-link (channels Z1) ---
     # One bot per deployment. The token is a credential (it rides in every Bot
     # API URL); the link secret signs the one-time ``/start`` token and must be
     # the worker's value too. Both unset = the /zalo routes are not mounted.
@@ -257,7 +257,7 @@ class ApiSettings(BaseSettings):
         default=SecretStr(""),
         validation_alias=AliasChoices("DW_API_ZALO_LINK_SECRET", "ZALO_LINK_SECRET"),
     )
-    # The server key a decision code is hashed under (ADR 0014, ticket 05):
+    # The server key a decision code is hashed under (ADR 0007, channels Z5):
     # HMAC-SHA256, so whoever reads the codes table cannot recover a code. The
     # worker holds the same value to check a code sent from Zalo. Empty = no
     # code is ever issued and approvals are decided on the web only.
@@ -272,7 +272,7 @@ class ApiSettings(BaseSettings):
 
     # poll = the worker long-polls getUpdates and the webhook route answers 404;
     # webhook = Zalo POSTs to /api/v1/zalo/webhook and the worker drains what
-    # the API queued (ADR 0015 amendment Z3). The worker reads the same
+    # the API queued (ADR 0008). The worker reads the same
     # variable, so one value decides both processes: one bot, one reader.
     zalo_updates_mode: Literal["poll", "webhook"] = Field(
         default="poll",
@@ -384,7 +384,7 @@ class ApiSettings(BaseSettings):
                 raise RuntimeError(
                     f"CORS origins must be listed explicitly in the {self.profile} profile"
                 )
-            # Real people sign in here (ADR 0023): a token, a cookie or a
+            # Real people sign in here (ADR 0009): a token, a cookie or a
             # cross-origin response over plain http is readable on the path.
             # The issuer is the URL the browser logs in through, so it must be
             # the TLS host too; the JWKS fetch stays internal and is not checked.
@@ -403,7 +403,7 @@ class ApiSettings(BaseSettings):
                     f"in the {self.profile} profile"
                 )
             # Zalo reaches the webhook over the internet; a guessable secret
-            # would hand chat traffic to anyone who tries (ADR 0015). The https
+            # would hand chat traffic to anyone who tries (ADR 0008). The https
             # base URL it is registered under is checked above for every
             # deployment, webhook or not.
             if (

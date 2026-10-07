@@ -315,7 +315,7 @@ class PlatformUnitOfWork(Protocol):
     feedback: FeedbackRepositoryPort
     outbox: OutboxRepositoryPort
     # Consuming a single-use decision code in the decision's own transaction
-    # (ADR 0014); only a decision admitted by a code touches it.
+    # (ADR 0007); only a decision admitted by a code touches it.
     decision_codes: DecisionCodeLedgerPort
 
     async def __aenter__(self) -> PlatformUnitOfWork: ...

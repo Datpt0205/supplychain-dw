@@ -1,5 +1,5 @@
 """Unit: the decision grammar, the code's keyed hash, the subject-version
-registry and the chat command's routing (zalo-channel ticket 05, ADR 0014).
+registry and the chat command's routing (channels Z5, ADR 0007).
 
 The grammar is fixed and read by code: `DUYỆT <mã>` and `KHÔNG <mã> <lý do>`,
 six ASCII digits, case and accents ignored. Anything that starts with the verb
@@ -145,14 +145,14 @@ class _Port:
 def test_the_longest_registered_prefix_answers_and_an_unknown_type_has_none() -> None:
     registry = ApprovalSubjectVersions()
     wide, narrow = _Port("wide"), _Port("narrow")
-    registry.register("supply_chain.", wide)
-    registry.register("supply_chain.product_action.", narrow)
+    registry.register("purchasing.", wide)
+    registry.register("purchasing.order.", narrow)
 
-    assert registry.for_type("supply_chain.product_action.bod_review") is narrow
-    assert registry.for_type("supply_chain.po.approve") is wide
+    assert registry.for_type("purchasing.order.release") is narrow
+    assert registry.for_type("purchasing.invoice.approve") is wide
     assert registry.for_type("memory.review") is None
     with pytest.raises(ValueError, match="already registered"):
-        registry.register("supply_chain.", wide)
+        registry.register("purchasing.", wide)
 
 
 # ---- the chat command ------------------------------------------------------
@@ -195,7 +195,7 @@ async def test_the_command_passes_a_non_decision_on_and_decides_a_decision() -> 
         replies.append(text)
 
     context = _context()
-    assert not await command.handle(_Message("chảo 28cm"), context, reply)
+    assert not await command.handle(_Message("đơn 007"), context, reply)
     assert await command.handle(_Message("duyệt hết"), context, reply)
     assert service.asked == []
     assert await command.handle(_Message("DUYỆT 482193"), context, reply)
@@ -230,7 +230,7 @@ def _decide_callers() -> set[str]:
 
 def test_only_the_web_route_and_the_chat_decision_service_reach_decide() -> None:
     """No chat command of Z4 or Z6, no workflow, no tool reaches the decision:
-    the model has no path to it (ADR 0014 point 6)."""
+    the model has no path to it (ADR 0007 point 6)."""
     assert _decide_callers() == {
         "apps/api/src/dw_api/routes/v1/approvals.py",
         "packages/python/dw_agent_runtime/src/dw_agent_runtime/channel_decisions.py",

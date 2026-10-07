@@ -21,9 +21,9 @@ sends ``/start`` and ``/stop`` here and the rest to the inbound router
 linked person's message reaches the commands registered at the composition
 root, each acting with a context built from that person's own membership and
 cut to the command's ceiling — never from the chat. So free text can act through
-a registered command (Z4b: a summarised proposal confirmed with "Đồng ý" creates a
-product case), but no free-text word unlinks anyone, and an approval is decided
-only under ADR 0014's rule (Z5). This module builds no context at all.
+a registered command a product context plugs in, but no free-text word unlinks
+anyone, and an approval is decided only under ADR 0007's rule (Z5). This module
+builds no context at all.
 """
 
 from __future__ import annotations
@@ -191,8 +191,8 @@ def message_id_of(update: dict[str, Any]) -> str:
     """The channel's id for the message, or "" when the update carries none.
 
     Read from ``message.message_id`` as Zalo's Bot Platform documents it; the
-    poll fixture this repo captured in Z1 predates any use of it, and the live
-    run (ticket 07) is where it gets measured. Empty means the message cannot
+    poll fixture captured in Z1 predates any use of it, and a live run against
+    the real bot is where it gets measured. Empty means the message cannot
     be deduplicated, and the caller must not act on it.
     """
     return str(_message(update).get("message_id") or "")

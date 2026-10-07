@@ -1,6 +1,6 @@
 """The workspace a person uses for chat commands, and the memberships to pick from.
 
-``platform.channel_preferences`` (migration 988592a8100f) is narrowed by
+``platform.channel_preferences`` (migration 9f2becb1bf80) is narrowed by
 ``app.principal_id`` alone: the row is the person's, and the bot reads it before
 it knows a tenant. Every transaction here binds that setting per transaction
 (``set_config(..., true)``) to the user the caller resolved server-side — the

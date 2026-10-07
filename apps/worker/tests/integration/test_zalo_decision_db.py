@@ -78,7 +78,11 @@ from dw_supply_chain.workflows.product_proposal_understanding import (
     PROMPT_VERSION as PROPOSAL_VERSION,
 )
 from dw_worker.composition import REPO_ROOT, build_model_stack_for
-from dw_worker.consumers.supply_chain import build_product_review_runner
+from dw_worker.consumers.supply_chain import (
+    PRODUCT_STRICT_APPROVAL_PREFIXES,
+    build_product_review_runner,
+    product_approval_subjects,
+)
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
 from dw_worker.main import (
     build_channel_commands,
@@ -176,6 +180,8 @@ class _Lane:
                     telemetry=NullTelemetry(),
                     release_manifest_ref=None,
                 ),
+                subjects=product_approval_subjects(self.sessions),
+                strict_approval_prefixes=PRODUCT_STRICT_APPROVAL_PREFIXES,
                 ids=Uuid4Generator(),
                 clock=clock,
             ),

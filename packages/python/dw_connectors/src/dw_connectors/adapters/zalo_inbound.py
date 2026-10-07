@@ -1,7 +1,7 @@
 """The one entry for a Zalo bot update, whichever way it arrived.
 
 The worker's poll lane calls ``ZaloInbound.handle`` for each update; in webhook
-mode (zalo-channel ticket 03) the worker's drain lane calls the same method with
+mode (channels Z3) the worker's drain lane calls the same method with
 the update the API's webhook queued, unchanged. Both paths therefore split
 updates one way:
 

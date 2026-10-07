@@ -149,7 +149,7 @@ async def test_the_schema_stays_available_off_production() -> None:
 def test_a_deployed_profile_refuses_a_url_that_is_not_https(
     profile: str, field: str, value: object, named: str
 ) -> None:
-    """ADR 0023: a deployment people sign into is reached over TLS only."""
+    """ADR 0009: a deployment people sign into is reached over TLS only."""
     settings = deployed_settings(profile=profile).model_copy(update={field: value})
     with pytest.raises(RuntimeError, match=named):
         settings.validate_for_profile()

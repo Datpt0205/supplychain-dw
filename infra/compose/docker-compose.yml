@@ -274,9 +274,9 @@ services:
       # set it to the web hostname. An empty string would not parse as a list.
       DW_API_CORS_ORIGINS: ${DW_API_CORS_ORIGINS:-[]}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      # Zalo self-link (zalo-channel ticket 01): /api/v1/zalo/* is mounted
+      # Zalo self-link (channels Z1): /api/v1/zalo/* is mounted
       # only when both the bot token and the link secret are set. The webhook
-      # (ticket 03) only with ZALO_UPDATES_MODE=webhook and the secret set;
+      # (channels Z3) only with ZALO_UPDATES_MODE=webhook and the secret set;
       # the worker reads the same mode, so one bot has one reader.
       ZALO_BOT_TOKEN: ${ZALO_BOT_TOKEN:-}
       ZALO_WEBHOOK_SECRET: ${ZALO_WEBHOOK_SECRET:-}
@@ -453,7 +453,7 @@ services:
       # uploaded docs land in the same Qdrant collection at the same width.
       DW_WORKER_EMBEDDING_PROVIDER: ${DW_API_EMBEDDING_PROVIDER:-hash}
       DW_WORKER_MODEL_PROFILE: ${DW_API_MODEL_PROFILE:-balanced}
-      # The model a Zalo chat command reads a message with: the API's provider.
+      # The model a chat command reads a message with: the API's provider.
       DW_WORKER_MODEL_PROVIDER: ${DW_MODEL_PROVIDER:-mock}
       DW_WORKER_OPENAI_STRUCTURED_MODE: ${DW_API_OPENAI_STRUCTURED_MODE:-json_schema}
       # Observability -> Langfuse (OTLP). Empty = no export.

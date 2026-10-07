@@ -13,6 +13,8 @@ source:
 
 # E2. Zalo Bot Platform là kênh làm việc đầu tiên; liên kết nằm ở `external_identities`, token dùng một lần; lệnh đến dựng AccessContext từ membership của người đã liên kết, scope tối thiểu, chỉ ở server
 
+> Phần chung đã đưa về platform (`2ebd50f`) thành ADR 0005 của platform ([`0005-zalo-bot-is-the-first-chat-channel.md`](0005-zalo-bot-is-the-first-chat-channel.md)); code platform ở đây trích ADR 0005, ADR này giữ phần của Elmich.
+
 Người dùng nội bộ của Elmich dùng Zalo, không dùng Slack. Kênh đầu tiên là **Zalo
 Bot Platform** (`bot-api.zaloplatforms.com`), qua `ZaloBotClient` có sẵn trong
 `dw_connectors`, thỏa `ChatSenderPort` (gửi một tin chữ). Người dùng tự liên kết:

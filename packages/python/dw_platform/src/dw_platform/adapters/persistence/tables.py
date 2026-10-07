@@ -98,9 +98,9 @@ external_identities = sa.Table(
 # to a user: whoever controls that chat proved nothing to an identity provider.
 CHANNEL_LINK_PROVIDERS: tuple[str, ...] = ("zalo",)
 
-# One-time nonces behind a channel link token (migration cf66605631d7). Identity
+# One-time nonces behind a channel link token (migration 02930a73bbdf). Identity
 # plane like `external_identities`: keyed by user, no tenant, no RLS — a link
-# belongs to the person, not to one of their workspaces (ADR 0012).
+# belongs to the person, not to one of their workspaces (ADR 0005).
 channel_link_nonces = sa.Table(
     "channel_link_nonces",
     metadata,
@@ -121,7 +121,7 @@ channel_link_nonces = sa.Table(
 )
 
 # One row per inbound chat message id, claimed before the message is acted on
-# (migration 988592a8100f). Identity plane like the nonces above: the dedupe runs
+# (migration 9f2becb1bf80). Identity plane like the nonces above: the dedupe runs
 # before a tenant is known, so there is no tenant to narrow by.
 channel_inbound_messages = sa.Table(
     "channel_inbound_messages",
@@ -141,8 +141,8 @@ channel_inbound_messages = sa.Table(
     sa.Column("outcome", sa.Text, nullable=False, server_default="processing"),
 )
 
-# A webhook update the API accepted and the worker has not taken yet (zalo-channel
-# ticket 03). Identity plane like the table above: no tenant, no RLS.
+# A webhook update the API accepted and the worker has not taken yet (channels
+# Z3). Identity plane like the table above: no tenant, no RLS.
 channel_inbound_updates = sa.Table(
     "channel_inbound_updates",
     metadata,
@@ -186,7 +186,7 @@ memberships = sa.Table(
     sa.UniqueConstraint("tenant_id", "workspace_id", "user_id", name="uq_memberships_scope_user"),
 )
 
-# The workspace a person chose for their chat commands (migration 988592a8100f).
+# The workspace a person chose for their chat commands (migration 9f2becb1bf80).
 # RLS by `app.principal_id`, not by tenant: the row is the person's, and the bot
 # reads it before a tenant is known. The FK to the membership keeps it naming a
 # workspace the person belongs to, and removes it with the membership.
@@ -249,11 +249,11 @@ approval_decisions = sa.Table(
     sa.Column("outcome", sa.Text, nullable=False),
     sa.Column("comment", sa.Text, nullable=False, server_default=""),
     sa.Column("decided_at", sa.TIMESTAMP(timezone=True), nullable=False),
-    # `web` or `zalo` (CHECK, migration dbb8c3359981): where the decision came from.
+    # `web` or `zalo` (CHECK, migration e399be8c0a2d): where the decision came from.
     sa.Column("channel", sa.Text, nullable=False, server_default="web"),
 )
 
-# A person opened an approval on the portal (zalo-channel ticket 05, ADR 0014):
+# A person opened an approval on the portal (channels Z5, ADR 0007):
 # the approval's version and its subject's version at that moment.
 approval_view_receipts = sa.Table(
     "approval_view_receipts",
@@ -520,8 +520,8 @@ notifications = sa.Table(
     sa.Column("read_at", sa.TIMESTAMP(timezone=True), nullable=True),
 )
 
-# A notification on its way out through a linked chat (migration 4a865a1c97aa,
-# ADR 0013). Rows are created only by `platform.deliver_notification`; the
+# A notification on its way out through a linked chat (migration 5a25154e0296,
+# ADR 0006). Rows are created only by `platform.deliver_notification`; the
 # application updates the delivery's own state and nothing else.
 channel_deliveries = sa.Table(
     "channel_deliveries",

@@ -1,7 +1,7 @@
 """Inbound chat messages: claim each message id once, record what came of it;
 and the queue a webhook update waits in until the worker takes it.
 
-``platform.channel_inbound_messages`` (migration 988592a8100f) is identity plane:
+``platform.channel_inbound_messages`` (migration 9f2becb1bf80) is identity plane:
 no tenant column and no RLS, because the claim happens before any tenant is
 resolved. Every statement names ``(channel, external_message_id)``. Bound to a
 ``dw_app`` session factory, which may insert, read, update ``outcome`` alone and
@@ -93,7 +93,7 @@ class SqlChannelInboundLedger:
 
 @dataclass(frozen=True)
 class SqlChannelUpdateQueue:
-    """``platform.channel_inbound_updates`` (migration 8728e2fac660).
+    """``platform.channel_inbound_updates`` (migration 395acbcad324).
 
     The API enqueues what a webhook was POSTed; the worker's drain takes it.
     Structurally implements the API's ``InboundUpdateInboxPort`` and the

@@ -41,11 +41,11 @@ class _Scope:
 @dataclass
 class _Row:
     recipient_user_id: uuid.UUID = field(default_factory=uuid.uuid4)
-    title: str = "PO-2026-007 chờ bạn duyệt"
+    title: str = "Đơn 007 chờ bạn duyệt"
     link: str | None = "/approvals/abc"
     attempts: int = 0
-    tenant_name: str = "Elmich"
-    workspace_name: str = "Cung ứng"
+    tenant_name: str = "Acme"
+    workspace_name: str = "Vận hành"
     member: bool = True
     status: str = "pending"
     outcome: tuple[object, ...] | None = None
@@ -122,7 +122,7 @@ async def test_a_linked_member_is_sent_the_message_once() -> None:
     assert chat.sent == [
         (
             "z-1",
-            "[Elmich · Cung ứng]\nPO-2026-007 chờ bạn duyệt\nhttps://portal.example/approvals/abc",
+            "[Acme · Vận hành]\nĐơn 007 chờ bạn duyệt\nhttps://portal.example/approvals/abc",
         )
     ]
     assert row.outcome == ("sent", "m1", chat_reference("zalo", "z-1"))
@@ -188,12 +188,12 @@ async def test_one_row_failing_to_settle_does_not_stop_the_lane() -> None:
 
 def test_the_message_never_carries_the_body_a_code_or_anything_but_its_four_parts() -> None:
     """`compose` takes no body: whatever a notification's body holds (a
-    decision code, a price) has no way into the chat (ADR 0014, QE-20)."""
+    decision code, a price) has no way into the chat (ADR 0006)."""
     text = compose(
-        tenant_name="Elmich",
-        workspace_name="Cung ứng",
+        tenant_name="Acme",
+        workspace_name="Vận hành",
         title="Có việc cần duyệt",
         link=None,
         web_url="https://portal.example",
     )
-    assert text == "[Elmich · Cung ứng]\nCó việc cần duyệt\nhttps://portal.example/"
+    assert text == "[Acme · Vận hành]\nCó việc cần duyệt\nhttps://portal.example/"

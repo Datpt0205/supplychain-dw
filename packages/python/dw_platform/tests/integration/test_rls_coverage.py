@@ -120,12 +120,12 @@ _PRINCIPAL_ONLY_ON_PURPOSE: dict[tuple[str, str], str] = {
     ),
     ("approval_decision_codes", "approval_decision_codes_self_select"): (
         "a decision code is the person's own and the bot reads it from the chat's "
-        "linked person before it knows a tenant (migration dbb8c3359981); SELECT "
+        "linked person before it knows a tenant (migration e399be8c0a2d); SELECT "
         "only, and every write runs under the tenant and workspace policy"
     ),
     ("channel_preferences", "channel_preferences_self"): (
         "the workspace a person chose for chat commands is the person's own row, "
-        "read by the bot before it knows a tenant (migration 988592a8100f); the FK "
+        "read by the bot before it knows a tenant (migration 9f2becb1bf80); the FK "
         "to the membership keeps it naming a workspace the person belongs to"
     ),
 }

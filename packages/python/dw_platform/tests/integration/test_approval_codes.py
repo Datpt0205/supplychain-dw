@@ -1,5 +1,5 @@
 """Integration: view receipts and decision codes, the database half (migration
-dbb8c3359981, zalo-channel ticket 05, ADR 0014).
+e399be8c0a2d, channels Z5, ADR 0007).
 
 As `dw_app`, against the catalog's own policies: a person's codes are read
 across tenants by `app.principal_id` and by nobody else; with no principal and

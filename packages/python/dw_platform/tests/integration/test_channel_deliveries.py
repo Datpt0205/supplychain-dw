@@ -1,4 +1,4 @@
-"""Integration: the channel outbox's database half (migration 4a865a1c97aa).
+"""Integration: the channel outbox's database half (migration 5a25154e0296).
 
 Rows enter by one door, `platform.deliver_notification`, and only for a
 recipient the notification was inserted for who holds a chat link; a repeat of

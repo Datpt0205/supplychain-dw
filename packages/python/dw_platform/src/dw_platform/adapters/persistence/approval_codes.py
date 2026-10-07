@@ -1,6 +1,6 @@
-"""View receipts and single-use decision codes (zalo-channel ticket 05, ADR 0014).
+"""View receipts and single-use decision codes (channels Z5, ADR 0007).
 
-Migration dbb8c3359981. Two ways in, one per kind of question:
+Migration e399be8c0a2d. Two ways in, one per kind of question:
 
 - **Mine, before a tenant is known.** The bot knows a person (the chat's link
   row) and not yet a tenant, so it reads that person's codes with

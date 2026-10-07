@@ -52,7 +52,7 @@ Everything is also runnable as containers: `make docker-up`.
 make new-context NAME=sales_chat
 ```
 
-That wires all fourteen places a context joins the platform and leaves a slice
+That wires all fifteen places a context joins the platform and leaves a slice
 that already passes lint, mypy, import-linter and its own test. CI generates a
 throwaway context on every push, so the seams below are checked rather than
 described.

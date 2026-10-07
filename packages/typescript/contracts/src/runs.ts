@@ -32,7 +32,7 @@ export const approvalSchema = z.object({
 export type Approval = z.infer<typeof approvalSchema>;
 
 /**
- * Opening an approval on the portal (`POST /approvals/{id}/view`, ADR 0014):
+ * Opening an approval on the portal (`POST /approvals/{id}/view`, ADR 0007):
  * the view is recorded, and with `issue_code` a single-use code is issued for
  * a decision on Zalo. The code is in this response only; `unavailable_reason`
  * says why none is offered, and the page says it in words.

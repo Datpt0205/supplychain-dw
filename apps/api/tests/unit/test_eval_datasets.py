@@ -61,7 +61,7 @@ def test_a_grader_name_the_table_lacks_fails_its_case() -> None:
                     "description": "a context grader nobody registered",
                     "input_ref": "evals/fixtures/cases/pf_side_effect.json",
                     "expected_ref": "evals/expected/pf_side_effect.json",
-                    "grader": "supply_chain.not_registered",
+                    "grader": "acme.not_registered",
                 }
             ],
         }

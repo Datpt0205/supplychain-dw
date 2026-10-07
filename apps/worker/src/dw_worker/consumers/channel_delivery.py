@@ -1,4 +1,4 @@
-"""Channel delivery: in-app notifications out through a linked chat (ADR 0013).
+"""Channel delivery: in-app notifications out through a linked chat (ADR 0006).
 
 ``platform.deliver_notification`` queues a row in ``platform.channel_deliveries``
 for every recipient with a chat link, in the transaction that addresses the
@@ -22,7 +22,7 @@ process that dies between the send and the commit sends that one message again.
 
 What the message says is ``compose``'s alone: the tenant and workspace names,
 the notification's title and an absolute link to the portal. Never its body,
-and so never a decision code or a secret (ADR 0014; QE-20 provisional).
+and so never a decision code or a secret (ADR 0006).
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from dw_kernel.channels import chat_reference
 
 logger = logging.getLogger("dw_worker.channel_delivery")
 
-# Five attempts, then failed (ticket 02). The delays between them double from
+# Five attempts, then failed (channels Z2). The delays between them double from
 # BASE_DELAY: 1, 2, 4 and 8 minutes, so a provider outage of a quarter of an
 # hour is ridden out and a dead chat is given up on the same morning.
 MAX_ATTEMPTS = 5

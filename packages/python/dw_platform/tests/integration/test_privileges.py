@@ -179,7 +179,7 @@ async def test_a_table_added_later_is_readable_without_a_new_grant(
 
 
 async def test_the_application_may_only_mark_a_link_nonce_used(db_urls: DatabaseUrls) -> None:
-    """`platform.channel_link_nonces` (migration cf66605631d7): `dw_app` issues,
+    """`platform.channel_link_nonces` (migration 02930a73bbdf): `dw_app` issues,
     consumes and prunes nonces, and the consume may set `used_at` and nothing
     else — never move a nonce to another user or stretch its expiry. Asked of the
     catalog, so a migration that dropped the column-level grant goes red here."""
@@ -224,7 +224,7 @@ async def test_the_application_may_only_mark_a_link_nonce_used(db_urls: Database
 async def test_the_application_may_only_settle_an_inbound_message_and_choose_a_workspace(
     db_urls: DatabaseUrls,
 ) -> None:
-    """Migration 988592a8100f. `channel_inbound_messages`: `dw_app` claims
+    """Migration 9f2becb1bf80. `channel_inbound_messages`: `dw_app` claims
     (INSERT), reads, settles (UPDATE of `outcome` only) and prunes (DELETE) —
     it can never move a claimed id to another user or re-date it.
     `channel_preferences`: `dw_app` reads, inserts and updates the chosen
@@ -268,7 +268,7 @@ async def test_the_application_may_only_settle_an_inbound_message_and_choose_a_w
             assert await column(chosen, "workspace_id", "UPDATE")
             assert not await column(chosen, "user_id", "UPDATE")
 
-            # Migration of zalo-channel ticket 03: the API queues a webhook
+            # Migration of channels Z3: the API queues a webhook
             # update, the worker's drain takes (deletes) it; nothing edits one.
             queued = "channel_inbound_updates"
             for verb in ("SELECT", "INSERT", "DELETE"):
@@ -282,7 +282,7 @@ async def test_the_application_may_only_settle_an_inbound_message_and_choose_a_w
 async def test_the_application_may_only_record_views_and_spend_or_revoke_codes(
     db_urls: DatabaseUrls,
 ) -> None:
-    """Migration dbb8c3359981. `approval_view_receipts`: `dw_app` reads and
+    """Migration e399be8c0a2d. `approval_view_receipts`: `dw_app` reads and
     inserts, never edits or deletes a receipt. `approval_decision_codes`: reads,
     inserts, and updates only `used_at`, `revoked_at`, `revoked_reason` and
     `failed_attempts` — never the hash, the comment, the owner, the approval or

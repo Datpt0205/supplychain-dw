@@ -94,7 +94,7 @@ async def test_send_message_sends_every_part_and_returns_the_last_id(monkeypatch
 
 @pytest.mark.parametrize("code", [400, 403, 404])
 async def test_a_refused_chat_is_unreachable_in_the_body_or_the_status(monkeypatch, code) -> None:
-    """The outbox stops retrying on this (zalo-channel ticket 02): the chat does
+    """The outbox stops retrying on this (channels Z2): the chat does
     not exist or blocked the bot. Both shapes, the dialect's ``ok: false`` body
     and a bare HTTP status, and the token is scrubbed from the description."""
 
@@ -185,7 +185,7 @@ def test_repr_does_not_print_the_token() -> None:
 
 async def test_set_webhook_registers_the_url_with_the_secret_token(monkeypatch) -> None:
     """Zalo sends ``secret_token`` back in ``X-Bot-Api-Secret-Token`` on every
-    webhook call; the URL itself carries no secret (zalo-channel ticket 03)."""
+    webhook call; the URL itself carries no secret (channels Z3)."""
     seen: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:

@@ -1,18 +1,18 @@
 """platform channel inbound messages and channel preferences
 
-Revision ID: 988592a8100f
-Revises: 57ca5f1df964
-Create Date: 2026-10-06 20:09:21.649647+00:00
+Revision ID: 9f2becb1bf80
+Revises: 02930a73bbdf
+Create Date: 2026-10-07 15:45:46.675835+00:00
 
-The foundation for commands a linked person sends through a chat (zalo-channel
-ticket 04, part Z4a). Two tables, both keyed by the person rather than by one of
-their workspaces, because the bot reads both before it knows a tenant.
+The foundation for commands a linked person sends through a chat (ADR 0005).
+Two tables, both keyed by the person rather than by one of their workspaces,
+because the bot reads both before it knows a tenant.
 
 `platform.channel_inbound_messages` — one row per inbound message id, written
 with `INSERT ... ON CONFLICT DO NOTHING` and committed as `processing` BEFORE the
 message is acted on; zero rows inserted means the id was seen already and the
 message is skipped. The poll lane's `getUpdates` acknowledges on read, and the
-webhook (Z3) may deliver the same update again, so the id is the only thing that
+webhook may deliver the same update again, so the id is the only thing that
 makes "act once" hold across both. After acting, `outcome` becomes `done`,
 `ignored` or `failed`; an id is never processed a second time, whatever its
 outcome.
@@ -25,8 +25,8 @@ outcome.
 - **Bounded.** The worker's `channel_inbound_messages_retention` lane deletes
   rows older than seven days (failure-modes #6).
 
-`platform.channel_preferences` — the workspace a person chose on `/settings`
-for their chat commands ("Workspace dùng cho Zalo"), one row per person.
+`platform.channel_preferences` — the workspace a person chose for their chat
+commands (`PUT /api/v1/zalo/workspace`), one row per person.
 
 - **FK to the membership**, `(tenant_id, workspace_id, user_id)` against
   `uq_memberships_scope_user`, `ON DELETE CASCADE`: the choice can only name a
@@ -40,14 +40,16 @@ for their chat commands ("Workspace dùng cho Zalo"), one row per person.
   named `tenant_isolation_*`, so the offboarding export does not pick the row
   up; the purge removes it through the membership's cascade.
 
-**Twin.** The platform took this change back as its own revision `9f2becb1bf80`
-(same names, same grants), which merging `platform/main` brings here on a
-second branch alembic may run before or after this one. So every statement is
-idempotent, written as the platform's copy writes it (objects created only if
-missing, functions and triggers `CREATE OR REPLACE`, the REVOKE/GRANT pair
-landing on the same state however often it runs), and downgrade is a no-op
-while the twin is still applied: whichever of the pair is downgraded last
-removes the objects. The platform revision does the same, mirrored.
+**Twin.** This change came back from the first product, which had already
+shipped it as its own revision `988592a8100f` (same tables, constraint, index
+and policy names, same grants). A product that merges this platform carries
+both, on two branches alembic may run in either order, so every statement here
+is idempotent: tables and indexes are created only if missing, the policy only
+if no policy of that name exists on the table, and ENABLE/FORCE and the
+REVOKE/GRANT pairs land on the same state however often they run. Downgrade is
+a no-op while the twin is still applied, because the objects are then the
+twin's too; whichever of the pair is downgraded last removes them. Where the
+twin does not exist (this repository) the check never matches.
 """
 
 from __future__ import annotations
@@ -55,13 +57,13 @@ from __future__ import annotations
 from alembic import context, op
 from alembic.script import ScriptDirectory
 
-revision = "988592a8100f"
-down_revision = "57ca5f1df964"
+revision = "9f2becb1bf80"
+down_revision = "02930a73bbdf"
 branch_labels = None
 depends_on = None
 
-# The platform revision that carries the same change (see docstring).
-_TWIN = "9f2becb1bf80"
+# The product revision that shipped the same change first (see docstring).
+_TWIN = "988592a8100f"
 
 _PRINCIPAL = "user_id = NULLIF(current_setting('app.principal_id', true), '')::uuid"
 

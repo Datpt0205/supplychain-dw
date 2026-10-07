@@ -251,7 +251,7 @@ class ApiContainer:
     runner: LangGraphWorkflowRunner | None = None
     approval_flow: ApproveAndResumeService | None = None
     # Opening an approval: the view receipt and, when asked, the code a
-    # decision on Zalo needs (ADR 0014). Wired with `approval_flow`.
+    # decision on Zalo needs (ADR 0007). Wired with `approval_flow`.
     approval_views: ApprovalViewService | None = None
 
     knowledge_gateway: KnowledgeGateway | None = None

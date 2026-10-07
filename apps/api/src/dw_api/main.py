@@ -161,7 +161,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
     if container.zalo_linking is not None:
         app.include_router(zalo_router, prefix="/api/v1")
 
-    # Zalo's own door, the hosted way updates arrive (ADR 0015): only in
+    # Zalo's own door, the hosted way updates arrive (ADR 0008): only in
     # webhook mode with a secret set. In poll mode the worker reads the bot
     # and this route does not exist, so the two never both read one bot.
     if settings.zalo_webhook_enabled and container.zalo_webhook_inbox is not None:

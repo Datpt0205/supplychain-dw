@@ -11,6 +11,8 @@ source:
 
 # E4. Quyết approval trên Zalo được, nhưng chỉ sau khi đã xem đúng phiên bản trên cổng, bằng một mã dùng một lần
 
+> Phần chung đã đưa về platform (`2ebd50f`) thành ADR 0007 của platform ([`0007-chat-decisions-after-a-portal-view.md`](0007-chat-decisions-after-a-portal-view.md)); code platform ở đây trích ADR 0007, ADR này giữ phần của Elmich.
+
 Bản trước của ADR này (cùng ngày) để mọi quyết định trên web, Zalo chỉ báo và dẫn
 liên kết. Đạt sửa ngày 5/10/2026: Zalo là kênh làm việc hai chiều, và người duyệt
 được trả lời quyết định trong Zalo, với điều kiện đã mở hồ sơ trên cổng trước. Quyết

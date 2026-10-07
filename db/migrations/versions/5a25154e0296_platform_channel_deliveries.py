@@ -1,11 +1,11 @@
 """platform channel deliveries
 
-Revision ID: 4a865a1c97aa
-Revises: 3fc6599ecd5e
-Create Date: 2026-10-07 03:41:45.794755+00:00
+Revision ID: 5a25154e0296
+Revises: 9f2becb1bf80
+Create Date: 2026-10-07 15:58:10.489888+00:00
 
 An in-app notification to a person who linked a chat also goes out through that
-chat (zalo-channel ticket 02, ADR 0013). `platform.channel_deliveries` holds one
+chat (channels Z2, ADR 0006). `platform.channel_deliveries` holds one
 row per notification, recipient and channel: its status, its attempts, when it
 may be tried next, and what the provider called the message it sent.
 
@@ -18,7 +18,7 @@ may be tried next, and what the provider called the message it sent.
   opt-in. `dw_app` holds no INSERT on the table, so there is no second way to
   create a row.
 - **What leaves through the chat** is copied onto the row at that moment: the
-  notification's `title` and `link`, never its `body` (QE-20, provisional: a
+  notification's `title` and `link`, never its `body` (a
   short title and a link back to the portal, which shows the rest after
   sign-in). `platform.notifications` is never rewritten by the application
   (`dw_app` updates `read_at` alone), so the copy is a stamp, not a second
@@ -26,7 +26,7 @@ may be tried next, and what the provider called the message it sent.
   inbox, which that table's RLS narrows to `app.user_id`.
 - **Idempotent.** UNIQUE `(tenant_id, channel, source_key,
   recipient_user_id)`, inserted `ON CONFLICT DO NOTHING`.
-- **Updated in place**, so an ordinary table and not partitioned (ADR 0013).
+- **Updated in place**, so an ordinary table and not partitioned (ADR 0006).
   `dw_app` may update the delivery's own state (`status`, `attempts`,
   `next_attempt_at`, `external_message_id`, `last_error`) and nothing else, and
   may not delete: rows go through `platform.prune_channel_deliveries()` (90
@@ -40,14 +40,17 @@ may be tried next, and what the provider called the message it sent.
   by it); every read after it runs under that scope's RLS.
 - **`updated_at`** by `platform.touch_updated_at()`.
 
-**Twin.** The platform took this change back as its own revision `5a25154e0296`
-(same names, same grants), which merging `platform/main` brings here on a
-second branch alembic may run before or after this one. So every statement is
-idempotent, written as the platform's copy writes it (objects created only if
-missing, functions and triggers `CREATE OR REPLACE`, the REVOKE/GRANT pair
-landing on the same state however often it runs), and downgrade is a no-op
-while the twin is still applied: whichever of the pair is downgraded last
-removes the objects. The platform revision does the same, mirrored.
+**Twin.** This change came back from the first product, which had already
+shipped it as its own revision `4a865a1c97aa` (same names for every table,
+constraint, index, policy and function, same grants). A product that merges
+this platform carries both, on two branches alembic may run in either order,
+so every statement here is idempotent: tables and indexes are created only if
+missing, a policy only if none of that name exists on its table, functions and
+triggers are created or replaced with the same body, and ENABLE/FORCE and the
+REVOKE/GRANT pairs land on the same state however often they run. Downgrade is
+a no-op while the twin is still applied, because the objects are then the
+twin's too; whichever of the pair is downgraded last removes them. Where the
+twin does not exist (this repository) the check never matches.
 """
 
 from __future__ import annotations
@@ -55,13 +58,13 @@ from __future__ import annotations
 from alembic import context, op
 from alembic.script import ScriptDirectory
 
-revision = "4a865a1c97aa"
-down_revision = "3fc6599ecd5e"
+revision = "5a25154e0296"
+down_revision = "9f2becb1bf80"
 branch_labels = None
 depends_on = None
 
-# The platform revision that carries the same change (see docstring).
-_TWIN = "5a25154e0296"
+# The product revision that shipped the same change first (see docstring).
+_TWIN = "4a865a1c97aa"
 
 _TENANT = "tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid"
 _WORKSPACE = "workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid"

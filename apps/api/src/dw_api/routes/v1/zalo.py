@@ -7,7 +7,7 @@ worker's poll lane (the API webhook once a public host exists) redeems it.
 Every route acts on ``context.principal_id`` — the user resolved server-side
 from the verified bearer token — and takes no body, query or path value that
 could name somebody else. The link belongs to the person, not to one of their
-workspaces (ADR 0012): the same user reads "linked" from every tenant they are
+workspaces (ADR 0005): the same user reads "linked" from every tenant they are
 a member of, by design.
 
 Mounted only when the bot token and the link secret are both configured; an
@@ -27,7 +27,7 @@ the same transaction, and anything else answers 404 — the same answer for a
 workspace that exists and one that does not.
 
 ``webhook_router`` is the other door: Zalo itself, not a signed-in person
-(ADR 0015 and its amendment Z3). It is mounted only in webhook mode with a
+(ADR 0008). It is mounted only in webhook mode with a
 secret set, so a poll deployment has no such route. It carries no bearer token,
 so the one thing that admits a call is the ``X-Bot-Api-Secret-Token`` header,
 compared in constant time before a byte of the body is read; a missing or
@@ -147,8 +147,8 @@ async def zalo_choose_workspace(
 webhook_router = APIRouter(prefix="/zalo", tags=["zalo"])
 
 # The header Zalo's Bot Platform sends the ``secret_token`` given to
-# ``setWebhook`` in (Telegram's dialect). PROVISIONAL until the live run
-# (ticket 07) sees a real call carry it; without it every call is refused and
+# ``setWebhook`` in (Telegram's dialect). PROVISIONAL until a live run
+# sees a real call carry it; without it every call is refused and
 # the deployment stays on poll, which is the safe way to be wrong.
 WEBHOOK_SECRET_HEADER = "X-Bot-Api-Secret-Token"
 # One chat update is a few hundred bytes; 64 KB is far past any and still small.

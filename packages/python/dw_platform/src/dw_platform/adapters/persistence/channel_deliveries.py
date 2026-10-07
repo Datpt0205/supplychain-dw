@@ -1,4 +1,4 @@
-"""SQL side of the channel outbox (migration 4a865a1c97aa, ADR 0013).
+"""SQL side of the channel outbox (migration 5a25154e0296, ADR 0006).
 
 Rows are created by ``platform.deliver_notification`` alone, in the statement
 that addresses the in-app notification; nothing here inserts. What this module
@@ -13,7 +13,7 @@ does is let the worker's ``channel_delivery`` lane find, hold and settle them:
   'pending'`` in the claim is re-checked by READ COMMITTED once a lock it
   waited on is released, so a row sent by one worker is never claimed by
   another. One delivery per transaction: a crash re-sends at most the one
-  message in flight, not a batch (ADR 0013: at least once).
+  message in flight, not a batch (ADR 0006: at least once).
 - Every settlement but a retry writes one ``platform.audit_events`` row in the
   same transaction.
 

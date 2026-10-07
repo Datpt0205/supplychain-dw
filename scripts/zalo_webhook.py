@@ -1,4 +1,4 @@
-"""Register, remove or show this deployment's Zalo webhook (ADR 0015, zalo-channel ticket 03).
+"""Register, remove or show this deployment's Zalo webhook (ADR 0008, channels Z3).
 
 Usage:
   uv run python scripts/zalo_webhook.py set     # ZALO_UPDATES_MODE=webhook only

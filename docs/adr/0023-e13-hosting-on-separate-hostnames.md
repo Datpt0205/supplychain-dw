@@ -10,6 +10,8 @@ source:
 
 # E13. Host trên ba tên máy riêng cho web, API và đăng nhập, lấy từ env; TLS bằng overlay Caddy
 
+> Phần chung đã đưa về platform (`2ebd50f`) thành ADR 0009 của platform ([`0009-hosting-on-three-hostnames-behind-caddy.md`](0009-hosting-on-three-hostnames-behind-caddy.md)); code platform ở đây trích ADR 0009, ADR này giữ phần của Elmich.
+
 **Quyết định (Đạt chọn tên máy riêng, 5/10/2026):**
 
 - Ba tên máy, mỗi cái một biến env: web (`DW_WEB_HOST`), API (`DW_API_HOST`), Keycloak

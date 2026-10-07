@@ -92,7 +92,7 @@ class DecisionRequest(BaseModel):
 class ViewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # The comment a decision taken with the code will carry (ADR 0014,
+    # The comment a decision taken with the code will carry (ADR 0007,
     # amendment 2026-10-06): required for a strict type, written here because
     # the chat carries only the code.
     comment: str = Field(default="", max_length=MAX_COMMENT_LENGTH)
@@ -200,7 +200,7 @@ async def decide(
     )
 
 
-# Opening an approval on the portal (ADR 0014, zalo-channel ticket 05). Every
+# Opening an approval on the portal (ADR 0007, channels Z5). Every
 # call records a view receipt — the approval's version and its subject's, as
 # the viewer saw them — so no `Idempotency-Key`: a second view is a second
 # receipt. With `issue_code`, a single-use code bound to that receipt and to

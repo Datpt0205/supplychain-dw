@@ -7,12 +7,13 @@ a feature is checked. Detail lives in the area file; history lives in git.
 
 ## Areas
 
-| Area                                      | File                                | State                    |
-| ----------------------------------------- | ----------------------------------- | ------------------------ |
-| Supply chain (Elmich), this product       | `.claude/plans/supply-chain.md`     | Port running; 26 tickets |
-| Ops hardening (inherited from `codebase`) | `.claude/plans/ops-hardening.md`    | Done; numbers owed       |
-| Agent runtime, memory (inherited)         | `.claude/plans/platform-runtime.md` | Done but for named gaps  |
-| Web UI shell, Ant Design v6 (inherited)   | `.claude/plans/web-ui.md`           | Shell done; 03–09 next   |
+| Area                                       | File                                | State                     |
+| ------------------------------------------ | ----------------------------------- | ------------------------- |
+| Supply chain (Elmich), this product        | `.claude/plans/supply-chain.md`     | Port running; 26 tickets  |
+| Ops hardening (inherited from `codebase`)  | `.claude/plans/ops-hardening.md`    | Done; numbers owed        |
+| Agent runtime, memory (inherited)          | `.claude/plans/platform-runtime.md` | Done but for named gaps   |
+| Web UI shell, Ant Design v6 (inherited)    | `.claude/plans/web-ui.md`           | Shell done; 03–09 next    |
+| Chat channels, Zalo (upstreamed from here) | `.claude/plans/channels.md`         | Upstreamed; live run owed |
 
 Inherited areas came with the platform seed (`codebase` `main`, `bf553f4`) and
 change here only when work in this repo touches them; their upstream copy is
@@ -29,10 +30,9 @@ the reference after each `git merge platform/main`.
 - **Zalo is two-way** (Đạt, 2026-10-05): chat proposal at step 1 (Z4),
   approvals at steps 6 and 9 by a one-time code seen on the portal (Z5, ADR
   0014 revised), read-only questions (Z6).
-- **Done in the first build session (2026-10-05):** port P, ENV, login and
-  `/settings` (U), Zalo link (Z1). `make ci` green.
-- **Done on branch `feat/elmich-a-d-s1` (2026-10-06, not pushed, not merged):**
-  A (`dabf5c4`), D (`51e3400`), S1. Steps 1–5 run end to end in the app.
+- **Done 2026-10-05:** port P, ENV, login and `/settings` (U), Zalo link (Z1).
+  On branch `feat/elmich-a-d-s1` (2026-10-06): A (`dabf5c4`), D (`51e3400`),
+  S1. Steps 1–5 run end to end in the app.
 - **2026-10-06:** platform-runtime 02 (`7b411df`), S2 and W done; platform
   hardening and the FCI rerank merged from `platform/main` (`c16857c`). Next:
   Z4 (Z4a, Z4b; photos split to 04b, waiting for a real photo update),

@@ -61,7 +61,7 @@ class WorkerSettings(BaseSettings):
         default=300.0, ge=10, le=86400
     )
     # How often the `channel_delivery` lane looks for notifications to send
-    # through a linked chat (zalo-channel ticket 02). Thirty seconds: a Zalo
+    # through a linked chat (channels Z2). Thirty seconds: a Zalo
     # message trails its in-app notification by at most that.
     channel_delivery_interval_seconds: float = Field(default=30.0, ge=5, le=3600)
 
@@ -233,7 +233,7 @@ class WorkerSettings(BaseSettings):
     # transient fault survived twice, not a broken handler retried for ever.
     outbox_max_attempts: int = Field(default=3, ge=1, le=10)
 
-    # --- Zalo self-link (zalo-channel ticket 01) ---
+    # --- Zalo self-link (channels Z1) ---
     # The bot token is a credential (it rides in every Bot API URL) and the link
     # secret must equal the API's: it verifies the ``/start`` token the API
     # signed. ``SecretStr`` so neither prints in a repr, a log or an error.
@@ -246,7 +246,7 @@ class WorkerSettings(BaseSettings):
         validation_alias=AliasChoices("DW_WORKER_ZALO_LINK_SECRET", "ZALO_LINK_SECRET"),
     )
     # The key decision codes are hashed under; must equal the API's, which
-    # issued them (ADR 0014, ticket 05). Empty = a decision sent from Zalo is
+    # issued them (ADR 0007, channels Z5). Empty = a decision sent from Zalo is
     # answered "not enabled" and nothing is decided.
     approval_code_secret: SecretStr = Field(
         default=SecretStr(""),

@@ -427,7 +427,7 @@ async def test_a_cursor_is_bound_to_the_workspace_it_was_issued_in(
     assert response.status_code == status
 
 
-# ---- opening an approval: the receipt and the code (zalo-channel ticket 05) ----
+# ---- opening an approval: the receipt and the code (channels Z5) ----
 
 _CODE_KEY = DecisionCodeKey(b"api-unit-code-secret-0123456789")
 

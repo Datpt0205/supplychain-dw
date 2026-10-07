@@ -32,8 +32,8 @@ _MAX_CHARS = 1900
 # Codes on which ``sendMessage`` will never succeed for this chat, whether they
 # come as the HTTP status or as ``error_code`` in an ``ok: false`` body: the
 # Telegram dialect answers 400 "chat not found" and 403 "blocked by the user".
-# PROVISIONAL (zalo-channel ticket 02): taken from the dialect, not measured
-# against Zalo; the live run (ticket 07) confirms or corrects it. Everything
+# PROVISIONAL (channels Z2): taken from the dialect, not measured
+# against Zalo; a live run confirms or corrects it. Everything
 # else - 401 included, which is this deployment's token and not the person's
 # chat - is retried, up to the outbox's ceiling.
 _UNREACHABLE = frozenset({400, 403, 404})
@@ -182,7 +182,7 @@ class ZaloBotClient:
 
         Zalo sends ``secret_token`` back in the ``X-Bot-Api-Secret-Token``
         header of every call, which is how the API tells Zalo from anyone else
-        (ADR 0015 amendment Z3); the URL carries no secret, so none lands in an
+        (ADR 0008); the URL carries no secret, so none lands in an
         access log. A failure's text has both the token and the secret scrubbed.
         """
         async with self._client(15) as client:

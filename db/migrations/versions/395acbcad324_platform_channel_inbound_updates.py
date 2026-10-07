@@ -1,13 +1,13 @@
 """platform channel inbound updates
 
-Revision ID: 8728e2fac660
-Revises: 992e7c6ae4fe
-Create Date: 2026-10-07 13:47:47.839564+00:00
+Revision ID: 395acbcad324
+Revises: e399be8c0a2d
+Create Date: 2026-10-07 16:19:36.954382+00:00
 
-The Zalo webhook (zalo-channel ticket 03, ADR 0015 amendment Z3): the API
-answers Zalo at once and leaves the work to the worker, which already hosts the
-one ``ZaloInbound`` the poll lane runs (commands, model, the review runner a
-decision resumes on). This table is the hand-over between them.
+The Zalo webhook (channels Z3, ADR 0008): the API answers Zalo at once and
+leaves the work to the worker, which already hosts the one ``ZaloInbound`` the
+poll lane runs (the link flow and the registered commands). This table is the
+hand-over between them.
 
 `platform.channel_inbound_updates` — one row per update the API accepted
 (secret checked, at most 64 KB, a bot update by schema), as it was POSTed.
@@ -26,14 +26,15 @@ decision resumes on). This table is the hand-over between them.
   lane was down) holds a person's text, so the `channel_inbound_messages_retention`
   lane deletes it after `INBOUND_UPDATE_RETENTION` (failure-modes #6).
 
-**Twin.** The platform took this change back as its own revision `395acbcad324`
-(same names, same grants), which merging `platform/main` brings here on a
-second branch alembic may run before or after this one. So every statement is
-idempotent, written as the platform's copy writes it (objects created only if
-missing, functions and triggers `CREATE OR REPLACE`, the REVOKE/GRANT pair
-landing on the same state however often it runs), and downgrade is a no-op
-while the twin is still applied: whichever of the pair is downgraded last
-removes the objects. The platform revision does the same, mirrored.
+**Twin.** This change came back from the first product, which had already
+shipped it as its own revision `8728e2fac660` (same table, constraint and index
+names, same grants). A product that merges this platform carries both, on two
+branches alembic may run in either order, so every statement here is
+idempotent: the table and indexes are created only if missing, and the
+REVOKE/GRANT pair lands on the same state however often it runs. Downgrade is
+a no-op while the twin is still applied, because the objects are then the
+twin's too; whichever of the pair is downgraded last removes them. Where the
+twin does not exist (this repository) the check never matches.
 """
 
 from __future__ import annotations
@@ -41,13 +42,13 @@ from __future__ import annotations
 from alembic import context, op
 from alembic.script import ScriptDirectory
 
-revision = "8728e2fac660"
-down_revision = "992e7c6ae4fe"
+revision = "395acbcad324"
+down_revision = "e399be8c0a2d"
 branch_labels = None
 depends_on = None
 
-# The platform revision that carries the same change (see docstring).
-_TWIN = "395acbcad324"
+# The product revision that shipped the same change first (see docstring).
+_TWIN = "8728e2fac660"
 
 
 def _twin_applied() -> bool:

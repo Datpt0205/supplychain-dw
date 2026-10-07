@@ -1,6 +1,6 @@
 """Single-use decision codes: a decision in a chat after a view on the portal.
 
-ADR 0014 with its 2026-10-06 amendment (zalo-channel ticket 05). A person opens
+ADR 0007 with its 2026-10-06 amendment (channels Z5). A person opens
 an approval on the portal; the page records a **view receipt** (the approval's
 version and its subject's version at that moment) and, when asked and allowed,
 issues a **code** bound to that receipt and to the comment typed there. The chat

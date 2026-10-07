@@ -1,6 +1,6 @@
 """The chat half of a decision on Zalo: `DUYỆT <mã>` and `KHÔNG <mã> <lý do>`.
 
-ADR 0014 with its 2026-10-06 amendment (zalo-channel ticket 05). A fixed
+ADR 0007 with its 2026-10-06 amendment (channels Z5). A fixed
 grammar read by code, never by a model: no tool decides, no intent schema has a
 "decision" field. `ChannelDecisionCommand` is the first command a deployment
 registers in its `ChannelCommandRegistry` (`dw_connectors.inbound`), so a reply
@@ -24,7 +24,7 @@ event (`approval.channel_decision_refused`) under the code's tenant:
 4. The approval's version and its subject's version are the ones the view saw.
 5. The sender's context, built for the code's workspace from their CURRENT
    membership and cut to `approvals.decide` plus the approval's stamped scope,
-   no role (`LinkedUserAccess.access_for`, ADR 0012 condition 2).
+   no role (`LinkedUserAccess.access_for`, ADR 0005 condition 2).
 6. `ApproveAndResumeService.decide(channel="zalo", admission=CodeAdmission)`:
    the same scope, stamp, strict-prefix and workspace checks as the web, and
    the code consumed by one conditional UPDATE in the decision's transaction.

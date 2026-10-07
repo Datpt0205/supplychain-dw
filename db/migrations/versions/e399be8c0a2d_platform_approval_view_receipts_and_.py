@@ -1,11 +1,10 @@
 """platform approval view receipts and decision codes
 
-Revision ID: dbb8c3359981
-Revises: 4a865a1c97aa
-Create Date: 2026-10-07 04:19:14.865922+00:00
+Revision ID: e399be8c0a2d
+Revises: 5a25154e0296
+Create Date: 2026-10-07 16:06:27.013816+00:00
 
-A decision on Zalo after a view on the portal (zalo-channel ticket 05, ADR 0014
-with its 2026-10-06 amendment). Three changes:
+A decision on Zalo after a view on the portal (channels Z5, ADR 0007). Three changes:
 
 `platform.approval_view_receipts` — one row each time a person opens an
 approval on the portal: who, which approval, the approval's `version` and the
@@ -27,8 +26,7 @@ by it and gone with it (`ON DELETE CASCADE`); not partitioned.
 - **Bound to the receipt** by a composite FK `(receipt_id, tenant_id,
   workspace_id, approval_id, user_id)`, so a code always names the view, the
   approval and the person it was issued to, and goes with them by cascade.
-- **Bound to the comment** typed on the portal when it was issued (amendment
-  2026-10-06): the decision records exactly that comment.
+- **Bound to the comment** typed on the portal when it was issued : the decision records exactly that comment.
 - **One open code per person per approval**: a partial UNIQUE over
   `(tenant_id, approval_id, user_id) WHERE used_at IS NULL AND revoked_at IS
   NULL`. Issuing a new one revokes the old one (`reissued`) in the same
@@ -49,14 +47,17 @@ by it and gone with it (`ON DELETE CASCADE`); not partitioned.
 `platform.approval_decisions.channel` — `web` or `zalo` (CHECK), default `web`:
 every row before this revision was decided on the web.
 
-**Twin.** The platform took this change back as its own revision `e399be8c0a2d`
-(same names, same grants), which merging `platform/main` brings here on a
-second branch alembic may run before or after this one. So every statement is
-idempotent, written as the platform's copy writes it (objects created only if
-missing, functions and triggers `CREATE OR REPLACE`, the REVOKE/GRANT pair
-landing on the same state however often it runs), and downgrade is a no-op
-while the twin is still applied: whichever of the pair is downgraded last
-removes the objects. The platform revision does the same, mirrored.
+**Twin.** This change came back from the first product, which had already
+shipped it as its own revision `dbb8c3359981` (same names for every table,
+constraint, index, policy and function, same grants). A product that merges
+this platform carries both, on two branches alembic may run in either order,
+so every statement here is idempotent: tables and indexes are created only if
+missing, a policy only if none of that name exists on its table, functions and
+triggers are created or replaced with the same body, and ENABLE/FORCE and the
+REVOKE/GRANT pairs land on the same state however often they run. Downgrade is
+a no-op while the twin is still applied, because the objects are then the
+twin's too; whichever of the pair is downgraded last removes them. Where the
+twin does not exist (this repository) the check never matches.
 """
 
 from __future__ import annotations
@@ -64,13 +65,13 @@ from __future__ import annotations
 from alembic import context, op
 from alembic.script import ScriptDirectory
 
-revision = "dbb8c3359981"
-down_revision = "4a865a1c97aa"
+revision = "e399be8c0a2d"
+down_revision = "5a25154e0296"
 branch_labels = None
 depends_on = None
 
-# The platform revision that carries the same change (see docstring).
-_TWIN = "e399be8c0a2d"
+# The product revision that shipped the same change first (see docstring).
+_TWIN = "dbb8c3359981"
 
 _TENANT = "tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid"
 _WORKSPACE = "workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid"

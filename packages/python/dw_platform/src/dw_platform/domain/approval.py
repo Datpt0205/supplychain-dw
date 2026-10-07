@@ -65,7 +65,7 @@ class ApprovalDecision:
     outcome: DecisionOutcome
     comment: str
     decided_at: datetime
-    # Where the decision was made: `web`, or `zalo` after a portal view (ADR 0014).
+    # Where the decision was made: `web`, or `zalo` after a portal view (ADR 0007).
     channel: str = "web"
 
 

@@ -1,6 +1,6 @@
 """Zalo updates the API's webhook queued: take -> ZaloInbound.handle.
 
-The hosted path (ADR 0015 and its amendment Z3). Zalo POSTs each update to
+The hosted path (ADR 0008). Zalo POSTs each update to
 ``/api/v1/zalo/webhook``; the API checks the secret, the size and the shape,
 queues the update in ``platform.channel_inbound_updates`` and answers at once.
 This lane takes what was queued and hands each update, unchanged, to

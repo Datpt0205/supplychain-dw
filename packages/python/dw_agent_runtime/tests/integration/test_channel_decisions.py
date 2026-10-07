@@ -1,6 +1,6 @@
 """Integration: a decision sent from a chat after a view on the portal.
 
-ADR 0014 with its 2026-10-06 amendment, zalo-channel ticket 05. Real Postgres
+ADR 0007 with its 2026-10-06 amendment, channels Z5. Real Postgres
 as `dw_app`: the view service the API route calls, the decision service the
 worker's chat command calls, `ApproveAndResumeService.decide` between them, and
 the real membership lookup the chat context is built from. Every refusal leaves

@@ -55,7 +55,7 @@ in `decide` (memory: the decider must be cleared for what they are deciding on).
 DECIDED_EVENT_SCHEMA = "1.0"
 
 # The audit action of a decision admitted by something outside the approval (a
-# single-use code, ADR 0014). A web decision writes none, as before.
+# single-use code, ADR 0007). A web decision writes none, as before.
 CHANNEL_DECIDED_ACTION = "approval.channel_decided"
 
 

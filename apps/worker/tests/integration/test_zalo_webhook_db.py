@@ -2,10 +2,10 @@
 
 What the API's route queues (``SqlChannelUpdateQueue.enqueue``, the API's own
 adapter) this lane takes and hands to the worker's ``build_zalo_inbound`` — the
-object the poll lane runs, unchanged (ADR 0015 amendment Z3). Shown here:
+object the poll lane runs, unchanged (ADR 0008). Shown here:
 
 * a ``/start <code>`` in the webhook's envelope links the chat, exactly as the
-  poll path does (ticket 01's flow, over the other door);
+  poll path does (the Z1 flow, over the other door);
 * the same update delivered twice — Zalo retrying, or a replay — is acted on
   once: the router claims the message id in ``channel_inbound_messages``;
 * a taken update is gone from the queue, and two drains at once never hand one

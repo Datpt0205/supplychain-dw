@@ -136,7 +136,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
     constant (`platform.prune_channel_deliveries()`). Wired without a bot
     token too: rows are queued for anyone linked whether or not this host sends.
     `approval_codes_retention` is the eleventh: single-use decision codes
-    (zalo-channel ticket 05) a day old, the database's constant
+    (channels Z5) a day old, the database's constant
     (`platform.prune_approval_decision_codes()`), whether or not this host polls.
 
     `supply_chain_follow_ups` is the first context lane: Supply Chain's sweep
