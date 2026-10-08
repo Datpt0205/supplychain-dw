@@ -14,10 +14,11 @@ go before it can bind anyone. Retention deletes through the SECURITY DEFINER
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -108,21 +109,36 @@ def _row(context: AccessContext, draft: FollowUpDraft) -> dict[str, object]:
 class SqlFollowUpRepository:
     session_factory: async_sessionmaker[AsyncSession]
 
-    async def open(self, context: AccessContext, drafts: Sequence[FollowUpDraft]) -> int:
+    async def open(
+        self,
+        context: AccessContext,
+        drafts: Sequence[FollowUpDraft],
+        *,
+        audit: Callable[[FollowUpDraft], AuditEvent],
+    ) -> int:
         if not drafts:
             return 0
         async with tenant_session(
             self.session_factory, TenantScope.from_access_context(context)
         ) as session:
-            result = await session.execute(
-                pg_insert(_f)
-                .values([_row(context, draft) for draft in drafts])
-                # Either episode key (`uq_follow_ups_po_case_id_kind_episode`,
-                # `uq_follow_ups_product_dev_case_id_kind_episode`): an episode
-                # opens once, whichever kind of case it is on.
-                .on_conflict_do_nothing()
+            opened = set(
+                (
+                    await session.execute(
+                        pg_insert(_f)
+                        .values([_row(context, draft) for draft in drafts])
+                        # Either episode key (`uq_follow_ups_po_case_id_kind_episode`,
+                        # `uq_follow_ups_product_dev_case_id_kind_episode`): an
+                        # episode opens once, whichever kind of case it is on.
+                        .on_conflict_do_nothing()
+                        .returning(_f.c.id)
+                    )
+                ).scalars()
             )
-        return int(getattr(result, "rowcount", 0) or 0)
+            audits = SqlAuditRepository(session)
+            for draft in drafts:
+                if draft.id in opened:
+                    await audits.append(audit(draft))
+        return len(opened)
 
     async def list_open(self, context: AccessContext) -> list[FollowUpRecord]:
         async with tenant_session(
@@ -137,21 +153,44 @@ class SqlFollowUpRepository:
             ).all()
         return [_record(row) for row in rows]
 
-    async def resolve(self, context: AccessContext, follow_up_ids: Sequence[uuid.UUID]) -> None:
-        if not follow_up_ids:
-            return
+    async def resolve(
+        self,
+        context: AccessContext,
+        follow_ups: Sequence[FollowUpRecord],
+        *,
+        audit: Callable[[FollowUpRecord], AuditEvent],
+    ) -> int:
+        if not follow_ups:
+            return 0
         async with tenant_session(
             self.session_factory, TenantScope.from_access_context(context)
         ) as session:
-            await session.execute(
-                sa.update(_f)
-                .where(
-                    *_in_scope(context),
-                    _f.c.id.in_(list(follow_up_ids)),
-                    _f.c.status == FollowUpStatus.OPEN.value,
-                )
-                .values(status=FollowUpStatus.RESOLVED.value, closed_at=sa.func.now())
+            closed = set(
+                (
+                    await session.execute(
+                        sa.update(_f)
+                        .where(
+                            *_in_scope(context),
+                            # One array parameter, however many are stale.
+                            _f.c.id
+                            == sa.any_(
+                                sa.literal(
+                                    [record.id for record in follow_ups],
+                                    postgresql.ARRAY(postgresql.UUID(as_uuid=True)),
+                                )
+                            ),
+                            _f.c.status == FollowUpStatus.OPEN.value,
+                        )
+                        .values(status=FollowUpStatus.RESOLVED.value, closed_at=sa.func.now())
+                        .returning(_f.c.id)
+                    )
+                ).scalars()
             )
+            audits = SqlAuditRepository(session)
+            for record in follow_ups:
+                if record.id in closed:
+                    await audits.append(audit(record))
+        return len(closed)
 
     async def mark_notified(self, context: AccessContext, follow_up_id: uuid.UUID) -> None:
         async with tenant_session(

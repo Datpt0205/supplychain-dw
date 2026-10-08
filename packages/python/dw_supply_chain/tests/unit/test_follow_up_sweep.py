@@ -9,7 +9,7 @@ one by the integration suite.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
@@ -19,8 +19,14 @@ from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.pagination import Page, PageRequest
 from dw_kernel.ports import Uuid4Generator
 from dw_platform.application.access_context import AccessContext
-from dw_platform.domain.audit import AuditEvent
-from dw_supply_chain.application.follow_up_sweep import SWEEP_PRINCIPAL, SweepFollowUps
+from dw_platform.domain.audit import AuditEvent, system_actor
+from dw_supply_chain.application.follow_up_sweep import (
+    FOLLOW_UP_OPENED,
+    FOLLOW_UP_RESOLVED,
+    FOLLOW_UP_SWEEP_LANE,
+    SWEEP_PRINCIPAL,
+    SweepFollowUps,
+)
 from dw_supply_chain.application.ports import FollowUpDraft, FollowUpRecord, POCaseListFilter
 from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.follow_up import FollowUpKind, FollowUpStatus
@@ -213,6 +219,8 @@ class FakeFollowUps:
     cases: FakeCases
     products: FakeProducts
     rows: dict[uuid.UUID, FollowUpRecord] = field(default_factory=dict)
+    # What each write committed with it, as the repository's transaction does.
+    audits: list[AuditEvent] = field(default_factory=list)
 
     def _label(self, kind: CaseKind, case_id: uuid.UUID) -> tuple[str | None, str | None]:
         if kind is CaseKind.PO:
@@ -221,7 +229,13 @@ class FakeFollowUps:
         product = self.products.cases[case_id]
         return product.proposal_code, product.supplier_name
 
-    async def open(self, context: AccessContext, drafts: Sequence[FollowUpDraft]) -> int:
+    async def open(
+        self,
+        context: AccessContext,
+        drafts: Sequence[FollowUpDraft],
+        *,
+        audit: Callable[[FollowUpDraft], AuditEvent],
+    ) -> int:
         taken = {r.key for r in self.rows.values()}
         opened = 0
         for draft in drafts:
@@ -252,6 +266,7 @@ class FakeFollowUps:
                 close_note=None,
             )
             taken.add(draft.due.key)
+            self.audits.append(audit(draft))
             opened += 1
         return opened
 
@@ -262,12 +277,21 @@ class FakeFollowUps:
             if r.status is FollowUpStatus.OPEN and r.workspace_id == context.workspace_id
         ]
 
-    async def resolve(self, context: AccessContext, follow_up_ids: Sequence[uuid.UUID]) -> None:
-        for i in follow_up_ids:
-            if self.rows[i].status is FollowUpStatus.OPEN:
-                self.rows[i] = replace(
-                    self.rows[i], status=FollowUpStatus.RESOLVED, closed_at=START
-                )
+    async def resolve(
+        self,
+        context: AccessContext,
+        follow_ups: Sequence[FollowUpRecord],
+        *,
+        audit: Callable[[FollowUpRecord], AuditEvent],
+    ) -> int:
+        closed = 0
+        for record in follow_ups:
+            row = self.rows[record.id]
+            if row.status is FollowUpStatus.OPEN and row.workspace_id == context.workspace_id:
+                self.rows[record.id] = replace(row, status=FollowUpStatus.RESOLVED, closed_at=START)
+                self.audits.append(audit(record))
+                closed += 1
+        return closed
 
     async def mark_notified(self, context: AccessContext, follow_up_id: uuid.UUID) -> None:
         self.rows[follow_up_id] = replace(self.rows[follow_up_id], notified_at=START)
@@ -806,8 +830,13 @@ async def test_membership_is_asked_again_when_the_notice_is_sent() -> None:
     # the PIC between the open and the delivery.
     original_open = world.follow_ups.open
 
-    async def open_then_leave(context: AccessContext, drafts: Sequence[FollowUpDraft]) -> int:
-        opened = await original_open(context, drafts)
+    async def open_then_leave(
+        context: AccessContext,
+        drafts: Sequence[FollowUpDraft],
+        *,
+        audit: Callable[[FollowUpDraft], AuditEvent],
+    ) -> int:
+        opened = await original_open(context, drafts, audit=audit)
         world.members.of[WORKSPACE].discard(PIC)
         return opened
 
@@ -875,3 +904,40 @@ def _audit() -> AuditEvent:
         resource_id="x",
         occurred_at=START,
     )
+
+
+# -- the sweep audits its own open and resolve, as itself --------------------
+
+
+async def test_the_sweep_audits_each_follow_up_it_opens_and_resolves_as_its_lane() -> None:
+    world = World()
+    case = world.case(created_days_ago=1)
+    await world.sweep().run()
+    await world.sweep().run()  # nothing new: nothing audited twice
+    world.supplier_writes(case)
+    await world.sweep().run()
+
+    (reminder,) = world.follow_ups.rows.values()
+    assert [(e.action, e.resource_id) for e in world.follow_ups.audits] == [
+        (FOLLOW_UP_OPENED, str(reminder.id)),
+        (FOLLOW_UP_RESOLVED, str(reminder.id)),
+    ]
+    for event in world.follow_ups.audits:
+        # The lane, never a person, and never the recipient it told.
+        assert event.actor_id == system_actor(FOLLOW_UP_SWEEP_LANE)
+        assert event.details["actor"] == f"system:{FOLLOW_UP_SWEEP_LANE}"
+        assert (event.tenant_id.value, event.workspace_id.value) == (TENANT, WORKSPACE)
+        assert event.details["case_id"] == str(case.id.value)
+    assert world.follow_ups.audits[0].details["kind"] == FollowUpKind.UPDATE_REMINDER.value
+
+
+async def test_an_episode_that_already_opened_is_neither_reopened_nor_audited_again() -> None:
+    world = World()
+    world.case(created_days_ago=1)
+    await world.sweep().run()
+    (row,) = world.follow_ups.rows.values()
+    world.follow_ups.rows[row.id] = replace(row, status=FollowUpStatus.DONE)
+
+    await world.sweep().run()
+
+    assert [e.action for e in world.follow_ups.audits] == [FOLLOW_UP_OPENED]

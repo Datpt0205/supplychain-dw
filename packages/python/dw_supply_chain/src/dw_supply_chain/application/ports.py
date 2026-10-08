@@ -7,7 +7,7 @@ concrete adapter is what keeps the handler testable without infrastructure.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, fields
 from datetime import datetime
 from enum import StrEnum
@@ -470,17 +470,33 @@ class FollowUpRecord:
 
 
 class FollowUpRepositoryPort(Protocol):
-    async def open(self, context: AccessContext, drafts: Sequence[FollowUpDraft]) -> int:
+    async def open(
+        self,
+        context: AccessContext,
+        drafts: Sequence[FollowUpDraft],
+        *,
+        audit: Callable[[FollowUpDraft], AuditEvent],
+    ) -> int:
         """Open each draft unless its case, kind and episode already has a
-        follow-up (open or closed): an episode opens once. How many opened."""
+        follow-up (open or closed): an episode opens once. Each draft that
+        opened has `audit(draft)` written in the same transaction; one that did
+        not open writes none. How many opened."""
         ...
 
     async def list_open(self, context: AccessContext) -> list[FollowUpRecord]:
         """The open follow-ups of the context's workspace, newest first."""
         ...
 
-    async def resolve(self, context: AccessContext, follow_up_ids: Sequence[uuid.UUID]) -> None:
-        """Close these open follow-ups as resolved: their signal is gone."""
+    async def resolve(
+        self,
+        context: AccessContext,
+        follow_ups: Sequence[FollowUpRecord],
+        *,
+        audit: Callable[[FollowUpRecord], AuditEvent],
+    ) -> int:
+        """Close these follow-ups as resolved, their signal gone, each still
+        open with `audit(record)` in the same transaction; one already closed
+        is left as it is and audited by nobody. How many closed."""
         ...
 
     async def mark_notified(self, context: AccessContext, follow_up_id: uuid.UUID) -> None: ...

@@ -41,7 +41,7 @@ from dw_platform.adapters.persistence.scope_holders import SqlScopeHolders
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.notifications import NotificationService
-from dw_platform.domain.audit import AuditEvent
+from dw_platform.domain.audit import AuditEvent, system_actor
 from dw_platform.testing.seed_env import seed_test_env
 from dw_supply_chain.adapters.persistence.follow_up_repository import (
     SqlFollowUpRepository,
@@ -54,7 +54,13 @@ from dw_supply_chain.adapters.persistence.product_case_repository import (
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
-from dw_supply_chain.application.follow_up_sweep import SweepFollowUps, sweep_context
+from dw_supply_chain.application.follow_up_sweep import (
+    FOLLOW_UP_OPENED,
+    FOLLOW_UP_RESOLVED,
+    FOLLOW_UP_SWEEP_LANE,
+    SweepFollowUps,
+    sweep_context,
+)
 from dw_supply_chain.application.handlers import CloseFollowUp, ListFollowUps
 from dw_supply_chain.domain.follow_up import FollowUpKind, FollowUpStatus
 from dw_supply_chain.domain.po_case import POCase, POCaseId
@@ -254,6 +260,26 @@ async def test_a_quiet_case_reaches_its_coordinator_once_and_resolves_when_the_s
     await sweep.sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
 
     assert await _follow_ups_of(stack, case) == [("update_reminder", "resolved", [RECORDS])]
+    # The sweep's own open and resolve, each in `platform.audit_events` as the
+    # lane (platform ADR 0011), in the follow-up's tenant and workspace.
+    async with stack.migrator.connect() as conn:
+        audited = (
+            await conn.execute(
+                sa.text(
+                    "SELECT a.action, a.actor_id, a.tenant_id, a.workspace_id,"
+                    " a.details ->> 'actor' AS label"
+                    " FROM platform.audit_events a JOIN supply_chain.follow_ups f"
+                    " ON a.resource_id = f.id::text AND a.resource_type = 'follow_up'"
+                    " WHERE f.po_case_id = :id ORDER BY a.occurred_at, a.action DESC"
+                ),
+                {"id": case.id.value},
+            )
+        ).all()
+    lane = system_actor(FOLLOW_UP_SWEEP_LANE).value
+    assert [(r.action, r.actor_id, r.tenant_id, r.workspace_id, r.label) for r in audited] == [
+        (action, lane, ALPHA, ALPHA_WS, f"system:{FOLLOW_UP_SWEEP_LANE}")
+        for action in (FOLLOW_UP_OPENED, FOLLOW_UP_RESOLVED)
+    ]
 
 
 async def test_another_tenant_sees_and_sweeps_none_of_it(stack: _Stack) -> None:

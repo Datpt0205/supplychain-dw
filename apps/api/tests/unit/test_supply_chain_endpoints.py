@@ -9,6 +9,7 @@ repositories against a real database; this covers the HTTP surface on top.
 
 from __future__ import annotations
 
+import itertools
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -65,9 +66,9 @@ from dw_supply_chain.application.handlers import (
     GetSLAEvaluation,
     GetSLAPolicy,
     ListCaseTransitions,
-    ListPOCaseApprovals,
     ListDelayImpactAnalyses,
     ListFollowUps,
+    ListPOCaseApprovals,
     ListPOCases,
     ListProductCategories,
     ListSupplierUpdates,
@@ -527,7 +528,7 @@ class FakeFollowUpRepository:
         self.rows = {r.id: r for r in records}
         self.audit: list[AuditEvent] = []
 
-    async def open(self, context: AccessContext, drafts: object) -> int:
+    async def open(self, context: AccessContext, drafts: object, *, audit: object) -> int:
         raise NotImplementedError("not exercised by the routes")
 
     async def list_open(self, context: AccessContext) -> list[FollowUpRecord]:
@@ -537,7 +538,7 @@ class FakeFollowUpRepository:
             reverse=True,
         )
 
-    async def resolve(self, context: AccessContext, follow_up_ids: object) -> None:
+    async def resolve(self, context: AccessContext, follow_ups: object, *, audit: object) -> int:
         raise NotImplementedError("not exercised by the routes")
 
     async def mark_notified(self, context: AccessContext, follow_up_id: uuid.UUID) -> None:
@@ -1887,7 +1888,7 @@ async def test_a_cases_transition_history_is_paged_newest_first() -> None:
             reason=None,
             occurred_at=datetime(2026, 1, day, tzinfo=UTC),
         )
-        for day, (before, after) in enumerate(zip(states, states[1:], strict=False), start=1)
+        for day, (before, after) in enumerate(itertools.pairwise(states), start=1)
     ]
     url = f"/api/v1/supply-chain/po-cases/{case_id}/transitions"
 

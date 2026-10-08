@@ -76,6 +76,7 @@ means platform code, an upstream candidate (ADR 0011).
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | resolved        | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 | HR1   | `hardening/issues/01-unbounded-reads.md`                                  | partly  | resolved        | —                                   |
+| HR2   | `hardening/issues/02-follow-up-sweep-audits-as-its-lane.md`               | no      | resolved        | platform ADR 0011 (M3)              |
 
 **Next:** H2 (the domain the webhook needs; runbook `docs/deploy/host.md`);
 Z4p when a real photo update exists; ZL measures the webhook header (Z3).
@@ -130,6 +131,7 @@ email as a second channel.
 | H      | `9b068dc` | Hosted overlay: Caddy 2.11.7 (digest, trivy 0) on `DW_WEB_HOST`/`DW_API_HOST`/`DW_AUTH_HOST`, `/api/*` and Keycloak public paths only, X-Forwarded-* trusted from Caddy's fixed IP (real client IP for rate limits); deployed URLs must be https; realm URLs from `DW_PUBLIC_WEB_URL`; `docs/deploy/host.md`; ADR 0023 amended.                                                       |
 | M2     | `7502a96` | Platform `2ebd50f` merged: one copy of the channel work (platform wording, ADR 0005–0009 twins of 0012–0015/0023); decide command takes subjects + strict prefixes from the product; five twin migrations idempotent, head `c2d7fc0648be`; dev DB migrated in place, each object once.                                                                                                |
 | HR1    | HR1       | Paged reads: active cases a page at a time (bulk reads bind one page of ids), transitions `Page` newest first, brief reads only the 10 it shows (`entries_shown`), `GET /po-cases/{id}/approvals` filtered on the server (platform `payload_match`); `d9e136c14d83` indexes.                                                                                                       |
+| HR2    | HR2       | Follow-up sweep audits its own open/resolve as `system:supply_chain_follow_ups` (`lane_audit_event`), in the row's transaction, only for rows it changed; lane registered by `FOLLOW_UP_SWEEP_LANE`.                                                                                                                                                                              |
 | M3     | `4890979` | Platform `ab33703` merged: prompts through the containing registry (5 new versions, delay analysis raw only for days and milestones, hostile-value tests; `supply_chain@1.8.0`); decision audit with channel decisions; SoD second person and role recheck (two Open items closed); `sc_*` role labels; one `@dw/ui` PageHeader/RegionState in this theme; merge head `cee9cf387387`. |
 
 ## Open — named, not fixed, still true after the port
@@ -137,10 +139,8 @@ email as a second channel.
 Carried from the archive's area file; each was true at `5d24c25`. Re-check
 after P before acting on one.
 
-- **Follow-ups:** recipients are members of the case's own workspace; the
-  sweep's own open and resolve are recorded on the row, not in
-  `platform.audit_events`; each sweep re-assesses every active case of every
-  tenant.
+- **Follow-ups:** recipients are members of the case's own workspace; each
+  sweep re-assesses every active case of every tenant.
 - **Model accuracy is unmeasured;** the mock cannot read.
   `delay_impact_analysis` has no eval case.
 - **Provisional domain values:** `SupplierEventType`'s seven values; the

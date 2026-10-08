@@ -86,6 +86,7 @@ from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.channel_access import LinkedUserAccess
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_platform.retention_policy import load_retention_policy
+from dw_supply_chain.application.follow_up_sweep import FOLLOW_UP_SWEEP_LANE
 from dw_worker.composition import (
     REPO_ROOT,
     build_case_document_storage,
@@ -609,7 +610,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     # it in `apps/worker/tests/unit/test_worker.py`.
     if follow_up_consumer is not None:
         registry.register(
-            "supply_chain_follow_ups",
+            # Also the sweep's audit actor (`system_actor`, platform ADR 0011).
+            FOLLOW_UP_SWEEP_LANE,
             follow_up_consumer,
             interval_seconds=settings.supply_chain_follow_up_interval_seconds,
         )

@@ -3567,10 +3567,10 @@ class _FollowUps:
         self.audits.append(audit)
         return True
 
-    async def open(self, context: AccessContext, drafts: object) -> int:
+    async def open(self, context: AccessContext, drafts: object, *, audit: object) -> int:
         raise NotImplementedError("not exercised by the read and close handlers")
 
-    async def resolve(self, context: AccessContext, follow_up_ids: object) -> None:
+    async def resolve(self, context: AccessContext, follow_ups: object, *, audit: object) -> int:
         raise NotImplementedError("not exercised by the read and close handlers")
 
     async def mark_notified(self, context: AccessContext, follow_up_id: uuid.UUID) -> None:

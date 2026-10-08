@@ -30,6 +30,13 @@ and a failure in one leaves the others swept.
 This is a system process, not a caller: it acts under a context with no
 roles and no scopes, bound to one tenant and workspace at a time, and reads
 nothing across tenants except which workspaces to visit.
+
+It audits its own changes as itself (platform ADR 0011): each follow-up it
+opens or resolves writes `supply_chain.follow_up.opened` / `.resolved` to
+`platform.audit_events` in the same transaction, with the actor
+`system_actor(FOLLOW_UP_SWEEP_LANE)` and `details.actor` `system:<lane>`, never
+a person's id. Notifying is not audited here: the inbox and the channel
+outbox record each delivery.
 """
 
 from __future__ import annotations
@@ -38,9 +45,11 @@ import logging
 import uuid
 from dataclasses import dataclass
 
+from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import PolicyOverridePort
+from dw_platform.domain.audit import AuditEvent, lane_audit_event
 from dw_supply_chain.application.handlers import (
     assess_active_cases,
     assess_active_product_cases,
@@ -75,6 +84,13 @@ logger = logging.getLogger(__name__)
 # The sweep's own principal: nobody's inbox, holding no scope, so nothing it
 # reads or writes is decided by who it is.
 SWEEP_PRINCIPAL = uuid.UUID("5a1ef011-0000-4000-8000-5ca1ab1ef011")
+
+# The worker registry name the sweep runs under, and so its audit actor
+# (`system_actor`): renaming the lane changes who the log says acted.
+FOLLOW_UP_SWEEP_LANE = "supply_chain_follow_ups"
+FOLLOW_UP_OPENED = "supply_chain.follow_up.opened"
+FOLLOW_UP_RESOLVED = "supply_chain.follow_up.resolved"
+_FOLLOW_UP_RESOURCE = "follow_up"
 
 
 def sweep_context(tenant_id: uuid.UUID, workspace_id: uuid.UUID) -> AccessContext:
@@ -200,11 +216,44 @@ class SweepFollowUps:
             )
             for item in new
         ]
-        opened = await self.follow_up_repo.open(context, drafts)
+        opened = await self.follow_up_repo.open(
+            context,
+            drafts,
+            audit=lambda draft: self._audit(
+                context,
+                FOLLOW_UP_OPENED,
+                follow_up_id=draft.id,
+                workspace_id=draft.due.subject.workspace_id,
+                details={
+                    "case_kind": draft.due.subject.case_kind.value,
+                    "case_id": str(draft.due.subject.case_id),
+                    "kind": draft.due.kind.value,
+                    "episode": draft.due.episode,
+                    "recipient_scopes": sorted(draft.recipient_scopes),
+                    "pic_routed": draft.recipient_user_id is not None,
+                },
+            ),
+        )
 
         due_keys = {item.key for item in due}
-        stale = [record.id for record in already_open if record.key not in due_keys]
-        await self.follow_up_repo.resolve(context, stale)
+        stale = [record for record in already_open if record.key not in due_keys]
+        resolved = await self.follow_up_repo.resolve(
+            context,
+            stale,
+            audit=lambda record: self._audit(
+                context,
+                FOLLOW_UP_RESOLVED,
+                follow_up_id=record.id,
+                workspace_id=record.workspace_id,
+                details={
+                    "case_kind": record.case_kind.value,
+                    "case_id": str(record.case_id),
+                    "kind": record.kind.value,
+                    "episode": record.episode,
+                    "reason": "signal_gone",
+                },
+            ),
+        )
 
         notified = 0
         for record in await self.follow_up_repo.list_open(context):
@@ -245,4 +294,25 @@ class SweepFollowUps:
             await self.follow_up_repo.mark_notified(context, record.id)
             notified += 1
 
-        return SweepOutcome(opened=opened, resolved=len(stale), notified=notified)
+        return SweepOutcome(opened=opened, resolved=resolved, notified=notified)
+
+    def _audit(
+        self,
+        context: AccessContext,
+        action: str,
+        *,
+        follow_up_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        details: dict[str, object],
+    ) -> AuditEvent:
+        return lane_audit_event(
+            lane=FOLLOW_UP_SWEEP_LANE,
+            event_id=self.ids.new_uuid(),
+            tenant_id=TenantId(context.tenant_id),
+            workspace_id=WorkspaceId(workspace_id),
+            action=action,
+            resource_type=_FOLLOW_UP_RESOURCE,
+            resource_id=str(follow_up_id),
+            occurred_at=self.clock.now(),
+            details=details,
+        )
