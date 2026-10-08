@@ -194,6 +194,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
         and container.supply_chain_get_missing_update_status is not None
         and container.supply_chain_advance_po_case is not None
         and container.supply_chain_list_case_transitions is not None
+        and container.supply_chain_list_case_approvals is not None
         and container.supply_chain_get_sla_evaluation is not None
         and container.supply_chain_get_sla_policy is not None
         and container.supply_chain_set_sla_policy_override is not None
@@ -249,6 +250,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
                 container.supply_chain_set_follow_up_policy_override,
                 create_po=container.supply_chain_create_po,
                 reassign_pic=container.supply_chain_reassign_po_case_pic,
+                list_case_approvals=container.supply_chain_list_case_approvals,
                 resolve_access_context=get_access_context,
                 resolve_idempotency=get_idempotent_operation,
             )

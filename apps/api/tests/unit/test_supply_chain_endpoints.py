@@ -65,6 +65,7 @@ from dw_supply_chain.application.handlers import (
     GetSLAEvaluation,
     GetSLAPolicy,
     ListCaseTransitions,
+    ListPOCaseApprovals,
     ListDelayImpactAnalyses,
     ListFollowUps,
     ListPOCases,
@@ -125,6 +126,7 @@ from dw_supply_chain.sla_policy import (
     SupplierUpdateCadence,
     SupplyChainSLAPolicy,
 )
+from dw_supply_chain.testing.pages import history_page
 from dw_supply_chain.testing.product_cases import InMemoryDirectory, InMemoryProductCases
 from dw_supply_chain.testing.production_gate import open_production_gate
 
@@ -227,16 +229,9 @@ class FakePOCaseRepository:
         return build_page(cases[: request.fetch_limit], request=request, position_of=_case_position)
 
     async def list_transitions(
-        self, context: AccessContext, case_id: POCaseId
-    ) -> list[CaseTransition]:
-        return self.transitions.get(case_id.value, [])
-
-    async def list_active(self, context: AccessContext) -> list[POCase]:
-        return [
-            c
-            for c in self.by_id.values()
-            if c.tenant_id.value == context.tenant_id and c.state not in TERMINAL_STATES
-        ]
+        self, context: AccessContext, case_id: POCaseId, request: PageRequest
+    ) -> Page[CaseTransition]:
+        return history_page(self.transitions.get(case_id.value, []), request)
 
     async def list_supplier_names(self, context: AccessContext) -> list[str]:
         return sorted(
@@ -270,8 +265,8 @@ class FakePOCaseRepository:
         ]
 
     async def list_latest_transitions_since(
-        self, context: AccessContext, since: datetime
-    ) -> list[tuple[POCaseId, CaseTransition]]:
+        self, context: AccessContext, since: datetime, *, limit: int
+    ) -> tuple[int, list[tuple[POCaseId, CaseTransition]]]:
         latest: list[tuple[POCaseId, CaseTransition]] = []
         for case_id, history in self.transitions.items():
             case = self.by_id.get(case_id)
@@ -280,7 +275,8 @@ class FakePOCaseRepository:
             inside = [t for t in history if t.occurred_at >= since]
             if inside:
                 latest.append((case.id, max(inside, key=lambda t: t.occurred_at)))
-        return latest
+        latest.sort(key=lambda pair: pair[1].occurred_at, reverse=True)
+        return len(latest), latest[:limit]
 
 
 def _case_position(case: POCase) -> CursorPosition:
@@ -492,10 +488,17 @@ class FakePendingApprovals:
 
     def __init__(self, approvals: list[ApprovalRequest] | None = None) -> None:
         self.approvals = approvals or []
+        self.calls = 0
 
     async def list_pending_by_type_prefix(
-        self, context: AccessContext, *, prefix: str, limit: int
+        self,
+        context: AccessContext,
+        *,
+        prefix: str,
+        limit: int,
+        payload_match: tuple[str, str] | None = None,
     ) -> tuple[int, list[ApprovalRequest]]:
+        self.calls += 1
         matching = sorted(
             (
                 a
@@ -504,6 +507,7 @@ class FakePendingApprovals:
                 and a.workspace_id.value == context.workspace_id
                 and a.status is ApprovalStatus.PENDING
                 and a.approval_type.startswith(prefix)
+                and (payload_match is None or a.payload.get(payload_match[0]) == payload_match[1])
             ),
             key=lambda a: (a.created_at, a.id),
             reverse=True,
@@ -776,6 +780,11 @@ def make_container(
             clock=SystemClock(),
         ),
         supply_chain_list_case_transitions=ListCaseTransitions(repo=repo, authz=authz),
+        supply_chain_list_case_approvals=ListPOCaseApprovals(
+            repo=repo,
+            pending_approvals=pending_approvals or FakePendingApprovals(),
+            authz=authz,
+        ),
         supply_chain_get_sla_evaluation=GetSLAEvaluation(
             po_case_repo=repo,
             policy_override_repo=resolved_policy_override_repo,
@@ -1859,10 +1868,39 @@ async def test_reading_a_cases_transition_history() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert len(body) == 1
-    assert body[0]["from_state"] == "po_created"
-    assert body[0]["to_state"] == "cancelled"
-    assert body[0]["reason"] == "customer walked away"
+    assert body["next_cursor"] is None
+    assert len(body["items"]) == 1
+    assert body["items"][0]["from_state"] == "po_created"
+    assert body["items"][0]["to_state"] == "cancelled"
+    assert body["items"][0]["reason"] == "customer walked away"
+
+
+async def test_a_cases_transition_history_is_paged_newest_first() -> None:
+    repo = FakePOCaseRepository()
+    container = make_container(repo, frozenset({READ_SCOPE, WRITE_SCOPE, *STEP_SCOPES}))
+    case_id = await _create_case(container)
+    states = [CaseState.PO_CREATED, CaseState.WAITING_DEPOSIT, CaseState.DEPOSIT_CONFIRMED]
+    repo.transitions[uuid.UUID(case_id)] = [
+        CaseTransition(
+            from_state=before,
+            to_state=after,
+            reason=None,
+            occurred_at=datetime(2026, 1, day, tzinfo=UTC),
+        )
+        for day, (before, after) in enumerate(zip(states, states[1:], strict=False), start=1)
+    ]
+    url = f"/api/v1/supply-chain/po-cases/{case_id}/transitions"
+
+    first = (await _request(container, "GET", f"{url}?limit=1")).json()
+    second = (
+        await _request(container, "GET", f"{url}?limit=1&cursor={first['next_cursor']}")
+    ).json()
+
+    assert [t["to_state"] for t in first["items"]] == ["deposit_confirmed"]
+    assert [t["to_state"] for t in second["items"]] == ["waiting_deposit"]
+    assert second["next_cursor"] is None
+    too_many = await _request(container, "GET", f"{url}?limit=201")
+    assert too_many.status_code == 422
 
 
 async def test_reading_transition_history_for_an_unknown_case_is_404() -> None:
@@ -3199,3 +3237,93 @@ async def test_a_product_question_without_the_product_read_scope_is_forbidden() 
         container, "POST", "/api/v1/supply-chain/case-query", json={"question": "các hồ sơ"}
     )
     assert response.status_code == 403
+
+
+# -- a case's pending approvals, filtered on the server -----------------------
+
+
+def _case_approval(case_id: str, *, tenant: uuid.UUID = TENANT) -> ApprovalRequest:
+    return ApprovalRequest(
+        id=uuid.uuid4(),
+        tenant_id=TenantId(tenant),
+        workspace_id=WorkspaceId(WORKSPACE),
+        approval_type="supply_chain.case_action.cancel",
+        requested_by=UserId(uuid.uuid4()),
+        reason="test",
+        payload={"po_case_id": case_id},
+        status=ApprovalStatus.PENDING,
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+
+async def test_a_cases_approvals_are_only_the_ones_naming_it() -> None:
+    repo = FakePOCaseRepository()
+    approvals = FakePendingApprovals()
+    container = make_container(
+        repo, frozenset({READ_SCOPE, WRITE_SCOPE, "approvals.read"}), pending_approvals=approvals
+    )
+    case_id = await _create_case(container)
+    other_id = await _create_case_for(container, reference="PO-OTHER", supplier="Other Co.")
+    mine = _case_approval(case_id)
+    approvals.approvals.extend(
+        [
+            mine,
+            _case_approval(other_id),
+            # Another tenant's approval naming this very case id.
+            _case_approval(case_id, tenant=uuid.uuid4()),
+        ]
+    )
+
+    response = await _request(
+        container, "GET", f"/api/v1/supply-chain/po-cases/{case_id}/approvals"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["visible"] is True
+    assert body["total"] == 1
+    assert [item["id"] for item in body["items"]] == [str(mine.id)]
+    assert body["items"][0]["action"] == "cancel"
+
+
+async def test_a_cases_approvals_are_not_looked_at_without_the_inbox_scope() -> None:
+    repo = FakePOCaseRepository()
+    approvals = FakePendingApprovals()
+    container = make_container(
+        repo, frozenset({READ_SCOPE, WRITE_SCOPE}), pending_approvals=approvals
+    )
+    case_id = await _create_case(container)
+    approvals.approvals.append(_case_approval(case_id))
+
+    response = await _request(
+        container, "GET", f"/api/v1/supply-chain/po-cases/{case_id}/approvals"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"visible": False, "total": 0, "items": []}
+    assert approvals.calls == 0
+
+
+async def test_a_cases_approvals_refuse_a_caller_without_the_case_read_scope() -> None:
+    repo = FakePOCaseRepository()
+    container = make_container(repo, frozenset({READ_SCOPE, WRITE_SCOPE}))
+    case_id = await _create_case(container)
+
+    response = await _request(
+        make_container(repo, frozenset({"approvals.read"})),
+        "GET",
+        f"/api/v1/supply-chain/po-cases/{case_id}/approvals",
+    )
+
+    assert response.status_code == 403
+
+
+async def test_another_tenants_case_has_no_approvals_to_show() -> None:
+    repo = FakePOCaseRepository()
+    container = make_container(repo, frozenset({READ_SCOPE, WRITE_SCOPE, "approvals.read"}))
+
+    response = await _request(
+        container, "GET", f"/api/v1/supply-chain/po-cases/{uuid.uuid4()}/approvals"
+    )
+
+    assert response.status_code == 404

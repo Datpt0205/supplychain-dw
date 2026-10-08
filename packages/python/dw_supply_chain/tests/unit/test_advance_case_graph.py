@@ -63,11 +63,8 @@ class FakePOCaseRepository:
         raise NotImplementedError("not exercised by this graph")
 
     async def list_transitions(
-        self, context: AccessContext, case_id: POCaseId
-    ) -> list[CaseTransition]:
-        raise NotImplementedError("not exercised by this graph")
-
-    async def list_active(self, context: AccessContext) -> list[POCase]:
+        self, context: AccessContext, case_id: POCaseId, request: PageRequest
+    ) -> Page[CaseTransition]:
         raise NotImplementedError("not exercised by this graph")
 
     async def list_supplier_names(self, context: AccessContext) -> list[str]:
@@ -85,8 +82,8 @@ class FakePOCaseRepository:
         raise NotImplementedError("not exercised by this graph")
 
     async def list_latest_transitions_since(
-        self, context: AccessContext, since: datetime
-    ) -> list[tuple[POCaseId, CaseTransition]]:
+        self, context: AccessContext, since: datetime, *, limit: int
+    ) -> tuple[int, list[tuple[POCaseId, CaseTransition]]]:
         raise NotImplementedError("not exercised by this graph")
 
 

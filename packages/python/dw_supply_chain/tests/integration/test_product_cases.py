@@ -65,6 +65,7 @@ from dw_supply_chain.domain.product_development_case import (
     SampleResult,
     SkuDraft,
 )
+from dw_supply_chain.testing.pages import oldest_first
 
 pytestmark = pytest.mark.integration
 
@@ -225,7 +226,9 @@ async def test_steps_one_to_five_are_saved_with_history_rounds_and_audit(db: _Db
         2,
         "NCC Minh Long",
     )
-    history = await db.cases.list_transitions(context, case.id)
+    history = await oldest_first(
+        lambda request: db.cases.list_transitions(context, case.id, request)
+    )
     assert [t.action for t in history] == [
         ProductAction.PROPOSE,
         ProductAction.REQUEST_SAMPLE,
@@ -311,7 +314,10 @@ async def test_another_tenant_or_workspace_reads_none_of_the_four_tables(
 
     assert await db.cases.get(caller, case.id) is None
     assert await db.cases.case_workspace(caller, case.id.value) is None
-    assert await db.cases.list_transitions(caller, case.id) == []
+    assert (
+        await oldest_first(lambda request: db.cases.list_transitions(caller, case.id, request))
+        == []
+    )
     assert await db.cases.list_rounds(caller, case.id) == []
     page = await db.cases.list_page(
         caller,
@@ -352,7 +358,10 @@ async def test_the_repository_filters_by_tenant_and_workspace_even_where_rls_doe
 
     assert await unprotected.get(caller, case.id) is None
     assert await unprotected.case_workspace(caller, case.id.value) is None
-    assert await unprotected.list_transitions(caller, case.id) == []
+    assert (
+        await oldest_first(lambda request: unprotected.list_transitions(caller, case.id, request))
+        == []
+    )
     assert await unprotected.list_rounds(caller, case.id) == []
     page = await unprotected.list_page(
         caller,
@@ -887,7 +896,12 @@ async def test_a_refused_step_leaves_no_audit_and_no_history(db: _Db) -> None:
         )
         == 0
     )
-    assert [t.action for t in await db.cases.list_transitions(context, case.id)] == [
+    assert [
+        t.action
+        for t in await oldest_first(
+            lambda request: db.cases.list_transitions(context, case.id, request)
+        )
+    ] == [
         ProductAction.PROPOSE,
         ProductAction.REQUEST_SAMPLE,
     ]
@@ -1034,7 +1048,9 @@ async def test_steps_seven_and_eight_are_saved_with_their_paper_on_the_history(d
     await db.cases.save(context, case, audit=_audit(context, case, "confirm_with_supplier"))
 
     assert (await _reloaded(db, context, case)).state is ProductDevState.ITEM_CODING
-    history = await db.cases.list_transitions(context, case.id)
+    history = await oldest_first(
+        lambda request: db.cases.list_transitions(context, case.id, request)
+    )
     assert [(t.action, t.document_id) for t in history[-3:]] == [
         (ProductAction.BOD_APPROVE, None),
         (ProductAction.COMPLETE_PROFILE, bm04.id.value),
@@ -1180,7 +1196,9 @@ async def test_a_document_a_step_was_taken_on_cannot_be_deleted_on_its_own(db: _
     case = await _to_item_coding(db, context, await _testing_passed(db, context))
     bm04 = next(
         t.document_id
-        for t in await db.cases.list_transitions(context, case.id)
+        for t in await oldest_first(
+            lambda request: db.cases.list_transitions(context, case.id, request)
+        )
         if t.action is ProductAction.COMPLETE_PROFILE
     )
     async with db.migrator.begin() as conn:
@@ -1273,7 +1291,9 @@ async def test_step_nine_is_saved_with_its_history_and_read_back(db: _Db) -> Non
     assert (stored.state, stored.signoff_round) == (ProductDevState.PENDING_SIGNOFF, 1)
     assert stored.item_code is not None and stored.item_code.code == "MH-0001"
     assert [(s.sku_code, s.planned_quantity) for s in stored.skus] == [("MH-0001-BLUE", 50)]
-    history = await db.cases.list_transitions(context, case.id)
+    history = await oldest_first(
+        lambda request: db.cases.list_transitions(context, case.id, request)
+    )
     assert [t.action for t in history[-5:]] == [
         ProductAction.ISSUE_ITEM_CODE,
         ProductAction.ADD_SKU,

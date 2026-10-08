@@ -115,6 +115,7 @@ from dw_supply_chain.product_approvals import (
     PRODUCT_APPROVALS_POLICY_ID,
     load_supply_chain_product_approvals,
 )
+from dw_supply_chain.testing.pages import oldest_first
 from dw_supply_chain.workflows.advance_product_case_graph import (
     APPROVAL_TYPE_PREFIX,
     BOD_REVIEW_APPROVAL_TYPE,
@@ -623,7 +624,9 @@ async def test_a_restarted_worker_resumes_the_same_run_and_bgd_is_the_actor(
     assert run.result is not None and run.result["outcome"] == "bod_approve"
     case = await _case(world, waiting.case_id)
     assert case.state is ProductDevState.PROFILE_IN_PROGRESS
-    history = await restarted.cases.list_transitions(_context(frozenset()), case.id)
+    history = await oldest_first(
+        lambda request: restarted.cases.list_transitions(_context(frozenset()), case.id, request)
+    )
     assert (history[-1].action, history[-1].actor_id, history[-1].reason) == (
         ProductAction.BOD_APPROVE,
         bod.principal_id,
@@ -658,7 +661,9 @@ async def test_bgd_not_approving_cancels_with_the_comment_as_the_reason(world: W
 
     case = await _case(world, waiting.case_id)
     assert case.state is ProductDevState.CANCELLED
-    history = await world.stack.cases.list_transitions(_context(frozenset()), case.id)
+    history = await oldest_first(
+        lambda request: world.stack.cases.list_transitions(_context(frozenset()), case.id, request)
+    )
     rejections = [t for t in history if t.action is ProductAction.BOD_REJECT]
     assert [(t.actor_id, t.reason) for t in rejections] == [
         (bod.principal_id, "Giá vốn vượt mục tiêu 15%")
@@ -894,7 +899,9 @@ async def test_cancelled_before_bgd_decides_the_decision_is_superseded(world: Wo
     assert run.result is not None and run.result["outcome"] == SUPERSEDED
     case = await _case(world, waiting.case_id)
     assert case.state is ProductDevState.CANCELLED
-    history = await world.stack.cases.list_transitions(_context(frozenset()), case.id)
+    history = await oldest_first(
+        lambda request: world.stack.cases.list_transitions(_context(frozenset()), case.id, request)
+    )
     assert not [t for t in history if t.action in {ProductAction.BOD_APPROVE}]
     assert (
         await _count(
@@ -929,7 +936,11 @@ async def test_decided_before_a_cancel_the_cancel_acts_on_the_new_state(world: W
     )
 
     assert cancelled.case.state is ProductDevState.CANCELLED
-    history = await world.stack.cases.list_transitions(_context(frozenset()), cancelled.case.id)
+    history = await oldest_first(
+        lambda request: world.stack.cases.list_transitions(
+            _context(frozenset()), cancelled.case.id, request
+        )
+    )
     assert [t.action for t in history][-2:] == [ProductAction.BOD_APPROVE, ProductAction.CANCEL]
     assert history[-1].from_state is ProductDevState.PROFILE_IN_PROGRESS
 
@@ -1101,7 +1112,9 @@ async def test_a_run_that_fails_after_bgd_decided_is_raised_again_and_applied_on
     )
     case = await _case(world, waiting.case_id)
     assert case.state is ProductDevState.CANCELLED
-    history = await world.stack.cases.list_transitions(_context(frozenset()), case.id)
+    history = await oldest_first(
+        lambda request: world.stack.cases.list_transitions(_context(frozenset()), case.id, request)
+    )
     bgd_steps = [
         (t.action, t.actor_id)
         for t in history
@@ -1318,7 +1331,9 @@ async def test_bgd_approves_on_zalo_after_a_view_and_the_review_applies_it(world
 
     assert outcome.decided is True, outcome
     case = await _case(world, waiting.case_id)
-    history = await world.stack.cases.list_transitions(_context(frozenset()), case.id)
+    history = await oldest_first(
+        lambda request: world.stack.cases.list_transitions(_context(frozenset()), case.id, request)
+    )
     assert [t.actor_id for t in history if t.action is ProductAction.BOD_APPROVE] == [
         bod.principal_id
     ]

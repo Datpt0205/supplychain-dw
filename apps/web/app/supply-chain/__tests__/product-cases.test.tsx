@@ -265,7 +265,10 @@ function renderList() {
 
 function renderDetail() {
   listProductCategories.mockResolvedValue(CATEGORIES);
-  listProductCaseTransitions.mockResolvedValue([]);
+  listProductCaseTransitions.mockResolvedValue({
+    items: [],
+    next_cursor: null,
+  });
   listProductCaseDocuments.mockResolvedValue([]);
   return render(
     <App>
@@ -641,16 +644,19 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
       detail({ state: "cancelled", actions: [] }),
     );
     listProductCaseDocuments.mockResolvedValue([]);
-    listProductCaseTransitions.mockResolvedValue([
-      {
-        action: "bod_reject",
-        from_state: "pending_bod_review",
-        to_state: "cancelled",
-        reason: "Giá vốn vượt mục tiêu",
-        actor_id: "88888888-8888-4888-8888-888888888888",
-        occurred_at: "2026-10-06T03:00:00Z",
-      },
-    ]);
+    listProductCaseTransitions.mockResolvedValue({
+      items: [
+        {
+          action: "bod_reject",
+          from_state: "pending_bod_review",
+          to_state: "cancelled",
+          reason: "Giá vốn vượt mục tiêu",
+          actor_id: "88888888-8888-4888-8888-888888888888",
+          occurred_at: "2026-10-06T03:00:00Z",
+        },
+      ],
+      next_cursor: null,
+    });
     // Not `renderDetail()`, which empties the history first.
     render(
       <App>

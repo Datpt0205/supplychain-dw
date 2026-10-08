@@ -9,6 +9,7 @@ import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@dw/api-client";
 import type {
+  CaseApprovals,
   MissingUpdateStatus,
   POCase,
   POCaseDetail,
@@ -41,7 +42,7 @@ const api = {
   getPOCase: vi.fn(),
   getSLAEvaluation: vi.fn(),
   getMissingUpdateStatus: vi.fn(),
-  listApprovals: vi.fn(),
+  listPOCaseApprovals: vi.fn(),
   listCaseTransitions: vi.fn(),
   listSupplierUpdates: vi.fn(),
   listDelayImpactAnalyses: vi.fn(),
@@ -218,16 +219,18 @@ describe("Hồ sơ PO: chi tiết", () => {
       age_days: 2,
     },
     updates = [],
+    approvals = { visible: true, total: 0, items: [] },
   }: {
     sla?: SLAEvaluation;
     missing?: MissingUpdateStatus;
     updates?: SupplierUpdate[];
+    approvals?: CaseApprovals;
   } = {}) {
     fresh();
     api.getSLAEvaluation.mockResolvedValue(sla);
     api.getMissingUpdateStatus.mockResolvedValue(missing);
-    api.listApprovals.mockResolvedValue({ items: [], next_cursor: null });
-    api.listCaseTransitions.mockResolvedValue([]);
+    api.listPOCaseApprovals.mockResolvedValue(approvals);
+    api.listCaseTransitions.mockResolvedValue({ items: [], next_cursor: null });
     api.listSupplierUpdates.mockResolvedValue(updates);
     api.listDelayImpactAnalyses.mockResolvedValue([]);
     api.listCaseDocuments.mockResolvedValue([]);
@@ -253,6 +256,37 @@ describe("Hồ sơ PO: chi tiết", () => {
     );
     expect(strip.textContent).toContain("Cần nhắc NCC");
     expect(strip.textContent).toContain("Không có");
+  });
+
+  it("counts the case's pending approvals as the server filtered them", async () => {
+    api.getPOCase.mockResolvedValue(poCaseDetail());
+    renderDetail({
+      approvals: {
+        visible: true,
+        total: 3,
+        items: [
+          {
+            id: "99999999-9999-4999-8999-999999999999",
+            action: "cancel",
+            requested_at: "2026-10-05T02:00:00Z",
+          },
+        ],
+      },
+    });
+
+    const strip = await screen.findByLabelText("Tóm tắt Hồ sơ PO");
+    await waitFor(() => expect(strip.textContent).toContain("3 yêu cầu"));
+    expect(api.listPOCaseApprovals).toHaveBeenCalledWith(CASE_ID);
+    expect(screen.getByText("1 yêu cầu mới nhất trong 3")).toBeTruthy();
+  });
+
+  it("says approvals were not looked at for a caller without the inbox", async () => {
+    api.getPOCase.mockResolvedValue(poCaseDetail());
+    renderDetail({ approvals: { visible: false, total: 0, items: [] } });
+
+    const strip = await screen.findByLabelText("Tóm tắt Hồ sơ PO");
+    await waitFor(() => expect(strip.textContent).toContain("Không xem được"));
+    expect(strip.textContent).not.toContain("Không có");
   });
 
   it("marks what a model read from the supplier, beside the supplier's own words", async () => {
@@ -332,8 +366,12 @@ describe("Hồ sơ PO: chờ tạo PO (bước 10)", () => {
       reference_at: "2026-10-07T02:00:00Z",
       age_days: 0,
     });
-    api.listApprovals.mockResolvedValue({ items: [], next_cursor: null });
-    api.listCaseTransitions.mockResolvedValue([]);
+    api.listPOCaseApprovals.mockResolvedValue({
+      visible: true,
+      total: 0,
+      items: [],
+    });
+    api.listCaseTransitions.mockResolvedValue({ items: [], next_cursor: null });
     api.listSupplierUpdates.mockResolvedValue([]);
     api.listDelayImpactAnalyses.mockResolvedValue([]);
     api.listCaseDocuments.mockResolvedValue([]);

@@ -569,8 +569,8 @@ class _UnnarrowedCases:
         raise NotImplementedError("not exercised by the eval graders")
 
     async def list_transitions(
-        self, context: AccessContext, case_id: ProductDevelopmentCaseId
-    ) -> list[ProductCaseTransition]:
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId, request: PageRequest
+    ) -> Page[ProductCaseTransition]:
         raise NotImplementedError("not exercised by the eval graders")
 
     async def list_rounds(

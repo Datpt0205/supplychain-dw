@@ -1074,6 +1074,64 @@
         "title": "CaseActionResultView",
         "type": "object"
       },
+      "CaseApprovalView": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested At"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "requested_at"
+        ],
+        "title": "CaseApprovalView",
+        "type": "object"
+      },
+      "CaseApprovalsView": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CaseApprovalView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "visible": {
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "visible",
+          "total",
+          "items"
+        ],
+        "title": "CaseApprovalsView",
+        "type": "object"
+      },
       "CaseDocumentView": {
         "description": "A document as the API shows it. The object key stays on the server.",
         "properties": {
@@ -1517,6 +1575,10 @@
             "title": "Approvals Visible",
             "type": "boolean"
           },
+          "entries_shown": {
+            "title": "Entries Shown",
+            "type": "integer"
+          },
           "flagged_case_count": {
             "title": "Flagged Case Count",
             "type": "integer"
@@ -1550,7 +1612,8 @@
           "product_cases_visible",
           "active_product_case_count",
           "flagged_product_case_count",
-          "groups"
+          "groups",
+          "entries_shown"
         ],
         "title": "DailyBriefView",
         "type": "object"
@@ -3834,6 +3897,35 @@
         "title": "Page",
         "type": "object"
       },
+      "Page_CaseTransitionView_": {
+        "description": "A page of results and the cursor that continues it.\n\n``next_cursor`` is ``None`` on the last page, and that — not an empty\n``items`` — is the client's stop condition: a filtered listing can return an\nempty page in the middle of a run and still have more rows behind it.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CaseTransitionView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
       "Page_FeedbackView_": {
         "description": "A page of results and the cursor that continues it.\n\n``next_cursor`` is ``None`` on the last page, and that — not an empty\n``items`` — is the client's stop condition: a filtered listing can return an\nempty page in the middle of a run and still have more rows behind it.",
         "properties": {
@@ -3927,6 +4019,35 @@
           "items": {
             "items": {
               "$ref": "#/components/schemas/POCaseView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "Page_ProductCaseTransitionView_": {
+        "description": "A page of results and the cursor that continues it.\n\n``next_cursor`` is ``None`` on the last page, and that — not an empty\n``items`` — is the client's stop condition: a filtered listing can return an\nempty page in the middle of a run and still have more rows behind it.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductCaseTransitionView"
             },
             "title": "Items",
             "type": "array"
@@ -10741,6 +10862,50 @@
         ]
       }
     },
+    "/api/v1/supply-chain/po-cases/{case_id}/approvals": {
+      "get": {
+        "description": "The pending approvals that name this case, filtered here rather\nthan by the client: the newest few, and how many there are.",
+        "operationId": "get_case_approvals_api_v1_supply_chain_po_cases__case_id__approvals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseApprovalsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Case Approvals",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/po-cases/{case_id}/create-po": {
       "post": {
         "description": "Step 10 on a case awaiting its PO. A reference already taken in\nthe tenant is a 409 naming it; a line still without a quantity, 409.",
@@ -11437,6 +11602,7 @@
     },
     "/api/v1/supply-chain/po-cases/{case_id}/transitions": {
       "get": {
+        "description": "The case's timeline, newest first, a page at a time.",
         "operationId": "get_case_transitions_api_v1_supply_chain_po_cases__case_id__transitions_get",
         "parameters": [
           {
@@ -11448,6 +11614,36 @@
               "title": "Case Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Opaque cursor from a previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from a previous page.",
+              "title": "Cursor"
+            }
           }
         ],
         "responses": {
@@ -11455,11 +11651,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/CaseTransitionView"
-                  },
-                  "title": "Response Get Case Transitions Api V1 Supply Chain Po Cases  Case Id  Transitions Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_CaseTransitionView_"
                 }
               }
             },
@@ -12105,6 +12297,7 @@
     },
     "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
       "get": {
+        "description": "The case's history, newest first, a page at a time.",
         "operationId": "get_product_case_transitions_api_v1_supply_chain_product_cases__case_id__transitions_get",
         "parameters": [
           {
@@ -12116,6 +12309,36 @@
               "title": "Case Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Opaque cursor from a previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from a previous page.",
+              "title": "Cursor"
+            }
           }
         ],
         "responses": {
@@ -12123,11 +12346,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ProductCaseTransitionView"
-                  },
-                  "title": "Response Get Product Case Transitions Api V1 Supply Chain Product Cases  Case Id  Transitions Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_ProductCaseTransitionView_"
                 }
               }
             },

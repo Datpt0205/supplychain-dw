@@ -41,18 +41,33 @@ class SqlPendingApprovalQuery:
     authorization: ScopeAuthorizationService
 
     async def list_pending_by_type_prefix(
-        self, context: AccessContext, *, prefix: str, limit: int
+        self,
+        context: AccessContext,
+        *,
+        prefix: str,
+        limit: int,
+        payload_match: tuple[str, str] | None = None,
     ) -> tuple[int, list[ApprovalRequest]]:
         """How many pending approvals have an `approval_type` starting with
         `prefix`, and the newest `limit` of them. The prefix is matched
         literally — `autoescape` keeps the `_` in `leave_request.` from being
-        LIKE's any-one-character wildcard."""
+        LIKE's any-one-character wildcard. `payload_match` (key, value)
+        narrows both to the requests whose payload's top-level `key` is
+        `value` — a context's record page asking for its own record's, so a
+        client never filters a page of every request itself.
+
+        `ix_approval_requests_page` (tenant, workspace, status, created_at,
+        id) carries the ORDER BY; the prefix and payload tests run on what
+        the workspace and status already narrowed."""
         approvals = tables.approval_requests
         matches = sa.and_(
             approvals.c.workspace_id == context.workspace_id,
             approvals.c.status == ApprovalStatus.PENDING.value,
             approvals.c.approval_type.startswith(prefix, autoescape=True),
             visible_to(ApprovalAudience.of(context, self.authorization)),
+            sa.true()
+            if payload_match is None
+            else approvals.c.payload[payload_match[0]].astext == payload_match[1],
         )
         scope = TenantScope.from_access_context(context)
         async with tenant_session(self.session_factory, scope) as session:

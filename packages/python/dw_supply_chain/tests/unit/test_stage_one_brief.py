@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from dw_kernel.ids import TenantId, WorkspaceId
+from dw_kernel.pagination import Page
 from dw_kernel.ports import FixedClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
@@ -262,11 +263,13 @@ class _NoUpdates:
 
 
 class _NoPOCases(InMemoryPOCases):
-    async def list_active(self, context: AccessContext) -> list[Any]:
-        return []
+    async def list_page(self, *args: object, **kwargs: object) -> Page[Any]:
+        return Page(items=(), next_cursor=None)
 
-    async def list_latest_transitions_since(self, *args: object, **kwargs: object) -> list[Any]:
-        return []
+    async def list_latest_transitions_since(
+        self, *args: object, **kwargs: object
+    ) -> tuple[int, list[Any]]:
+        return 0, []
 
     async def get_many(self, *args: object, **kwargs: object) -> list[Any]:
         return []

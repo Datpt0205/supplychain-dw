@@ -45,6 +45,7 @@ from dw_supply_chain.action_duties import (
     load_supply_chain_action_duties,
 )
 from dw_supply_chain.adapters.persistence import po_case_repository
+from dw_supply_chain.application import handlers as handlers_module
 from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.handlers import (
     AdvancePOCase,
@@ -92,7 +93,7 @@ from dw_supply_chain.brief_policy import SupplyChainBriefPolicy
 from dw_supply_chain.domain.brief_summary import BriefSummaryDraft, BriefSummaryStatus
 from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.case_query import CaseQueryOutcome, GroundedField
-from dw_supply_chain.domain.daily_brief import BriefSignal
+from dw_supply_chain.domain.daily_brief import ENTRIES_SHOWN, BriefSignal
 from dw_supply_chain.domain.delay_impact import (
     DelayImpactAnalysis,
     DelayImpactExtraction,
@@ -127,6 +128,7 @@ from dw_supply_chain.sla_policy import (
     SupplierUpdateCadence,
     SupplyChainSLAPolicy,
 )
+from dw_supply_chain.testing.pages import history_page
 from dw_supply_chain.testing.product_cases import InMemoryDirectory, InMemoryProductCases
 from dw_supply_chain.testing.production_gate import open_production_gate
 
@@ -215,16 +217,9 @@ class FakePOCaseRepository:
         return build_page(cases[: request.fetch_limit], request=request, position_of=_case_position)
 
     async def list_transitions(
-        self, context: AccessContext, case_id: POCaseId
-    ) -> list[CaseTransition]:
-        return self.transitions.get(case_id.value, [])
-
-    async def list_active(self, context: AccessContext) -> list[POCase]:
-        return [
-            c
-            for c in self.by_id.values()
-            if c.tenant_id.value == context.tenant_id and c.state not in TERMINAL_STATES
-        ]
+        self, context: AccessContext, case_id: POCaseId, request: PageRequest
+    ) -> Page[CaseTransition]:
+        return history_page(self.transitions.get(case_id.value, []), request)
 
     async def list_supplier_names(self, context: AccessContext) -> list[str]:
         return sorted(
@@ -263,8 +258,8 @@ class FakePOCaseRepository:
         ]
 
     async def list_latest_transitions_since(
-        self, context: AccessContext, since: datetime
-    ) -> list[tuple[POCaseId, CaseTransition]]:
+        self, context: AccessContext, since: datetime, *, limit: int
+    ) -> tuple[int, list[tuple[POCaseId, CaseTransition]]]:
         # Honors the real contract: the caller's tenant only, each case's
         # latest transition inside the window, one per case.
         latest: list[tuple[POCaseId, CaseTransition]] = []
@@ -275,7 +270,8 @@ class FakePOCaseRepository:
             inside = [t for t in history if t.occurred_at >= since]
             if inside:
                 latest.append((case.id, max(inside, key=lambda t: t.occurred_at)))
-        return latest
+        latest.sort(key=lambda pair: pair[1].occurred_at, reverse=True)
+        return len(latest), latest[:limit]
 
 
 def _case_position(case: POCase) -> CursorPosition:
@@ -1524,17 +1520,19 @@ async def test_list_transitions_returns_the_cases_own_history() -> None:
     po_case_repo.transitions[case.id.value] = expected
 
     result = await ListCaseTransitions(repo=po_case_repo, authz=ScopeAuthorizationService()).handle(
-        context, case.id
+        context, case.id, limit=1, cursor=None
     )
 
-    assert result == expected
+    # Newest first, a page at a time.
+    assert result.items == (expected[1],)
+    assert result.next_cursor is not None
 
 
 async def test_list_transitions_raises_not_found_for_an_unknown_case() -> None:
     po_case_repo = FakePOCaseRepository()
     handler = ListCaseTransitions(repo=po_case_repo, authz=ScopeAuthorizationService())
     with pytest.raises(NotFoundError):
-        await handler.handle(_context(), POCaseId(uuid.uuid4()))
+        await handler.handle(_context(), POCaseId(uuid.uuid4()), limit=10, cursor=None)
 
 
 async def test_list_transitions_refuses_without_the_read_scope() -> None:
@@ -1545,7 +1543,7 @@ async def test_list_transitions_refuses_without_the_read_scope() -> None:
     handler = ListCaseTransitions(repo=po_case_repo, authz=ScopeAuthorizationService())
     denied_context = _context(scopes=frozenset())
     with pytest.raises(PermissionDeniedError):
-        await handler.handle(denied_context, case.id)
+        await handler.handle(denied_context, case.id, limit=10, cursor=None)
 
 
 # -- GetSLAPolicy / SetSLAPolicyOverride / GetSLAEvaluation -----------------
@@ -2541,7 +2539,12 @@ class FakePendingApprovals:
         self.calls = 0
 
     async def list_pending_by_type_prefix(
-        self, context: AccessContext, *, prefix: str, limit: int
+        self,
+        context: AccessContext,
+        *,
+        prefix: str,
+        limit: int,
+        payload_match: tuple[str, str] | None = None,
     ) -> tuple[int, list[ApprovalRequest]]:
         self.calls += 1
         matching = sorted(
@@ -2551,6 +2554,7 @@ class FakePendingApprovals:
                 if a.tenant_id.value == context.tenant_id
                 and a.workspace_id.value == context.workspace_id
                 and a.approval_type.startswith(prefix)
+                and (payload_match is None or a.payload.get(payload_match[0]) == payload_match[1])
             ),
             key=lambda a: (a.created_at, a.id),
             reverse=True,
@@ -3718,3 +3722,96 @@ async def test_analyze_is_refused_before_the_model_once_the_plan_day_is_spent(
     assert inner.calls == []
     assert delay_impact_repo.by_case == {}
     assert delay_impact_repo.audits == []
+
+
+# -- unbounded reads: a whole set is read a page at a time -------------------
+
+
+class _CountingPOCases(FakePOCaseRepository):
+    """Records how many case ids each bulk read was handed: the parameters
+    a real statement would bind."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.bulk_sizes: list[int] = []
+
+    async def bulk_current_state_entered_at(
+        self, context: AccessContext, case_ids: list[POCaseId]
+    ) -> dict[uuid.UUID, datetime]:
+        self.bulk_sizes.append(len(case_ids))
+        return await super().bulk_current_state_entered_at(context, case_ids)
+
+
+async def test_active_cases_are_assessed_a_page_at_a_time_with_bounded_bulk_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every active case of the caller's tenant is assessed exactly once, and
+    no bulk read is handed more ids than a page holds — however many cases
+    the tenant has (asyncpg refuses more than 32 767 parameters)."""
+    monkeypatch.setattr(handlers_module, "ACTIVE_CASES_PAGE", 2)
+    repo = _CountingPOCases()
+    context = _context(scopes=_BRIEF_READ)
+    mine = [
+        _case_with_created_at(
+            context, created_at=_NOW - timedelta(days=day), state=CaseState.PRODUCTION
+        )
+        for day in range(1, 6)
+    ]
+    for case in mine:
+        await repo.add(context, case)
+    done = _case_with_created_at(context, created_at=_NOW, state=CaseState.PRODUCTION)
+    done.cancel("duplicate")
+    await repo.add(context, done)
+    other = AccessContext(
+        tenant_id=uuid.uuid4(),
+        workspace_id=WORKSPACE,
+        principal_id=context.principal_id,
+        roles=context.roles,
+        scopes=context.scopes,
+        plan_id=context.plan_id,
+    )
+    await repo.add(
+        other,
+        replace(
+            _case_with_created_at(other, created_at=_NOW, state=CaseState.PRODUCTION),
+            tenant_id=TenantId(other.tenant_id),
+        ),
+    )
+
+    healths = await handlers_module.assess_active_cases(
+        context,
+        po_case_repo=repo,
+        supplier_update_repo=FakeSupplierUpdateRepository(),
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_policy=_sla_policy(),
+        clock=FixedClock(_NOW),
+    )
+
+    assert sorted(h.case.id.value for h in healths) == sorted(c.id.value for c in mine)
+    assert repo.bulk_sizes == [2, 2, 1]
+
+
+async def test_the_brief_reads_only_the_newest_changes_and_still_counts_every_one() -> None:
+    repo = FakePOCaseRepository()
+    context = _context(scopes=_BRIEF_READ)
+    moved = ENTRIES_SHOWN + 3
+    for hour in range(moved):
+        case = _case_with_created_at(
+            context, created_at=_NOW - timedelta(days=2), state=CaseState.PRODUCTION
+        )
+        await repo.add(context, case)
+        repo.transitions[case.id.value] = [
+            CaseTransition(
+                from_state=CaseState.QC,
+                to_state=CaseState.PRODUCTION,
+                reason=None,
+                occurred_at=_NOW - timedelta(hours=hour + 1),
+            )
+        ]
+
+    brief = await _daily_brief_handler(repo).handle(context)
+
+    group = brief.group("changed_recently")
+    assert group is not None
+    assert group.total == moved
+    assert len(group.entries) == ENTRIES_SHOWN

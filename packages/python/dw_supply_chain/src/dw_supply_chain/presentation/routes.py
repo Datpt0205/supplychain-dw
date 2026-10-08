@@ -47,6 +47,7 @@ from dw_supply_chain.application.handlers import (
     ListCaseTransitions,
     ListDelayImpactAnalyses,
     ListFollowUps,
+    ListPOCaseApprovals,
     ListPOCases,
     ListSupplierUpdates,
     ReassignPOCasePic,
@@ -65,6 +66,7 @@ from dw_supply_chain.domain.brief_summary import BriefSummary, BriefSummaryStatu
 from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.case_query import CaseQueryKind, CaseQueryOutcome, GroundedField
 from dw_supply_chain.domain.daily_brief import (
+    ENTRIES_SHOWN,
     BriefEntry,
     BriefGroup,
     BriefSignal,
@@ -96,6 +98,7 @@ from dw_supply_chain.domain.supplier_update import (
 )
 from dw_supply_chain.follow_up_policy import SupplyChainFollowUpPolicy
 from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
+from dw_supply_chain.workflows.advance_case_graph import APPROVAL_TYPE_PREFIX
 
 # Declared here, satisfied by the composition root: this context needs a way
 # to resolve the caller's verified identity from a request, but must not
@@ -415,6 +418,22 @@ def _case_transition_view(transition: CaseTransition) -> CaseTransitionView:
     )
 
 
+class CaseApprovalView(BaseModel):
+    id: uuid.UUID
+    # The step waiting on the decision (`approval_type` without its prefix).
+    action: str
+    requested_at: datetime | None
+
+
+class CaseApprovalsView(BaseModel):
+    # False when the caller may not read the approval inbox: not looked at,
+    # which is not the same as none pending.
+    visible: bool
+    # Every pending approval naming the case; `items` is the newest few.
+    total: int
+    items: list[CaseApprovalView]
+
+
 class SLAEvaluationView(BaseModel):
     status: SLAEvaluationStatus
     milestone: str | None
@@ -560,6 +579,10 @@ class DailyBriefView(BaseModel):
     flagged_product_case_count: int
     # In the tenant's own `signal_order`; a client renders them as given.
     groups: list[BriefGroupView]
+    # How many cases a group lists at most. A group's `total` counts every
+    # one; for pending approvals and recent changes only the newest this
+    # many were read at all.
+    entries_shown: int
 
 
 def _product_brief_entry_view(entry: ProductBriefEntry) -> ProductBriefEntryView:
@@ -606,6 +629,7 @@ def _daily_brief_view(brief: DailyBrief) -> DailyBriefView:
         active_product_case_count=brief.active_product_case_count,
         flagged_product_case_count=brief.flagged_product_case_count,
         groups=[_brief_group_view(group) for group in brief.groups],
+        entries_shown=ENTRIES_SHOWN,
     )
 
 
@@ -880,6 +904,7 @@ def build_router(
     *,
     create_po: CreatePO,
     reassign_pic: ReassignPOCasePic,
+    list_case_approvals: ListPOCaseApprovals,
     resolve_access_context: AccessContextResolver,
     resolve_idempotency: IdempotencyResolver,
 ) -> APIRouter:
@@ -1150,13 +1175,39 @@ def build_router(
 
     @router.get(
         "/po-cases/{case_id}/transitions",
-        response_model=list[CaseTransitionView],
+        response_model=Page[CaseTransitionView],
     )
     async def get_case_transitions(
+        case_id: uuid.UUID,
+        context: require_access_context,
+        limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+        cursor: str | None = Query(default=None, description="Opaque cursor from a previous page."),
+    ) -> Page[CaseTransitionView]:
+        """The case's timeline, newest first, a page at a time."""
+        page = await list_case_transitions.handle(
+            context, POCaseId(case_id), limit=limit, cursor=cursor
+        )
+        return page.map_items(_case_transition_view)
+
+    @router.get("/po-cases/{case_id}/approvals", response_model=CaseApprovalsView)
+    async def get_case_approvals(
         case_id: uuid.UUID, context: require_access_context
-    ) -> list[CaseTransitionView]:
-        transitions = await list_case_transitions.handle(context, POCaseId(case_id))
-        return [_case_transition_view(transition) for transition in transitions]
+    ) -> CaseApprovalsView:
+        """The pending approvals that name this case, filtered here rather
+        than by the client: the newest few, and how many there are."""
+        found = await list_case_approvals.handle(context, POCaseId(case_id))
+        return CaseApprovalsView(
+            visible=found.visible,
+            total=found.total,
+            items=[
+                CaseApprovalView(
+                    id=approval.id,
+                    action=approval.approval_type.removeprefix(APPROVAL_TYPE_PREFIX),
+                    requested_at=approval.created_at,
+                )
+                for approval in found.newest
+            ],
+        )
 
     @router.get("/po-cases/{case_id}/sla-evaluation", response_model=SLAEvaluationView)
     async def get_sla_evaluation_route(

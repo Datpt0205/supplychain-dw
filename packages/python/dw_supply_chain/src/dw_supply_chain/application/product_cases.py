@@ -56,7 +56,7 @@ from typing import Protocol
 
 from dw_kernel.errors import DomainError, NotFoundError
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
-from dw_kernel.pagination import Page, page_request
+from dw_kernel.pagination import Page, PageQuery, page_request
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import AuthorizationPort, PolicyOverridePort
@@ -353,16 +353,27 @@ class ListProductCaseTransitions:
     authz: AuthorizationPort
 
     async def handle(
-        self, context: AccessContext, case_id: ProductDevelopmentCaseId
-    ) -> list[ProductCaseTransition]:
+        self,
+        context: AccessContext,
+        case_id: ProductDevelopmentCaseId,
+        *,
+        limit: int,
+        cursor: str | None,
+    ) -> Page[ProductCaseTransition]:
+        """One page of the case's history, newest first."""
         await self.authz.require(
             context=context,
             action=PRODUCT_CASE_READ,
             resource_type=_RESOURCE,
             resource_id=str(case_id),
         )
+        request = page_request(
+            limit=limit,
+            cursor=cursor,
+            query=PageQuery(key="supply_chain.product_case_transitions", filters={"case": case_id}),
+        )
         case = await _case_in_workspace(self.repo, context, case_id)
-        return await self.repo.list_transitions(context, case.id)
+        return await self.repo.list_transitions(context, case.id, request)
 
 
 @dataclass(frozen=True)

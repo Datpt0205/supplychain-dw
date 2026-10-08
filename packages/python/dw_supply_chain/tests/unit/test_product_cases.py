@@ -251,8 +251,8 @@ class FakeCases:
         return Page(items=tuple(items[: request.limit]), next_cursor=None)
 
     async def list_transitions(
-        self, context: AccessContext, case_id: ProductDevelopmentCaseId
-    ) -> list[ProductCaseTransition]:
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId, request: PageRequest
+    ) -> Page[ProductCaseTransition]:
         raise NotImplementedError("not exercised by these handler tests beyond the 404 path")
 
     async def list_rounds(
@@ -407,7 +407,12 @@ class FakeApprovals:
     pending: dict[tuple[uuid.UUID, str, str], PendingReview] = field(default_factory=dict)
 
     async def list_pending_by_type_prefix(
-        self, context: AccessContext, *, prefix: str, limit: int
+        self,
+        context: AccessContext,
+        *,
+        prefix: str,
+        limit: int,
+        payload_match: tuple[str, str] | None = None,
     ) -> tuple[int, Sequence[PendingApprovalRecord]]:
         raise NotImplementedError("not exercised by the product-case handlers")
 
@@ -963,7 +968,7 @@ async def test_another_tenants_or_workspaces_case_is_not_found(
         await stack.get().handle(caller, case.id)
     with pytest.raises(NotFoundError):
         await ListProductCaseTransitions(stack.cases, ScopeAuthorizationService()).handle(
-            caller, case.id
+            caller, case.id, limit=10, cursor=None
         )
     with pytest.raises(NotFoundError):
         await stack.advance().handle(
@@ -997,7 +1002,7 @@ async def test_the_handlers_refuse_another_workspaces_case_a_repository_let_thro
         await stack.get().handle(caller, case.id)
     with pytest.raises(NotFoundError):
         await ListProductCaseTransitions(stack.cases, ScopeAuthorizationService()).handle(
-            caller, case.id
+            caller, case.id, limit=10, cursor=None
         )
     with pytest.raises(NotFoundError):
         await stack.advance().handle(
@@ -1024,7 +1029,9 @@ async def test_reading_needs_the_read_scope(read: str) -> None:
                 caller, ProductCaseListFilter(), limit=10, cursor=None
             )
         elif read == "transitions":
-            await ListProductCaseTransitions(stack.cases, authz).handle(caller, case.id)
+            await ListProductCaseTransitions(stack.cases, authz).handle(
+                caller, case.id, limit=10, cursor=None
+            )
         else:
             await GetProductActionDuties(stack.policies, DUTIES, authz).handle(caller)
 

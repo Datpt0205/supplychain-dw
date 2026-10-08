@@ -391,6 +391,7 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         ListCaseTransitions,
         ListDelayImpactAnalyses,
         ListFollowUps,
+        ListPOCaseApprovals,
         ListPOCases,
         ListProductCategories,
         ListSupplierUpdates,
@@ -548,6 +549,11 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
     )
     container.supply_chain_list_case_transitions = ListCaseTransitions(
         repo=po_case_repo, authz=authorization
+    )
+    container.supply_chain_list_case_approvals = ListPOCaseApprovals(
+        repo=po_case_repo,
+        pending_approvals=SqlPendingApprovalQuery(wiring.seam.session_factory, authorization),
+        authz=authorization,
     )
     container.supply_chain_get_sla_evaluation = GetSLAEvaluation(
         po_case_repo=po_case_repo,

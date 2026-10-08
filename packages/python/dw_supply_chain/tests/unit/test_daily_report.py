@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from dw_kernel.ids import TenantId, WorkspaceId
+from dw_kernel.pagination import Page, PageRequest
 from dw_kernel.ports import FixedClock
 from dw_platform.application.access_context import AccessContext
 from dw_supply_chain.application.daily_report import BRIEF_LINK, SendStageOneReport
@@ -196,10 +197,12 @@ async def test_another_workspaces_cases_are_not_counted() -> None:
 
 async def test_one_failing_workspace_does_not_stop_the_others() -> None:
     class _Broken(InMemoryProductCases):
-        async def list_active(self, context: AccessContext) -> list[ProductDevelopmentCase]:
+        async def list_active(
+            self, context: AccessContext, request: PageRequest
+        ) -> Page[ProductDevelopmentCase]:
             if context.workspace_id == W2:
                 raise RuntimeError("bad row")
-            return await super().list_active(context)
+            return await super().list_active(context, request)
 
     inbox, products = _Inbox(), _Broken()
     passed = _product("SP-001", ProductDevState.PENDING_BOD_REVIEW)

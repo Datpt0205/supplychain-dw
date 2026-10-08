@@ -22,6 +22,7 @@ import {
   slaEvaluationSchema,
   missingUpdateStatusSchema,
   caseTransitionSchema,
+  caseApprovalsSchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -78,6 +79,7 @@ import {
   type SLAEvaluation,
   type MissingUpdateStatus,
   type CaseTransition,
+  type CaseApprovals,
   type AttentionItem,
   type FollowUp,
   type CaseDocument,
@@ -373,6 +375,15 @@ const _dailyBriefMirrorsTheRoute: [
   >,
 ] = [true, true, true, true];
 void _dailyBriefMirrorsTheRoute;
+
+const _caseApprovalsMirrorsTheRoute: [
+  SameType<CaseApprovals, SupplyChainGenerated["CaseApprovalsView"]>,
+  SameType<
+    keyof CaseApprovals["items"][number],
+    keyof SupplyChainGenerated["CaseApprovalView"]
+  >,
+] = [true, true];
+void _caseApprovalsMirrorsTheRoute;
 
 const _briefSummaryMirrorsTheRoute: [
   SameType<DailyBriefSummary, SupplyChainGenerated["DailyBriefSummaryView"]>,
@@ -1345,11 +1356,24 @@ export class ApiClient {
     );
   }
 
-  listCaseTransitions(caseId: string): Promise<CaseTransition[]> {
+  /** One page of the case's timeline, newest first. */
+  listCaseTransitions(
+    caseId: string,
+    params: PageParams = {},
+  ): Promise<Page<CaseTransition>> {
     return this.request(
       "GET",
-      `/api/v1/supply-chain/po-cases/${caseId}/transitions`,
-      z.array(caseTransitionSchema),
+      `/api/v1/supply-chain/po-cases/${caseId}/transitions${pageQueryString(params)}`,
+      pageSchema(caseTransitionSchema),
+    );
+  }
+
+  /** The pending approvals naming one PO case, filtered by the server. */
+  listPOCaseApprovals(caseId: string): Promise<CaseApprovals> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${caseId}/approvals`,
+      caseApprovalsSchema,
     );
   }
 
@@ -1568,11 +1592,15 @@ export class ApiClient {
     );
   }
 
-  listProductCaseTransitions(caseId: string): Promise<ProductCaseTransition[]> {
+  /** One page of the case's history, newest first. */
+  listProductCaseTransitions(
+    caseId: string,
+    params: PageParams = {},
+  ): Promise<Page<ProductCaseTransition>> {
     return this.request(
       "GET",
-      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/transitions`,
-      z.array(productCaseTransitionSchema),
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/transitions${pageQueryString(params)}`,
+      pageSchema(productCaseTransitionSchema),
     );
   }
 
@@ -1686,6 +1714,7 @@ export type {
   SLAEvaluation,
   MissingUpdateStatus,
   CaseTransition,
+  CaseApprovals,
   AttentionItem,
   PortfolioSummary,
   POCaseListFilter,

@@ -155,20 +155,11 @@ class POCaseRepositoryPort(Protocol):
         ...
 
     async def list_transitions(
-        self, context: AccessContext, case_id: POCaseId
-    ) -> list[CaseTransition]:
-        """The case's own timeline, oldest first — a journey reads start to
-        now, unlike every other list here, which reads newest first because
-        it is a feed of recent activity rather than a sequence."""
-        ...
-
-    async def list_active(self, context: AccessContext) -> list[POCase]:
-        """Every case NOT in a terminal state, unpaginated — the entry point
-        of `handlers.assess_active_cases`, which the Attention Queue and the
-        Control Tower both compute over. Deliberately not exposed as a
-        public list endpoint the way `list_page` is: its callers need every
-        active case to compute signals over, not a page a client scrolls
-        through."""
+        self, context: AccessContext, case_id: POCaseId, request: PageRequest
+    ) -> Page[CaseTransition]:
+        """One page of the case's own timeline, newest first, so the first
+        page is where the case is now; a client shows each page oldest at
+        the top. Paged because a case's history has no bound of its own."""
         ...
 
     async def list_supplier_names(self, context: AccessContext) -> list[str]:
@@ -194,7 +185,8 @@ class POCaseRepositoryPort(Protocol):
         — a case with no entry here has never transitioned, same as that
         method's own `None` case; the caller falls back to `POCase.
         created_at` per case, same fallback `GetSLAEvaluation` already uses
-        for one case at a time."""
+        for one case at a time. Called with one page of cases at most
+        (`handlers.ACTIVE_CASES_PAGE`), so the ids it binds are bounded."""
         ...
 
     async def get_many(self, context: AccessContext, case_ids: list[POCaseId]) -> list[POCase]:
@@ -203,12 +195,12 @@ class POCaseRepositoryPort(Protocol):
         ...
 
     async def list_latest_transitions_since(
-        self, context: AccessContext, since: datetime
-    ) -> list[tuple[POCaseId, CaseTransition]]:
-        """Each case's most recent transition at or after `since`, one per
-        case that moved at all — what the daily brief reports as changed.
-        Bounded by one window's activity rather than paged, the same shape
-        `list_active` has."""
+        self, context: AccessContext, since: datetime, *, limit: int
+    ) -> tuple[int, list[tuple[POCaseId, CaseTransition]]]:
+        """How many cases moved at or after `since`, and the `limit` that
+        moved most recently, each with its latest transition — what the
+        daily brief reports as changed. The count is every one; the list is
+        bounded, as the brief shows only a few."""
         ...
 
 
@@ -282,11 +274,18 @@ class PendingApprovalsPort(Protocol):
     not show an approval the inbox would refuse."""
 
     async def list_pending_by_type_prefix(
-        self, context: AccessContext, *, prefix: str, limit: int
+        self,
+        context: AccessContext,
+        *,
+        prefix: str,
+        limit: int,
+        payload_match: tuple[str, str] | None = None,
     ) -> tuple[int, Sequence[PendingApprovalRecord]]:
         """How many pending approvals have an `approval_type` starting with
         `prefix`, and the newest `limit` of them. `prefix` is matched
-        literally: an `_` in it is not a wildcard."""
+        literally: an `_` in it is not a wildcard. `payload_match` (key,
+        value) narrows both to those whose payload's top-level `key` is
+        `value`: one PO case's approvals, filtered by the server."""
         ...
 
     async def pending_by_payload(
@@ -536,7 +535,12 @@ class ActiveProductCasesPort(Protocol):
     """What the follow-up sweep reads of product cases: those of the context's
     workspace not yet ordered or cancelled, and when each last moved."""
 
-    async def list_active(self, context: AccessContext) -> list[ProductDevelopmentCase]: ...
+    async def list_active(
+        self, context: AccessContext, request: PageRequest
+    ) -> Page[ProductDevelopmentCase]:
+        """One page of them, newest first: a caller reads every page, each
+        bounded, so no query binds one parameter per active case."""
+        ...
 
     async def state_entered_at(
         self, context: AccessContext, case_ids: Sequence[uuid.UUID]
@@ -757,9 +761,10 @@ class ProductCaseRepositoryPort(Protocol):
         ...
 
     async def list_transitions(
-        self, context: AccessContext, case_id: ProductDevelopmentCaseId
-    ) -> list[ProductCaseTransition]:
-        """The case's history, oldest first."""
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId, request: PageRequest
+    ) -> Page[ProductCaseTransition]:
+        """One page of the case's history, newest first (as
+        `POCaseRepositoryPort.list_transitions`)."""
         ...
 
     async def list_rounds(

@@ -31,6 +31,7 @@ from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.ports import ModelRequest
 from dw_kernel.errors import ConflictError, NotFoundError
 from dw_kernel.ids import TenantId, WorkspaceId
+from dw_kernel.pagination import PageQuery, page_request
 from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
@@ -65,6 +66,7 @@ from dw_supply_chain.domain.supplier_update import (
     SupplierUpdateExtraction,
     SupplierUpdateId,
 )
+from dw_supply_chain.testing.pages import oldest_first
 
 pytestmark = pytest.mark.integration
 
@@ -255,7 +257,7 @@ async def test_another_workspace_reads_nothing_through_the_handlers(
     with pytest.raises(NotFoundError):
         await GetPOCase(repo=repo, authz=authz).handle(w2, case.id)
     with pytest.raises(NotFoundError):
-        await ListCaseTransitions(repo=repo, authz=authz).handle(w2, case.id)
+        await ListCaseTransitions(repo=repo, authz=authz).handle(w2, case.id, limit=50, cursor=None)
     with pytest.raises(NotFoundError):
         await ListSupplierUpdates(
             po_case_repo=repo,
@@ -274,7 +276,16 @@ async def test_another_workspace_reads_nothing_through_the_handlers(
     assert page.items == ()
     assert await repo.find_by_reference(w2, case.po_reference) == []
     assert case.supplier_name not in await repo.list_supplier_names(w2)
-    assert case.id not in {c.id for c in await repo.list_active(w2)}
+    active_in_w2 = await oldest_first(
+        lambda request: repo.list_page(w2, request, POCaseListFilter(active_only=True))
+    )
+    assert case.id not in {c.id for c in active_in_w2}
+    # A page of the case's history asked for by id from W2 is empty, not W1's.
+    assert (
+        await repo.list_transitions(
+            w2, case.id, page_request(limit=50, cursor=None, query=PageQuery(key="t"))
+        )
+    ).items == ()
     assert await repo.get_many(w2, [case.id]) == []
     # And the same reads from W1 do find it, so the above is the workspace.
     assert await repo.find_by_reference(_context(W1), case.po_reference) != []

@@ -52,6 +52,7 @@ function brief(overrides: Partial<DailyBrief> = {}): DailyBrief {
     active_case_count: 5,
     flagged_case_count: 1,
     approvals_visible: true,
+    entries_shown: 10,
     product_cases_visible: true,
     active_product_case_count: 0,
     flagged_product_case_count: 0,

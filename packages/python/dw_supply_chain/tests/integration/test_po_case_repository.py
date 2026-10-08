@@ -28,6 +28,7 @@ from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRep
 from dw_supply_chain.application.ports import POCaseListFilter
 from dw_supply_chain.domain.packaging_design import PreProductionTest, ProductionGate
 from dw_supply_chain.domain.po_case import CaseState, POCase, POCaseId
+from dw_supply_chain.testing.pages import oldest_first
 
 pytestmark = pytest.mark.integration
 
@@ -673,7 +674,9 @@ async def test_list_transitions_returns_the_cases_own_timeline_oldest_first(
     case.confirm_deposit()
     await repo.save(context, case)
 
-    transitions = await repo.list_transitions(context, case.id)
+    transitions = await oldest_first(
+        lambda request: repo.list_transitions(context, case.id, request)
+    )
 
     assert [(t.from_state, t.to_state, t.reason) for t in transitions] == [
         (CaseState.PO_CREATED, CaseState.WAITING_DEPOSIT, None),
@@ -690,7 +693,9 @@ async def test_list_transitions_is_empty_for_a_case_that_never_transitioned(
     case = _case()
     await repo.add(context, case)
 
-    assert await repo.list_transitions(context, case.id) == []
+    assert (
+        await oldest_first(lambda request: repo.list_transitions(context, case.id, request)) == []
+    )
 
 
 async def test_list_transitions_is_empty_for_another_tenants_case(
@@ -702,8 +707,10 @@ async def test_list_transitions_is_empty_for_another_tenants_case(
     case.request_deposit()
     await repo.save(_context(tenant=TENANT_A, workspace=WORKSPACE_A), case)
 
-    transitions = await repo.list_transitions(
-        _context(tenant=TENANT_B, workspace=WORKSPACE_B), case.id
+    transitions = await oldest_first(
+        lambda request: repo.list_transitions(
+            _context(tenant=TENANT_B, workspace=WORKSPACE_B), case.id, request
+        )
     )
     assert transitions == []
 
@@ -795,7 +802,9 @@ async def test_list_active_excludes_terminal_cases(
     cancelled.cancel("customer walked away")
     await repo.save(context, cancelled)
 
-    result = await repo.list_active(context)
+    result = await oldest_first(
+        lambda request: repo.list_page(context, request, POCaseListFilter(active_only=True))
+    )
 
     assert [c.id for c in result] == [active.id]
 
@@ -813,7 +822,10 @@ async def test_list_active_only_returns_the_callers_tenant(
         _case(tenant=other_tenant, workspace=other_workspace),
     )
 
-    result = await repo.list_active(_context(tenant=mine_tenant, workspace=mine_workspace))
+    mine_context = _context(tenant=mine_tenant, workspace=mine_workspace)
+    result = await oldest_first(
+        lambda request: repo.list_page(mine_context, request, POCaseListFilter(active_only=True))
+    )
 
     assert [c.id for c in result] == [mine.id]
 
@@ -915,13 +927,21 @@ async def test_latest_transitions_since_is_one_per_case_the_newest_inside_the_wi
     once.request_deposit()
     await repo.save(context, once)
 
-    latest = dict(await repo.list_latest_transitions_since(context, before))
+    total, moved = await repo.list_latest_transitions_since(context, before, limit=10)
+    latest = dict(moved)
 
+    assert total == 2
     assert set(latest) == {twice.id, once.id}
     assert latest[twice.id].to_state is CaseState.DEPOSIT_CONFIRMED
     assert latest[once.id].to_state is CaseState.WAITING_DEPOSIT
     # Nothing moved after now: an empty window, not the whole history.
-    assert await repo.list_latest_transitions_since(context, datetime.now(UTC)) == []
+    assert await repo.list_latest_transitions_since(context, datetime.now(UTC), limit=10) == (
+        0,
+        [],
+    )
+    # Bounded: the newest mover only, and still counted as two.
+    total, newest = await repo.list_latest_transitions_since(context, before, limit=1)
+    assert (total, [case_id for case_id, _ in newest]) == (2, [once.id])
 
 
 async def test_latest_transitions_since_never_reaches_another_tenant(
@@ -936,4 +956,4 @@ async def test_latest_transitions_since_never_reaches_another_tenant(
 
     mine = _context(tenant=uuid.uuid4(), workspace=uuid.uuid4())
     since = datetime.now(UTC) - timedelta(hours=1)
-    assert await repo.list_latest_transitions_since(mine, since) == []
+    assert await repo.list_latest_transitions_since(mine, since, limit=10) == (0, [])

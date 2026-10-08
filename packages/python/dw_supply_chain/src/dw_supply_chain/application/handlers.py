@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -20,7 +20,7 @@ from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.ports import ModelGateway, ModelOutputInvalidError, WorkflowRunnerPort
 from dw_kernel.errors import DomainError, NotFoundError, PermissionDeniedError
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
-from dw_kernel.pagination import Page, page_request
+from dw_kernel.pagination import MAX_PAGE_SIZE, Page, PageQuery, PageRequest, page_request
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import AuthorizationPort, PolicyOverridePort
@@ -52,6 +52,7 @@ from dw_supply_chain.domain.brief_summary import (
 )
 from dw_supply_chain.domain.daily_brief import (
     CHANGE_WINDOW_HOURS,
+    ENTRIES_SHOWN,
     DailyBrief,
     PendingApprovalsSeen,
     PendingCaseApproval,
@@ -214,9 +215,11 @@ _BRIEF_POLICY_RESOURCE = "brief_policy"
 # The platform approval inbox's own read scope (`GET /api/v1/approvals`). The
 # brief shows pending approvals only to a caller who could open that inbox.
 APPROVALS_READ = "approvals.read"
-# How many pending approvals the brief reads and resolves to a case; the
-# group's count is still every pending one.
-_BRIEF_APPROVALS_READ = 50
+# How many pending approvals, and how many recently changed cases, the brief
+# reads and resolves to a case: the newest of each, as many as a group shows
+# (`ENTRIES_SHOWN`). Each group's `total` still counts every one, and the view
+# states the bound (`DailyBriefView.entries_shown`).
+_BRIEF_ROWS_READ = ENTRIES_SHOWN
 
 # Neither is a registered worker (no configs/workers/supply_chain.yaml) —
 # each is one structured-extraction call, not an autonomous agent loop with
@@ -508,14 +511,63 @@ class ListPOCases:
 
 @dataclass(frozen=True)
 class ListCaseTransitions:
-    """The case's own timeline — every state change it has been through,
-    oldest first. Reuses `PO_CASE_READ`, resource-scoped like `GetPOCase`:
-    this is about one named case, not a tenant-wide listing."""
+    """The case's own timeline — every state change it has been through, a
+    page at a time, newest first. Reuses `PO_CASE_READ`, resource-scoped like
+    `GetPOCase`: this is about one named case, not a tenant-wide listing."""
 
     repo: POCaseRepositoryPort
     authz: AuthorizationPort
 
-    async def handle(self, context: AccessContext, case_id: POCaseId) -> list[CaseTransition]:
+    async def handle(
+        self, context: AccessContext, case_id: POCaseId, *, limit: int, cursor: str | None
+    ) -> Page[CaseTransition]:
+        await self.authz.require(
+            context=context,
+            action=PO_CASE_READ,
+            resource_type=_RESOURCE,
+            resource_id=str(case_id),
+        )
+        request = page_request(
+            limit=limit,
+            cursor=cursor,
+            query=PageQuery(key="supply_chain.po_case_transitions", filters={"case": case_id}),
+        )
+        case = await self.repo.get(context, case_id)
+        if case is None:
+            raise NotFoundError("PO case not found", details={"case_id": str(case_id)})
+        return await self.repo.list_transitions(context, case_id, request)
+
+
+# How many of one case's pending approvals its page reads; the count is
+# every one. A case waits on one step at a time, so more than a few is rare.
+CASE_APPROVALS_READ = 20
+
+
+@dataclass(frozen=True, slots=True)
+class CaseApprovals:
+    """One PO case's pending approvals as its page shows them. `visible` is
+    False when the caller may not read the approval inbox: not looked at,
+    which is not the same as none pending."""
+
+    visible: bool
+    total: int
+    newest: tuple[PendingApprovalRecord, ...]
+
+
+@dataclass(frozen=True)
+class ListPOCaseApprovals:
+    """The pending approvals that name one PO case, filtered by the server
+    (the platform inbox, narrowed by the case's id in the payload) rather than
+    by a client reading a page of every approval. Reuses `PO_CASE_READ` on
+    the case and, like the brief, shows approvals only to a caller who holds
+    the inbox's own `approvals.read`; the inbox's audience rule applies
+    inside the query."""
+
+    repo: POCaseRepositoryPort
+    pending_approvals: PendingApprovalsPort
+    authz: AuthorizationPort
+
+    async def handle(self, context: AccessContext, case_id: POCaseId) -> CaseApprovals:
         await self.authz.require(
             context=context,
             action=PO_CASE_READ,
@@ -525,7 +577,19 @@ class ListCaseTransitions:
         case = await self.repo.get(context, case_id)
         if case is None:
             raise NotFoundError("PO case not found", details={"case_id": str(case_id)})
-        return await self.repo.list_transitions(context, case_id)
+        try:
+            await self.authz.require(
+                context=context, action=APPROVALS_READ, resource_type="approval_request"
+            )
+        except PermissionDeniedError:
+            return CaseApprovals(visible=False, total=0, newest=())
+        total, newest = await self.pending_approvals.list_pending_by_type_prefix(
+            context,
+            prefix=APPROVAL_TYPE_PREFIX,
+            limit=CASE_APPROVALS_READ,
+            payload_match=("po_case_id", str(case.id.value)),
+        )
+        return CaseApprovals(visible=True, total=total, newest=tuple(newest))
 
 
 @dataclass(frozen=True)
@@ -1225,6 +1289,27 @@ class GetSLAEvaluation:
         )
 
 
+# How many active cases one read of a whole set takes. The ceiling of a page,
+# so a bulk read keyed by one page's ids binds at most this many parameters.
+ACTIVE_CASES_PAGE = MAX_PAGE_SIZE
+
+
+async def every_page[ItemT](
+    fetch: Callable[[PageRequest], Awaitable[Page[ItemT]]], query: PageQuery
+) -> AsyncIterator[tuple[ItemT, ...]]:
+    """Each page of a keyset listing in turn, `ACTIVE_CASES_PAGE` at a time:
+    how a computation over a whole set (every active case) reads it without
+    one unbounded query."""
+    cursor: str | None = None
+    while True:
+        page = await fetch(page_request(limit=ACTIVE_CASES_PAGE, cursor=cursor, query=query))
+        if page.items:
+            yield page.items
+        if page.next_cursor is None:
+            return
+        cursor = page.next_cursor
+
+
 async def assess_active_cases(
     context: AccessContext,
     *,
@@ -1245,40 +1330,45 @@ async def assess_active_cases(
     two queries per case. Each case is evaluated by the exact domain
     functions those two single-case handlers call.
     """
-    cases = await po_case_repo.list_active(context)
-    if not cases:
-        return []
-
-    case_ids = [case.id for case in cases]
-    entered_at_by_case = await po_case_repo.bulk_current_state_entered_at(context, case_ids)
-    latest_update_by_case = await supplier_update_repo.bulk_latest(context, case_ids)
     policy = await resolve_sla_policy(context, policy_override_repo, platform_default_policy)
     now = clock.now()
-
     healths: list[CaseHealth] = []
-    for case in cases:
-        assert case.created_at is not None  # persisted rows always carry it
-        latest_update = latest_update_by_case.get(case.id.value)
-        healths.append(
-            CaseHealth(
-                case=case,
-                sla=evaluate_sla(
-                    state=case.state,
-                    category=case.category,
-                    entered_current_state_at=entered_at_by_case.get(case.id.value, case.created_at),
-                    now=now,
-                    policy=policy,
-                ),
-                missing_update=missing_update_status(
-                    state=case.state,
-                    case_created_at=case.created_at,
-                    last_supplier_update_at=latest_update.created_at if latest_update else None,
-                    now=now,
-                    cadence=policy.supplier_update.cadence,
-                ),
-                latest_update=latest_update,
+    active = POCaseListFilter(active_only=True)
+    async for cases in every_page(
+        lambda request: po_case_repo.list_page(context, request, active),
+        PageQuery(key="supply_chain.active_po_cases", filters={"tenant": context.tenant_id}),
+    ):
+        # One page's ids per bulk read: bounded by `ACTIVE_CASES_PAGE`, never
+        # by how many cases a tenant has (asyncpg refuses a statement of more
+        # than 32 767 parameters).
+        case_ids = [case.id for case in cases]
+        entered_at_by_case = await po_case_repo.bulk_current_state_entered_at(context, case_ids)
+        latest_update_by_case = await supplier_update_repo.bulk_latest(context, case_ids)
+        for case in cases:
+            assert case.created_at is not None  # persisted rows always carry it
+            latest_update = latest_update_by_case.get(case.id.value)
+            healths.append(
+                CaseHealth(
+                    case=case,
+                    sla=evaluate_sla(
+                        state=case.state,
+                        category=case.category,
+                        entered_current_state_at=entered_at_by_case.get(
+                            case.id.value, case.created_at
+                        ),
+                        now=now,
+                        policy=policy,
+                    ),
+                    missing_update=missing_update_status(
+                        state=case.state,
+                        case_created_at=case.created_at,
+                        last_supplier_update_at=latest_update.created_at if latest_update else None,
+                        now=now,
+                        cadence=policy.supplier_update.cadence,
+                    ),
+                    latest_update=latest_update,
+                )
             )
-        )
     return healths
 
 
@@ -1375,27 +1465,30 @@ async def assess_active_product_cases(
     SLA evaluation, under the tenant's SLA policy and the case's own stamped
     Category — what the follow-up sweep opens work from and the daily brief
     groups, so the two cannot evaluate one case two ways."""
-    cases = await product_case_repo.list_active(context)
-    if not cases:
-        return []
-    entered = await product_case_repo.state_entered_at(context, [case.id.value for case in cases])
     policy = await resolve_sla_policy(context, policy_override_repo, platform_default_policy)
     now = clock.now()
     healths: list[ProductHealth] = []
-    for case in cases:
-        assert case.created_at is not None  # read back from a row
-        healths.append(
-            ProductHealth(
-                case=case,
-                sla=evaluate_product_sla(
-                    state=case.state,
-                    category=case.category,
-                    entered_current_state_at=entered.get(case.id.value, case.created_at),
-                    now=now,
-                    policy=policy,
-                ),
-            )
+    async for cases in every_page(
+        lambda request: product_case_repo.list_active(context, request),
+        PageQuery(key="supply_chain.active_product_cases", filters={"tenant": context.tenant_id}),
+    ):
+        entered = await product_case_repo.state_entered_at(
+            context, [case.id.value for case in cases]
         )
+        for case in cases:
+            assert case.created_at is not None  # read back from a row
+            healths.append(
+                ProductHealth(
+                    case=case,
+                    sla=evaluate_product_sla(
+                        state=case.state,
+                        category=case.category,
+                        entered_current_state_at=entered.get(case.id.value, case.created_at),
+                        now=now,
+                        policy=policy,
+                    ),
+                )
+            )
     return healths
 
 
@@ -1496,8 +1589,8 @@ class GetDailyBrief:
         )
         stage_one = await self._stage_one(context)
         now = self.clock.now()
-        changed = await self.po_case_repo.list_latest_transitions_since(
-            context, now - timedelta(hours=CHANGE_WINDOW_HOURS)
+        changed_total, changed = await self.po_case_repo.list_latest_transitions_since(
+            context, now - timedelta(hours=CHANGE_WINDOW_HOURS), limit=_BRIEF_ROWS_READ
         )
         pending = await self._pending_approvals(context)
 
@@ -1522,6 +1615,7 @@ class GetDailyBrief:
                 for case_id, transition in changed
                 if case_id.value in cases
             ],
+            recent_changes_total=changed_total,
             approvals=(
                 None
                 if pending is None
@@ -1559,7 +1653,7 @@ class GetDailyBrief:
         except PermissionDeniedError:
             return None
         return await self.pending_approvals.list_pending_by_type_prefix(
-            context, prefix=APPROVAL_TYPE_PREFIX, limit=_BRIEF_APPROVALS_READ
+            context, prefix=APPROVAL_TYPE_PREFIX, limit=_BRIEF_ROWS_READ
         )
 
 

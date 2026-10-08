@@ -204,7 +204,12 @@ async def test_the_brief_holds_only_the_callers_tenant_and_workspace(
 
 class _NoPending:
     async def list_pending_by_type_prefix(
-        self, context: AccessContext, *, prefix: str, limit: int
+        self,
+        context: AccessContext,
+        *,
+        prefix: str,
+        limit: int,
+        payload_match: tuple[str, str] | None = None,
     ) -> tuple[int, Sequence[PendingApprovalRecord]]:
         return 0, []
 

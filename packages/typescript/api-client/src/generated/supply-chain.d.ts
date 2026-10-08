@@ -327,6 +327,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/po-cases/{case_id}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Case Approvals
+         * @description The pending approvals that name this case, filtered here rather
+         *     than by the client: the newest few, and how many there are.
+         */
+        get: operations["get_case_approvals_api_v1_supply_chain_po_cases__case_id__approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/po-cases/{case_id}/create-po": {
         parameters: {
             query?: never;
@@ -513,7 +534,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Case Transitions */
+        /**
+         * Get Case Transitions
+         * @description The case's timeline, newest first, a page at a time.
+         */
         get: operations["get_case_transitions_api_v1_supply_chain_po_cases__case_id__transitions_get"];
         put?: never;
         /** Create Po Case Transition */
@@ -655,7 +679,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Product Case Transitions */
+        /**
+         * Get Product Case Transitions
+         * @description The case's history, newest first, a page at a time.
+         */
         get: operations["get_product_case_transitions_api_v1_supply_chain_product_cases__case_id__transitions_get"];
         put?: never;
         /** Create Product Case Transition */
@@ -869,6 +896,27 @@ export interface components {
              */
             status: "applied" | "pending_approval";
         };
+        /** CaseApprovalView */
+        CaseApprovalView: {
+            /** Action */
+            action: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Requested At */
+            requested_at: string | null;
+        };
+        /** CaseApprovalsView */
+        CaseApprovalsView: {
+            /** Items */
+            items: components["schemas"]["CaseApprovalView"][];
+            /** Total */
+            total: number;
+            /** Visible */
+            visible: boolean;
+        };
         /**
          * CaseDocumentView
          * @description A document as the API shows it. The object key stays on the server.
@@ -1041,6 +1089,8 @@ export interface components {
             active_product_case_count: number;
             /** Approvals Visible */
             approvals_visible: boolean;
+            /** Entries Shown */
+            entries_shown: number;
             /** Flagged Case Count */
             flagged_case_count: number;
             /** Flagged Product Case Count */
@@ -1404,9 +1454,37 @@ export interface components {
          *     ``items`` — is the client's stop condition: a filtered listing can return an
          *     empty page in the middle of a run and still have more rows behind it.
          */
+        Page_CaseTransitionView_: {
+            /** Items */
+            items: components["schemas"]["CaseTransitionView"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /**
+         * Page
+         * @description A page of results and the cursor that continues it.
+         *
+         *     ``next_cursor`` is ``None`` on the last page, and that — not an empty
+         *     ``items`` — is the client's stop condition: a filtered listing can return an
+         *     empty page in the middle of a run and still have more rows behind it.
+         */
         Page_POCaseView_: {
             /** Items */
             items: components["schemas"]["POCaseView"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /**
+         * Page
+         * @description A page of results and the cursor that continues it.
+         *
+         *     ``next_cursor`` is ``None`` on the last page, and that — not an empty
+         *     ``items`` — is the client's stop condition: a filtered listing can return an
+         *     empty page in the middle of a run and still have more rows behind it.
+         */
+        Page_ProductCaseTransitionView_: {
+            /** Items */
+            items: components["schemas"]["ProductCaseTransitionView"][];
             /** Next Cursor */
             next_cursor: string | null;
         };
@@ -2708,6 +2786,37 @@ export interface operations {
             };
         };
     };
+    get_case_approvals_api_v1_supply_chain_po_cases__case_id__approvals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseApprovalsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_po_route_api_v1_supply_chain_po_cases__case_id__create_po_post: {
         parameters: {
             query?: never;
@@ -3121,7 +3230,11 @@ export interface operations {
     };
     get_case_transitions_api_v1_supply_chain_po_cases__case_id__transitions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                /** @description Opaque cursor from a previous page. */
+                cursor?: string | null;
+            };
             header?: never;
             path: {
                 case_id: string;
@@ -3136,7 +3249,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CaseTransitionView"][];
+                    "application/json": components["schemas"]["Page_CaseTransitionView_"];
                 };
             };
             /** @description Validation Error */
@@ -3494,7 +3607,11 @@ export interface operations {
     };
     get_product_case_transitions_api_v1_supply_chain_product_cases__case_id__transitions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                /** @description Opaque cursor from a previous page. */
+                cursor?: string | null;
+            };
             header?: never;
             path: {
                 case_id: string;
@@ -3509,7 +3626,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProductCaseTransitionView"][];
+                    "application/json": components["schemas"]["Page_ProductCaseTransitionView_"];
                 };
             };
             /** @description Validation Error */

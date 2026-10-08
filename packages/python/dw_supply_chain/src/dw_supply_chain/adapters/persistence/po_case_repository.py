@@ -176,11 +176,15 @@ def _transition_from_row(row: Row[tuple]) -> CaseTransition:  # type: ignore[typ
 
 
 def _is_active(state: sa.ColumnElement[str]) -> sa.ColumnElement[bool]:
-    """Not in a terminal state — the one SQL spelling of "active", shared by
-    `list_active` (what the Control Tower counts) and `list_page`'s
-    `active_only` (its drill-down), so the count and the list it links to
-    cannot come apart."""
+    """Not in a terminal state — the one SQL spelling of "active": `list_page`'s
+    `active_only`, which both the Control Tower's count (read a page at a
+    time by `handlers.assess_active_cases`) and its drill-down use, so the
+    count and the list it links to cannot come apart."""
     return state.notin_([terminal.value for terminal in TERMINAL_STATES])
+
+
+def _row_position(row: Row[tuple]) -> CursorPosition:  # type: ignore[type-arg]
+    return CursorPosition(sort_value=row.occurred_at, tiebreaker=row.id)
 
 
 def _case_position(case: POCase) -> CursorPosition:
@@ -362,31 +366,33 @@ class SqlPOCaseRepository:
         )
 
     async def list_transitions(
-        self, context: AccessContext, case_id: POCaseId
-    ) -> list[CaseTransition]:
+        self, context: AccessContext, case_id: POCaseId, request: PageRequest
+    ) -> Page[CaseTransition]:
+        """Newest first, by `ix_po_case_state_transitions_case_page` (tenant,
+        workspace, case, occurred_at, id): RLS supplies the first two."""
+        transitions = tables.po_case_state_transitions
         scope = TenantScope.from_access_context(context)
         async with tenant_session(self.session_factory, scope) as session:
-            result = await session.execute(
-                sa.select(
-                    tables.po_case_state_transitions.c.from_state,
-                    tables.po_case_state_transitions.c.to_state,
-                    tables.po_case_state_transitions.c.reason,
-                    tables.po_case_state_transitions.c.occurred_at,
+            rows = (
+                await session.execute(
+                    sa.select(
+                        transitions.c.id,
+                        transitions.c.from_state,
+                        transitions.c.to_state,
+                        transitions.c.reason,
+                        transitions.c.occurred_at,
+                    )
+                    .where(
+                        transitions.c.po_case_id == case_id.value,
+                        after_position(transitions.c.occurred_at, transitions.c.id, request.after),
+                    )
+                    .order_by(*newest_first(transitions.c.occurred_at, transitions.c.id))
+                    .limit(request.fetch_limit)
                 )
-                .where(tables.po_case_state_transitions.c.po_case_id == case_id.value)
-                .order_by(tables.po_case_state_transitions.c.occurred_at.asc())
-            )
-            return [_transition_from_row(row) for row in result]
-
-    async def list_active(self, context: AccessContext) -> list[POCase]:
-        scope = TenantScope.from_access_context(context)
-        async with tenant_session(self.session_factory, scope) as session:
-            result = await session.execute(
-                sa.select(tables.po_cases)
-                .where(_is_active(tables.po_cases.c.state))
-                .order_by(tables.po_cases.c.created_at.asc())
-            )
-            return [_case_from_row(row) for row in result]
+            ).all()
+        return build_page(rows, request=request, position_of=_row_position).map_items(
+            _transition_from_row
+        )
 
     async def list_supplier_names(self, context: AccessContext) -> list[str]:
         scope = TenantScope.from_access_context(context)
@@ -445,28 +451,40 @@ class SqlPOCaseRepository:
             return [_case_from_row(row) for row in result]
 
     async def list_latest_transitions_since(
-        self, context: AccessContext, since: datetime
-    ) -> list[tuple[POCaseId, CaseTransition]]:
+        self, context: AccessContext, since: datetime, *, limit: int
+    ) -> tuple[int, list[tuple[POCaseId, CaseTransition]]]:
         scope = TenantScope.from_access_context(context)
         transitions = tables.po_case_state_transitions
-        async with tenant_session(self.session_factory, scope) as session:
-            # `ix_po_case_state_transitions_tenant_occurred_at` carries the
-            # window: RLS supplies tenant_id and workspace_id, the range bounds
-            # occurred_at.
-            result = await session.execute(
-                sa.select(
-                    transitions.c.po_case_id,
-                    transitions.c.from_state,
-                    transitions.c.to_state,
-                    transitions.c.reason,
-                    transitions.c.occurred_at,
-                )
-                .distinct(transitions.c.po_case_id)
-                .where(transitions.c.occurred_at >= since)
-                .order_by(
-                    transitions.c.po_case_id,
-                    transitions.c.occurred_at.desc(),
-                    transitions.c.id.desc(),
-                )
+        # `ix_po_case_state_transitions_tenant_occurred_at` carries the
+        # window: RLS supplies tenant_id and workspace_id, the range bounds
+        # occurred_at. Each moved case once, at its latest transition.
+        latest = (
+            sa.select(
+                transitions.c.po_case_id,
+                transitions.c.from_state,
+                transitions.c.to_state,
+                transitions.c.reason,
+                transitions.c.occurred_at,
+                transitions.c.id,
             )
-            return [(POCaseId(row.po_case_id), _transition_from_row(row)) for row in result]
+            .distinct(transitions.c.po_case_id)
+            .where(transitions.c.occurred_at >= since)
+            .order_by(
+                transitions.c.po_case_id,
+                transitions.c.occurred_at.desc(),
+                transitions.c.id.desc(),
+            )
+            .subquery()
+        )
+        async with tenant_session(self.session_factory, scope) as session:
+            total = (
+                await session.execute(sa.select(sa.func.count()).select_from(latest))
+            ).scalar_one()
+            rows = (
+                await session.execute(
+                    sa.select(latest)
+                    .order_by(latest.c.occurred_at.desc(), latest.c.id.desc())
+                    .limit(limit)
+                )
+            ).all()
+        return total, [(POCaseId(row.po_case_id), _transition_from_row(row)) for row in rows]

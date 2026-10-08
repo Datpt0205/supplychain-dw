@@ -99,6 +99,7 @@ from dw_supply_chain.domain.product_development_case import (
 from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE, SLA_POLICY_FILE
 from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
+from dw_supply_chain.testing.pages import oldest_first
 from dw_supply_chain.testing.production_gate import open_production_gate
 
 pytestmark = pytest.mark.integration
@@ -292,7 +293,7 @@ async def test_placing_the_order_opens_the_po_case_with_the_rows_stamps_in_one_t
         )
         == 2
     )
-    history = await db.cases.list_transitions(owner, case.id)
+    history = await oldest_first(lambda request: db.cases.list_transitions(owner, case.id, request))
     assert (history[-1].action, history[-1].actor_id) == (
         ProductAction.PLACE_ORDER,
         clicker.principal_id,
@@ -338,7 +339,7 @@ async def test_two_clicks_at_once_open_one_po_case(db: _Db) -> None:
     # The conditional UPDATE answered, before anything was inserted.
     assert "constraint" not in refused[0].details
     assert await _po_rows(db, case.id.value) == 1
-    history = await db.cases.list_transitions(owner, case.id)
+    history = await oldest_first(lambda request: db.cases.list_transitions(owner, case.id, request))
     assert [t.action for t in history].count(ProductAction.PLACE_ORDER) == 1
     assert (
         await _count(
@@ -565,7 +566,9 @@ async def test_create_po_sets_the_reference_and_a_taken_one_is_a_409_naming_it(d
     stored = await repo.get(owner, placed.po_case.id)
     assert stored is not None and stored.po_reference == reference
     assert {line.sku_id: line.quantity for line in stored.lines}[sku] == 75
-    history = await repo.list_transitions(owner, placed.po_case.id)
+    history = await oldest_first(
+        lambda request: repo.list_transitions(owner, placed.po_case.id, request)
+    )
     assert [(t.from_state, t.to_state) for t in history] == [
         (CaseState.ORDER_REQUESTED, CaseState.PO_CREATED)
     ]

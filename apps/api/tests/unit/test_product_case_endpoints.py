@@ -97,6 +97,7 @@ from dw_supply_chain.product_action_duties import (
     SupplyChainProductActionDuties,
 )
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
+from dw_supply_chain.testing.pages import history_page
 
 pytestmark = pytest.mark.unit
 
@@ -344,11 +345,11 @@ class FakeCases:
         return case is not None and self._visible(context, case)
 
     async def list_transitions(
-        self, context: AccessContext, case_id: ProductDevelopmentCaseId
-    ) -> list[ProductCaseTransition]:
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId, request: PageRequest
+    ) -> Page[ProductCaseTransition]:
         if not self._readable(context, case_id):
-            return []
-        return list(self.history.get(case_id.value, []))
+            return history_page([], request)
+        return history_page(self.history.get(case_id.value, []), request)
 
     async def list_rounds(
         self, context: AccessContext, case_id: ProductDevelopmentCaseId
@@ -538,7 +539,12 @@ class FakeApprovals:
     pending: dict[tuple[uuid.UUID, str], PendingReview] = field(default_factory=dict)
 
     async def list_pending_by_type_prefix(
-        self, context: AccessContext, *, prefix: str, limit: int
+        self,
+        context: AccessContext,
+        *,
+        prefix: str,
+        limit: int,
+        payload_match: tuple[str, str] | None = None,
     ) -> tuple[int, Sequence[PendingApprovalRecord]]:
         raise NotImplementedError("not exercised by the product-case routes")
 
@@ -1209,14 +1215,17 @@ async def test_the_history_and_rounds_are_the_cases_own() -> None:
         str(evaluation.id),
         str(world.principal),
     )
-    body = history.json()
+    page = history.json()
+    assert page["next_cursor"] is None
+    # Newest first: the page opens where the case is now.
+    body = page["items"]
     assert [(t["action"], t["from_state"], t["to_state"]) for t in body] == [
-        ("propose", None, "proposed"),
-        ("request_sample", "proposed", "sample_requested"),
-        ("receive_sample", "sample_requested", "sample_testing"),
         ("pass_sample", "sample_testing", "pending_bod_review"),
+        ("receive_sample", "sample_requested", "sample_testing"),
+        ("request_sample", "proposed", "sample_requested"),
+        ("propose", None, "proposed"),
     ]
-    assert body[-1]["actor_id"] == str(world.principal)
+    assert body[0]["actor_id"] == str(world.principal)
     assert body[-1]["reason"] is None
 
 
@@ -1316,9 +1325,9 @@ async def test_rnd_completes_the_bm04_and_the_supply_lead_confirms_over_http() -
     assert (profiled.json()["state"], profiled.json()["review"]) == ("supplier_confirmation", None)
     assert confirmed.status_code == 200, confirmed.text
     assert confirmed.json()["state"] == "item_coding"
-    assert [(t["action"], t["document_id"]) for t in history.json()[-2:]] == [
-        ("complete_profile", str(bm04.id)),
+    assert [(t["action"], t["document_id"]) for t in history.json()["items"][:2]] == [
         ("confirm_with_supplier", str(email.id)),
+        ("complete_profile", str(bm04.id)),
     ]
 
 

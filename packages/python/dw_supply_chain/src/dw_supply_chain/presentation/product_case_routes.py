@@ -535,13 +535,19 @@ def build_product_cases_router(
         )
 
     @router.get(
-        "/product-cases/{case_id}/transitions", response_model=list[ProductCaseTransitionView]
+        "/product-cases/{case_id}/transitions", response_model=Page[ProductCaseTransitionView]
     )
     async def get_product_case_transitions(
-        case_id: uuid.UUID, context: require_access_context
-    ) -> list[ProductCaseTransitionView]:
-        transitions = await list_transitions.handle(context, ProductDevelopmentCaseId(case_id))
-        return [_transition_view(t) for t in transitions]
+        case_id: uuid.UUID,
+        context: require_access_context,
+        limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+        cursor: str | None = Query(default=None, description="Opaque cursor from a previous page."),
+    ) -> Page[ProductCaseTransitionView]:
+        """The case's history, newest first, a page at a time."""
+        page = await list_transitions.handle(
+            context, ProductDevelopmentCaseId(case_id), limit=limit, cursor=cursor
+        )
+        return page.map_items(_transition_view)
 
     @router.get("/product-action-duties", response_model=SupplyChainProductActionDuties)
     async def get_product_action_duties(

@@ -155,6 +155,24 @@ export const caseTransitionSchema = z.object({
 });
 export type CaseTransition = z.infer<typeof caseTransitionSchema>;
 
+/** One pending approval naming a PO case: the step waiting on it. */
+export const caseApprovalSchema = z.object({
+  id: z.string(),
+  action: z.string(),
+  requested_at: z.string().nullable(),
+});
+export type CaseApproval = z.infer<typeof caseApprovalSchema>;
+
+/** A PO case's pending approvals, filtered by the server. `visible` is false
+ * when the caller may not read the approval inbox: not looked at, which is not
+ * the same as none pending. `total` counts every one; `items` is the newest. */
+export const caseApprovalsSchema = z.object({
+  visible: z.boolean(),
+  total: z.number(),
+  items: z.array(caseApprovalSchema),
+});
+export type CaseApprovals = z.infer<typeof caseApprovalsSchema>;
+
 /** One case the Attention Queue flags. `sla`/`missing_update` are set only
  * when that signal is the reason the case is here — never a clean bill of
  * health repeated for every case. */
@@ -425,6 +443,9 @@ export const dailyBriefSchema = z.object({
   active_product_case_count: z.number(),
   flagged_product_case_count: z.number(),
   groups: z.array(briefGroupSchema),
+  /** How many cases a group lists at most; for pending approvals and recent
+   * changes only the newest this many were read. `total` counts every one. */
+  entries_shown: z.number(),
 });
 export type DailyBrief = z.infer<typeof dailyBriefSchema>;
 

@@ -51,6 +51,7 @@ from dw_supply_chain.sla_policy import (
     SupplierUpdateCadence,
     SupplyChainSLAPolicy,
 )
+from dw_supply_chain.testing.pages import case_position, newest_first_page
 
 pytestmark = pytest.mark.unit
 
@@ -81,16 +82,21 @@ class FakeCases:
         self.entered_at: dict[uuid.UUID, datetime] = {}
         self.broken_tenants: set[uuid.UUID] = set()
 
-    async def list_active(self, context: AccessContext) -> list[POCase]:
-        # PO cases are tenant-wide (their RLS is the tenant's), as the
-        # repository reads them.
+    async def list_page(
+        self, context: AccessContext, request: PageRequest, case_filter: POCaseListFilter
+    ) -> Page[POCase]:
+        # The sweep reads the active cases only, a page at a time, under the
+        # caller's tenant as the repository reads them.
+        if case_filter != POCaseListFilter(active_only=True):
+            raise NotImplementedError("the sweep lists active cases only")
         if context.tenant_id in self.broken_tenants:
             raise RuntimeError("this tenant's data is unreadable")
-        return [
+        active = [
             case
             for case in self.cases.values()
             if case.tenant_id.value == context.tenant_id and case.state not in TERMINAL_STATES
         ]
+        return newest_first_page(active, request, case_position)
 
     async def bulk_current_state_entered_at(
         self, context: AccessContext, case_ids: list[POCaseId]
@@ -115,14 +121,9 @@ class FakeCases:
     ) -> datetime | None:
         raise NotImplementedError("not exercised by the sweep")
 
-    async def list_page(
-        self, context: AccessContext, request: PageRequest, case_filter: POCaseListFilter
-    ) -> Page[POCase]:
-        raise NotImplementedError("not exercised by the sweep")
-
     async def list_transitions(
-        self, context: AccessContext, case_id: POCaseId
-    ) -> list[CaseTransition]:
+        self, context: AccessContext, case_id: POCaseId, request: PageRequest
+    ) -> Page[CaseTransition]:
         raise NotImplementedError("not exercised by the sweep")
 
     async def list_supplier_names(self, context: AccessContext) -> list[str]:
@@ -135,8 +136,8 @@ class FakeCases:
         raise NotImplementedError("not exercised by the sweep")
 
     async def list_latest_transitions_since(
-        self, context: AccessContext, since: datetime
-    ) -> list[tuple[POCaseId, CaseTransition]]:
+        self, context: AccessContext, since: datetime, *, limit: int
+    ) -> tuple[int, list[tuple[POCaseId, CaseTransition]]]:
         raise NotImplementedError("not exercised by the sweep")
 
 
@@ -148,14 +149,17 @@ class FakeProducts:
         self.cases: dict[uuid.UUID, ProductDevelopmentCase] = {}
         self.entered_at: dict[uuid.UUID, datetime] = {}
 
-    async def list_active(self, context: AccessContext) -> list[ProductDevelopmentCase]:
-        return [
+    async def list_active(
+        self, context: AccessContext, request: PageRequest
+    ) -> Page[ProductDevelopmentCase]:
+        active = [
             case
             for case in self.cases.values()
             if case.tenant_id.value == context.tenant_id
             and case.workspace_id.value == context.workspace_id
             and case.state not in PRODUCT_TERMINAL_STATES
         ]
+        return newest_first_page(active, request, case_position)
 
     async def state_entered_at(
         self, context: AccessContext, case_ids: Sequence[uuid.UUID]

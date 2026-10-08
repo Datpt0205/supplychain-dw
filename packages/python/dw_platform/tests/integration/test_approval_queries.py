@@ -56,6 +56,7 @@ async def _add(
     approval_type: str,
     *,
     status: ApprovalStatus = ApprovalStatus.PENDING,
+    case_id: str | None = None,
 ) -> ApprovalRequest:
     request = ApprovalRequest(
         id=uuid.uuid4(),
@@ -64,7 +65,7 @@ async def _add(
         approval_type=approval_type,
         requested_by=UserId(context.principal_id),
         reason="test",
-        payload={"case_id": str(uuid.uuid4())},
+        payload={"case_id": case_id or str(uuid.uuid4())},
         status=status,
     )
     async with tenant_session(sessions, TenantScope.from_access_context(context)) as session:
@@ -119,3 +120,34 @@ async def test_another_tenants_approvals_are_not_there(
     ).list_pending_by_type_prefix(mine, prefix=_PREFIX, limit=10)
 
     assert (total, rows) == (0, [])
+
+
+async def test_a_payload_match_narrows_the_count_and_the_rows_to_one_record(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """A record page asks for its own record's approvals; the server filters,
+    so a page of every approval never reaches the client."""
+    mine = _context()
+    record = str(uuid.uuid4())
+    wanted = [await _add(sessions, mine, f"{_PREFIX}cancel", case_id=record) for _ in range(2)]
+    await _add(sessions, mine, f"{_PREFIX}cancel")  # another record's
+    await _add(sessions, mine, f"{_PREFIX}cancel", case_id=record, status=ApprovalStatus.APPROVED)
+    # The same record id in another workspace of the same tenant, and in
+    # another tenant: neither is the caller's.
+    same_tenant_other_workspace = AccessContext(
+        tenant_id=mine.tenant_id,
+        workspace_id=uuid.uuid4(),
+        principal_id=mine.principal_id,
+        roles=mine.roles,
+        scopes=mine.scopes,
+        plan_id=mine.plan_id,
+    )
+    await _add(sessions, same_tenant_other_workspace, f"{_PREFIX}cancel", case_id=record)
+    await _add(sessions, _context(mine.workspace_id), f"{_PREFIX}cancel", case_id=record)
+
+    total, rows = await SqlPendingApprovalQuery(
+        sessions, ScopeAuthorizationService()
+    ).list_pending_by_type_prefix(mine, prefix=_PREFIX, limit=1, payload_match=("case_id", record))
+
+    assert total == 2
+    assert [row.id for row in rows] == [wanted[1].id]

@@ -24,6 +24,7 @@ import type { TableColumnsType } from "antd";
 import { StatusTag, PageHeader, RegionState } from "@dw/ui";
 import { formatCount } from "../../../../lib/money";
 import { LoadError } from "../../../../components/load-error";
+import { LoadMore } from "../../../../components/load-more";
 import {
   ApiError,
   type OrderKind,
@@ -63,6 +64,7 @@ import { errorMessage } from "../../../../lib/error-message";
 import { useOnline } from "../../../../lib/hooks/use-online";
 import { useAttemptKey } from "../../../../lib/idempotency-key";
 import { apiClient } from "../../../../lib/session";
+import { useCachedPages } from "../../../../lib/use-cached-pages";
 import { useCachedResource } from "../../../../lib/use-cached-resource";
 
 /**
@@ -91,26 +93,22 @@ export default function POCaseWorkspacePage() {
     `supply-chain:po-case:${id}:missing-update`,
     useCallback(() => apiClient().getMissingUpdateStatus(id), [id]),
   );
-  // GET /api/v1/approvals has no case filter of its own — it is a platform
-  // route, generic across every context's approval types, with no reason to
-  // know what `po_case_id` means. Filtered here instead, against pending
-  // approvals only: the same route never returns a decided one, so a case
-  // whose action was already decided shows nothing here — its own state
-  // already reflects that outcome. A tenant with more pending approvals
-  // platform-wide than one page holds could miss one still further back;
-  // worth a server-side filter if that becomes real.
+  // The server filters by the case (the approval inbox narrowed by the case
+  // id in the payload): `total` counts every pending one, however many the
+  // tenant has, and `visible` is false when the caller may not read the inbox.
   const relatedApprovalsResource = useCachedResource(
     `supply-chain:po-case:${id}:approvals`,
-    useCallback(async () => {
-      const page = await apiClient().listApprovals({ limit: 200 });
-      return page.items.filter(
-        (approval) => approval.payload.po_case_id === id,
-      );
-    }, [id]),
+    useCallback(() => apiClient().listPOCaseApprovals(id), [id]),
   );
-  const transitionsResource = useCachedResource(
+  // Newest first, a page at a time: a long-running case's history has no
+  // bound of its own.
+  const transitionsResource = useCachedPages(
     `supply-chain:po-case:${id}:transitions`,
-    useCallback(() => apiClient().listCaseTransitions(id), [id]),
+    useCallback(
+      (cursor: string | null) =>
+        apiClient().listCaseTransitions(id, { cursor: cursor ?? undefined }),
+      [id],
+    ),
   );
   const supplierUpdatesResource = useCachedResource(
     `supply-chain:po-case:${id}:supplier-updates`,
@@ -192,14 +190,18 @@ export default function POCaseWorkspacePage() {
           relatedApprovalsResource.loading,
           relatedApprovalsResource.error != null,
         ) ??
-        (approvals && approvals.length > 0
-          ? `${approvals.length} yêu cầu`
-          : "Không có"),
+        (approvals && !approvals.visible
+          ? "Không xem được"
+          : approvals && approvals.total > 0
+            ? `${approvals.total} yêu cầu`
+            : "Không có"),
       sub:
-        approvals && approvals.length > 0
-          ? "Bước tiếp theo chờ một người quyết"
-          : undefined,
-      tone: approvals && approvals.length > 0 ? "warn" : undefined,
+        approvals && !approvals.visible
+          ? "Cần quyền xem trang Duyệt"
+          : approvals && approvals.total > 0
+            ? "Bước tiếp theo chờ một người quyết"
+            : undefined,
+      tone: approvals && approvals.total > 0 ? "warn" : undefined,
     },
   ];
 
@@ -264,31 +266,40 @@ export default function POCaseWorkspacePage() {
             </>
           ) : (
             <List
-              dataSource={approvals ?? []}
+              dataSource={approvals?.items ?? []}
               locale={{
                 emptyText: (
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="Không có yêu cầu nào đang chờ duyệt cho hồ sơ này."
+                    description={
+                      approvals && !approvals.visible
+                        ? "Bạn không có quyền xem trang Duyệt, nên yêu cầu chờ duyệt không hiện ở đây."
+                        : "Không có yêu cầu nào đang chờ duyệt cho hồ sơ này."
+                    }
                   />
                 ),
               }}
+              footer={
+                approvals && approvals.total > approvals.items.length
+                  ? `${approvals.items.length} yêu cầu mới nhất trong ${approvals.total}`
+                  : undefined
+              }
               renderItem={(approval) => (
                 <List.Item
                   key={approval.id}
                   extra={
-                    <Link href="/approvals">
-                      <Button>Mở trang Duyệt</Button>
+                    <Link href={`/approvals/${approval.id}`}>
+                      <Button>Mở yêu cầu</Button>
                     </Link>
                   }
                 >
                   <List.Item.Meta
-                    title={
-                      typeof approval.payload.action === "string"
-                        ? approval.payload.action
-                        : approval.approval_type
+                    title={approval.action}
+                    description={
+                      approval.requested_at
+                        ? `Gửi lúc ${formatDateTimeFull(approval.requested_at)}`
+                        : undefined
                     }
-                    description={approval.reason}
                   />
                 </List.Item>
               )}
@@ -309,32 +320,41 @@ export default function POCaseWorkspacePage() {
                 <RegionState kind="loading" compact />
               ) : null}
             </>
-          ) : !transitionsResource.data?.length ? (
+          ) : transitionsResource.items.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description="Hồ sơ chưa chuyển trạng thái lần nào."
             />
           ) : (
-            <Timeline
-              items={transitionsResource.data.map((transition, index) => ({
-                // A transition row has no id of its own; its position in the
-                // (already server-ordered) timeline is stable.
-                key: index,
-                content: (
-                  <Flex vertical gap={2}>
-                    <Flex wrap gap="small" align="center">
-                      <CaseStateTag state={transition.from_state} />
-                      <span aria-hidden>→</span>
-                      <CaseStateTag state={transition.to_state} />
+            <Flex vertical gap="middle">
+              <Timeline
+                items={transitionsResource.items.map((transition, index) => ({
+                  // A transition row has no id of its own; its position in the
+                  // (already server-ordered) timeline is stable.
+                  key: index,
+                  content: (
+                    <Flex vertical gap={2}>
+                      <Flex wrap gap="small" align="center">
+                        <CaseStateTag state={transition.from_state} />
+                        <span aria-hidden>→</span>
+                        <CaseStateTag state={transition.to_state} />
+                      </Flex>
+                      <Typography.Text type="secondary">
+                        {formatDateTimeFull(transition.occurred_at)}
+                        {transition.reason && ` · ${transition.reason}`}
+                      </Typography.Text>
                     </Flex>
-                    <Typography.Text type="secondary">
-                      {formatDateTimeFull(transition.occurred_at)}
-                      {transition.reason && ` · ${transition.reason}`}
-                    </Typography.Text>
-                  </Flex>
-                ),
-              }))}
-            />
+                  ),
+                }))}
+              />
+              <LoadMore
+                hasMore={transitionsResource.hasMore}
+                loading={transitionsResource.loadingMore}
+                onLoadMore={transitionsResource.loadMore}
+                shown={transitionsResource.items.length}
+                noun="lần chuyển"
+              />
+            </Flex>
           )}
         </Card>
 

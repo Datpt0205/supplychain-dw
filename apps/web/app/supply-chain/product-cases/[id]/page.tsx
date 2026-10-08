@@ -26,6 +26,7 @@ import type { TableColumnsType, UploadFile } from "antd";
 import { PaperClipOutlined, UploadOutlined } from "@ant-design/icons";
 import { PageHeader, RegionState, stateForError } from "@dw/ui";
 import { LoadError } from "../../../../components/load-error";
+import { LoadMore } from "../../../../components/load-more";
 import {
   ApiError,
   type CaseDocument,
@@ -86,6 +87,7 @@ import { errorMessage, toRegionError } from "../../../../lib/error-message";
 import { useOnline } from "../../../../lib/hooks/use-online";
 import { newIdempotencyKey } from "../../../../lib/idempotency-key";
 import { apiClient } from "../../../../lib/session";
+import { useCachedPages } from "../../../../lib/use-cached-pages";
 
 const DOCUMENT_WRITE = "supply_chain.document.write";
 const OFFLINE = "Không có kết nối mạng. Kết nối lại rồi thử lại.";
@@ -964,11 +966,6 @@ function RoundsCard({
   );
 }
 
-type HistoryState =
-  | { kind: "loading" }
-  | { kind: "error"; error: unknown }
-  | { kind: "ready"; transitions: ProductCaseTransition[] };
-
 function HistoryCard({
   caseId,
   tick,
@@ -978,56 +975,66 @@ function HistoryCard({
   tick: number;
   who: (userId: string | null) => string;
 }) {
-  const [history, setHistory] = useState<HistoryState>({ kind: "loading" });
-
-  const load = useCallback(async () => {
-    try {
-      setHistory({
-        kind: "ready",
-        transitions: await apiClient().listProductCaseTransitions(caseId),
-      });
-    } catch (error) {
-      setHistory({ kind: "error", error });
-    }
-  }, [caseId]);
-
+  // Newest first, a page at a time: the page opens where the case is now.
+  const history = useCachedPages(
+    `supply-chain:product-case:${caseId}:history`,
+    useCallback(
+      (cursor: string | null) =>
+        apiClient().listProductCaseTransitions(caseId, {
+          cursor: cursor ?? undefined,
+        }),
+      [caseId],
+    ),
+  );
+  const { reload } = history;
+  const firstTick = useRef(tick);
   useEffect(() => {
-    void load();
-  }, [load, tick]);
+    // A step taken on this page moves the case: read its history again.
+    if (tick !== firstTick.current) reload();
+  }, [tick, reload]);
 
   return (
     <Card title="Lịch sử">
-      {history.kind === "loading" ? (
+      {history.loading ? (
         <Skeleton active paragraph={{ rows: 3 }} />
-      ) : history.kind === "error" ? (
-        <LoadError compact error={history.error} onRetry={() => void load()} />
-      ) : history.transitions.length === 0 ? (
+      ) : history.error != null && history.items.length === 0 ? (
+        <LoadError compact error={history.error} onRetry={history.reload} />
+      ) : history.items.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description="Hồ sơ chưa qua bước nào."
         />
       ) : (
-        <Timeline
-          items={history.transitions.map((t) => ({
-            key: `${t.occurred_at}-${t.action}`,
-            content: (
-              <Flex vertical>
-                <Typography.Text strong>
-                  {PRODUCT_ACTION_LABEL[t.action]}
-                  {" · "}
-                  {t.from_state
-                    ? `${PRODUCT_DEV_STATE_LABEL[t.from_state]} → `
-                    : ""}
-                  {PRODUCT_DEV_STATE_LABEL[t.to_state]}
-                </Typography.Text>
-                {t.reason && <Typography.Text>{t.reason}</Typography.Text>}
-                <Typography.Text type="secondary">
-                  {who(t.actor_id)} · {formatDateTimeFull(t.occurred_at)}
-                </Typography.Text>
-              </Flex>
-            ),
-          }))}
-        />
+        <Flex vertical gap="middle">
+          <Timeline
+            items={history.items.map((t) => ({
+              key: `${t.occurred_at}-${t.action}`,
+              content: (
+                <Flex vertical>
+                  <Typography.Text strong>
+                    {PRODUCT_ACTION_LABEL[t.action]}
+                    {" · "}
+                    {t.from_state
+                      ? `${PRODUCT_DEV_STATE_LABEL[t.from_state]} → `
+                      : ""}
+                    {PRODUCT_DEV_STATE_LABEL[t.to_state]}
+                  </Typography.Text>
+                  {t.reason && <Typography.Text>{t.reason}</Typography.Text>}
+                  <Typography.Text type="secondary">
+                    {who(t.actor_id)} · {formatDateTimeFull(t.occurred_at)}
+                  </Typography.Text>
+                </Flex>
+              ),
+            }))}
+          />
+          <LoadMore
+            hasMore={history.hasMore}
+            loading={history.loadingMore}
+            onLoadMore={history.loadMore}
+            shown={history.items.length}
+            noun="bước"
+          />
+        </Flex>
       )}
     </Card>
   );

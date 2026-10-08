@@ -75,6 +75,7 @@ means platform code, an upstream candidate (ADR 0011).
 | W     | `antd-pages/issues/01-rebuild-supply-chain-pages.md` (E-HSDT v3 look)     | no      | resolved        | P                                   |
 | H     | `hosting/issues/01-caddy-overlay-and-runbook.md`                          | yes     | resolved        | ENV, U                              |
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
+| HR1   | `hardening/issues/01-unbounded-reads.md`                                  | partly  | resolved        | —                                   |
 
 **Next:** H2 (the domain the webhook needs; runbook `docs/deploy/host.md`);
 Z4p when a real photo update exists; ZL measures the webhook header (Z3).
@@ -128,6 +129,7 @@ email as a second channel.
 | PK     | `435bd63` | Step 12 sub-flow on the PO case: `packaging_designs` + history (workspace RLS, order CHECK, report FK), 3 doc types, duties 1.2.0 + override data step, `supply_chain_packaging@1.0.0` gate asked by `AdvancePOCase` and the graph's apply node, Elmich override on, step-12 card; ADR 0021 amended.                                                                                  |
 | H      | `9b068dc` | Hosted overlay: Caddy 2.11.7 (digest, trivy 0) on `DW_WEB_HOST`/`DW_API_HOST`/`DW_AUTH_HOST`, `/api/*` and Keycloak public paths only, X-Forwarded-* trusted from Caddy's fixed IP (real client IP for rate limits); deployed URLs must be https; realm URLs from `DW_PUBLIC_WEB_URL`; `docs/deploy/host.md`; ADR 0023 amended.                                                       |
 | M2     | `7502a96` | Platform `2ebd50f` merged: one copy of the channel work (platform wording, ADR 0005–0009 twins of 0012–0015/0023); decide command takes subjects + strict prefixes from the product; five twin migrations idempotent, head `c2d7fc0648be`; dev DB migrated in place, each object once.                                                                                                |
+| HR1    | HR1       | Paged reads: active cases a page at a time (bulk reads bind one page of ids), transitions `Page` newest first, brief reads only the 10 it shows (`entries_shown`), `GET /po-cases/{id}/approvals` filtered on the server (platform `payload_match`); `d9e136c14d83` indexes.                                                                                                       |
 | M3     | `4890979` | Platform `ab33703` merged: prompts through the containing registry (5 new versions, delay analysis raw only for days and milestones, hostile-value tests; `supply_chain@1.8.0`); decision audit with channel decisions; SoD second person and role recheck (two Open items closed); `sc_*` role labels; one `@dw/ui` PageHeader/RegionState in this theme; merge head `cee9cf387387`. |
 
 ## Open — named, not fixed, still true after the port
@@ -139,10 +141,6 @@ after P before acting on one.
   sweep's own open and resolve are recorded on the row, not in
   `platform.audit_events`; each sweep re-assesses every active case of every
   tenant.
-- **Unbounded reads:** `list_active` has no pagination and binds one parameter
-  per active case (asyncpg's 32 767 limit fails closed with a 500); the brief
-  reads 50 pending approvals; one day's transitions are unbounded.
-- **Pending-approvals card filters on the client** from `listApprovals({limit: 200})`.
 - **Model accuracy is unmeasured;** the mock cannot read.
   `delay_impact_analysis` has no eval case.
 - **Provisional domain values:** `SupplierEventType`'s seven values; the

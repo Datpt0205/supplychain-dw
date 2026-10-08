@@ -108,6 +108,7 @@ from dw_supply_chain.application.handlers import (
     ListCaseTransitions,
     ListDelayImpactAnalyses,
     ListFollowUps,
+    ListPOCaseApprovals,
     ListPOCases,
     ListProductCategories,
     ListSupplierUpdates,
@@ -210,6 +211,7 @@ class ApiContainer:
     supply_chain_get_missing_update_status: GetMissingUpdateStatus | None = None
     supply_chain_advance_po_case: AdvancePOCase | None = None
     supply_chain_list_case_transitions: ListCaseTransitions | None = None
+    supply_chain_list_case_approvals: ListPOCaseApprovals | None = None
     supply_chain_get_sla_evaluation: GetSLAEvaluation | None = None
     supply_chain_get_sla_policy: GetSLAPolicy | None = None
     supply_chain_set_sla_policy_override: SetSLAPolicyOverride | None = None

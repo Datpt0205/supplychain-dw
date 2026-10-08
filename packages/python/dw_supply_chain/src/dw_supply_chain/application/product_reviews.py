@@ -48,7 +48,7 @@ from dataclasses import dataclass
 
 from dw_agent_runtime.contracts import RunContext
 from dw_kernel.errors import ConflictError
-from dw_kernel.pagination import MAX_PAGE_SIZE, page_request
+from dw_kernel.pagination import MAX_PAGE_SIZE, PageQuery, page_request
 from dw_kernel.ports import IdGenerator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import PolicyOverridePort
@@ -441,13 +441,23 @@ class ReconcileProductApprovals:
     async def _requester(
         self, context: AccessContext, case: ProductDevelopmentCase, plan: str
     ) -> ReviewRequester | None:
-        """Whoever took the step that left the case waiting where it is."""
-        history = await self.cases.list_transitions(context, case.id)
-        entered = [t for t in history if t.to_state is case.state]
-        if not entered:
+        """Whoever took the step that left the case waiting where it is: the
+        newest transition into its state, read newest first a page at a
+        time (the first page holds it unless the case moved since)."""
+        query = PageQuery(key="supply_chain.product_case_transitions", filters={"case": case.id})
+        cursor: str | None = None
+        while True:
+            page = await self.cases.list_transitions(
+                context, case.id, page_request(limit=MAX_PAGE_SIZE, cursor=cursor, query=query)
+            )
+            entered = next((t for t in page.items if t.to_state is case.state), None)
+            if entered is not None or page.next_cursor is None:
+                break
+            cursor = page.next_cursor
+        if entered is None:
             return None
         return ReviewRequester(
-            principal_id=entered[-1].actor_id,
+            principal_id=entered.actor_id,
             roles=frozenset(),
             scopes=frozenset(),
             plan_id=plan,

@@ -30,6 +30,7 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevelopmentCaseId,
     SampleRound,
 )
+from dw_supply_chain.testing.pages import case_position, newest_first_page
 
 _NOT_READ_HERE = "not exercised by a question or a brief"
 
@@ -92,8 +93,11 @@ class InMemoryProductCases:
             key=lambda c: c.proposal_code,
         )
 
-    async def list_active(self, context: AccessContext) -> list[ProductDevelopmentCase]:
-        return [c for c in self._visible(context) if c.state not in PRODUCT_TERMINAL_STATES]
+    async def list_active(
+        self, context: AccessContext, request: PageRequest
+    ) -> Page[ProductDevelopmentCase]:
+        active = [c for c in self._visible(context) if c.state not in PRODUCT_TERMINAL_STATES]
+        return newest_first_page(active, request, case_position)
 
     async def state_entered_at(
         self, context: AccessContext, case_ids: Sequence[uuid.UUID]
@@ -132,8 +136,8 @@ class InMemoryProductCases:
         raise NotImplementedError(_NOT_READ_HERE)
 
     async def list_transitions(
-        self, context: AccessContext, case_id: ProductDevelopmentCaseId
-    ) -> list[ProductCaseTransition]:
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId, request: PageRequest
+    ) -> Page[ProductCaseTransition]:
         raise NotImplementedError(_NOT_READ_HERE)
 
     async def list_rounds(

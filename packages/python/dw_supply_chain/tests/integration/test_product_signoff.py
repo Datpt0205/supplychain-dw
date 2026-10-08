@@ -89,6 +89,7 @@ from dw_supply_chain.product_approvals import (
     PRODUCT_APPROVALS_POLICY_ID,
     load_supply_chain_product_approvals,
 )
+from dw_supply_chain.testing.pages import oldest_first
 from dw_supply_chain.workflows.advance_product_case_graph import (
     APPROVAL_TYPE_PREFIX,
     BOD_REVIEW_CASE_KEY,
@@ -313,7 +314,9 @@ async def test_bgd_then_accounting_sign_one_run_and_the_case_is_ready_to_order(
     run = await world.stack.run_store.get(world.stack.lookup(), first.run_id)
     assert run.status is RunStatus.COMPLETED
     assert run.result is not None and run.result["outcome"] == "signoff_approve"
-    history = await world.stack.cases.list_transitions(_context(frozenset()), case.id)
+    history = await oldest_first(
+        lambda request: world.stack.cases.list_transitions(_context(frozenset()), case.id, request)
+    )
     assert [(t.action, t.actor_id) for t in history[-3:]] == [
         (ProductAction.ADD_SKU, operator.principal_id),
         (ProductAction.SUBMIT_FOR_SIGNOFF, operator.principal_id),
@@ -349,7 +352,9 @@ async def test_accounting_not_approving_returns_the_case_to_coding_with_its_code
     assert case.state is ProductDevState.ITEM_CODING
     assert case.item_code is not None and case.item_code.code == submitted.item_code
     assert [s.sku_code for s in case.skus] == [f"{submitted.item_code}-RED"]
-    history = await world.stack.cases.list_transitions(_context(frozenset()), case.id)
+    history = await oldest_first(
+        lambda request: world.stack.cases.list_transitions(_context(frozenset()), case.id, request)
+    )
     assert (history[-1].action, history[-1].actor_id, history[-1].reason) == (
         ProductAction.SIGNOFF_REJECT,
         accountant.principal_id,
@@ -643,7 +648,9 @@ async def test_accounting_signs_on_zalo_after_a_view_and_the_signoff_applies(
     assert outcome.decided is True, outcome
     case = await _reload(world, submitted.case_id)
     assert case.state is ProductDevState.READY_TO_ORDER
-    history = await world.stack.cases.list_transitions(_context(frozenset()), case.id)
+    history = await oldest_first(
+        lambda request: world.stack.cases.list_transitions(_context(frozenset()), case.id, request)
+    )
     assert (history[-1].action, history[-1].actor_id) == (
         ProductAction.SIGNOFF_APPROVE,
         accountant.principal_id,

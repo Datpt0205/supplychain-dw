@@ -54,6 +54,7 @@ from dw_supply_chain.product_approvals import (
     PRODUCT_APPROVALS_POLICY_ID,
     SupplyChainProductApprovals,
 )
+from dw_supply_chain.testing.pages import history_page
 from dw_supply_chain.workflows import product_signoff_graph
 from dw_supply_chain.workflows.advance_product_case_graph import (
     BOD_REVIEW_APPROVAL_TYPE,
@@ -477,9 +478,9 @@ class FakeCaseList:
         return Page(items=tuple(items), next_cursor=None)
 
     async def list_transitions(
-        self, context: AccessContext, case_id: ProductDevelopmentCaseId
-    ) -> list[ProductCaseTransition]:
-        return self.history.get(case_id.value, [])
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId, request: PageRequest
+    ) -> Page[ProductCaseTransition]:
+        return history_page(self.history.get(case_id.value, []), request)
 
     async def add(self, *args: object, **kwargs: object) -> None:
         raise NotImplementedError("the lane writes no case")

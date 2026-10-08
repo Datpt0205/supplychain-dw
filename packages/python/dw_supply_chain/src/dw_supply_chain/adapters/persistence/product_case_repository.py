@@ -627,9 +627,13 @@ class SqlProductCaseRepository:
             cases = await _with_skus(session, context, [_case(row) for row in rows])
         return build_page(cases, request=request, position_of=_position)
 
-    async def list_active(self, context: AccessContext) -> list[ProductDevelopmentCase]:
-        """The workspace's cases not yet ordered or cancelled, oldest first:
-        what the follow-up sweep evaluates."""
+    async def list_active(
+        self, context: AccessContext, request: PageRequest
+    ) -> Page[ProductDevelopmentCase]:
+        """One page of the workspace's cases not yet ordered or cancelled,
+        newest first: what the follow-up sweep and the brief evaluate, a page
+        at a time. `ix_product_dev_cases_page` (tenant, workspace, created_at,
+        id) carries the ORDER BY."""
         terminal = [state.value for state in PRODUCT_TERMINAL_STATES]
         async with tenant_session(
             self.session_factory, TenantScope.from_access_context(context)
@@ -637,11 +641,17 @@ class SqlProductCaseRepository:
             rows = (
                 await session.execute(
                     _with_current_round()
-                    .where(*_in_scope(_c, context), _c.c.state.notin_(terminal))
-                    .order_by(_c.c.created_at.asc(), _c.c.id.asc())
+                    .where(
+                        *_in_scope(_c, context),
+                        _c.c.state.notin_(terminal),
+                        after_position(_c.c.created_at, _c.c.id, request.after),
+                    )
+                    .order_by(*newest_first(_c.c.created_at, _c.c.id))
+                    .limit(request.fetch_limit)
                 )
             ).all()
-            return await _with_skus(session, context, [_case(row) for row in rows])
+            cases = await _with_skus(session, context, [_case(row) for row in rows])
+        return build_page(cases, request=request, position_of=_position)
 
     async def state_entered_at(
         self, context: AccessContext, case_ids: Sequence[uuid.UUID]
@@ -663,20 +673,31 @@ class SqlProductCaseRepository:
         return {row.product_dev_case_id: row.at for row in rows}
 
     async def list_transitions(
-        self, context: AccessContext, case_id: ProductDevelopmentCaseId
-    ) -> list[ProductCaseTransition]:
+        self, context: AccessContext, case_id: ProductDevelopmentCaseId, request: PageRequest
+    ) -> Page[ProductCaseTransition]:
+        """Newest first, by `ix_product_dev_case_transitions_case_page`
+        (tenant, workspace, case, occurred_at, id)."""
         async with tenant_session(
             self.session_factory, TenantScope.from_access_context(context)
         ) as session:
             rows = (
                 await session.execute(
                     sa.select(_t)
-                    .where(*_in_scope(_t, context), _t.c.product_dev_case_id == case_id.value)
-                    .order_by(_t.c.occurred_at.asc(), _t.c.id.asc())
+                    .where(
+                        *_in_scope(_t, context),
+                        _t.c.product_dev_case_id == case_id.value,
+                        after_position(_t.c.occurred_at, _t.c.id, request.after),
+                    )
+                    .order_by(*newest_first(_t.c.occurred_at, _t.c.id))
+                    .limit(request.fetch_limit)
                 )
             ).all()
-        return [
-            ProductCaseTransition(
+        return build_page(
+            rows,
+            request=request,
+            position_of=lambda row: CursorPosition(sort_value=row.occurred_at, tiebreaker=row.id),
+        ).map_items(
+            lambda row: ProductCaseTransition(
                 action=ProductAction(row.action),
                 from_state=ProductDevState(row.from_state) if row.from_state else None,
                 to_state=ProductDevState(row.to_state),
@@ -685,8 +706,7 @@ class SqlProductCaseRepository:
                 occurred_at=row.occurred_at,
                 document_id=row.document_id,
             )
-            for row in rows
-        ]
+        )
 
     async def list_rounds(
         self, context: AccessContext, case_id: ProductDevelopmentCaseId

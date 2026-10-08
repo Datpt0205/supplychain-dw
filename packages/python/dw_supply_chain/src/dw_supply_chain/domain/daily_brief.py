@@ -203,7 +203,8 @@ class BriefGroup:
     # PO cases; empty for a stage-1 group, whose cases are `product_entries`.
     entries: tuple[BriefEntry, ...]
     # Every case the signal holds for. Equal to `len(entries)` except for
-    # approvals, where only the newest are read.
+    # approvals and recent changes, where only the newest `ENTRIES_SHOWN` are
+    # read.
     total: int
     # The one state every case in the group is in, when a state is what
     # defines the group (the exception states, waiting on us) — so a reader
@@ -411,10 +412,13 @@ def compose_brief(
     signal_order: Sequence[BriefSignal],
     now: datetime,
     stage_one: StageOneSnapshot | None = None,
+    recent_changes_total: int | None = None,
 ) -> DailyBrief:
     """`approvals` is None when the caller may not read approvals — never
     the same as "none pending", and the brief says which. `stage_one` is
-    None, the same way, when the caller may not read product cases."""
+    None, the same way, when the caller may not read product cases.
+    `recent_changes` may be the newest few of `recent_changes_total` (the
+    brief reads no more than it shows); None means they are all of them."""
     groups = _health_groups(healths)
     if stage_one is not None:
         groups.extend(stage_one_groups(stage_one))
@@ -451,7 +455,7 @@ def compose_brief(
                         reverse=True,
                     )
                 ),
-                total=len(recent_changes),
+                total=max(len(recent_changes), recent_changes_total or 0),
             )
         )
 
