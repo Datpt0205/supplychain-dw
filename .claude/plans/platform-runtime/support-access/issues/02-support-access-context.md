@@ -1,6 +1,6 @@
 # 02 — Ngữ cảnh hỗ trợ: MFA, route mặc định từ chối, audit
 
-Status: ready-for-agent
+Status: ready-for-agent (lõi xong 8/10/2026; còn bước 10, xem Comments)
 Blocked by: 01
 Area: platform-runtime
 
@@ -95,3 +95,59 @@ Integration (`dw_platform/tests/integration` và `apps/api/tests`; một route t
 - `spec.md` của lát này: Ngữ cảnh hỗ trợ (Mục tiêu 2), SA4–SA7, SA10–SA13, câu hỏi còn mở 1.
 
 ## Comments
+
+- 8/10/2026 (nhánh `feat/platform-tickets`, quyết tạm theo ủy quyền của Đạt).
+  **Đo Keycloak 26.7.2** (đăng nhập thật qua compose, PKCE, mã TOTP thật, realm
+  tạm đã xóa): mặc định token có mật khẩu và token có mật khẩu + OTP giống hệt
+  nhau, `acr: "1"`, `amr: []`. Bật mapper AMR trên `dw-web` và đặt
+  authentication reference (`pwd` cho form mật khẩu, `otp` cho form OTP, max
+  age 43200): chỉ mật khẩu ra `amr: ["pwd"]`, nhân viên hỗ trợ ra
+  `["pwd","otp","otp"]`; `acr` vẫn `"1"`. Lần đăng nhập đầu của nhân viên mới bị
+  ép cài OTP nhưng token của phiên đó chỉ có `["pwd"]`, nên bị từ chối và phải
+  đăng nhập lại một lần. `dw-realm.json`: nhóm `dw-support` mang vai realm
+  `support-staff`, luồng `dw browser` có nhánh con "Support staff OTP" (vai →
+  form OTP bắt buộc); tệp đã được nhập thử thành realm mới và đăng nhập đúng như
+  đo. `--import-realm` không cập nhật realm đã có: môi trường đã chạy phải áp
+  tay. Bản token đã che chữ ký không giữ lại (realm tạm đã xóa).
+- **Đã làm:** `VerifiedIdentity.auth_methods` (từ `amr`) và `acr` ở cả hai
+  verifier; `AccessContext.support` (`SupportScope`); `SupportAccessContextFactory`
+  (nhân viên hỗ trợ → yếu tố thứ hai `otp`/`hwk`/`mfa` trong `amr` → quyền giao
+  cho chính người đó qua `support_grant_for_staff` → `grant_effective_state`
+  là `active` → tenant có `support_access`), mã lỗi trong
+  `details.reason_code`: `support_staff_required`, `support_mfa_required`,
+  `support_grant_ended` (kèm `ended_reason` `expired|revoked|ineffective`,
+  `ended_at`), `support_access_not_enabled`, `support_context_not_allowed`;
+  quyền của người khác là 404. Ngữ cảnh: tenant, workspace từ quyền, vai rỗng,
+  scope đóng dấu, không cache. `recheck` cho thao tác dài.
+  `RequireAccessContext` gặp `X-DW-Support-Grant` thì 403
+  `support_context_not_allowed`; `RequireAccessContextOrSupport` kiểm
+  `(method, path)` trong `SUPPORT_ALLOWED_ROUTES` (rỗng, `wiring.py`) ngay trong
+  dependency, rồi dựng ngữ cảnh và ghi một `support.access` (phương thức, mẫu
+  route, id trong đường dẫn; không query, không body). Migration
+  `f1576bf82a5a`: hai hàm `SECURITY DEFINER` đọc `app.principal_id`, `REVOKE ALL
+FROM PUBLIC`, `dw_app` EXECUTE. `GET /support/my-grants` (chỉ nhân viên hỗ
+  trợ). `GET /auth/bootstrap` có `is_support_staff`. Header thêm vào CORS.
+- **Test:** unit `test_support_context.py` 10 ca (SA4 vai rỗng và không qua
+  nhánh admin, chỉ nhân viên hỗ trợ, SA5 hai ca, quyền của người khác 404, SA6
+  hết hạn đúng tại `expires_at`, thu hồi kể cả `recheck`, người cấp mất
+  `support.grant`, SA11, audit không có body). API `test_support_routes.py`:
+  bộ duyệt route thấy route dùng dependency (chứng minh test đỏ được), tập route
+  dùng dependency bằng đúng `SUPPORT_ALLOWED_ROUTES`, SA7 với `GET /runs/{id}`,
+  `/approvals`, `/knowledge/documents`, `/audit/events`, `/admin/members`,
+  `/support/grants` → 403 `support_context_not_allowed`, và dependency tự từ
+  chối route thiếu trong danh sách. Integration
+  `test_support_staff_access.py`: SA12 (người khác và kết nối không gắn ai đọc 0
+  dòng; catalog: hai hàm là `SECURITY DEFINER`, `PUBLIC` không chạy được,
+  `dw_app` chạy được), SA4/SA10 từ quyền thật (vai rỗng, scope đóng dấu; không
+  phải nhân viên, thiếu OTP, nhân viên khác bị từ chối; ba lần truy cập là ba
+  dòng `support.access` có `support_grant_id`).
+- **Mutation:** gỡ từ chối header trong `RequireAccessContext` → SA7 đỏ; gỡ kiểm
+  yếu tố thứ hai → SA5 đỏ cả hai ca; gỡ kiểm danh sách trong dependency → test
+  route thiếu danh sách đỏ. Chưa mutation ở mức SQL cho hàm `SECURITY DEFINER`
+  (ca "nhân viên khác đọc 0 dòng" là test sẽ đỏ nếu bỏ điều kiện
+  `staff_user_id`, nhưng chưa chạy thử với hàm đã sửa).
+- **Còn lại:** bước 10 (route audit: lọc `support_grant_id`,
+  `actor_display_name`, `actor_kind`; SA10 phần "lọc thấy đúng ba dòng" và
+  "nhân viên gọi `/audit/events` → 403" — ca 403 đã có trong SA7); áp realm cho
+  môi trường đã chạy; kiểm xung đột lợi ích khi giao người (spec, câu hỏi 2).
+  Web (ticket 03) chưa làm.

@@ -120,11 +120,15 @@ lockfiles; never `latest`.
 Ant Design v6 (`antd`) is the component library, decided 2026-09-28 in place
 of shadcn/ui; the measurements behind it are in `.claude/plans/web-ui.md`.
 
-- **One component system.** New UI uses `antd`, `@ant-design/icons`, and
-  `@ant-design/nextjs-registry` for server-rendered styles. No new shadcn/ui
-  component is added; an existing one is replaced when its page is next
-  touched, not in one sweep. ProComponents waits for a stable release that
-  supports v6 (its v6 line was still beta on 2026-09-27).
+- **One component system.** UI uses `antd`, `@ant-design/icons`, and
+  `@ant-design/nextjs-registry` for server-rendered styles, and nothing else:
+  on 2026-10-08 Đạt asked for antd everywhere, and shadcn/ui, Radix, sonner,
+  lucide and class-variance-authority left the platform in one sweep (the
+  page-by-page rule before it is retired). `apps/web/lib/__tests__/antd-only.test.ts`
+  fails on an import or a manifest entry that brings one back, in `apps/web`
+  and in `@dw/ui`; ESLint says the same in the app. Notices go through
+  `App.useApp()`. ProComponents waits for a stable release that supports v6
+  (its v6 line was still beta on 2026-09-27).
 - **Tailwind is for layout only** (flex, grid, spacing). Colour, type and
   radius come from the antd theme.
 - **One owner of the tokens:** the antd theme (`ConfigProvider`, `vi_VN`
@@ -197,6 +201,9 @@ kind of change nobody makes and everybody works around.
 
 ## Agent and tool rules
 
+- Every value a prompt interpolates is untrusted: `PromptRegistry` wraps it in
+  an escaped `<input name="...">` block. A template opts a variable out with
+  `raw_variables` and a reason, only for a value code builds (ADR 0010).
 - Graph state is typed and versioned; LLM output is always validated into a
   Pydantic schema.
 - Workflow nodes contain no provider SDK and no SQL, and never import a concrete
@@ -205,6 +212,11 @@ kind of change nobody makes and everybody works around.
   approval policy, timeout and idempotency. The executor authorizes, validates,
   executes, validates the output and audits.
 - All side effects use idempotency keys.
+- A background lane audits as itself, never as a person:
+  `dw_platform.domain.audit.lane_audit_event`, whose actor is
+  `system_actor(<lane>)`, a fixed id from the lane's worker registry name, and
+  whose `details.actor` reads `system:<lane>`. From a cross-tenant drain, write
+  with `lane_audit.append_across_tenants` (ADR 0011).
 - A tenant's plan quota is enforced where a run begins — in the runner, not in
   an API dependency. The API is not the only door: a worker reacting to an
   inbound event starts runs no request ever touched. The limit comes from the

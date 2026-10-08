@@ -37,6 +37,22 @@ class VerifiedIdentity(Protocol):
     @property
     def issuer(self) -> str: ...
 
+    @property
+    def auth_methods(self) -> frozenset[str]:
+        """The token's `amr`: how the person authenticated this session.
+
+        Keycloak emits a method only for an execution configured with an
+        authentication reference (`dw-realm.json`: `pwd`, `otp`); measured
+        2026-10-08 on 26.7.2. Empty when the claim is absent, which a check
+        for a second factor reads as "none"."""
+        ...
+
+    @property
+    def acr(self) -> str | None:
+        """The token's `acr`. Measured "1" with and without OTP, so nothing
+        decides on it today; carried for a later level-of-assurance policy."""
+        ...
+
 
 class TokenVerifierPort(Protocol):
     """Verifies a bearer token and returns trusted claims.

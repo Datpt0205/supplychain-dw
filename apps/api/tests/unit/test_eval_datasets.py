@@ -36,7 +36,7 @@ def _load_script() -> ModuleType:  # scripts/ is loaded by path, as make runs it
 
 
 def test_every_bounded_context_dataset_is_found() -> None:
-    assert {p.name for p in DATASETS} >= {"platform@1.1.0.json"}
+    assert {p.name for p in DATASETS} >= {"platform@1.2.0.json"}
     assert any(p.name.startswith("supply_chain@") for p in DATASETS)
 
 

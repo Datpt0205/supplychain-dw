@@ -12,7 +12,7 @@ a feature is checked. Detail lives in the area file; history lives in git.
 | Supply chain (Elmich), this product        | `.claude/plans/supply-chain.md`     | Port running; 26 tickets  |
 | Ops hardening (inherited from `codebase`)  | `.claude/plans/ops-hardening.md`    | Done; numbers owed        |
 | Agent runtime, memory (inherited)          | `.claude/plans/platform-runtime.md` | Done but for named gaps   |
-| Web UI shell, Ant Design v6 (inherited)    | `.claude/plans/web-ui.md`           | Shell done; 03–09 next    |
+| Web UI shell, Ant Design v6 (inherited)    | `.claude/plans/web-ui.md`           | antd everywhere, CSP done |
 | Chat channels, Zalo (upstreamed from here) | `.claude/plans/channels.md`         | Upstreamed; live run owed |
 
 Inherited areas came with the platform seed (`codebase` `main`, `bf553f4`) and
@@ -37,7 +37,7 @@ the reference after each `git merge platform/main`.
   hardening and the FCI rerank merged from `platform/main` (`c16857c`). Next:
   Z4 (Z4a, Z4b; photos split to 04b, waiting for a real photo update),
   S3 → S7, Z5, Z6.
-- **2026-10-07/08:** Z4a–Z4b, S3–S8, Z2, Z5, Z6, P4, W done. Next: P2, P3, PK.
+- **2026-10-07/08:** Z4a–Z4b, S3–S8, Z2, Z5, Z6, P4, W, M3 done. Next: P2, P3, PK.
 - **Run locally:** `make infra-up`, `make db-migrate`, seed
   (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
   then `scripts/keycloak_dev_users.py`), `make dev`, open http://localhost:3200.

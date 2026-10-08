@@ -1,4 +1,5 @@
 import { renderHook, waitFor } from "@testing-library/react";
+import { App } from "antd";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // The hook folds the active workspace into its cache key. Mock the auth hook so
@@ -20,8 +21,9 @@ afterEach(() => {
 describe("useCachedResource — workspace isolation", () => {
   it("refetches when the active workspace changes", async () => {
     const load = vi.fn(async () => activeWorkspaceId);
-    const { result, rerender } = renderHook(() =>
-      useCachedResource("leads:page1", load),
+    const { result, rerender } = renderHook(
+      () => useCachedResource("leads:page1", load),
+      { wrapper: App },
     );
 
     await waitFor(() => expect(result.current.data).toBe("ws-A"));
@@ -37,14 +39,18 @@ describe("useCachedResource — workspace isolation", () => {
 
   it("does not serve one workspace's cache under another", async () => {
     const load = vi.fn(async () => `data-for-${activeWorkspaceId}`);
-    const first = renderHook(() => useCachedResource("accounts", load));
+    const first = renderHook(() => useCachedResource("accounts", load), {
+      wrapper: App,
+    });
     await waitFor(() =>
       expect(first.result.current.data).toBe("data-for-ws-A"),
     );
     first.unmount();
 
     activeWorkspaceId = "ws-B";
-    const second = renderHook(() => useCachedResource("accounts", load));
+    const second = renderHook(() => useCachedResource("accounts", load), {
+      wrapper: App,
+    });
     // Must not flash ws-A's cached value; the ws-B entry is separate.
     await waitFor(() =>
       expect(second.result.current.data).toBe("data-for-ws-B"),

@@ -18,6 +18,7 @@ import {
   Typography,
 } from "antd";
 import { RegionState, StatusTag, type StatusTone } from "@dw/ui";
+import { LoadError } from "../load-error";
 import type {
   CaseDocument,
   PackagingAction,
@@ -27,7 +28,7 @@ import type {
   ReviewStatus,
 } from "@dw/api-client";
 import { formatDateTime, formatDateTimeFull } from "../../lib/dates";
-import { errorMessage, regionFailure } from "../../lib/error-message";
+import { errorMessage } from "../../lib/error-message";
 import { useOnline } from "../../lib/hooks/use-online";
 import { useAttemptKey } from "../../lib/idempotency-key";
 import { apiClient } from "../../lib/session";
@@ -87,16 +88,11 @@ export function PackagingDesignCard({
   if (!design) {
     return (
       <Card title="Thiết kế màu và bao bì (bước 12)">
-        <RegionState
-          compact
-          loading={resource.loading}
-          failure={
-            resource.error != null ? regionFailure(resource.error) : null
-          }
-          what="thiết kế màu và bao bì"
-          onRetry={resource.reload}
-          rows={3}
-        />
+        {resource.error != null ? (
+          <LoadError error={resource.error} onRetry={resource.reload} compact />
+        ) : resource.loading ? (
+          <RegionState kind="loading" compact />
+        ) : null}
       </Card>
     );
   }

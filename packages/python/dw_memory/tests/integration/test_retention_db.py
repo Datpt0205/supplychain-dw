@@ -23,7 +23,8 @@ from sqlalchemy.pool import NullPool
 
 from dw_memory import tables
 from dw_memory.adapters.qdrant_ranker import QdrantMemoryRanker
-from dw_memory.retention import SqlMemoryRetention
+from dw_memory.retention import EXPIRED_ACTION, LANE, SqlMemoryRetention
+from dw_platform.domain.audit import system_actor, system_actor_label
 from dw_platform.retention_policy import (
     AuditRetention,
     KnowledgeRetention,
@@ -58,6 +59,7 @@ def _policy(**overrides: object) -> RetentionPolicy:
         "knowledge": KnowledgeRetention(deleted_grace_days=30, orphan_evidence_grace_days=7),
         "audit": AuditRetention(months_ahead=1, enforced=False, tables={}),
         "checkpoints": {"superseded_days": 7, "idle_thread_days": 730},
+        "channel_deliveries": {"pending_expiry_days": 7},
         "batch_limit": 1000,
     }
     fields.update(overrides)
@@ -403,3 +405,48 @@ async def test_a_vector_store_that_is_down_does_not_keep_an_expired_row(
     await SqlMemoryRetention(sessions, _policy(), _Clock(), vector_index=_Down()).prune()
 
     assert not await _alive(sessions, expired)
+
+
+async def _audit_rows(
+    sessions: async_sessionmaker[AsyncSession], tenant: uuid.UUID, resource_id: str
+) -> list[sa.Row[tuple[object, ...]]]:
+    async with sessions() as session, session.begin():
+        await session.execute(
+            sa.text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant)}
+        )
+        return list(
+            (
+                await session.execute(
+                    sa.text(
+                        "SELECT action, actor_id, workspace_id, details"
+                        " FROM platform.audit_events WHERE resource_id = :r"
+                    ),
+                    {"r": resource_id},
+                )
+            ).all()
+        )
+
+
+async def test_an_expired_memory_is_on_its_tenants_audit_log_as_the_lane(
+    sweep: tuple[SqlMemoryRetention, async_sessionmaker[AsyncSession]],
+) -> None:
+    pruner, sessions = sweep
+    mine = await _memory(sessions, retention="ephemeral", age_days=40)
+    theirs = await _memory(sessions, retention="ephemeral", age_days=40, tenant=OTHER_TENANT)
+    kept = await _memory(sessions, retention="ephemeral", age_days=1)
+
+    await pruner.prune()
+
+    [(action, actor_id, workspace_id, details)] = await _audit_rows(sessions, TENANT, str(mine))
+    assert action == EXPIRED_ACTION
+    assert actor_id == system_actor(LANE).value
+    assert workspace_id == WORKSPACE
+    assert details == {
+        "retention_class": "ephemeral",
+        "policy_version": "1.0.0",
+        "actor": system_actor_label(LANE),
+    }
+    # Each row in its own tenant: not visible from the other, and present there.
+    assert await _audit_rows(sessions, TENANT, str(theirs)) == []
+    assert len(await _audit_rows(sessions, OTHER_TENANT, str(theirs))) == 1
+    assert await _audit_rows(sessions, TENANT, str(kept)) == []

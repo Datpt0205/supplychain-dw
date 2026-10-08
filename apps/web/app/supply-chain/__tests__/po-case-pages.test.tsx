@@ -173,7 +173,7 @@ describe("Hồ sơ PO: danh sách", () => {
     render(<POCasesPage />);
 
     expect(await screen.findByText("Máy chủ đang bận")).toBeTruthy();
-    expect(screen.getByText("Không tải được danh sách Hồ sơ PO")).toBeTruthy();
+    expect(screen.getByText("Không tải được dữ liệu")).toBeTruthy();
     expect(screen.queryByText(/Chưa có Hồ sơ PO nào/)).toBeNull();
     expect(screen.getByRole("button", { name: /Thử lại/ })).toBeTruthy();
   });
@@ -287,7 +287,7 @@ describe("Hồ sơ PO: chi tiết", () => {
       new ApiError(404, { code: "not_found", message: "x", details: {} }),
     );
     renderDetail();
-    expect(await screen.findByText("Không tìm thấy Hồ sơ PO")).toBeTruthy();
+    expect(await screen.findByText("Không tìm thấy")).toBeTruthy();
   });
 
   it("shows the server's sentence and retries a failed load", async () => {

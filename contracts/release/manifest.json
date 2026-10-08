@@ -25,17 +25,17 @@
   ],
   "eval_datasets": [
     {
-      "checksum": "4504460eb6160e093df4edba7e8a1e955f16a8e9916af80b35a36c22ac86dd5d",
+      "checksum": "2c3569c4af18d9543cbb0223b5dd1c59bf2e4932260ec193975baa1ac38d9d9d",
       "dataset_id": "platform_smoke",
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
-      "checksum": "e38262fe0a51791c815925c7a8302dccdb48ae92fef4a736bb7d501fedc71da1",
+      "checksum": "6126d4afbd0acec21467c445b5dda6e0e6199f7dc817b80a365eae079405bdb8",
       "dataset_id": "supply_chain_smoke",
-      "version": "1.7.0"
+      "version": "1.8.0"
     }
   ],
-  "git_sha": "0f60e8011e817e8452fcc8ceb6692f5d7412380b",
+  "git_sha": "e877cd5268f4f2a0162f17ba86ba85b58e98d684",
   "knowledge_index_version": "2026-07-25.structure-1",
   "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
@@ -46,9 +46,9 @@
       "version": "1.1.0"
     },
     {
-      "checksum": "fde5e39c166b55b2616311be8e132555def7c4e2e634d938ed4b58d28a961bf8",
+      "checksum": "c0ec53bf9f752948ddcb910c88cfb61f04020ee4c1e437aae74f77623fcaf075",
       "policy_id": "retention",
-      "version": "1.6.0"
+      "version": "1.7.0"
     },
     {
       "checksum": "8bbb67547294c506104fcba179c7fe9d8ae43a0aadce6749a6461330f551e078",
@@ -98,49 +98,34 @@
   ],
   "prompt_bundles": [
     {
-      "checksum": "d09bde4799b114aa013b9af9c82681cf225b4055bf2e2935870d45b78285bf63",
+      "checksum": "b5dee5fc2c33cf58c88dad2853961f1aae2372dafb70080158098a45fb57a042",
       "prompt_id": "platform.untrusted_demo",
-      "version": "1.0.0"
-    },
-    {
-      "checksum": "ef053a58ea28421c616ee0ee1e2c4e4f94a6b66a47d3ae192193558320ede7b9",
-      "prompt_id": "supply_chain.case_query_understanding",
-      "version": "1.0.0"
-    },
-    {
-      "checksum": "850844d4c299d97a324b6adc088a71e4d4be464f1f1bf5d3c8080c4eef9305a3",
-      "prompt_id": "supply_chain.case_query_understanding",
       "version": "1.1.0"
     },
     {
-      "checksum": "51e58dd4c4a0329f370a688dcffd48cd9ca0e468f4bfadd9c236c5a69b9a544e",
-      "prompt_id": "supply_chain.daily_brief_summary",
-      "version": "1.0.0"
+      "checksum": "8ee1d853affd0e0f53167f3180f4d65a68cfa82ed8a266329b91aaf68281471c",
+      "prompt_id": "supply_chain.case_query_understanding",
+      "version": "1.2.0"
     },
     {
-      "checksum": "7bf911f07b22f023e084c5b7435426ef6539c787f79c0b6061baf0b36582a141",
+      "checksum": "d335357d511063e6e4f1824a587b5452dbc274d40f156f5198dbf9e480b98c33",
       "prompt_id": "supply_chain.daily_brief_summary",
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
-      "checksum": "cf05a993c4810ad65a18a98dba7e630ab957825ae38c221b3119e4bad22d1a99",
+      "checksum": "d5a609e6e97d5efe604127dcef9983264439fa8354c8d4cc4b7653b259df8498",
       "prompt_id": "supply_chain.delay_impact_analysis",
-      "version": "1.0.0"
-    },
-    {
-      "checksum": "9eb1e01932904d135d9a9ee38494c205188ca2ed648238fe68eb6c27e357985d",
-      "prompt_id": "supply_chain.product_proposal_understanding",
-      "version": "1.0.0"
-    },
-    {
-      "checksum": "d021e35254d906272e8c9f5e4f1bb5b26991073d6dc5dd5fbe54b9d3801c4a5a",
-      "prompt_id": "supply_chain.product_proposal_understanding",
       "version": "1.1.0"
     },
     {
-      "checksum": "90d333b46afa559861b9083509c72465b1f0587be52b6b1313afe529d9e315b7",
+      "checksum": "8f2c6c7bd6a516d246ea3b2d5a4128e7ae9ba40768c10a59073b8cf9509da17e",
+      "prompt_id": "supply_chain.product_proposal_understanding",
+      "version": "1.2.0"
+    },
+    {
+      "checksum": "7ad599bcc06f15bfcdb97ac3257271f7c9d4f8a0f45ec750b22269cad0de21f9",
       "prompt_id": "supply_chain.supplier_update_understanding",
-      "version": "1.0.0"
+      "version": "1.1.0"
     }
   ],
   "rubrics": [],

@@ -8,6 +8,7 @@ import pytest
 from dw_agent_runtime.adapters.run_store import RunRecord, RunStatus
 from dw_agent_runtime.approval_flow import (
     CHANNEL_DECIDED_ACTION,
+    DECIDED_ACTION,
     ApproveAndResumeService,
     DecisionGuard,
 )
@@ -76,10 +77,15 @@ class FakeOutbox:
 
 @dataclass
 class FakeAudit:
+    """Like `FakeOutbox`: an event appended after the commit is one a crash
+    between the two loses, so it is kept apart."""
+
     events: list[AuditEvent] = field(default_factory=list)
+    added_after_commit: list[AuditEvent] = field(default_factory=list)
+    committed: bool = False
 
     async def append(self, event: AuditEvent) -> None:
-        self.events.append(event)
+        (self.added_after_commit if self.committed else self.events).append(event)
 
 
 @dataclass
@@ -96,6 +102,7 @@ class FakeUoW:
 
     async def commit(self) -> None:
         self.outbox.committed = True
+        self.audit.committed = True
 
     async def rollback(self) -> None: ...
 
@@ -913,7 +920,8 @@ async def test_the_web_is_the_channel_when_none_is_named() -> None:
 
     assert [d.channel for d in repo.decisions] == ["web"]
     assert [c.channel for c in runner.contexts] == ["web"]
-    assert audit.events == []
+    # A web decision is audited as one, not as a channel decision.
+    assert [event.action for event in audit.events] == [DECIDED_ACTION]
 
 
 async def test_an_admission_runs_before_anything_is_written_and_its_refusal_writes_nothing() -> (
@@ -997,3 +1005,125 @@ async def test_an_admitted_decision_is_audited_with_what_admitted_it() -> None:
         "outcome": "rejected",
         "approval_type": "sales_chat.email_send",
     }
+
+
+# ---- every decision on the audit log (approval-audit-and-workspace/01) -------
+
+
+@pytest.mark.parametrize(
+    ("principal", "approve", "outcome", "withdrawn"),
+    [
+        (APPROVER, True, "approved", False),
+        (APPROVER, False, "rejected", False),
+        (REQUESTER, False, "rejected", True),
+    ],
+    ids=["approved", "rejected", "withdrawn"],
+)
+async def test_a_decision_is_audited_in_its_own_transaction_naming_the_decider(
+    principal: uuid.UUID, approve: bool, outcome: str, withdrawn: bool
+) -> None:
+    request = make_request(
+        "demo.dispatch", run_id=RUN_ID, payload={"amount": 9000, "customer": "x"}
+    )
+    repo = FakeApprovalRepo(request=request)
+    audit = FakeAudit()
+    service = make_service(
+        request, frozenset(), runner=FakeRunner(hosted=True), repo=repo, audit=audit
+    )
+
+    await service.decide(
+        approval_id=request.id,
+        approve=approve,
+        comment="ghi chú nghiệp vụ",
+        context=make_context(principal),
+        authorization=ScopeAuthorizationService(),
+    )
+
+    assert audit.added_after_commit == []
+    (event,) = audit.events
+    (decision,) = repo.decisions
+    assert event.action == DECIDED_ACTION
+    assert event.actor_id.value == principal
+    assert (event.resource_type, event.resource_id) == ("approval_request", str(request.id))
+    assert event.run_id == RUN_ID
+    assert event.occurred_at == decision.decided_at
+    assert event.details == {
+        "approval_type": "demo.dispatch",
+        "outcome": outcome,
+        "decision_id": str(decision.id),
+        "withdrawn": withdrawn,
+    }
+    # Neither the comment nor any key of the payload reaches the audit log.
+    assert "ghi chú nghiệp vụ" not in str(event.details)
+    assert not set(event.details) & {"comment", *request.payload}
+
+
+async def _refused(service: ApproveAndResumeService, principal: uuid.UUID, comment: str) -> None:
+    with pytest.raises((ConflictError, PermissionDeniedError, NotFoundError)):
+        await service.decide(
+            approval_id=uuid.UUID(int=10),
+            approve=True,
+            comment=comment,
+            context=make_context(principal),
+            authorization=ScopeAuthorizationService(),
+        )
+
+
+async def test_a_refused_decision_writes_no_audit() -> None:
+    cases: list[
+        tuple[ApprovalRequest, frozenset[str], uuid.UUID, str, dict[str, DecisionGuard]]
+    ] = [
+        # Strict: the requester, then a missing comment.
+        (make_request("sales_chat.email_send"), frozenset({"sales_chat."}), REQUESTER, "ok", {}),
+        (make_request("sales_chat.email_send"), frozenset({"sales_chat."}), APPROVER, " ", {}),
+        # A per-type guard refuses.
+        (make_request("memory.review"), frozenset(), APPROVER, "ok", {"memory.review": _refuse}),
+    ]
+    for request, prefixes, principal, comment, guards in cases:
+        audit = FakeAudit()
+        service = make_service(request, prefixes, audit=audit, guards=guards)
+        await _refused(service, principal, comment)
+        assert audit.events == [] and audit.added_after_commit == []
+
+    # The run is not waiting for approval any more.
+    audit = FakeAudit()
+    service = make_service(
+        make_request("demo.dispatch", run_id=RUN_ID),
+        frozenset(),
+        runner=FakeRunner(hosted=True),
+        run_status=RunStatus.COMPLETED,
+        audit=audit,
+    )
+    await _refused(service, APPROVER, "")
+    assert audit.events == []
+
+    # No `approvals.decide`, on someone else's request.
+    audit = FakeAudit()
+    service = make_service(make_request("demo.dispatch"), frozenset(), audit=audit)
+    with pytest.raises(PermissionDeniedError):
+        await service.decide(
+            approval_id=uuid.UUID(int=10),
+            approve=False,
+            comment="",
+            context=context_without_the_right(APPROVER),
+            authorization=ScopeAuthorizationService(),
+        )
+    assert audit.events == []
+
+
+async def test_a_channel_decision_keeps_its_own_audit_and_writes_one_row() -> None:
+    request = make_request("sales_chat.email_send")
+    audit = FakeAudit()
+    service = make_service(request, frozenset(), audit=audit)
+
+    await service.decide(
+        approval_id=request.id,
+        approve=True,
+        comment="ok",
+        context=make_context(APPROVER),
+        authorization=ScopeAuthorizationService(),
+        channel="zalo",
+        admission=FakeAdmission(),
+    )
+
+    assert [event.action for event in audit.events] == [CHANNEL_DECIDED_ACTION]

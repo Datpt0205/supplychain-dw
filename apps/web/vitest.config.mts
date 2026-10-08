@@ -11,6 +11,7 @@ export default defineConfig({
     plugins: [react()],
     test: {
         environment: "jsdom",
+        setupFiles: ["./vitest.setup.ts"],
         include: ["**/*.test.ts", "**/*.test.tsx"],
         exclude: ["node_modules/**", ".next/**", "e2e/**"],
         setupFiles: ["./vitest.setup.ts"],

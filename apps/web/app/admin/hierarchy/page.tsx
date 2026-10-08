@@ -1,37 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Loader2, Network } from "lucide-react";
+import { Alert, Card, Flex, Select, Spin, Typography, theme } from "antd";
+import { ApartmentOutlined } from "@ant-design/icons";
 import type { HierarchyMember } from "@dw/contracts";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@dw/ui";
-import { ApiError } from "@dw/api-client";
+import { PageHeader, RegionState } from "@dw/ui";
 import { apiClient } from "../../../lib/session";
 import { useAuth } from "../../../lib/auth/auth-context";
-import { PageHeading } from "../../../components/page-heading";
-import { EmptyState } from "../../../components/empty-state";
+import { errorMessage as errorText } from "../../../lib/error-message";
 import { roleLabels } from "../../../lib/nav/roles";
-
-function errorText(error: unknown): string {
-  return error instanceof ApiError
-    ? error.body.message
-    : "Something went wrong";
-}
 
 export default function HierarchyPage() {
   const { hasScope } = useAuth();
 
   if (!hasScope("platform.members.write")) {
     return (
-      <EmptyState
-        icon={Network}
-        title="No access"
-        description="You need the member-management permission to view this page."
+      <RegionState
+        kind="forbidden"
+        description="Cần quyền quản lý thành viên để xem trang này."
       />
     );
   }
@@ -74,37 +60,26 @@ function HierarchyManager() {
   );
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <PageHeading
-        icon={Network}
-        title="Reporting line"
-        description="Who reports to whom in the workspace. Change 'Reports to' to set someone's manager."
+    <div className="mx-auto max-w-4xl">
+      <PageHeader
+        icon={<ApartmentOutlined />}
+        title="Tuyến báo cáo"
+        subtitle="Ai báo cáo cho ai trong workspace. Đổi ô “Báo cáo cho” để đặt người quản lý của một người."
       />
-
-      {error && (
-        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Reporting chart</CardTitle>
-          <CardDescription>
-            People with no manager sit at the root; reports are indented beneath
-            them.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <Flex vertical gap="middle">
+        {error && <Alert type="error" showIcon title={error} />}
+        <Card title="Sơ đồ báo cáo">
+          <Typography.Paragraph type="secondary">
+            Người không có quản lý đứng ở gốc; người báo cáo thụt vào bên dưới.
+          </Typography.Paragraph>
           {members === null ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> Loading…
-            </div>
+            <RegionState kind="loading" compact />
           ) : members.length === 0 ? (
-            <EmptyState
-              icon={Network}
-              title="No members yet"
-              description="This workspace has no one to arrange into a reporting line."
+            <RegionState
+              kind="empty"
+              compact
+              title="Chưa có thành viên"
+              description="Workspace này chưa có ai để xếp tuyến báo cáo."
             />
           ) : (
             <HierarchyTree
@@ -113,8 +88,8 @@ function HierarchyManager() {
               onSetManager={setManager}
             />
           )}
-        </CardContent>
-      </Card>
+        </Card>
+      </Flex>
     </div>
   );
 }
@@ -162,11 +137,7 @@ function HierarchyTree({
       );
     });
 
-  return (
-    <div className="divide-y rounded-md border">
-      {renderNodes(null, 0, new Set<string>())}
-    </div>
-  );
+  return <div>{renderNodes(null, 0, new Set<string>())}</div>;
 }
 
 function MemberRow({
@@ -182,41 +153,49 @@ function MemberRow({
   saving: boolean;
   onSetManager: (userId: string, managerUserId: string | null) => void;
 }) {
+  const { token } = theme.useToken();
+  const selectId = `manager-${member.user_id}`;
   return (
-    <div
-      className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm"
-      style={{ paddingLeft: `${depth * 1.5 + 0.75}rem` }}
+    <Flex
+      wrap
+      justify="space-between"
+      align="center"
+      gap="small"
+      className="py-2.5 pr-1"
+      style={{
+        paddingLeft: depth * 24 + 4,
+        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+      }}
     >
       <div className="min-w-0">
-        <p className="truncate font-medium">{member.display_name}</p>
-        <p className="truncate text-xs text-muted-foreground">
+        <Typography.Text strong ellipsis className="block">
+          {member.display_name}
+        </Typography.Text>
+        <Typography.Text type="secondary" className="text-xs">
           {member.role_keys.length > 0 ? roleLabels(member.role_keys) : "—"}
-        </p>
+        </Typography.Text>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <label className="text-xs text-muted-foreground">Reports to</label>
-        <select
+      <Flex align="center" gap="small">
+        <label htmlFor={selectId}>
+          <Typography.Text type="secondary" className="text-xs">
+            Báo cáo cho
+          </Typography.Text>
+        </label>
+        <Select
+          id={selectId}
+          className="w-48"
           value={member.manager_user_id ?? ""}
           disabled={saving}
-          onChange={(e) =>
-            onSetManager(
-              member.user_id,
-              e.target.value === "" ? null : e.target.value,
-            )
+          onChange={(value: string) =>
+            onSetManager(member.user_id, value === "" ? null : value)
           }
-          className="rounded-md border bg-background px-2 py-1.5 text-sm"
-        >
-          <option value="">— (none)</option>
-          {others.map((o) => (
-            <option key={o.user_id} value={o.user_id}>
-              {o.display_name}
-            </option>
-          ))}
-        </select>
-        {saving && (
-          <Loader2 className="size-4 animate-spin text-muted-foreground" />
-        )}
-      </div>
-    </div>
+          options={[
+            { value: "", label: "— (không ai)" },
+            ...others.map((o) => ({ value: o.user_id, label: o.display_name })),
+          ]}
+        />
+        {saving && <Spin size="small" />}
+      </Flex>
+    </Flex>
   );
 }

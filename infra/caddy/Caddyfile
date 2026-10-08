@@ -38,12 +38,17 @@
 {$DW_WEB_HOST} {
 	import edge_headers
 	header X-Frame-Options "DENY"
+	# The pages' Content-Security-Policy is the web app's own
+	# (apps/web/middleware.ts): its script nonce is minted per request, which
+	# only the process rendering the page can do, so Caddy does not write one.
 	reverse_proxy web:3000
 }
 
 {$DW_API_HOST} {
 	import edge_headers
 	header X-Frame-Options "DENY"
+	# JSON only: nothing here is a document to run or embed anything.
+	header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
 	# The platform API only. `/metrics` is unauthenticated by design and relies
 	# on being reachable from dw-internal alone (main.py); proxying the whole
 	# host would publish it. An allow-list fails closed for any route added at

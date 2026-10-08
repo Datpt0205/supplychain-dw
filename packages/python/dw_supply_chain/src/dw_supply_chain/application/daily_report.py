@@ -141,12 +141,14 @@ class SendStageOneReport:
             return ReportOutcome()
         leads = set(
             await self.holders.holding(
-                context, context.workspace_id, frozenset({duty_scope(CaseDuty.SUPPLY_LEAD)})
+                context.tenant_id,
+                context.workspace_id,
+                frozenset({duty_scope(CaseDuty.SUPPLY_LEAD)}),
             )
         )
         readers = set(
             await self.holders.holding(
-                context, context.workspace_id, frozenset({PRODUCT_CASE_READ})
+                context.tenant_id, context.workspace_id, frozenset({PRODUCT_CASE_READ})
             )
         )
         recipients = sorted(leads & readers)

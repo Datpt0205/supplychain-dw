@@ -19,6 +19,7 @@ that no unit test can:
 
 from __future__ import annotations
 
+import html
 import re
 import uuid
 from collections.abc import AsyncIterator
@@ -85,7 +86,7 @@ pytestmark = pytest.mark.integration
 
 _SECRET = "case-query-db-link-secret"
 _WEB = "https://portal.example"
-_INPUT = re.compile(r"<input>\s*(.*?)\s*</input>", re.DOTALL)
+_INPUT = re.compile(r'<input name="[a-z_]+">\s*(.*?)\s*</input>', re.DOTALL)
 
 
 @pytest.fixture
@@ -130,7 +131,8 @@ class _Plan:
 def _question(prompt: RenderedPrompt) -> str:
     found = _INPUT.search(prompt.user)
     assert found is not None
-    return found.group(1)
+    # The registry escapes what it contains; the person typed the unescaped text.
+    return html.unescape(found.group(1))
 
 
 @dataclass

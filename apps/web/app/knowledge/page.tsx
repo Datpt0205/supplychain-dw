@@ -1,32 +1,33 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Library, Loader2, RefreshCw, Trash2, Upload } from "lucide-react";
-import type { IngestJob, KnowledgeDocument } from "@dw/contracts";
 import {
-  Badge,
+  Alert,
+  App,
   Button,
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  Flex,
   Input,
+  Modal,
   Select,
-  Skeleton,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@dw/ui";
-import { EmptyState } from "../../components/empty-state";
+  Tag,
+  Typography,
+  Upload,
+} from "antd";
+import {
+  BookOutlined,
+  DeleteOutlined,
+  ReloadOutlined,
+  UploadOutlined,
+} from "@ant-design/icons";
+import type { IngestJob, KnowledgeDocument } from "@dw/contracts";
+import { PageHeader, RegionState } from "@dw/ui";
+import { LoadError } from "../../components/load-error";
 import { LoadMore } from "../../components/load-more";
-import { Modal } from "../../components/modal";
-import { PageHeading } from "../../components/page-heading";
 import { useAuth } from "../../lib/auth/auth-context";
 import { formatDateTime } from "../../lib/dates";
+import { errorMessage } from "../../lib/error-message";
 import { apiClient } from "../../lib/session";
 import { useCachedPages } from "../../lib/use-cached-pages";
 
@@ -36,18 +37,21 @@ import { useCachedPages } from "../../lib/use-cached-pages";
 const POLL_MS = 2_000;
 const POLL_ATTEMPTS = 150;
 
-const JOB_BADGE: Record<
-  string,
-  "secondary" | "warning" | "success" | "destructive"
-> = {
-  queued: "secondary",
-  running: "warning",
-  done: "success",
-  failed: "destructive",
+const JOB_STATUS: Record<string, { label: string; color: string }> = {
+  queued: { label: "Đang chờ", color: "default" },
+  running: { label: "Đang xử lý", color: "processing" },
+  done: { label: "Xong", color: "success" },
+  failed: { label: "Lỗi", color: "error" },
+};
+
+const SCOPE: Record<string, { label: string; color: string }> = {
+  tenant: { label: "Trong công ty", color: "default" },
+  global: { label: "Mọi công ty", color: "gold" },
 };
 
 export default function KnowledgePage() {
   const { hasScope, hasRole } = useAuth();
+  const { modal } = App.useApp();
   // Jobs this browser started. The API exposes a job by id, not a list, so the
   // page follows the ones it queued rather than inventing a history it cannot
   // read back after a reload.
@@ -101,8 +105,7 @@ export default function KnowledgePage() {
     }
   }
 
-  async function upload(event: React.FormEvent) {
-    event.preventDefault();
+  async function upload() {
     if (!file || !title.trim()) return;
     setBusy(true);
     try {
@@ -115,277 +118,289 @@ export default function KnowledgePage() {
       setError(null);
       setFormOpen(false);
       setTitle("");
-      // The dialog unmounts when it closes, so the file input resets itself.
       setFile(null);
       void pollJob(job.job_id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "unknown error");
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
   }
 
-  async function remove(document: KnowledgeDocument) {
-    setBusy(true);
-    try {
-      await apiClient().deleteKnowledgeDocument(document.document_id);
-      setError(null);
-      reload();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "unknown error");
-    } finally {
-      setBusy(false);
-    }
+  function confirmRemove(document: KnowledgeDocument) {
+    modal.confirm({
+      title: `Gỡ tài liệu “${document.title}”?`,
+      content: "Worker sẽ không truy xuất được tài liệu này nữa.",
+      okText: "Gỡ",
+      okButtonProps: { danger: true },
+      cancelText: "Hủy",
+      autoFocusButton: "cancel",
+      onOk: async () => {
+        try {
+          await apiClient().deleteKnowledgeDocument(document.document_id);
+          setError(null);
+          reload();
+        } catch (e) {
+          setError(errorMessage(e));
+        }
+      },
+    });
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <PageHeading
-        icon={Library}
-        title="Knowledge"
-        description="The documents workers retrieve from. Every one carries a scope and a version, and retrieval is filtered by the tenant the reader belongs to."
+    <div className="mx-auto max-w-6xl">
+      <PageHeader
+        icon={<BookOutlined />}
+        title="Tri thức"
+        subtitle="Tài liệu mà worker truy xuất. Mỗi tài liệu có phạm vi và phiên bản, và việc truy xuất luôn lọc theo công ty của người đọc."
         actions={
           <>
             {canWrite && (
-              <Button onClick={() => setFormOpen(true)}>
-                <Upload /> Add document
+              <Button
+                type="primary"
+                icon={<UploadOutlined aria-hidden />}
+                onClick={() => setFormOpen(true)}
+              >
+                Thêm tài liệu
               </Button>
             )}
-            <Button variant="outline" size="icon" onClick={reload}>
-              <RefreshCw />
-            </Button>
+            <Button
+              icon={<ReloadOutlined aria-hidden />}
+              aria-label="Tải lại"
+              onClick={reload}
+            />
           </>
         }
       />
-      {(error ?? loadError) != null && (
-        <p className="text-sm text-destructive">
-          {error ??
-            (loadError instanceof Error ? loadError.message : "unknown error")}
-        </p>
-      )}
-      {loading && loadError == null && <Skeleton className="h-64 w-full" />}
-      {!loading && documents.length === 0 && (
-        <EmptyState
-          icon={Library}
-          title="No documents yet"
-          description="Upload the first document to give the workers something to retrieve from."
-        />
-      )}
+      <Flex vertical gap="middle">
+        {error != null && <Alert type="error" showIcon title={error} />}
+        {loadError != null && <LoadError error={loadError} onRetry={reload} />}
+        {loading && loadError == null && <RegionState kind="loading" />}
+        {!loading && loadError == null && documents.length === 0 && (
+          <RegionState
+            kind="empty"
+            title="Chưa có tài liệu nào"
+            description="Tải lên tài liệu đầu tiên để worker có nguồn truy xuất."
+          />
+        )}
 
-      {documents.length > 0 && (
-        <Card className="overflow-hidden">
-          <CardContent className="pt-5">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Domain</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Classification</TableHead>
-                  <TableHead>Chunks</TableHead>
-                  <TableHead>Version</TableHead>
-                  <TableHead>Added</TableHead>
-                  {canWrite && <TableHead />}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {documents.map((document) => (
-                  <TableRow key={document.document_id} className="align-top">
-                    <TableCell className="text-sm font-medium">
-                      {document.title}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {document.domain}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          document.scope === "global" ? "warning" : "secondary"
-                        }
-                      >
-                        {document.scope}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {document.classification}
-                    </TableCell>
-                    <TableCell className="text-xs tabular-nums">
-                      {document.chunk_count}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {/* Source version is what the uploader stamped; index
-                          version is what the retrieval index was built with. */}
+        {documents.length > 0 && (
+          <Card>
+            <Table<KnowledgeDocument>
+              rowKey="document_id"
+              size="small"
+              pagination={false}
+              scroll={{ x: "max-content" }}
+              dataSource={documents}
+              columns={[
+                { title: "Tiêu đề", dataIndex: "title" },
+                { title: "Lĩnh vực", dataIndex: "domain" },
+                {
+                  title: "Phạm vi",
+                  dataIndex: "scope",
+                  render: (value: string) => {
+                    const shown = SCOPE[value] ?? {
+                      label: value,
+                      color: "default",
+                    };
+                    return <Tag color={shown.color}>{shown.label}</Tag>;
+                  },
+                },
+                { title: "Phân loại", dataIndex: "classification" },
+                { title: "Số đoạn", dataIndex: "chunk_count", align: "right" },
+                {
+                  title: "Phiên bản",
+                  key: "version",
+                  // Source version is what the uploader stamped; index version
+                  // is what the retrieval index was built with.
+                  render: (_, document) => (
+                    <Typography.Text code className="text-xs">
                       {document.source_version}
                       {document.index_version
                         ? ` · ${document.index_version}`
                         : ""}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap font-mono text-xs">
-                      {formatDateTime(document.created_at)}
-                    </TableCell>
-                    {canWrite && (
-                      <TableCell>
-                        {(document.scope !== "global" || canPublishGlobal) && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Remove document"
-                            disabled={busy}
-                            onClick={() => void remove(document)}
-                            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          >
-                            <Trash2 />
-                          </Button>
-                        )}
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                    </Typography.Text>
+                  ),
+                },
+                {
+                  title: "Thêm lúc",
+                  dataIndex: "created_at",
+                  render: (value: string) => formatDateTime(value),
+                },
+                ...(canWrite
+                  ? [
+                      {
+                        title: "",
+                        key: "remove",
+                        render: (_: unknown, document: KnowledgeDocument) =>
+                          document.scope !== "global" || canPublishGlobal ? (
+                            <Button
+                              type="text"
+                              danger
+                              icon={<DeleteOutlined aria-hidden />}
+                              aria-label={`Gỡ ${document.title}`}
+                              onClick={() => confirmRemove(document)}
+                            />
+                          ) : null,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          </Card>
+        )}
 
-      {!loading && documents.length > 0 && (
-        <LoadMore
-          hasMore={hasMore}
-          loading={loadingMore}
-          onLoadMore={loadMore}
-          shown={documents.length}
-          noun="documents"
-        />
-      )}
+        {!loading && documents.length > 0 && (
+          <LoadMore
+            hasMore={hasMore}
+            loading={loadingMore}
+            onLoadMore={loadMore}
+            shown={documents.length}
+            noun="tài liệu"
+          />
+        )}
 
-      {jobs.length > 0 && (
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle className="text-base">Ingest jobs</CardTitle>
-            <CardDescription>
-              Uploads queued from this browser. A document only becomes
-              retrievable once its job reports done.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-1">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Queued</TableHead>
-                  <TableHead>File</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Attempts</TableHead>
-                  <TableHead>Chunks</TableHead>
-                  <TableHead>Notes</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {jobs.map((job) => (
-                  <TableRow key={job.job_id} className="align-top">
-                    <TableCell className="whitespace-nowrap font-mono text-xs">
-                      {formatDateTime(job.created_at)}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      <p className="font-medium">{job.title}</p>
-                      <p className="text-muted-foreground">{job.filename}</p>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={JOB_BADGE[job.status] ?? "secondary"}>
-                        {job.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs tabular-nums">
-                      {job.attempts}
-                    </TableCell>
-                    <TableCell className="text-xs tabular-nums">
-                      {job.chunk_count ?? "—"}
-                    </TableCell>
-                    <TableCell className="max-w-64 text-xs text-muted-foreground">
-                      {/* A warning means the file was indexed but not read
-                          whole — the uploader is the only person who can do
-                          anything about it, so it is never swallowed. */}
-                      {job.error ??
-                        (job.warnings.length > 0
-                          ? job.warnings.join(" · ")
-                          : "—")}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+        {jobs.length > 0 && (
+          <Card title="Việc nạp tài liệu">
+            <Typography.Paragraph type="secondary">
+              Các lần tải lên từ trình duyệt này. Tài liệu chỉ truy xuất được
+              khi việc nạp báo xong.
+            </Typography.Paragraph>
+            <Table<IngestJob>
+              rowKey="job_id"
+              size="small"
+              pagination={false}
+              scroll={{ x: "max-content" }}
+              dataSource={jobs}
+              columns={[
+                {
+                  title: "Xếp hàng lúc",
+                  dataIndex: "created_at",
+                  render: (value: string) => formatDateTime(value),
+                },
+                {
+                  title: "Tệp",
+                  key: "file",
+                  render: (_, job) => (
+                    <Flex vertical>
+                      <Typography.Text strong>{job.title}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {job.filename}
+                      </Typography.Text>
+                    </Flex>
+                  ),
+                },
+                {
+                  title: "Trạng thái",
+                  dataIndex: "status",
+                  render: (value: string) => {
+                    const shown = JOB_STATUS[value] ?? {
+                      label: value,
+                      color: "default",
+                    };
+                    return <Tag color={shown.color}>{shown.label}</Tag>;
+                  },
+                },
+                { title: "Số lần thử", dataIndex: "attempts", align: "right" },
+                {
+                  title: "Số đoạn",
+                  dataIndex: "chunk_count",
+                  align: "right",
+                  render: (value: number | null) => value ?? "—",
+                },
+                {
+                  title: "Ghi chú",
+                  key: "notes",
+                  width: 260,
+                  // A warning means the file was indexed but not read whole —
+                  // the uploader is the only person who can act on it, so it
+                  // is never swallowed.
+                  render: (_, job) =>
+                    job.error ??
+                    (job.warnings.length > 0 ? job.warnings.join(" · ") : "—"),
+                },
+              ]}
+            />
+          </Card>
+        )}
+      </Flex>
 
       {canWrite && (
         <Modal
           open={formOpen}
-          onClose={() => {
+          title="Thêm tài liệu"
+          onCancel={() => {
             if (!busy) setFormOpen(false);
           }}
-          title="Add document"
-          subtitle="The file is staged to object storage and parsed by the worker; nothing is retrievable until its job reports done."
-          footerActions={
-            <>
-              <Button
-                variant="ghost"
-                disabled={busy}
-                onClick={() => setFormOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                form="knowledge-upload"
-                disabled={busy || !file || !title.trim()}
-              >
-                {busy ? <Loader2 className="animate-spin" /> : <Upload />}
-                {busy ? "Uploading…" : "Upload"}
-              </Button>
-            </>
-          }
+          okText="Tải lên"
+          cancelText="Hủy"
+          okButtonProps={{
+            icon: <UploadOutlined aria-hidden />,
+            loading: busy,
+            disabled: !file || !title.trim(),
+          }}
+          cancelButtonProps={{ disabled: busy }}
+          onOk={() => void upload()}
+          destroyOnHidden
         >
-          <form id="knowledge-upload" onSubmit={upload} className="space-y-4">
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium">File</span>
+          <Flex vertical gap="middle">
+            <Typography.Text type="secondary">
+              Tệp được đưa lên kho lưu trữ và worker đọc nó; chưa truy xuất được
+              gì tới khi việc nạp báo xong.
+            </Typography.Text>
+            <Flex vertical gap={4}>
+              <span>Tệp</span>
+              <Upload
+                maxCount={1}
+                beforeUpload={(picked) => {
+                  setFile(picked);
+                  // Kept in the browser; the API call above sends it.
+                  return false;
+                }}
+                onRemove={() => setFile(null)}
+              >
+                <Button icon={<UploadOutlined aria-hidden />}>Chọn tệp</Button>
+              </Upload>
+            </Flex>
+            <Flex vertical gap={4}>
+              <label htmlFor="knowledge-title">Tiêu đề</label>
               <Input
-                type="file"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium">Title</span>
-              <Input
+                id="knowledge-title"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
-                placeholder="How this document will be listed"
+                placeholder="Tên hiện trong danh sách"
               />
-            </label>
+            </Flex>
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block">
-                <span className="mb-1.5 block text-sm font-medium">Domain</span>
+              <Flex vertical gap={4}>
+                <label htmlFor="knowledge-domain">Lĩnh vực</label>
                 <Input
+                  id="knowledge-domain"
                   value={domain}
                   onChange={(event) => setDomain(event.target.value)}
                   placeholder="shared"
                 />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-sm font-medium">Scope</span>
+              </Flex>
+              <Flex vertical gap={4}>
+                <label htmlFor="knowledge-scope">Phạm vi</label>
                 <Select
+                  id="knowledge-scope"
                   value={scope}
-                  onChange={(event) =>
-                    setScope(event.target.value as "tenant" | "global")
-                  }
-                >
-                  <option value="tenant">This tenant only</option>
-                  <option value="global" disabled={!canPublishGlobal}>
-                    Every tenant
-                    {canPublishGlobal ? "" : " — platform admin only"}
-                  </option>
-                </Select>
-              </label>
+                  onChange={setScope}
+                  options={[
+                    { value: "tenant", label: "Chỉ công ty này" },
+                    {
+                      value: "global",
+                      label: canPublishGlobal
+                        ? "Mọi công ty"
+                        : "Mọi công ty — chỉ quản trị nền tảng",
+                      disabled: !canPublishGlobal,
+                    },
+                  ]}
+                />
+              </Flex>
             </div>
-          </form>
+          </Flex>
         </Modal>
       )}
     </div>

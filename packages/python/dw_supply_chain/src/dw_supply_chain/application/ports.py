@@ -513,10 +513,12 @@ class WorkspacesWithCasesPort(Protocol):
 
 class ScopeHoldersPort(Protocol):
     """Members of a workspace who hold any of `scopes`, through a role or a
-    permission set. Declared here, satisfied by `dw_platform`."""
+    permission set. Declared here, satisfied by `dw_platform`. `tenant_id`
+    comes from a verified source (the access context, a tenant-tagged row,
+    a stamped state), never from a request body."""
 
     async def holding(
-        self, context: AccessContext, workspace_id: uuid.UUID, scopes: frozenset[str]
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, scopes: frozenset[str]
     ) -> list[uuid.UUID]: ...
 
 
@@ -526,7 +528,7 @@ class WorkspaceMembersPort(Protocol):
     Declared here, satisfied by `dw_platform`."""
 
     async def members(
-        self, context: AccessContext, workspace_id: uuid.UUID, user_ids: frozenset[uuid.UUID]
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, user_ids: frozenset[uuid.UUID]
     ) -> frozenset[uuid.UUID]: ...
 
 

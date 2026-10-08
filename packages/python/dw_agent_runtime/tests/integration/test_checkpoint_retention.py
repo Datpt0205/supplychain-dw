@@ -33,7 +33,7 @@ from dw_platform.retention_policy import RetentionPolicy, load_retention_policy
 pytestmark = pytest.mark.integration
 
 NOW = datetime.now(UTC)
-POLICY = load_retention_policy(Path(REPO_ROOT) / "configs" / "policies" / "retention@1.6.0.yaml")
+POLICY = load_retention_policy(Path(REPO_ROOT) / "configs" / "policies" / "retention@1.7.0.yaml")
 SUPERSEDED = POLICY.checkpoints.superseded_days
 IDLE = POLICY.checkpoints.idle_thread_days
 

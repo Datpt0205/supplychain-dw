@@ -179,8 +179,8 @@ trợ (kèm test âm) và trang đích ở nhánh của nó, sau khi merge lát 
 
 ## Danh sách ticket
 
-| #   | Ticket                                                                                                  | Status          | Blocked by                               |
-| --- | ------------------------------------------------------------------------------------------------------- | --------------- | ---------------------------------------- |
-| 01  | [Quyền hỗ trợ: bảng, vòng đời, route phía khách và đội hỗ trợ](issues/01-support-grants-lifecycle.md)   | ready-for-agent | —                                        |
-| 02  | [Ngữ cảnh hỗ trợ: MFA, route mặc định từ chối, audit](issues/02-support-access-context.md)              | ready-for-agent | 01                                       |
-| 03  | [Web: phiên quyền hỗ trợ, trang "Quyền hỗ trợ của tôi", chỗ cắm băng](issues/03-support-web-session.md) | ready-for-agent | 01, 02, web-ui/antd-shell 03, 05, 06, 09 |
+| #   | Ticket                                                                                                  | Status                            | Blocked by                               |
+| --- | ------------------------------------------------------------------------------------------------------- | --------------------------------- | ---------------------------------------- |
+| 01  | [Quyền hỗ trợ: bảng, vòng đời, route phía khách và đội hỗ trợ](issues/01-support-grants-lifecycle.md)   | resolved (web bước 7 ở phiên web) | —                                        |
+| 02  | [Ngữ cảnh hỗ trợ: MFA, route mặc định từ chối, audit](issues/02-support-access-context.md)              | lõi xong; còn bước 10 (audit)     | 01                                       |
+| 03  | [Web: phiên quyền hỗ trợ, trang "Quyền hỗ trợ của tôi", chỗ cắm băng](issues/03-support-web-session.md) | ready-for-agent                   | 01, 02, web-ui/antd-shell 03, 05, 06, 09 |

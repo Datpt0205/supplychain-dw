@@ -20,7 +20,7 @@ from dw_supply_chain.domain.brief_summary import BriefSummaryDraft
 from dw_supply_chain.domain.daily_brief import PRODUCT_SIGNALS, DailyBrief
 
 PROMPT_ID = "supply_chain.daily_brief_summary"
-PROMPT_VERSION = "1.1.0"
+PROMPT_VERSION = "1.2.0"
 
 
 def brief_as_data(brief: DailyBrief) -> str:

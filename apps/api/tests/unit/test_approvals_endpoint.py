@@ -51,6 +51,7 @@ from dw_platform.domain.approval import (
     ApprovalStatus,
     decided_event_type,
 )
+from dw_platform.domain.audit import AuditEvent
 from dw_platform.domain.outbox import OutboxEvent
 
 pytestmark = pytest.mark.unit
@@ -145,9 +146,20 @@ class FakeOutbox:
 
 
 @dataclass
+class FakeAudit:
+    """Every decision appends its audit row (approval-audit-and-workspace/01)."""
+
+    events: list[AuditEvent] = field(default_factory=list)
+
+    async def append(self, event: AuditEvent) -> None:
+        self.events.append(event)
+
+
+@dataclass
 class FakeUoW:
     approvals: FakeApprovalRepo
     outbox: FakeOutbox
+    audit: FakeAudit = field(default_factory=FakeAudit)
 
     async def __aenter__(self) -> "FakeUoW":
         return self

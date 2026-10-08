@@ -54,8 +54,11 @@ in `decide` (memory: the decider must be cleared for what they are deciding on).
 
 DECIDED_EVENT_SCHEMA = "1.0"
 
-# The audit action of a decision admitted by something outside the approval (a
-# single-use code, ADR 0007). A web decision writes none, as before.
+# Every decision writes exactly one audit row, in its own transaction, naming
+# the decider (approval-audit-and-workspace/01). One admitted by something
+# outside the approval (a single-use code, ADR 0007) keeps its own action, which
+# also records what admitted it; every other decision writes `approval.decided`.
+DECIDED_ACTION = "approval.decided"
 CHANNEL_DECIDED_ACTION = "approval.channel_decided"
 
 
@@ -240,8 +243,13 @@ class ApproveAndResumeService:
             await uow.approvals.add_decision(decision)
             if request.run_id is None:
                 await uow.outbox.add(self._decided_event(request, decision))
-            if admitted is not None:
-                await uow.audit.append(self._admitted_audit(request, decision, admitted))
+            # Before the commit, in the decision's transaction: a decision with
+            # no trail, or a trail for a decision rolled back, is not possible.
+            await uow.audit.append(
+                self._decided_audit(request, decision)
+                if admitted is None
+                else self._admitted_audit(request, decision, admitted)
+            )
             await uow.commit()
 
         if record is not None and request.run_id is not None:
@@ -317,6 +325,32 @@ class ApproveAndResumeService:
                 "decided_by": str(decision.decided_by.value),
             },
             actor_id=decision.decided_by.value,
+        )
+
+    def _decided_audit(self, request: ApprovalRequest, decision: ApprovalDecision) -> AuditEvent:
+        """The decider, never the run's requester (who `run.resumed` names), and
+        identifiers and codes only: the comment and the payload can carry
+        business data, and their readers are authorized on `approval_decisions`
+        and `approval_requests`, not on the audit log."""
+        return AuditEvent(
+            id=self.id_generator.new_uuid(),
+            tenant_id=request.tenant_id,
+            workspace_id=request.workspace_id,
+            actor_id=decision.decided_by,
+            action=DECIDED_ACTION,
+            resource_type="approval_request",
+            resource_id=str(request.id),
+            occurred_at=decision.decided_at,
+            run_id=request.run_id,
+            details={
+                "approval_type": request.approval_type,
+                "outcome": decision.outcome.value,
+                "decision_id": str(decision.id),
+                # The requester taking their own request back (allowed without
+                # `approvals.decide`, and only on a type that is not strict).
+                "withdrawn": decision.outcome is DecisionOutcome.REJECTED
+                and decision.decided_by == request.requested_by,
+            },
         )
 
     def _admitted_audit(

@@ -8,7 +8,7 @@ change both together.
 from __future__ import annotations
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 
 from dw_kernel.naming import NAMING_CONVENTION
 
@@ -499,6 +499,10 @@ sod_waivers = sa.Table(
     sa.Column("revoked_at", sa.TIMESTAMP(timezone=True), nullable=True),
     sa.Column("revoked_by", UUID(as_uuid=True), nullable=True),
     sa.Column("revoke_reason", sa.Text, nullable=True),
+    # A second holder of the waiver scope (f381f1694395); until then it lifts nothing.
+    sa.Column("confirmed_by", UUID(as_uuid=True), nullable=True),
+    sa.Column("confirmed_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("confirm_reason", sa.Text, nullable=True),
 )
 
 # One person's in-app inbox (migration 855ae928c3fa). RLS narrows reads and
@@ -550,6 +554,55 @@ channel_deliveries = sa.Table(
     sa.Column(
         "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
+)
+
+# Who may be assigned a support grant (migration af8ee878b4ab, ADR 0024).
+# Identity plane like `platform_operators`: no tenant, written by the provisioner.
+support_staff = sa.Table(
+    "support_staff",
+    metadata,
+    sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), primary_key=True),
+    sa.Column("note", sa.Text, nullable=True),
+    sa.Column("added_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column(
+        "added_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+# A customer-granted support access (migration af8ee878b4ab). The status and
+# step columns move only forward, by `platform.guard_support_grant()`; `code`
+# is assigned by that trigger.
+support_grants = sa.Table(
+    "support_grants",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("code", sa.Text, nullable=False),
+    sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), sa.ForeignKey("workspaces.id"), nullable=False),
+    sa.Column("resource_type", sa.Text, nullable=False),
+    sa.Column("resource_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("resource_label", sa.Text, nullable=False),
+    sa.Column("scope_set_key", sa.Text, nullable=False),
+    sa.Column("scope_set_label", sa.Text, nullable=False),
+    sa.Column("scopes", ARRAY(sa.Text), nullable=False),
+    sa.Column("reason", sa.Text, nullable=False),
+    sa.Column("duration_hours", sa.Integer, nullable=False),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("requested_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column(
+        "requested_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+    sa.Column("granted_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column("granted_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("rejected_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column("rejected_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("reject_reason", sa.Text, nullable=True),
+    sa.Column("staff_user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column("assigned_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column("activated_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("expires_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("revoked_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column("revoked_at", sa.TIMESTAMP(timezone=True), nullable=True),
 )
 
 # Tables whose rows belong to exactly one tenant → RLS enabled + forced.

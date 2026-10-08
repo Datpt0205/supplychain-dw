@@ -43,6 +43,28 @@ _ACTION_REVOKE = "platform.membership.revoke"
 _RESOURCE = "membership"
 
 
+# A role is administrative when it carries any scope under this prefix
+# (platform_admin, org_admin). Read by `forbid_escalation` and by the
+# per-workspace role replacement, which keeps administrative roles as they are.
+ADMIN_SCOPE_PREFIX = "platform."
+
+
+def is_administrative(scopes: frozenset[str]) -> bool:
+    return any(scope.startswith(ADMIN_SCOPE_PREFIX) for scope in scopes)
+
+
+def forbid_escalation(context: AccessContext, granted_scopes: frozenset[str]) -> None:
+    """Only a Platform Admin may hand out an administrative role."""
+    if PLATFORM_ADMIN_ROLE in context.roles:
+        return  # a super admin may grant anything
+    administrative = {s for s in granted_scopes if s.startswith(ADMIN_SCOPE_PREFIX)}
+    if administrative:
+        raise PermissionDeniedError(
+            "only a platform admin may grant an administrative role",
+            details={"scopes": sorted(administrative)},
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class UserRef:
     """A platform identity an admin can act on."""
@@ -157,15 +179,7 @@ class GrantMembershipHandler:
         return user
 
     async def _forbid_escalation(self, context: AccessContext, role_keys: frozenset[str]) -> None:
-        if PLATFORM_ADMIN_ROLE in context.roles:
-            return  # a super admin may grant anything
-        granted = await self.repo.scopes_for_roles(role_keys)
-        administrative = {scope for scope in granted if scope.startswith("platform.")}
-        if administrative:
-            raise PermissionDeniedError(
-                "only a platform admin may grant an administrative role",
-                details={"scopes": sorted(administrative)},
-            )
+        forbid_escalation(context, await self.repo.scopes_for_roles(role_keys))
 
     def _event(
         self,

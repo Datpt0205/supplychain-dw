@@ -7,30 +7,58 @@
  */
 
 /**
- * Friendly English labels shown in place of raw role keys. The tenant role
- * catalog in the database owns the keys themselves; this owns only the wording.
- * An unknown key falls back to the key, so a role a bounded context adds still
- * reads as something rather than disappearing.
+ * How a role key reads to a person: the ONE label table for roles in the web
+ * app (session menu, members, hierarchy, dev login, role catalog). The tenant
+ * role catalog in the database owns the keys; this owns only the wording, and
+ * `__tests__/roles.test.ts` fails when the catalog seeds a key this table does
+ * not name.
+ *
+ * PLUG-IN POINT: a bounded context adds its own roles' labels here, in the same
+ * change that seeds them.
  */
 const ROLE_LABELS: Record<string, string> = {
-  member: "Staff",
-  approver: "Manager",
-  // Naming (2026-09-10): the in-tenant god-mode role reads as "Tenant Admin";
-  // "Platform Admin" is reserved for the cross-tenant operator that creates
-  // tenants (see SessionChip). org_admin manages users/roles/settings, shown
-  // as "System Admin".
-  org_admin: "System Admin",
-  platform_admin: "Tenant Admin",
+  member: "Nhân viên",
+  approver: "Người duyệt",
+  manager: "Quản lý",
+  director: "Giám đốc",
+  executive: "Ban điều hành",
+  // Naming (2026-09-10): org_admin manages users, roles and settings;
+  // platform_admin is the in-tenant role that passes every scope. Neither is
+  // the cross-tenant operator who creates tenants (OPERATOR_LABEL).
+  org_admin: "Quản trị hệ thống",
+  platform_admin: "Quản trị toàn quyền",
+  // Supply Chain (dw_supply_chain), seeded by its own migrations; the
+  // catalog's "Supply Chain — …" names are for the admin's role list.
+  sc_viewer: "Xem chuỗi cung ứng",
+  sc_operator: "Điều phối đơn hàng",
+  sc_supply_lead: "Trưởng phòng Cung ứng",
+  sc_finance: "Kế toán",
+  sc_qc: "Kiểm soát chất lượng (QC)",
+  sc_logistics: "Vận chuyển (Logistics)",
+  sc_warehouse: "Kho",
+  sc_rnd: "Nghiên cứu và phát triển (R&D)",
+  sc_bod: "Ban Giám đốc",
+  sc_process_admin: "Quản trị quy trình cung ứng",
 };
 
-/** Label for a single role key; unknown keys fall back to the raw key. */
-export function roleLabel(key: string): string {
-  return ROLE_LABELS[key] ?? key;
+/** How a platform operator (creates tenants, ADR-002) is named; not a role key. */
+export const OPERATOR_LABEL = "Quản trị nền tảng";
+
+/** What a role with no label and no catalog name reads as: never its code. */
+export const UNNAMED_ROLE = "Vai khác";
+
+/**
+ * Label for a single role key. A key this table does not name falls back to
+ * the name the role catalog gave it, then to a generic label: a raw key like
+ * `sc_operator` is never shown to a person.
+ */
+export function roleLabel(key: string, catalogName?: string): string {
+  return ROLE_LABELS[key] ?? catalogName ?? UNNAMED_ROLE;
 }
 
 /** Deduplicated, comma-joined labels for a member's role keys. */
 export function roleLabels(keys: readonly string[]): string {
-  return [...new Set(keys.map(roleLabel))].join(", ");
+  return [...new Set(keys.map((key) => roleLabel(key)))].join(", ");
 }
 
 /** True when the user holds at least one of the roles an item asks for. */

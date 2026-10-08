@@ -141,6 +141,9 @@ export const adminSodWaiverSchema = z.object({
   reason: z.string(),
   granted_by: z.string(),
   granted_at: z.string(),
+  // Null while it waits for a second admin; until then it lifts nothing.
+  confirmed_by: z.string().nullable(),
+  confirmed_at: z.string().nullable(),
 });
 export type AdminSodWaiver = z.infer<typeof adminSodWaiverSchema>;
 

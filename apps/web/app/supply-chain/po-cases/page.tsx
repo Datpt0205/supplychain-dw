@@ -19,7 +19,8 @@ import {
 } from "antd";
 import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
 import { caseStateSchema, type CaseState, type POCase } from "@dw/contracts";
-import { PageHeader, RegionState } from "@dw/ui";
+import { PageHeader } from "@dw/ui";
+import { LoadError } from "../../../components/load-error";
 import {
   CASE_STATE_LABEL,
   CASE_STATE_META,
@@ -32,7 +33,7 @@ import {
   poReferenceLabel,
 } from "../../../components/supply-chain/po-reference";
 import { formatDateTime, VN_TIME } from "../../../lib/dates";
-import { errorMessage, regionFailure } from "../../../lib/error-message";
+import { errorMessage } from "../../../lib/error-message";
 import { matches } from "../../../lib/search";
 import { apiClient } from "../../../lib/session";
 import {
@@ -94,7 +95,7 @@ function POCasesView() {
       <PageHeader
         breadcrumb={supplyChainCrumbs("Hồ sơ PO")}
         title="Hồ sơ PO"
-        description="Đơn đặt hàng với NCC, từ Tạo PO (bước 10) tới Nhập kho (bước 17). Mới nhất trước."
+        subtitle="Đơn đặt hàng với NCC, từ Tạo PO (bước 10) tới Nhập kho (bước 17). Mới nhất trước."
       />
       <Flex vertical gap="middle">
         <Flex wrap gap="middle" align="center">
@@ -224,13 +225,7 @@ function POCaseResults({
   // A failed load is never shown as "no cases": that would contradict the
   // Control Tower row that linked here.
   if (error != null && items.length === 0) {
-    return (
-      <RegionState
-        failure={regionFailure(error)}
-        what="danh sách Hồ sơ PO"
-        onRetry={reload}
-      />
-    );
+    return <LoadError error={error} onRetry={reload} />;
   }
 
   const shown = items.filter((item) =>

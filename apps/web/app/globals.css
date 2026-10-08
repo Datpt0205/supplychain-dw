@@ -6,13 +6,12 @@
 @layer theme, base, antd, components, utilities;
 
 @import "tailwindcss";
-@import "tw-shimmer";
 
 @source "../../../packages/typescript/ui/src";
 
 /* Every colour here is a name for an antd token: the theme in @dw/ui owns the
    values (light and dark), emits them as `--ant-*` on the class the root layout
-   puts on <html>, and these only give them the names Tailwind and the shadcn
+   puts on <html>, and these only give them the names Tailwind and the app's
    components use. Nothing here is a value of its own. */
 :root {
   /* Native controls and scrollbars follow the OS, as the theme does. */
@@ -43,6 +42,9 @@
   --border: var(--ant-color-border-secondary);
   --input: var(--ant-color-border);
   --ring: var(--ant-color-primary);
+  /* Links outside antd (a Markdown answer): antd's link colour, 5.57:1 light
+     and 6.48:1 dark, where a literal sky-700 was 2.7:1 on the dark card. */
+  --link: var(--ant-color-link);
   /* antd's large radius; the md and xl steps below are offsets from it that
      antd has no token for. */
   --radius: var(--ant-border-radius-lg);
@@ -73,12 +75,13 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-link: var(--link);
   --radius-sm: var(--ant-border-radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   /* The theme's family (Be Vietnam Pro, then system fonts), so text outside
-     antd's App - a portal, a toast - is set in it too. */
+     antd's App - a portal - is set in it too. */
   --font-sans: var(--ant-font-family);
 
   /* Content that arrives while the user is already looking at the space it
@@ -86,28 +89,6 @@
      minute. The fade is short on purpose: it marks the arrival without asking
      to be watched. */
   --animate-fade-in: fade-in 0.4s ease-out;
-  @keyframes collapsible-down {
-    from {
-      height: 0;
-    }
-    to {
-      height: var(
-        --radix-collapsible-content-height,
-        var(--collapsible-panel-height, auto)
-      );
-    }
-  }
-  @keyframes collapsible-up {
-    from {
-      height: var(
-        --radix-collapsible-content-height,
-        var(--collapsible-panel-height, auto)
-      );
-    }
-    to {
-      height: 0;
-    }
-  }
 }
 
 /* antd's breakpoints (screenSM … screenXXL), so `lg:` and the navbar's switch
@@ -149,16 +130,6 @@ html {
      ~15px, which shifts everything centred in the header — the search bar
      visibly jumps sideways. Reserving the gutter keeps the width constant. */
   scrollbar-gutter: stable;
-}
-
-/* Calm, consistent application surfaces for the shadcn cards drawn before
-   antd. Unlayered, so they keep beating those components' own utilities. The
-   table rules that stood here went with the Supply Chain pages' antd Tables
-   (ui-quality §11): unlayered, they restyled every antd table's head and rows. */
-main section,
-main .rounded-2xl.border.bg-card {
-  border-color: var(--ant-color-border-secondary);
-  box-shadow: var(--ant-box-shadow-tertiary);
 }
 
 /* App-wide scrollbars (BA 2026-08-25): thin, both axes, and invisible until
@@ -282,7 +253,3 @@ textarea {
     font-size: 16px !important;
   }
 }
-
-@custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));
-
-@custom-variant data-closed (&:where([data-state="closed"], [data-closed]:not([data-closed="false"])));

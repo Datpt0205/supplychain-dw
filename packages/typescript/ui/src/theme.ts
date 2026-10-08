@@ -159,6 +159,10 @@ export const STATUS_TONES: Record<
   },
 };
 
+/** The dark danger button's hover: lighter than its #ff6b61 label, as antd
+ * lightens a hover in dark mode. */
+const DARK_ERROR_TEXT_HOVER = "#ff8a82";
+
 /** The tag's shape: a pill for a status, a soft square for a code. */
 export const STATUS_TAG_SHAPE = {
   radius: 999,
@@ -251,6 +255,25 @@ export function buildTheme(
         primaryShadow: "none",
         defaultShadow: "none",
         dangerShadow: "none",
+        // A danger button that is not filled writes its label in colorError:
+        // dark #d63a30 on the card is 3.65:1. In dark mode it takes the error
+        // text colour, and a filled one, now that light, takes the card
+        // colour for its label instead of white (white on #ff6b61 is 2.6:1).
+        ...(mode === "dark" && {
+          colorError: palette.colorErrorText,
+          colorErrorHover: DARK_ERROR_TEXT_HOVER,
+          colorErrorActive: palette.colorError,
+          dangerColor: palette.colorBgContainer,
+        }),
+      },
+      // An antd Tag writes its text in the status colour on that colour's own
+      // tint; the status colour is for icons, borders and fills (light success
+      // on its tint is 2.96:1, warning 3.27:1, dark error 3.4:1). The status
+      // text colours are the ones made for text. `StatusTag` draws its own.
+      Tag: {
+        colorSuccess: palette.colorSuccessText,
+        colorWarning: palette.colorWarningText,
+        colorError: palette.colorErrorText,
       },
       Card: {
         headerFontSize: 14,

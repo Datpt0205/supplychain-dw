@@ -1,7 +1,6 @@
 "use client";
 
 import { Fragment, useMemo, type ReactNode } from "react";
-import { cn } from "@dw/ui";
 
 /**
  * An answer, rendered as the document it already is.
@@ -33,6 +32,11 @@ import { cn } from "@dw/ui";
  */
 
 /** A `[text](href)` whose href is not one of these is drawn as plain text. */
+/** Joins the class names that are set. */
+function cn(...names: (string | false | null | undefined)[]): string {
+  return names.filter(Boolean).join(" ");
+}
+
 const SAFE_LINK = /^(https?:\/\/|\/)/i;
 
 type Block =
@@ -271,7 +275,7 @@ function renderInline(text: string, keyPrefix = ""): ReactNode[] {
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sky-700 underline decoration-sky-300 underline-offset-2 hover:decoration-sky-600"
+            className="text-link underline decoration-link/40 underline-offset-2 hover:decoration-link"
           >
             {label}
           </a>

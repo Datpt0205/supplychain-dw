@@ -129,20 +129,18 @@ Mốc 6 (running many customers) is half done:
   in-app notifications unexported (`ops-hardening.md` Open).
 - **Approval decisions audited; approvals, runs and audit read by workspace**
   (`platform-runtime/approval-audit-and-workspace/`): HITL-11 and the rest of
-  TEN-04. Ticket 01 open, and comes before the first product gate. Ticket 02
-  done on `feat/elmich-a-d-s1` (2026-10-05, provisional decisions awaiting
-  QO-2): the repository narrows approval, run and audit reads to the caller's
-  workspace (RLS unchanged, still tenant-only), a decision resumes the run in
-  the run's own workspace, `GET /runs/{id}` checks `runs.read`, the audit
-  route checks `audit.events`, and the keyset indexes carry `workspace_id`
-  (`cbf765d02a12`). Review round 1 (2026-10-06): the account menu's audit
-  link now reads its scope from the nav registry, cross-tenant tests name the
-  victim's workspace so only the tenant boundary refuses, both pages watched
-  in a browser; whether the UoW should own the workspace is for QO-2.
-  Upstreamed to the platform (2026-10-07, platform `22ad681`) together with
-  `required_scope`: its migrations `36dabf47619c` and `6d4aed20ccf2` are twins
-  of this repo's `5d3965984679` and `cbf765d02a12`; all four are idempotent and
-  a downgrade is a no-op while the twin is applied (platform `6768b22`).
+  TEN-04. Ticket 01 **resolved 2026-10-08** (`feat/security-debts`): every
+  decision writes `approval.decided` (or, admitted by a channel code,
+  `approval.channel_decided`) in its own transaction; `dw_app` lost UPDATE on
+  `approval_decisions` (`ecb47f78702c`). Ticket 02
+  **resolved 2026-10-06**, upstreamed from the first product's repo: the
+  repository narrows approval, run and audit reads to the caller's workspace
+  (RLS unchanged, still tenant-only), `decide` resumes in the run's own
+  workspace, `GET /runs/{id}` checks `runs.read`, the audit route checks
+  `audit.events`, cursors carry the workspace, keyset indexes carry
+  `workspace_id` (`6d4aed20ccf2`; twin of this repo's `cbf765d02a12`, and
+  `36dabf47619c` of `5d3965984679`, all four idempotent). Open: whether the
+  UoW should own the workspace instead of a required read argument.
 - **Tickets written for the first product, platform side** (2026-10-03, all
   `ready-for-agent`, product-neutral), each under `platform-runtime/<folder>/`:
   `scope-holder-check` (ask whether a user holds a scope without an
@@ -214,7 +212,8 @@ Mốc 6 (running many customers) is half done:
       tenant's own copy of a policy document;
     - `SqlPendingApprovalQuery`: a context counting its own pending
       approvals by type prefix;
-    - `scope_holders.py`: who holds a scope, for routing work to people;
+    - `scope_holders.py`: `holding` and `holds` (who holds a scope, for
+      routing work to people); only `scopes_of` has a caller (support grants);
     - `required_scope` on an approval: no platform node stamps one; a
       context's graph puts it in its interrupt payload;
     - `decided_by` in the resume payload: no platform graph reads it;
@@ -260,6 +259,59 @@ Mốc 6 (running many customers) is half done:
   An unknown `embedding_provider` (the retired `tei` included) now stops
   startup instead of quietly becoming hash vectors. The key is only in local
   `.env`; uat/production have none yet.
+
+## Security debts (2026-10-08, `feat/security-debts`)
+
+Six debts, each its own commit and ticket under `platform-runtime/<folder>/`;
+Đạt delegated the open calls, decided provisionally (fail closed) and
+recorded in each ticket.
+
+- **`prompt-containment/01`:** `PromptRegistry` wraps every interpolated
+  value in an escaped `<input name>` block; `raw_variables` with a reason
+  opts out (ADR 0010). Open: the compaction summary prompt is copy, not a
+  registry artifact, and is not covered.
+- **`approval-audit-and-workspace/01`:** above.
+- **`system-actor/01`:** a lane audits as `system_actor(<lane>)`
+  (`lane_audit_event`, `append_across_tenants`, ADR 0011); memory expiry and
+  knowledge hard delete now audited, channel delivery no longer names the
+  recipient as actor.
+- **`sod-waiver-second-person/01`:** a waiver lifts nothing until a second
+  admin confirms it; a role or permission set cannot gain a scope that puts a
+  membership in breach (`f381f1694395`, ADR 0012). Open: a rule's own scopes
+  changing under memberships.
+- **`unauthenticated-401/01`:** missing or unverifiable bearer is 401 with
+  `WWW-Authenticate`; the web bounces only a request that carried a token.
+- **`channel-delivery-expiry/01`:** a delivery pending past
+  `retention@1.7.0.yaml` `channel_deliveries.pending_expiry_days` (7) fails
+  as `channel_unconfigured`, audited (`983b509c3f0f`, ADR 0006 amendment).
+
+## Platform tickets (2026-10-08, `feat/platform-tickets`)
+
+Đạt delegated the open calls; each is decided provisionally and recorded in
+its ticket's Comments.
+
+- **`scope-holder-check/01`, `/02`:** `SqlScopeHolders.holds(tenant, ws,
+user, scope)` and `holding(tenant, ws, scopes)`, neither needing an
+  `AccessContext`, both reading one membership query (`_members`) and
+  `effective_scopes`. Integration-tested on `dw_app`, mutation-checked.
+  Still no production caller (the "waiting for their first context" list
+  above).
+
+- **`support-access/01`:** customer-granted support grants (ADR 0024,
+  `af8ee878b4ab`): `support_staff`, `support_grants` with the status machine
+  in a trigger, a membership trigger refusing support staff on every path,
+  `SupportScopeCatalog` (empty on `main`), `SupportGrantService`,
+  `/support/*` and `/platform/support-*`. Refusals carry
+  `details.reason_code`. `SqlScopeHolders` now has its first caller
+  (`scopes_of`, the granter's current scopes). Open: the `/platform` console
+  tables (web), conflict of interest at assignment.
+
+- **`tenant-members-and-invitations/01`:** `GET /admin/members` (tenant-wide,
+  `vi-VN-x-icu` order, measured present), `PUT /admin/members/{id}/memberships`
+  (administrative roles kept, `plan_memberships`), `POST /admin/invitations`
+  (user without a sign-in, `status=invited` until the first sign-in links by
+  email), `status` on `/directory/members` from one SQL expression. No email
+  is sent (P1). Open: email linking before customer SSO is brokered.
 
 ## Deliberately not taken
 

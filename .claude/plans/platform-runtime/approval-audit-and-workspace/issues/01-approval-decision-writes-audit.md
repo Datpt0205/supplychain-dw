@@ -1,6 +1,6 @@
 # 01 — Quyết định approval ghi `audit_events` cùng giao dịch
 
-Status: ready-for-agent
+Status: resolved (2026-10-08, nhánh `feat/security-debts`)
 Blocked by: —
 Area: platform-runtime
 
@@ -33,20 +33,20 @@ dụng sửa được, còn dòng `run.resumed` lại ghi người khởi chạy
 
 ## Tiêu chí chấp nhận
 
-- [ ] Integration (DB thật): duyệt một approval cho đúng một dòng `approval.decided`, có
+- [x] Integration (DB thật): duyệt một approval cho đúng một dòng `approval.decided`, có
       `actor_id` là người quyết, `details.outcome = approved`, cùng `decision_id` với dòng
       `approval_decisions`. Từ chối cho `outcome = rejected`. Người yêu cầu tự rút một loại
       không nghiêm cho `withdrawn = true`.
-- [ ] Cùng giao dịch: `uow.audit.append` ném lỗi thì không có dòng `approval_decisions`,
+- [x] Cùng giao dịch: `uow.audit.append` ném lỗi thì không có dòng `approval_decisions`,
       approval vẫn `pending`, run không chạy tiếp. Commit lỗi thì không có cả hai dòng.
-- [ ] Quyết định bị từ chối trước khi ghi (thiếu scope, tách nhiệm, thiếu ghi chú ở loại
+- [x] Quyết định bị từ chối trước khi ghi (thiếu scope, tách nhiệm, thiếu ghi chú ở loại
       nghiêm, run không chờ approval): không có dòng `approval.decided`.
-- [ ] `details` không chứa `comment` hay khóa nào của `payload` (test so tập khóa).
-- [ ] `dw_app` UPDATE `platform.approval_decisions` bị từ chối; INSERT, SELECT, DELETE vẫn
+- [x] `details` không chứa `comment` hay khóa nào của `payload` (test so tập khóa).
+- [x] `dw_app` UPDATE `platform.approval_decisions` bị từ chối; INSERT, SELECT, DELETE vẫn
       được; test offboarding hiện có vẫn xanh (dòng của tenant được offboard vẫn bị xóa).
-- [ ] Mutation, ghi vào Comments: bỏ lệnh `append` thì ca đầu đỏ; dời `append` ra sau
+- [x] Mutation, ghi vào Comments: bỏ lệnh `append` thì ca đầu đỏ; dời `append` ra sau
       `commit` thì ca "append ném lỗi" đỏ.
-- [ ] `make ci` xanh.
+- [x] `make ci` xanh.
 
 ## Nguồn
 
@@ -62,3 +62,19 @@ dụng sửa được, còn dòng `run.resumed` lại ghi người khởi chạy
   are part of the schema"; `.claude/rules/failure-modes.md` #5.
 
 ## Comments
+
+- 2026-10-08 (Đạt giao quyết định tạm):
+    - **Quyết định qua kênh giữ audit riêng.** Mỗi quyết định ghi đúng MỘT dòng: quyết định
+      có `admission` (mã một lần, ADR 0007) ghi `approval.channel_decided` như cũ (nó còn
+      mang mã nào đã cho phép); mọi quyết định khác ghi `approval.decided`. Không ghi cả hai,
+      để một quyết định không thành hai sự kiện trên sổ. Ai cần mọi quyết định thì đọc cả
+      hai action; cả hai cùng mang `decision_id`, `outcome`, `approval_type`, người quyết.
+    - `withdrawn` = người quyết là người yêu cầu và kết quả là từ chối.
+    - Migration `ecb47f78702c` thu UPDATE (không đụng DELETE, không cấp/thu TRUNCATE vì
+      default privileges chưa từng cấp), idempotent, có guard role.
+    - Test: unit `test_approval_flow.py` (+7, kể cả "append sau commit" qua fake ghi thứ tự),
+      integration `test_approval_decision_audit.py` (6, DB thật: approve/reject/withdraw,
+      từ chối không ghi, append lỗi và commit lỗi không để lại gì, approval vẫn `pending`,
+      run vẫn chờ), `test_privileges.py` (+2).
+    - Mutation: bỏ `append` → 4 đỏ (integration); dời `append` ra sau `commit` → 4 đỏ
+      (integration, ca append lỗi để lại quyết định); bỏ REVOKE → 2 đỏ (`test_privileges`).

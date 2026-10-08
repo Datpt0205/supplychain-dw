@@ -17,6 +17,7 @@ and the platform defaults are the files that ship in `configs/policies`.
 from __future__ import annotations
 
 import asyncio
+import html
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -387,7 +388,9 @@ def grade_proposal_prompt_containment(
         PROPOSAL_PROMPT_ID, PROPOSAL_PROMPT_VERSION, {"message": message_as_data(message)}
     )
     tag: str = expected["wrapper_tag"]
-    open_tag, close_tag = f"<{tag}>", f"</{tag}>"
+    # The registry writes the block (`<input name="...">`), so its opening
+    # carries attributes; a value's own `</input>` arrives escaped.
+    open_tag, close_tag = f"<{tag}", f"</{tag}>"
     if expected["system_must_contain"] not in rendered.system:
         return GradeResult.fail("system prompt lost its untrusted-data instruction")
     marker: str = input_data["injected_marker"]
@@ -400,7 +403,7 @@ def grade_proposal_prompt_containment(
         )
     start, end = rendered.user.find(open_tag), rendered.user.find(close_tag)
     inside = rendered.user[start + len(open_tag) : end]
-    if message_as_data(message) not in inside:
+    if html.escape(message_as_data(message), quote=False) not in inside:
         return GradeResult.fail("the message is not whole inside the untrusted block")
     if marker not in inside:
         return GradeResult.fail("the injected text was dropped or escaped the block")
@@ -448,7 +451,9 @@ def grade_brief_prompt_containment(
         BRIEF_PROMPT_ID, BRIEF_PROMPT_VERSION, {"brief": brief_as_data(brief)}
     )
     tag: str = expected["wrapper_tag"]
-    open_tag, close_tag = f"<{tag}>", f"</{tag}>"
+    # The registry writes the block (`<input name="...">`), so its opening
+    # carries attributes; a value's own `</input>` arrives escaped.
+    open_tag, close_tag = f"<{tag}", f"</{tag}>"
     if expected["system_must_contain"] not in rendered.system:
         return GradeResult.fail("system prompt lost its untrusted-data instruction")
     whole = rendered.system + rendered.user
@@ -789,7 +794,7 @@ class _ReviewRun:
         return self.raised
 
     async def holding(
-        self, context: AccessContext, workspace_id: uuid.UUID, scopes: frozenset[str]
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, scopes: frozenset[str]
     ) -> list[uuid.UUID]:
         return []
 

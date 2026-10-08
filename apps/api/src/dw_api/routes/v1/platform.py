@@ -12,7 +12,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from dw_api.bootstrap import ApiContainer
 from dw_api.dependencies.auth import RequireProvisioningContext
@@ -302,3 +302,146 @@ async def remove_operator(
     container: RequireContainer,
 ) -> None:
     await _service(container).remove_operator(context, user_id=user_id)
+
+
+# ---- customer-granted support access, the operators' side (ADR 0024) -----
+
+
+class SupportStaffView(BaseModel):
+    user_id: UUID
+    email: str | None
+    display_name: str
+    note: str | None
+    added_at: datetime
+
+
+class AddSupportStaffRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str
+    note: str | None = Field(default=None, max_length=200)
+
+
+class SupportRequestView(BaseModel):
+    """A grant waiting for a person: what the operator chooses by, no more."""
+
+    grant_id: UUID
+    code: str
+    tenant_id: UUID
+    tenant_name: str
+    workspace_id: UUID
+    workspace_name: str
+    resource_type: str
+    resource_label: str
+    scope_set_key: str
+    scope_set_label: str
+    duration_hours: int
+    reason: str
+    requested_at: datetime
+
+
+class AssignSupportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    staff_user_id: UUID
+
+
+class AssignedSupportGrantView(BaseModel):
+    grant_id: UUID
+    code: str
+    tenant_id: UUID
+    staff_user_id: UUID
+    activated_at: datetime
+    expires_at: datetime
+
+
+@router.get("/support-staff", response_model=list[SupportStaffView])
+async def list_support_staff(
+    context: RequireProvisioningContext,
+    container: RequireContainer,
+) -> list[SupportStaffView]:
+    staff = await _service(container).list_support_staff(context)
+    return [
+        SupportStaffView(
+            user_id=s.user_id,
+            email=s.email,
+            display_name=s.display_name,
+            note=s.note,
+            added_at=s.added_at,
+        )
+        for s in staff
+    ]
+
+
+@router.post("/support-staff", response_model=UserRefView, status_code=201)
+async def add_support_staff(
+    body: AddSupportStaffRequest,
+    context: RequireProvisioningContext,
+    container: RequireContainer,
+) -> UserRefView:
+    """By the email of an identity that has signed in; idempotent."""
+    user = await _service(container).add_support_staff(context, email=body.email, note=body.note)
+    return UserRefView(user_id=user.user_id, email=user.email, display_name=user.display_name)
+
+
+@router.delete("/support-staff/{user_id}", status_code=204)
+async def remove_support_staff(
+    user_id: UUID,
+    context: RequireProvisioningContext,
+    container: RequireContainer,
+) -> None:
+    await _service(container).remove_support_staff(context, user_id=user_id)
+
+
+@router.get("/support-requests", response_model=list[SupportRequestView])
+async def list_support_requests(
+    context: RequireProvisioningContext,
+    container: RequireContainer,
+) -> list[SupportRequestView]:
+    """Every tenant's grants waiting for assignment (`pending_assignment`), oldest first."""
+    requests = await _service(container).list_support_requests(context)
+    return [
+        SupportRequestView(
+            grant_id=r.grant_id,
+            code=r.code,
+            tenant_id=r.tenant_id,
+            tenant_name=r.tenant_name,
+            workspace_id=r.workspace_id,
+            workspace_name=r.workspace_name,
+            resource_type=r.resource_type,
+            resource_label=r.resource_label,
+            scope_set_key=r.scope_set_key,
+            scope_set_label=r.scope_set_label,
+            duration_hours=r.duration_hours,
+            reason=r.reason,
+            requested_at=r.requested_at,
+        )
+        for r in requests
+    ]
+
+
+@router.post(
+    "/support-requests/{grant_id}/assign", response_model=AssignedSupportGrantView, status_code=200
+)
+async def assign_support_request(
+    grant_id: UUID,
+    body: AssignSupportRequest,
+    context: RequireProvisioningContext,
+    container: RequireContainer,
+) -> AssignedSupportGrantView:
+    """409 `support_staff_required` when the person is not support staff, 409
+    `support_grant_wrong_status` when the grant is not waiting for assignment.
+    No conflict-of-interest check yet (ADR 0024)."""
+    grant = await _service(container).assign_support_request(
+        context, grant_id=grant_id, staff_user_id=body.staff_user_id
+    )
+    assert grant.staff_user_id is not None
+    assert grant.activated_at is not None and grant.expires_at is not None
+    return AssignedSupportGrantView(
+        grant_id=grant.id,
+        code=grant.code,
+        tenant_id=grant.tenant_id,
+        staff_user_id=grant.staff_user_id,
+        activated_at=grant.activated_at,
+        expires_at=grant.expires_at,
+    )

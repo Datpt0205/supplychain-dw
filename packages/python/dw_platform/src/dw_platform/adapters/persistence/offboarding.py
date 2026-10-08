@@ -91,7 +91,7 @@ _CATALOG_EXPORTABLE = text(_CATALOG_COLUMNS + " ORDER BY schemaname, tablename")
 # Only the ones `dw_app` may also DELETE from. `platform.audit_events` is
 # exportable but not this: `0001_platform_grants.sql` revokes UPDATE/DELETE
 # from `dw_app` there on purpose (append-only; the audit term is
-# `retention@1.6.0.yaml`'s own decision, not offboarding's to shorten). Found
+# `retention@1.7.0.yaml`'s own decision, not offboarding's to shorten). Found
 # by running this against a real database rather than assumed — the same
 # revoke could apply to a table added later, and asking `has_table_privilege`
 # instead of hand-naming `audit_events` catches that one too.
@@ -200,7 +200,7 @@ class SqlTenantOffboarding:
         after. Safe to be the first delete-adjacent write: `audit_events`
         is exportable but never purgeable (`dw_app` has no DELETE there — see
         `_CATALOG_PURGEABLE`), so this row outlives every other table this
-        pass empties, for as long as `retention@1.6.0.yaml`'s own term says.
+        pass empties, for as long as `retention@1.7.0.yaml`'s own term says.
 
         `workspace_id`/`actor_id` are NOT NULL on `audit_events` and this
         pass has neither on hand directly, so both are looked up: any one of

@@ -31,6 +31,7 @@ from dw_platform.application.admin_console import (
 from dw_platform.application.cache import membership_cache_pattern, tenant_cache_pattern
 from dw_platform.application.hierarchy import HierarchyService, SetManager
 from dw_platform.application.separation_of_duties import (
+    ConfirmWaiver,
     RevokeWaiver,
     SeparationOfDutiesService,
     SodRuleStatus,
@@ -117,6 +118,9 @@ class SodWaiverView(BaseModel):
     reason: str
     granted_by: UUID
     granted_at: datetime
+    # Null while the waiver waits for a second admin; it lifts nothing until then.
+    confirmed_by: UUID | None
+    confirmed_at: datetime | None
 
 
 class SodRuleView(BaseModel):
@@ -371,6 +375,19 @@ async def revoke_separation_of_duties_waiver(
     return Response(status_code=204)
 
 
+@router.post("/separation-of-duties/{rule_key}/waiver/confirm", status_code=204)
+async def confirm_separation_of_duties_waiver(
+    rule_key: str,
+    payload: WaiverDecisionBody,
+    context: RequireAccessContext,
+    container: RequireContainer,
+) -> Response:
+    await _separation_of_duties(container).confirm(
+        context, ConfirmWaiver(rule_key=rule_key, reason=payload.reason)
+    )
+    return Response(status_code=204)
+
+
 def _rule_view(r: SodRuleStatus) -> SodRuleView:
     return SodRuleView(
         key=r.key,
@@ -384,6 +401,8 @@ def _rule_view(r: SodRuleStatus) -> SodRuleView:
             reason=r.waiver.reason,
             granted_by=r.waiver.granted_by,
             granted_at=r.waiver.granted_at,
+            confirmed_by=r.waiver.confirmed_by,
+            confirmed_at=r.waiver.confirmed_at,
         ),
     )
 

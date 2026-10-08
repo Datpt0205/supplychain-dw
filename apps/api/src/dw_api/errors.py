@@ -10,6 +10,7 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.VALIDATION_FAILED: 422,
     ErrorCode.NOT_FOUND: 404,
     ErrorCode.CONFLICT: 409,
+    ErrorCode.UNAUTHENTICATED: 401,
     ErrorCode.PERMISSION_DENIED: 403,
     ErrorCode.ENTITLEMENT_DENIED: 403,
     ErrorCode.APPROVAL_REQUIRED: 409,

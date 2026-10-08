@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import uuid
 
-from dw_kernel.errors import PermissionDeniedError, TenantContextMissingError
+from dw_kernel.errors import TenantContextMissingError, UnauthenticatedError
 
 BEARER_SCHEME = "bearer"
 TENANT_HEADER = "X-Tenant-Id"
@@ -25,7 +25,7 @@ def bearer_token(authorization: str | None) -> str:
     """The token from an ``Authorization`` header value, or refuse the request."""
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.lower() != BEARER_SCHEME or not token.strip():
-        raise PermissionDeniedError("missing bearer token")
+        raise UnauthenticatedError("missing bearer token")
     return token.strip()
 
 

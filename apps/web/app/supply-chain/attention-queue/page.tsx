@@ -4,7 +4,8 @@ import { useCallback } from "react";
 import Link from "next/link";
 import { Empty, Flex, Table, Typography, type TableColumnsType } from "antd";
 import type { AttentionItem } from "@dw/contracts";
-import { PageHeader, RegionState } from "@dw/ui";
+import { PageHeader } from "@dw/ui";
+import { LoadError } from "../../../components/load-error";
 import { CaseStateTag } from "../../../components/supply-chain/case-state-badge";
 import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
 import { MissingUpdateTag } from "../../../components/supply-chain/missing-update-badge";
@@ -13,7 +14,6 @@ import {
   SlaStatusTag,
   milestoneLabel,
 } from "../../../components/supply-chain/sla-status-badge";
-import { regionFailure } from "../../../lib/error-message";
 import { apiClient } from "../../../lib/session";
 import { useCachedResource } from "../../../lib/use-cached-resource";
 
@@ -93,7 +93,7 @@ export default function AttentionQueuePage() {
       <PageHeader
         breadcrumb={supplyChainCrumbs("Cần chú ý")}
         title="Cần chú ý"
-        description={
+        subtitle={
           data
             ? `${data.length} Hồ sơ PO trễ SLA hoặc NCC im lặng quá lâu. Tính bằng quy tắc, không suy diễn.`
             : "Hồ sơ PO trễ SLA hoặc NCC im lặng quá lâu. Tính bằng quy tắc, không suy diễn."
@@ -102,11 +102,7 @@ export default function AttentionQueuePage() {
       {/* Never "every case is on track" read off a failed request: that is
           the one claim this page exists to make, and a 403 did not make it. */}
       {error != null && !data ? (
-        <RegionState
-          failure={regionFailure(error)}
-          what="danh sách cần chú ý"
-          onRetry={reload}
-        />
+        <LoadError error={error} onRetry={reload} />
       ) : (
         <Table<AttentionItem>
           rowKey={(item) => item.case.id}

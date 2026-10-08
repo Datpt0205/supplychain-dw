@@ -1,50 +1,38 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Archive, Building2, Check, Loader2, Pencil, Plus } from "lucide-react";
-import type { AdminWorkspace } from "@dw/contracts";
 import {
-  Badge,
+  Alert,
+  App,
   Button,
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  Flex,
   Input,
-} from "@dw/ui";
-import { ApiError } from "@dw/api-client";
+  Tag,
+  Typography,
+  theme,
+} from "antd";
+import {
+  ClusterOutlined,
+  EditOutlined,
+  InboxOutlined,
+  PlusOutlined,
+} from "@ant-design/icons";
+import type { AdminWorkspace } from "@dw/contracts";
+import { PageHeader, RegionState } from "@dw/ui";
 import { apiClient } from "../../../lib/session";
 import { useAuth } from "../../../lib/auth/auth-context";
-import { PageHeading } from "../../../components/page-heading";
-import { EmptyState } from "../../../components/empty-state";
-
-function errorText(error: unknown): string {
-  return error instanceof ApiError
-    ? error.body.message
-    : "Something went wrong";
-}
-
-// Same rule as the platform CreateTenantCard: derive a URL-safe slug from the
-// name; a manual edit takes over. The API validates and enforces uniqueness.
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
+import { errorMessage as errorText } from "../../../lib/error-message";
+import { slugify } from "../../../lib/slug";
 
 export default function WorkspacesPage() {
   const { hasScope } = useAuth();
 
   if (!hasScope("platform.workspaces.write")) {
     return (
-      <EmptyState
-        icon={Building2}
-        title="No access"
-        description="You need the workspace-management permission to view this page."
+      <RegionState
+        kind="forbidden"
+        description="Cần quyền quản lý workspace để xem trang này."
       />
     );
   }
@@ -70,25 +58,21 @@ function WorkspacesManager() {
   }, [refresh]);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <PageHeading
-        icon={Building2}
-        title="Workspaces"
-        description="The tenant's workspaces (departments)."
+    <div className="mx-auto max-w-4xl">
+      <PageHeader
+        icon={<ClusterOutlined />}
+        title="Workspace"
+        subtitle="Các workspace (phòng ban) của công ty."
       />
-
-      {error && (
-        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      )}
-
-      <CreateWorkspaceCard onCreated={refresh} onError={setError} />
-      <WorkspacesCard
-        workspaces={workspaces}
-        onChanged={refresh}
-        onError={setError}
-      />
+      <Flex vertical gap="middle">
+        {error && <Alert type="error" showIcon title={error} />}
+        <CreateWorkspaceCard onCreated={refresh} onError={setError} />
+        <WorkspacesCard
+          workspaces={workspaces}
+          onChanged={refresh}
+          onError={setError}
+        />
+      </Flex>
     </div>
   );
 }
@@ -104,6 +88,7 @@ function CreateWorkspaceCard({
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
   const [busy, setBusy] = useState(false);
+  const { message } = App.useApp();
 
   const submit = async () => {
     if (!name.trim() || !slug.trim()) return;
@@ -113,6 +98,7 @@ function CreateWorkspaceCard({
         name: name.trim(),
         slug: slug.trim(),
       });
+      message.success(`Đã tạo workspace “${name.trim()}”.`);
       setName("");
       setSlug("");
       setSlugEdited(false);
@@ -125,54 +111,47 @@ function CreateWorkspaceCard({
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Create workspace</CardTitle>
-        <CardDescription>
-          The slug is generated automatically from the name.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-wrap items-end gap-3">
-        <label className="text-sm">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">
-            Name
-          </span>
+    <Card title="Tạo workspace">
+      <Typography.Paragraph type="secondary">
+        Mã được sinh tự động từ tên.
+      </Typography.Paragraph>
+      <Flex wrap align="end" gap="middle">
+        <Flex vertical gap={4}>
+          <label htmlFor="workspace-name">Tên</label>
           <Input
+            id="workspace-name"
             className="w-56"
-            placeholder="Operations"
+            placeholder="Vận hành"
             value={name}
             onChange={(e) => {
               setName(e.target.value);
               if (!slugEdited) setSlug(slugify(e.target.value));
             }}
           />
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">
-            Slug
-          </span>
+        </Flex>
+        <Flex vertical gap={4}>
+          <label htmlFor="workspace-slug">Mã</label>
           <Input
+            id="workspace-slug"
             className="w-40"
-            placeholder="operations"
+            placeholder="van-hanh"
             value={slug}
             onChange={(e) => {
               setSlug(e.target.value);
               setSlugEdited(true);
             }}
           />
-        </label>
+        </Flex>
         <Button
-          onClick={submit}
-          disabled={busy || !name.trim() || !slug.trim()}
+          type="primary"
+          icon={<PlusOutlined aria-hidden />}
+          loading={busy}
+          disabled={!name.trim() || !slug.trim()}
+          onClick={() => void submit()}
         >
-          {busy ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Plus className="size-4" />
-          )}
-          Create
+          Tạo
         </Button>
-      </CardContent>
+      </Flex>
     </Card>
   );
 }
@@ -188,6 +167,8 @@ function WorkspacesCard({
 }) {
   const [renameFor, setRenameFor] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
+  const { modal } = App.useApp();
+  const { token } = theme.useToken();
 
   const rename = async (workspaceId: string) => {
     if (!newName.trim()) return;
@@ -201,97 +182,106 @@ function WorkspacesCard({
     }
   };
 
-  const archive = async (workspaceId: string) => {
-    try {
-      await apiClient().archiveWorkspace(workspaceId);
-      onChanged();
-    } catch (e) {
-      onError(errorText(e));
-    }
+  const archive = (workspace: AdminWorkspace) => {
+    modal.confirm({
+      title: `Lưu trữ workspace “${workspace.name}”?`,
+      content: "Thành viên sẽ không vào workspace này được nữa.",
+      okText: "Lưu trữ",
+      okButtonProps: { danger: true },
+      cancelText: "Hủy",
+      autoFocusButton: "cancel",
+      onOk: async () => {
+        try {
+          await apiClient().archiveWorkspace(workspace.workspace_id);
+          onChanged();
+        } catch (e) {
+          onError(errorText(e));
+        }
+      },
+    });
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">All workspaces</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {workspaces === null ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> Loading…
-          </div>
-        ) : workspaces.length === 0 ? (
-          <EmptyState
-            icon={Building2}
-            title="No workspaces yet"
-            description="Create the first workspace above."
-          />
-        ) : (
-          <div className="divide-y rounded-md border">
-            {workspaces.map((w) => (
-              <div key={w.workspace_id} className="px-3 py-2.5 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-medium">{w.name}</span>
-                      {w.archived && (
-                        <Badge variant="secondary">archived</Badge>
-                      )}
-                    </div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {w.slug} · {w.member_count} members
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
+    <Card title="Tất cả workspace">
+      {workspaces === null ? (
+        <RegionState kind="loading" compact />
+      ) : workspaces.length === 0 ? (
+        <RegionState
+          kind="empty"
+          compact
+          title="Chưa có workspace nào"
+          description="Tạo workspace đầu tiên ở trên."
+        />
+      ) : (
+        <ul className="m-0 list-none p-0">
+          {workspaces.map((w) => (
+            <li
+              key={w.workspace_id}
+              className="py-3"
+              style={{
+                borderBottom: `1px solid ${token.colorBorderSecondary}`,
+              }}
+            >
+              <Flex wrap justify="space-between" align="center" gap="small">
+                <Flex vertical gap={4} className="min-w-0">
+                  <Flex align="center" gap="small">
+                    <Typography.Text strong ellipsis>
+                      {w.name}
+                    </Typography.Text>
+                    {w.archived && <Tag>Đã lưu trữ</Tag>}
+                  </Flex>
+                  <Typography.Text type="secondary" className="text-xs">
+                    {w.slug} · {w.member_count} thành viên
+                  </Typography.Text>
+                </Flex>
+                <Flex gap="small">
+                  <Button
+                    size="small"
+                    icon={<EditOutlined aria-hidden />}
+                    onClick={() => {
+                      setRenameFor(w.workspace_id);
+                      setNewName(w.name);
+                    }}
+                  >
+                    Đổi tên
+                  </Button>
+                  {!w.archived && (
                     <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setRenameFor(w.workspace_id);
-                        setNewName(w.name);
-                      }}
+                      size="small"
+                      icon={<InboxOutlined aria-hidden />}
+                      onClick={() => archive(w)}
                     >
-                      <Pencil className="size-3.5" /> Rename
+                      Lưu trữ
                     </Button>
-                    {!w.archived && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void archive(w.workspace_id)}
-                      >
-                        <Archive className="size-3.5" /> Archive
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                {renameFor === w.workspace_id && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <Input
-                      className="h-8 w-56 py-1"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                      placeholder={w.name}
-                    />
-                    <Button
-                      size="sm"
-                      onClick={() => void rename(w.workspace_id)}
-                    >
-                      <Check className="size-3.5" /> Save
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setRenameFor(null)}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
+                  )}
+                </Flex>
+              </Flex>
+              {renameFor === w.workspace_id && (
+                <Flex wrap gap="small" className="mt-2">
+                  <Input
+                    size="small"
+                    className="w-56"
+                    aria-label="Tên mới"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder={w.name}
+                  />
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={() => void rename(w.workspace_id)}
+                  >
+                    Lưu
+                  </Button>
+                  <Button size="small" onClick={() => setRenameFor(null)}>
+                    Hủy
+                  </Button>
+                </Flex>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

@@ -1,52 +1,49 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
 import {
-  Building,
-  Loader2,
-  Lock,
-  LockOpen,
-  Pencil,
-  ShieldPlus,
-  Trash2,
-} from "lucide-react";
-import {
-  Badge,
+  App,
   Button,
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  Flex,
   Input,
-  cn,
-} from "@dw/ui";
+  Table,
+  Tag,
+  Typography,
+  theme,
+} from "antd";
 import {
-  ApiError,
-  type PlatformOperator,
-  type PlatformTenant,
-  type PlatformUserRef,
+  BankOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  LockOutlined,
+  PlusOutlined,
+  SafetyCertificateOutlined,
+  UnlockOutlined,
+} from "@ant-design/icons";
+import type {
+  PlatformOperator,
+  PlatformTenant,
+  PlatformUserRef,
 } from "@dw/api-client";
+import { PageHeader, RegionState } from "@dw/ui";
 import { apiClient } from "../../lib/session";
 import { useAuth } from "../../lib/auth/auth-context";
-import { PageHeading } from "../../components/page-heading";
-import { EmptyState } from "../../components/empty-state";
+import { errorMessage } from "../../lib/error-message";
+import { slugify } from "../../lib/slug";
+import { tenantStatus } from "../../lib/tenant-status";
 import { EmailPicker, type EmailOption } from "../../components/email-picker";
-
-function errorText(error: unknown): string {
-  return error instanceof ApiError ? error.message : "Something went wrong.";
-}
+import { SupportConsole } from "../../components/platform/support-console";
 
 export default function PlatformPage() {
   const { isPlatformOperator } = useAuth();
 
   if (!isPlatformOperator) {
     return (
-      <EmptyState
-        icon={Building}
-        title="Operators only"
-        description="This area is for platform operators. Ask one to add you."
+      <RegionState
+        kind="forbidden"
+        title="Chỉ dành cho người vận hành nền tảng"
+        description="Khu vực này dành cho người vận hành nền tảng. Hãy nhờ một người vận hành thêm bạn."
       />
     );
   }
@@ -54,6 +51,7 @@ export default function PlatformPage() {
 }
 
 function PlatformConsole() {
+  const { message } = App.useApp();
   const [tenants, setTenants] = useState<PlatformTenant[] | null>(null);
   const [operators, setOperators] = useState<PlatformOperator[] | null>(null);
   const [users, setUsers] = useState<PlatformUserRef[]>([]);
@@ -68,9 +66,9 @@ function PlatformConsole() {
       .then(setTenants)
       .catch((error) => {
         setTenants([]);
-        toast.error(errorText(error));
+        message.error(errorMessage(error));
       });
-  }, []);
+  }, [message]);
   const loadOperators = useCallback(() => {
     apiClient()
       .listOperators()
@@ -89,36 +87,32 @@ function PlatformConsole() {
   }, [loadTenants, loadOperators]);
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <PageHeading icon={Building} title="Platform" />
-      <CreateTenantCard onCreated={loadTenants} />
-      <TenantsCard
-        tenants={tenants}
-        emailOptions={emailOptions}
-        onChanged={loadTenants}
+    <div className="mx-auto max-w-5xl">
+      <PageHeader
+        icon={<BankOutlined />}
+        title="Nền tảng"
+        subtitle="Công ty, quản trị viên công ty và người vận hành nền tảng. Người vận hành không đọc dữ liệu nghiệp vụ của công ty nào."
       />
-      <OperatorsCard
-        operators={operators}
-        emailOptions={emailOptions}
-        onChanged={loadOperators}
-      />
+      <Flex vertical gap="middle">
+        <CreateTenantCard onCreated={loadTenants} />
+        <TenantsCard
+          tenants={tenants}
+          emailOptions={emailOptions}
+          onChanged={loadTenants}
+        />
+        <OperatorsCard
+          operators={operators}
+          emailOptions={emailOptions}
+          onChanged={loadOperators}
+        />
+        <SupportConsole emailOptions={emailOptions} />
+      </Flex>
     </div>
   );
 }
 
-// Slug is a URL-safe unique handle. Derive it from the name so nobody has to
-// think about it; a manual edit takes over. The API validates + enforces
-// uniqueness regardless.
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "") // strip Vietnamese accents
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 function CreateTenantCard({ onCreated }: { onCreated: () => void }) {
+  const { message } = App.useApp();
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
   const [name, setName] = useState("");
@@ -136,63 +130,60 @@ function CreateTenantCard({ onCreated }: { onCreated: () => void }) {
         name: name.trim(),
         planId,
       });
+      message.success(`Đã tạo công ty “${name.trim()}”.`);
       setSlug("");
       setName("");
       setSlugEdited(false);
-      toast.success(`Tenant "${name.trim()}" created.`);
       onCreated();
     } catch (error) {
-      toast.error(errorText(error));
+      message.error(errorMessage(error));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Card className="mt-3">
-      <CardHeader>
-        <CardTitle>New tenant (company)</CardTitle>
-        <CardDescription>
-          Creates the tenant with a default “main” workspace and a plan.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-wrap items-end gap-3">
-        <label className="text-sm">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">
-            Slug
-          </span>
+    <Card title="Công ty mới">
+      <Typography.Paragraph type="secondary">
+        Tạo công ty kèm workspace mặc định “main” và một gói dịch vụ.
+      </Typography.Paragraph>
+      <Flex wrap align="end" gap="middle">
+        <Flex vertical gap={4}>
+          <label htmlFor="tenant-name">Tên</label>
           <Input
-            className="w-40"
-            placeholder="fis"
-            value={slug}
-            onChange={(e) => {
-              setSlug(e.target.value);
-              setSlugEdited(true);
-            }}
-          />
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">
-            Name
-          </span>
-          <Input
+            id="tenant-name"
             className="w-56"
-            placeholder="FPT IS"
+            placeholder="Công ty ABC"
             value={name}
             onChange={(e) => {
               setName(e.target.value);
               if (!slugEdited) setSlug(slugify(e.target.value));
             }}
           />
-        </label>
+        </Flex>
+        <Flex vertical gap={4}>
+          <label htmlFor="tenant-slug">Mã</label>
+          <Input
+            id="tenant-slug"
+            className="w-40"
+            placeholder="abc"
+            value={slug}
+            onChange={(e) => {
+              setSlug(e.target.value);
+              setSlugEdited(true);
+            }}
+          />
+        </Flex>
         <Button
-          onClick={submit}
-          disabled={busy || !slug.trim() || !name.trim()}
+          type="primary"
+          icon={<PlusOutlined aria-hidden />}
+          loading={busy}
+          disabled={!slug.trim() || !name.trim()}
+          onClick={() => void submit()}
         >
-          {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-          Create
+          Tạo
         </Button>
-      </CardContent>
+      </Flex>
     </Card>
   );
 }
@@ -206,6 +197,7 @@ function TenantsCard({
   emailOptions: EmailOption[];
   onChanged: () => void;
 }) {
+  const { message, modal } = App.useApp();
   const [assignFor, setAssignFor] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [renameFor, setRenameFor] = useState<string | null>(null);
@@ -215,179 +207,187 @@ function TenantsCard({
     if (!newName.trim()) return;
     try {
       const t = await apiClient().renameTenant(tenantId, newName.trim());
-      toast.success(`Renamed to "${t.name}".`);
+      message.success(`Đã đổi tên thành “${t.name}”.`);
       setRenameFor(null);
       setNewName("");
       onChanged();
     } catch (error) {
-      toast.error(errorText(error));
+      message.error(errorMessage(error));
     }
   };
 
-  const toggleLock = async (t: PlatformTenant) => {
-    try {
-      await apiClient().setTenantLocked(t.id, t.status !== "locked");
-      toast.success(
-        `${t.name} ${t.status === "locked" ? "unlocked" : "locked"}.`,
-      );
-      onChanged();
-    } catch (error) {
-      toast.error(errorText(error));
-    }
+  const toggleLock = (t: PlatformTenant) => {
+    const locking = t.status !== "locked";
+    modal.confirm({
+      title: locking ? `Khóa công ty “${t.name}”?` : `Mở khóa “${t.name}”?`,
+      content: locking
+        ? "Mọi thành viên của công ty sẽ không vào được tới khi mở khóa."
+        : "Thành viên của công ty sẽ vào lại được.",
+      okText: locking ? "Khóa" : "Mở khóa",
+      okButtonProps: { danger: locking },
+      cancelText: "Hủy",
+      autoFocusButton: "cancel",
+      onOk: async () => {
+        try {
+          await apiClient().setTenantLocked(t.id, locking);
+          message.success(
+            locking ? `Đã khóa ${t.name}.` : `Đã mở khóa ${t.name}.`,
+          );
+          onChanged();
+        } catch (error) {
+          message.error(errorMessage(error));
+        }
+      },
+    });
   };
 
   const assign = async (tenantId: string) => {
     if (!email.trim()) return;
     try {
       const ref = await apiClient().assignOrgAdmin(tenantId, email.trim());
-      toast.success(`${ref.display_name} is now an org admin.`);
+      message.success(`${ref.display_name} đã là quản trị viên công ty.`);
       setAssignFor(null);
       setEmail("");
       onChanged();
     } catch (error) {
-      toast.error(errorText(error));
+      message.error(errorMessage(error));
     }
   };
 
   return (
-    <Card className="mt-4">
-      <CardHeader>
-        <CardTitle>Tenants</CardTitle>
-        <CardDescription>Every company on the platform.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {tenants === null ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> Loading…
-          </div>
-        ) : tenants.length === 0 ? (
-          <EmptyState
-            icon={Building}
-            title="No tenants yet"
-            description="Create the first company above."
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[42rem] text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-3 py-2 font-medium">Company</th>
-                  <th className="px-3 py-2 font-medium">Workspaces</th>
-                  <th className="px-3 py-2 font-medium">Members</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tenants.map((t) => (
-                  <tr key={t.id} className="border-b last:border-0">
-                    <td className="px-3 py-2.5">
-                      <div className="font-semibold">{t.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {t.slug}
-                      </div>
-                      {assignFor === t.id && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <div className="w-56">
-                            <EmailPicker
-                              value={email}
-                              onChange={setEmail}
-                              options={emailOptions}
-                              placeholder="Chọn hoặc gõ email…"
-                              className="h-8 py-1"
-                            />
-                          </div>
-                          <Button size="sm" onClick={() => assign(t.id)}>
-                            Assign
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setAssignFor(null)}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      )}
-                      {renameFor === t.id && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <Input
-                            className="h-8 w-56 py-1"
-                            value={newName}
-                            onChange={(e) => setNewName(e.target.value)}
-                            placeholder={t.name}
-                          />
-                          <Button size="sm" onClick={() => rename(t.id)}>
-                            Save
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setRenameFor(null)}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums">
-                      {t.workspace_count}
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums">
-                      {t.member_count}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Badge
-                        variant={
-                          t.status === "locked" ? "destructive" : "secondary"
-                        }
+    <Card title="Công ty">
+      {tenants === null ? (
+        <RegionState kind="loading" compact />
+      ) : tenants.length === 0 ? (
+        <RegionState
+          kind="empty"
+          compact
+          title="Chưa có công ty nào"
+          description="Tạo công ty đầu tiên ở trên."
+        />
+      ) : (
+        <Table<PlatformTenant>
+          rowKey="id"
+          size="small"
+          pagination={false}
+          scroll={{ x: "max-content" }}
+          dataSource={tenants}
+          columns={[
+            {
+              title: "Công ty",
+              key: "company",
+              render: (_, t) => (
+                <Flex vertical gap={4}>
+                  <Typography.Text strong>{t.name}</Typography.Text>
+                  <Typography.Text type="secondary" className="text-xs">
+                    {t.slug}
+                  </Typography.Text>
+                  {assignFor === t.id && (
+                    <Flex wrap gap="small">
+                      <EmailPicker
+                        className="w-56"
+                        value={email}
+                        onChange={setEmail}
+                        options={emailOptions}
+                        placeholder="Chọn hoặc gõ email…"
+                      />
+                      <Button
+                        size="small"
+                        type="primary"
+                        onClick={() => void assign(t.id)}
                       >
-                        {t.status}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setAssignFor(t.id);
-                            setEmail("");
-                          }}
-                        >
-                          <ShieldPlus className="size-3.5" /> Org admin
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setRenameFor(t.id);
-                            setNewName(t.name);
-                          }}
-                        >
-                          <Pencil className="size-3.5" /> Rename
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => toggleLock(t)}
-                        >
-                          {t.status === "locked" ? (
-                            <LockOpen className="size-3.5" />
-                          ) : (
-                            <Lock className="size-3.5" />
-                          )}
-                          {t.status === "locked" ? "Unlock" : "Lock"}
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </CardContent>
+                        Giao
+                      </Button>
+                      <Button size="small" onClick={() => setAssignFor(null)}>
+                        Hủy
+                      </Button>
+                    </Flex>
+                  )}
+                  {renameFor === t.id && (
+                    <Flex wrap gap="small">
+                      <Input
+                        size="small"
+                        className="w-56"
+                        aria-label="Tên mới"
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        placeholder={t.name}
+                      />
+                      <Button
+                        size="small"
+                        type="primary"
+                        onClick={() => void rename(t.id)}
+                      >
+                        Lưu
+                      </Button>
+                      <Button size="small" onClick={() => setRenameFor(null)}>
+                        Hủy
+                      </Button>
+                    </Flex>
+                  )}
+                </Flex>
+              ),
+            },
+            {
+              title: "Workspace",
+              dataIndex: "workspace_count",
+              align: "right",
+            },
+            { title: "Thành viên", dataIndex: "member_count", align: "right" },
+            {
+              title: "Trạng thái",
+              dataIndex: "status",
+              render: (value: string) => (
+                <Tag color={tenantStatus(value).color}>
+                  {tenantStatus(value).label}
+                </Tag>
+              ),
+            },
+            {
+              title: "Thao tác",
+              key: "actions",
+              align: "right",
+              render: (_, t) => (
+                <Flex gap="small" justify="end" wrap>
+                  <Button
+                    size="small"
+                    icon={<SafetyCertificateOutlined aria-hidden />}
+                    onClick={() => {
+                      setAssignFor(t.id);
+                      setEmail("");
+                    }}
+                  >
+                    Quản trị viên
+                  </Button>
+                  <Button
+                    size="small"
+                    icon={<EditOutlined aria-hidden />}
+                    onClick={() => {
+                      setRenameFor(t.id);
+                      setNewName(t.name);
+                    }}
+                  >
+                    Đổi tên
+                  </Button>
+                  <Button
+                    size="small"
+                    icon={
+                      t.status === "locked" ? (
+                        <UnlockOutlined aria-hidden />
+                      ) : (
+                        <LockOutlined aria-hidden />
+                      )
+                    }
+                    onClick={() => toggleLock(t)}
+                  >
+                    {t.status === "locked" ? "Mở khóa" : "Khóa"}
+                  </Button>
+                </Flex>
+              ),
+            },
+          ]}
+        />
+      )}
     </Card>
   );
 }
@@ -402,6 +402,8 @@ function OperatorsCard({
   onChanged: () => void;
 }) {
   const { principalId } = useAuth();
+  const { message, modal } = App.useApp();
+  const { token } = theme.useToken();
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -410,83 +412,103 @@ function OperatorsCard({
     setBusy(true);
     try {
       const ref = await apiClient().addOperator(email.trim());
-      toast.success(`${ref.display_name} is now a platform operator.`);
+      message.success(`${ref.display_name} đã là người vận hành nền tảng.`);
       setEmail("");
       onChanged();
     } catch (error) {
-      toast.error(errorText(error));
+      message.error(errorMessage(error));
     } finally {
       setBusy(false);
     }
   };
 
-  const remove = async (userId: string) => {
-    try {
-      await apiClient().removeOperator(userId);
-      toast.success("Operator removed.");
-      onChanged();
-    } catch (error) {
-      toast.error(errorText(error));
-    }
+  const remove = (operator: PlatformOperator) => {
+    modal.confirm({
+      title: `Gỡ ${operator.display_name} khỏi người vận hành?`,
+      okText: "Gỡ",
+      okButtonProps: { danger: true },
+      cancelText: "Hủy",
+      autoFocusButton: "cancel",
+      onOk: async () => {
+        try {
+          await apiClient().removeOperator(operator.user_id);
+          message.success("Đã gỡ người vận hành.");
+          onChanged();
+        } catch (error) {
+          message.error(errorMessage(error));
+        }
+      },
+    });
   };
 
   return (
-    <Card className="mt-4">
-      <CardHeader>
-        <CardTitle>Platform operators</CardTitle>
-        <CardDescription>
-          Who may provision tenants. Operators read no tenant business data.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-end gap-2">
-          <div className="w-64">
+    <Card title="Người vận hành nền tảng">
+      <Flex vertical gap="middle">
+        <Typography.Text type="secondary">
+          Ai được tạo và quản lý công ty trên nền tảng.
+        </Typography.Text>
+        <Flex wrap align="end" gap="small">
+          <Flex vertical gap={4}>
+            <label htmlFor="operator-email">Email</label>
             <EmailPicker
+              id="operator-email"
+              className="w-64"
               value={email}
               onChange={setEmail}
               options={emailOptions}
               placeholder="Chọn hoặc gõ email…"
             />
-          </div>
-          <Button onClick={add} disabled={busy || !email.trim()}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-            Add operator
+          </Flex>
+          <Button
+            type="primary"
+            icon={<PlusOutlined aria-hidden />}
+            loading={busy}
+            disabled={!email.trim()}
+            onClick={() => void add()}
+          >
+            Thêm người vận hành
           </Button>
-        </div>
+        </Flex>
         {operators === null ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> Loading…
-          </div>
+          <RegionState kind="loading" compact />
         ) : operators.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No operators listed.</p>
+          <RegionState kind="empty" compact title="Chưa có người vận hành" />
         ) : (
-          <ul className="divide-y rounded-lg border">
+          <ul className="m-0 list-none p-0">
             {operators.map((o) => (
               <li
                 key={o.user_id}
-                className="flex items-center justify-between gap-2 px-3 py-2"
+                className="py-2"
+                style={{
+                  borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                }}
               >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">
-                    {o.display_name}
+                <Flex justify="space-between" align="center" gap="small">
+                  <div className="min-w-0">
+                    <Typography.Text strong ellipsis className="block">
+                      {o.display_name}
+                    </Typography.Text>
+                    <Typography.Text type="secondary" className="text-xs">
+                      {o.email ?? o.user_id}
+                    </Typography.Text>
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {o.email ?? o.user_id}
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className={cn(o.user_id === principalId && "invisible")}
-                  onClick={() => remove(o.user_id)}
-                >
-                  <Trash2 className="size-4 text-destructive" />
-                </Button>
+                  {/* An operator cannot remove themselves: the last one would
+                      lock everybody out of provisioning. */}
+                  {o.user_id !== principalId && (
+                    <Button
+                      type="text"
+                      danger
+                      icon={<DeleteOutlined aria-hidden />}
+                      aria-label={`Gỡ ${o.display_name}`}
+                      onClick={() => remove(o)}
+                    />
+                  )}
+                </Flex>
               </li>
             ))}
           </ul>
         )}
-      </CardContent>
+      </Flex>
     </Card>
   );
 }

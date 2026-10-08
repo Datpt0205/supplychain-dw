@@ -221,9 +221,7 @@ describe("an approval's page", () => {
     render(<ApprovalPage />);
 
     expect(
-      await screen.findByText(
-        /không thuộc workspace nào của bạn|Không tìm thấy/,
-      ),
+      await screen.findByText("Yêu cầu không thuộc workspace nào của bạn."),
     ).toBeTruthy();
     expect(getApproval).not.toHaveBeenCalled();
     expect(viewApproval).not.toHaveBeenCalled();

@@ -162,6 +162,10 @@ def prompt_artifact(
         system=system,
         template=template,
         variables=frozenset({"today"}) if "{today}" in template else frozenset(),
+        # The host formats it from its clock: a value code builds.
+        raw_variables={"today": "formatted by the host from its clock"}
+        if "{today}" in template
+        else {},
     )
 
 

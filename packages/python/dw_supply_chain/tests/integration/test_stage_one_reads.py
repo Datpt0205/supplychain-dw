@@ -220,7 +220,7 @@ class _Holders:
         self.people = people
 
     async def holding(
-        self, context: AccessContext, workspace_id: uuid.UUID, scopes: frozenset[str]
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, scopes: frozenset[str]
     ) -> list[uuid.UUID]:
         return [p for p, ws in self.people.items() if ws == workspace_id]
 

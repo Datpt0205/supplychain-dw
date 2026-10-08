@@ -73,6 +73,14 @@ from dw_platform.application.ports import (
 )
 from dw_platform.application.provisioning import ProvisioningService
 from dw_platform.application.separation_of_duties import SeparationOfDutiesService
+from dw_platform.application.support_access import (
+    StaffGrantsListPort,
+    SupportAccessAuditPort,
+    SupportAccessContextFactory,
+    SupportGrantService,
+    SupportScopeCatalog,
+)
+from dw_platform.application.tenant_members import TenantMembersService
 from dw_supply_chain.application.case_documents import (
     DownloadCaseDocument,
     ListCaseDocuments,
@@ -264,10 +272,24 @@ class ApiContainer:
     workspace_directory: WorkspaceDirectoryPort | None = None
     grant_membership: GrantMembershipHandler | None = None
     revoke_membership: RevokeMembershipHandler | None = None
+    tenant_members: TenantMembersService | None = None
     admin_console: AdminConsoleService | None = None
     hierarchy: HierarchyService | None = None
     separation_of_duties: SeparationOfDutiesService | None = None
     notifications: NotificationService | None = None
+    # Customer-granted support access (ADR 0024). A context registers its
+    # grantable scope sets and resource describers on the catalog at the seam
+    # in `wiring.py`; `build_container` freezes it once wiring is done.
+    support_catalog: SupportScopeCatalog = field(default_factory=SupportScopeCatalog)
+    support_grants: SupportGrantService | None = None
+    # The staff side (ticket 02): the support context built from a grant, its
+    # `support.access` trail, and "my grants".
+    support_access: SupportAccessContextFactory | None = None
+    support_access_audit: SupportAccessAuditPort | None = None
+    staff_grants: StaffGrantsListPort | None = None
+    # (method, path template) a support context may reach; `wiring.py`'s
+    # SUPPORT_ALLOWED_ROUTES. Empty refuses every support request.
+    support_allowed_routes: frozenset[tuple[str, str]] = frozenset()
     # The signed-in user's own Zalo link. ``None`` unless the bot token and the
     # link secret are both set, and then /api/v1/zalo/* is not mounted.
     zalo_linking: ZaloLinking | None = None

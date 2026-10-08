@@ -24,7 +24,8 @@ import {
 } from "antd";
 import type { TableColumnsType, UploadFile } from "antd";
 import { PaperClipOutlined, UploadOutlined } from "@ant-design/icons";
-import { PageHeader, RegionState, type RegionFailure } from "@dw/ui";
+import { PageHeader, RegionState, stateForError } from "@dw/ui";
+import { LoadError } from "../../../../components/load-error";
 import {
   ApiError,
   type CaseDocument,
@@ -81,7 +82,7 @@ import {
   VN_TIME,
 } from "../../../../lib/dates";
 import { memberName, useWorkspaceMembers } from "../../../../lib/directory";
-import { errorMessage, regionFailure } from "../../../../lib/error-message";
+import { errorMessage, toRegionError } from "../../../../lib/error-message";
 import { useOnline } from "../../../../lib/hooks/use-online";
 import { newIdempotencyKey } from "../../../../lib/idempotency-key";
 import { apiClient } from "../../../../lib/session";
@@ -91,7 +92,7 @@ const OFFLINE = "Không có kết nối mạng. Kết nối lại rồi thử l�
 
 type CaseState =
   | { kind: "loading" }
-  | { kind: "error"; failure: RegionFailure }
+  | { kind: "error"; error: unknown }
   | { kind: "ready"; detail: ProductCaseDetail };
 
 /**
@@ -110,7 +111,7 @@ export default function ProductCasePage() {
     try {
       setState({ kind: "ready", detail: await apiClient().getProductCase(id) });
     } catch (error) {
-      setState({ kind: "error", failure: regionFailure(error) });
+      setState({ kind: "error", error });
     }
   }, [id]);
 
@@ -131,20 +132,17 @@ export default function ProductCasePage() {
           breadcrumb={LIST_CRUMBS}
           title="Hồ sơ phát triển sản phẩm"
         />
-        <RegionState
-          loading={state.kind === "loading"}
-          failure={state.kind === "error" ? state.failure : null}
-          what="hồ sơ"
-          onRetry={() => void load()}
-          rows={8}
-          copy={{
-            forbidden: {
-              title: "Bạn chưa được xem hồ sơ phát triển sản phẩm",
-              subTitle:
-                "Cần một vai Supply Chain có quyền xem hồ sơ. Liên hệ quản trị workspace.",
-            },
-          }}
-        />
+        {state.kind === "loading" ? (
+          <RegionState kind="loading" />
+        ) : stateForError(toRegionError(state.error)).kind === "forbidden" ? (
+          <RegionState
+            kind="forbidden"
+            title="Bạn chưa được xem hồ sơ phát triển sản phẩm"
+            description="Cần một vai Supply Chain có quyền xem hồ sơ. Liên hệ quản trị workspace."
+          />
+        ) : (
+          <LoadError error={state.error} onRetry={() => void load()} />
+        )}
       </div>
     );
   }
@@ -224,22 +222,20 @@ function CaseView({
     <>
       <PageHeader
         breadcrumb={[...LIST_CRUMBS, { title: detail.proposal_code }]}
-        meta={
-          <Typography.Text type="secondary">
-            Hồ sơ phát triển sản phẩm ·{" "}
-            <Typography.Text code>{detail.proposal_code}</Typography.Text>
-          </Typography.Text>
-        }
         title={detail.product_name}
         tags={
           <>
+            <Typography.Text type="secondary">
+              Hồ sơ phát triển sản phẩm ·{" "}
+              <Typography.Text code>{detail.proposal_code}</Typography.Text>
+            </Typography.Text>
             <ProductDevStateTag state={detail.state} />
             {detail.sla.status !== "not_applicable" && (
               <SlaStatusTag status={detail.sla.status} />
             )}
           </>
         }
-        description={`Category ${categoryLabel(categories, detail.category)} · tạo lúc ${formatDateTimeFull(detail.created_at)}`}
+        subtitle={`Category ${categoryLabel(categories, detail.category)} · tạo lúc ${formatDateTimeFull(detail.created_at)}`}
       />
       <Flex vertical gap="middle">
         <CaseSummary label="Tóm tắt hồ sơ" cells={cells} />
@@ -970,7 +966,7 @@ function RoundsCard({
 
 type HistoryState =
   | { kind: "loading" }
-  | { kind: "error"; failure: RegionFailure }
+  | { kind: "error"; error: unknown }
   | { kind: "ready"; transitions: ProductCaseTransition[] };
 
 function HistoryCard({
@@ -991,7 +987,7 @@ function HistoryCard({
         transitions: await apiClient().listProductCaseTransitions(caseId),
       });
     } catch (error) {
-      setHistory({ kind: "error", failure: regionFailure(error) });
+      setHistory({ kind: "error", error });
     }
   }, [caseId]);
 
@@ -1004,12 +1000,7 @@ function HistoryCard({
       {history.kind === "loading" ? (
         <Skeleton active paragraph={{ rows: 3 }} />
       ) : history.kind === "error" ? (
-        <RegionState
-          compact
-          failure={history.failure}
-          what="lịch sử"
-          onRetry={() => void load()}
-        />
+        <LoadError compact error={history.error} onRetry={() => void load()} />
       ) : history.transitions.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}

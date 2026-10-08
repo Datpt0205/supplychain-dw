@@ -175,7 +175,7 @@ class FakeHolders:
     asked: list[tuple[uuid.UUID, frozenset[str]]] = field(default_factory=list)
 
     async def holding(
-        self, context: AccessContext, workspace_id: uuid.UUID, scopes: frozenset[str]
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, scopes: frozenset[str]
     ) -> list[uuid.UUID]:
         self.asked.append((workspace_id, scopes))
         return sorted({user for scope in scopes for user in self.by_scope.get(scope, [])})

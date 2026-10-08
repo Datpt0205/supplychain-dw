@@ -1,6 +1,6 @@
 # 01 — `SqlScopeHolders.holds` theo id, không cần `AccessContext`
 
-Status: ready-for-agent
+Status: resolved (2026-10-08, nhánh `feat/platform-tickets`)
 Blocked by: —
 Area: platform-runtime
 
@@ -31,20 +31,20 @@ người hỏi được người đó có giữ một scope ở workspace đó k
 Integration `packages/python/dw_platform/tests/integration/test_scope_holders.py` (PostgreSQL
 thật, kết nối `dw_app`, hai tenant, tenant A có ws1 và ws2):
 
-- [ ] Người giữ một vai mang scope `x.do` ở ws1: `holds(A, ws1, user, "x.do")` là `True`; cùng
+- [x] Người giữ một vai mang scope `x.do` ở ws1: `holds(A, ws1, user, "x.do")` là `True`; cùng
       người ở ws2, nơi họ không có vai đó: `False`; người không có thành viên ở ws1: `False`.
-- [ ] Scope đến từ permission set (không từ vai): `True`.
-- [ ] Tenant A bị khóa (`status` khác `active`): `holds` là `False`, `holding` trả rỗng.
-- [ ] Hỏi bằng tenant B cho người và ws1 của tenant A: `False` (RLS và điều kiện tenant).
-- [ ] Hai lời gọi liên tiếp, tenant A rồi tenant B, trên cùng pool: lời thứ hai không thấy
+- [x] Scope đến từ permission set (không từ vai): `True`.
+- [x] Tenant A bị khóa (`status` khác `active`): `holds` là `False`, `holding` trả rỗng.
+- [x] Hỏi bằng tenant B cho người và ws1 của tenant A: `False` (RLS và điều kiện tenant).
+- [x] Hai lời gọi liên tiếp, tenant A rồi tenant B, trên cùng pool: lời thứ hai không thấy
       thành viên của tenant A.
-- [ ] Đồng thuận: với mọi thành viên của fixture, `user in holding(ctx, ws, {s})` khi và chỉ
+- [x] Đồng thuận: với mọi thành viên của fixture, `user in holding(ctx, ws, {s})` khi và chỉ
       khi `holds(tenant, ws, user, s)`.
-- [ ] Mutation (ghi vào Comments): bỏ điều kiện `workspace_id` trong hàm chung thì ca ws2 đỏ;
+- [x] Mutation (ghi vào Comments): bỏ điều kiện `workspace_id` trong hàm chung thì ca ws2 đỏ;
       bỏ điều kiện tenant `active` thì ca tenant bị khóa đỏ.
-- [ ] `rg "memberships" packages/python/dw_platform/src/dw_platform/adapters/persistence/scope_holders.py`
+- [x] `rg "memberships" packages/python/dw_platform/src/dw_platform/adapters/persistence/scope_holders.py`
       chỉ ra một truy vấn (không có truy vấn thứ hai cho `holds`).
-- [ ] `make ci` xanh.
+- [x] `make ci` xanh.
 
 ## Nguồn
 
@@ -56,3 +56,18 @@ thật, kết nối `dw_app`, hai tenant, tenant A có ws1 và ws2):
   lời một câu hỏi); `.claude/rules/failure-modes.md` #2, #3, #7.
 
 ## Comments
+
+- 2026-10-08 (agent): làm cùng ticket 02 trong một commit. `_members(session, tenant_id,
+workspace_id, user_id=None)` là truy vấn thành viên duy nhất của tệp; `holding` và `holds`
+  cùng gọi nó và `effective_scopes` (qua `_scopes_of`). `holds` trả `False` khi không đúng một
+  dòng thành viên, tenant không `active`, hoặc `scope` rỗng; không ngoại lệ theo vai.
+  `rg "memberships" scope_holders.py` chỉ ra một truy vấn (các dòng `tables.memberships.c.*`
+  của cùng một `select`, cộng docstring).
+- Test: `packages/python/dw_platform/tests/integration/test_scope_holders.py`, 10 ca, kết nối
+  `dw_app`, tenant và vai tạo mới mỗi test (khóa tenant A ở một test không lây sang test khác).
+  Ca pool dùng `pool_size=1` để chắc hai lời gọi đi trên cùng một kết nối, và kiểm
+  `current_setting('app.tenant_id', true)` rỗng sau khi trả kết nối. 10 passed.
+- Mutation: bỏ `memberships.workspace_id == workspace_id` trong `_members` → 6 đỏ, gồm
+  `test_holds_answers_per_workspace` (người chỉ có ở ws2 thành `True` ở ws1) và hai ca khác
+  workspace của `holding`. Bỏ `tenants.status == "active"` → `test_a_locked_tenant_has_no_holders`
+  đỏ. Khôi phục, 10 passed.

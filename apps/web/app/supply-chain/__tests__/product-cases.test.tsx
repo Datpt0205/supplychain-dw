@@ -331,7 +331,7 @@ describe("Hồ sơ phát triển sản phẩm: danh sách", () => {
     );
     renderList();
     expect(
-      await screen.findByText("Bạn chưa được xem hồ sơ phát triển sản phẩm"),
+      await screen.findByText("Bạn không có quyền xem mục này"),
     ).toBeTruthy();
   });
 
@@ -423,7 +423,7 @@ describe("Hồ sơ phát triển sản phẩm: chi tiết", () => {
       new ApiError(404, { code: "not_found", message: "x", details: {} }),
     );
     renderDetail();
-    expect(await screen.findByText("Không tìm thấy hồ sơ")).toBeTruthy();
+    expect(await screen.findByText("Không tìm thấy")).toBeTruthy();
   });
 
   it("shows the server's sentence on a failed load, and retries", async () => {

@@ -23,6 +23,7 @@ from dw_platform.adapters.persistence.repositories import SqlAuditRepository
 from dw_platform.adapters.persistence.separation_of_duties import (
     separation_of_duties_conflict,
 )
+from dw_platform.adapters.persistence.support_grants import support_staff_conflict
 from dw_platform.adapters.persistence.tenant_session import TenantScope, tenant_session
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.membership_admin import UserRef
@@ -122,8 +123,9 @@ class SqlMembershipAdminRepository:
             except IntegrityError as exc:
                 # The database refused a combination of roles one person may
                 # not hold (the membership's existing permission sets
-                # included): nothing was granted, and no audit row claims it.
-                conflict = separation_of_duties_conflict(exc)
+                # included), or a support staff member (ADR 0024): nothing
+                # was granted, and no audit row claims it.
+                conflict = separation_of_duties_conflict(exc) or support_staff_conflict(exc)
                 if conflict is None:
                     raise
                 raise conflict from exc

@@ -2,7 +2,7 @@
 
 Usage:
     uv run python scripts/run_evals.py --smoke              # all datasets
-    uv run python scripts/run_evals.py --dataset evals/datasets/platform@1.1.0.json
+    uv run python scripts/run_evals.py --dataset evals/datasets/platform@1.2.0.json
 
 Exit code is non-zero when any case fails or a dataset lacks full security
 coverage (prompt injection, cross-tenant attack, missing evidence).

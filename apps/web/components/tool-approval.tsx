@@ -1,5 +1,5 @@
 import type { Approval } from "@dw/contracts";
-import { cn } from "@dw/ui";
+import { Descriptions } from "antd";
 import { PRODUCT_APPROVAL_TITLE } from "./supply-chain/product-case-labels";
 
 /**
@@ -107,23 +107,23 @@ export function toolArgumentRows(payload: Approval["payload"]): Row[] {
  */
 export function ToolApprovalPayload({
   payload,
-  className,
 }: {
   payload: Approval["payload"];
-  className?: string;
 }) {
   const rows = toolArgumentRows(payload);
   if (rows.length === 0) return null;
   return (
-    <dl className={cn("space-y-0.5 rounded-lg p-2 text-xs", className)}>
-      {rows.map((row) => (
-        <div key={row.field} className="flex gap-2">
-          <dt className="shrink-0 font-medium">{row.label}:</dt>
-          <dd className="min-w-0 whitespace-pre-wrap break-words">
-            {row.value}
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <Descriptions
+      size="small"
+      bordered
+      column={1}
+      items={rows.map((row) => ({
+        key: row.field,
+        label: row.label,
+        children: (
+          <span className="whitespace-pre-wrap break-words">{row.value}</span>
+        ),
+      }))}
+    />
   );
 }

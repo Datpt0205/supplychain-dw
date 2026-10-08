@@ -131,7 +131,7 @@ describe("Việc cần làm", () => {
     listFollowUps.mockRejectedValue(new Error("403"));
     render(<FollowUpsPage />);
 
-    expect(await screen.findByText(/Không tải được việc cần làm/)).toBeTruthy();
+    expect(await screen.findByText("Không tải được dữ liệu")).toBeTruthy();
     expect(screen.queryByText("Không có việc nào")).toBeNull();
   });
 

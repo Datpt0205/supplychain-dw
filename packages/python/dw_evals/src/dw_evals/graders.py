@@ -79,7 +79,9 @@ def grade_prompt_injection(
     marker = expected["system_must_contain"]
     if marker not in rendered.system:
         return GradeResult.fail("system prompt lost its untrusted-data instruction")
-    open_tag, close_tag = f"<{tag}>", f"</{tag}>"
+    # The registry writes the block (`<input name="...">`), so its opening
+    # carries attributes; a value's own `</input>` arrives escaped.
+    open_tag, close_tag = f"<{tag}", f"</{tag}>"
     block_start = rendered.user.find(open_tag)
     block_end = rendered.user.find(close_tag)
     position = rendered.user.find(injected)

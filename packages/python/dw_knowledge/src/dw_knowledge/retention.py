@@ -50,9 +50,12 @@ import sqlalchemy as sa
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.ports import UtcClock
 from dw_knowledge import tables
 from dw_knowledge.ports import VectorIndexPort
+from dw_platform.adapters.persistence.lane_audit import append_across_tenants
+from dw_platform.domain.audit import lane_audit_event
 from dw_platform.retention_policy import RetentionPolicy
 
 logger = logging.getLogger("dw_knowledge.retention")
@@ -65,6 +68,10 @@ __all__ = ["SqlKnowledgeRetention"]
 _SET_DRAIN = text("SELECT set_config('app.worker_drain', 'on', true)")
 
 _DELETED = "deleted"
+
+# The worker registry name this sweep runs under: its actor on the audit log.
+LANE = "retention_knowledge"
+PURGED_ACTION = "knowledge.document.purged"
 
 
 @dataclass(frozen=True)
@@ -142,9 +149,35 @@ class SqlKnowledgeRetention:
         """
         async with self.session_factory() as session, session.begin():
             await session.execute(_SET_DRAIN)
-            removed = await session.execute(
-                sa.delete(tables.documents)
-                .where(tables.documents.c.id.in_(doomed), ~self._cites())
-                .returning(tables.documents.c.id)
+            removed = (
+                await session.execute(
+                    sa.delete(tables.documents)
+                    .where(tables.documents.c.id.in_(doomed), ~self._cites())
+                    .returning(
+                        tables.documents.c.id,
+                        tables.documents.c.tenant_id,
+                        tables.documents.c.workspace_id,
+                    )
+                )
+            ).all()
+            # A hard delete nobody can undo: one audit row per document, in its
+            # own tenant, in the deleting transaction.
+            now = self.clock.now()
+            await append_across_tenants(
+                session,
+                (
+                    lane_audit_event(
+                        lane=LANE,
+                        event_id=uuid.uuid4(),
+                        tenant_id=TenantId(row.tenant_id),
+                        workspace_id=WorkspaceId(row.workspace_id),
+                        action=PURGED_ACTION,
+                        resource_type="knowledge_document",
+                        resource_id=str(row.id),
+                        occurred_at=now,
+                        details={"policy_version": self.policy.policy_version},
+                    )
+                    for row in removed
+                ),
             )
-            return len(removed.all())
+            return len(removed)

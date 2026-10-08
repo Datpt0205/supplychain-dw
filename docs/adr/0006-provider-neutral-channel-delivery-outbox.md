@@ -67,3 +67,18 @@ cancelled`), `attempts`, `next_attempt_at`, `external_message_id`,
 - Another channel (email) is one CHECK value and one adapter, not a new table.
 - A context never sends to a chat; it sends a notification, and the
   notification goes out through the channel.
+
+## Amendment 2026-10-08: nothing waits forever
+
+A delivery is queued whether or not any host sends, and the prune never
+removes a `pending` row, so with the bot token removed every queued row stayed
+pending for good. The same `channel_deliveries_retention` lane now also fails
+every row still pending past `channel_deliveries.pending_expiry_days` of the
+retention policy (`retention@1.7.0.yaml`, 7 days) with `last_error =
+'channel_unconfigured'`, writing one `channel_delivery.failed` audit row per
+row in its own tenant, as the lane's system actor (ADR 0011), through
+`platform.expire_pending_channel_deliveries` (migration `983b509c3f0f`,
+SECURITY DEFINER, EXECUTE for `dw_app` only). Chosen over refusing to enqueue
+when no sender is configured: the queue is written by the database function
+inside the notification's own statement, which cannot know what a worker host
+is configured to do, and a host may be configured later.

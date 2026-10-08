@@ -2,26 +2,29 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Check,
-  ChevronDown,
-  Loader2,
-  ShieldPlus,
-  Trash2,
-  UserPlus,
-} from "lucide-react";
-import type { PlatformUserRef, WorkspaceMember } from "@dw/api-client";
-import type { AdminPermissionSet } from "@dw/contracts";
-import {
+  Alert,
+  App,
   Button,
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@dw/ui";
-import { ApiError } from "@dw/api-client";
+  Checkbox,
+  Flex,
+  Select,
+  Tag,
+  Typography,
+  theme,
+} from "antd";
+import {
+  DeleteOutlined,
+  SafetyCertificateOutlined,
+  SaveOutlined,
+  UserAddOutlined,
+} from "@ant-design/icons";
+import type { PlatformUserRef, WorkspaceMember } from "@dw/api-client";
+import type { AdminPermissionSet } from "@dw/contracts";
+import { RegionState } from "@dw/ui";
 import { apiClient } from "../../lib/session";
 import { useAuth } from "../../lib/auth/auth-context";
+import { errorMessage } from "../../lib/error-message";
 import { roleLabel } from "../../lib/nav/roles";
 import { EmailPicker } from "../email-picker";
 
@@ -30,17 +33,15 @@ import { EmailPicker } from "../email-picker";
 // catalog — the API refuses a key the catalog does not carry.
 const BASE_GRANTABLE_ROLES = ["member", "approver"];
 // Administrative roles: the API refuses them from a non-platform-admin, so they
-// are offered only to a platform admin / operator (see `grantableRoles`). Listing
-// them also lets an existing admin member's row show its real role instead of
-// falling back to the first business role.
+// are offered only to a platform admin (see `grantableRoles`). Listing them also
+// lets an existing admin member's row show its real role instead of falling
+// back to the first business role.
 const ADMIN_GRANTABLE_ROLES = ["org_admin", "platform_admin"];
-
-function toRoleOptions(keys: string[]): { key: string; label: string }[] {
-  return keys.map((key) => ({ key, label: roleLabel(key) }));
-}
 
 export function MembersManager() {
   const { active, roles } = useAuth();
+  const { message, modal } = App.useApp();
+  const { token } = theme.useToken();
   const workspaceId = active?.workspaceId ?? null;
   // Only the platform_admin ROLE may mint an admin role — the grant handler's
   // _forbid_escalation lets exactly that role through and refuses everyone else,
@@ -48,14 +49,14 @@ export function MembersManager() {
   const canGrantAdmin = roles.includes("platform_admin");
   const grantableRoles = useMemo(
     () =>
-      toRoleOptions([
+      [
         ...BASE_GRANTABLE_ROLES,
         ...(canGrantAdmin ? ADMIN_GRANTABLE_ROLES : []),
-      ]),
+      ].map((key) => ({ value: key, label: roleLabel(key) })),
     [canGrantAdmin],
   );
 
-  const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [members, setMembers] = useState<WorkspaceMember[] | null>(null);
   const [candidates, setCandidates] = useState<PlatformUserRef[]>([]);
   // The picker is a convenience (the email box works without it), so a load
   // failure shows a small note here rather than being swallowed silently.
@@ -63,7 +64,6 @@ export function MembersManager() {
   const [permissionSets, setPermissionSets] = useState<AdminPermissionSet[]>(
     [],
   );
-  const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState(BASE_GRANTABLE_ROLES[0]!);
   const [busy, setBusy] = useState(false);
@@ -72,8 +72,7 @@ export function MembersManager() {
   // until it is touched.
   const [roleEdits, setRoleEdits] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
-  // Per-row permission-set edits, keyed by user id; a row falls back to its
-  // stored keys until it is touched.
+  // Per-row permission-set edits, keyed by user id.
   const [setEdits, setSetEdits] = useState<Record<string, string[]>>({});
   const [savingSetsId, setSavingSetsId] = useState<string | null>(null);
   // Permission sets are the exception, not the rule, so the editor stays folded
@@ -88,20 +87,16 @@ export function MembersManager() {
       setCandidatesError(null);
     } catch (e) {
       setCandidates([]);
-      setCandidatesError(
-        e instanceof ApiError
-          ? e.body.message
-          : "Could not load the suggestions — type the email to grant directly.",
-      );
+      setCandidatesError(`${errorMessage(e)} Gõ email để cấp trực tiếp.`);
     }
   }, []);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
     try {
       setMembers(await apiClient().listWorkspaceMembers());
       // Clear pending per-row edits so freshly loaded members show stored state.
       setSetEdits({});
+      setRoleEdits({});
       await loadCandidates();
       // The permission-set catalog is optional decoration; a failure here must
       // not blank the roster.
@@ -111,9 +106,8 @@ export function MembersManager() {
         setPermissionSets([]);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load the roster");
-    } finally {
-      setLoading(false);
+      setMembers([]);
+      setError(errorMessage(e));
     }
   }, [loadCandidates]);
 
@@ -131,10 +125,11 @@ export function MembersManager() {
         workspaceId,
         roleKeys: [role],
       });
+      message.success(`Đã cấp quyền cho ${email.trim()}.`);
       setEmail("");
       await refresh();
     } catch (e) {
-      setError(e instanceof ApiError ? e.body.message : "Grant failed");
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -144,9 +139,9 @@ export function MembersManager() {
     const edited = roleEdits[m.user_id];
     if (edited !== undefined) return edited;
     const known = m.role_keys.find((k) =>
-      grantableRoles.some((r) => r.key === k),
+      grantableRoles.some((r) => r.value === k),
     );
-    return known ?? grantableRoles[0]!.key;
+    return known ?? grantableRoles[0]!.value;
   }
 
   // grant is an upsert, so re-granting with a single role replaces the member's
@@ -164,9 +159,7 @@ export function MembersManager() {
       });
       await refresh();
     } catch (e) {
-      setError(
-        e instanceof ApiError ? e.body.message : "Could not update the role",
-      );
+      setError(errorMessage(e));
     } finally {
       setSavingId(null);
     }
@@ -176,12 +169,6 @@ export function MembersManager() {
     return setEdits[m.user_id] ?? m.permission_set_keys;
   }
 
-  function toggleSet(m: WorkspaceMember, key: string, on: boolean) {
-    const current = checkedSets(m);
-    const next = on ? [...current, key] : current.filter((k) => k !== key);
-    setSetEdits((prev) => ({ ...prev, [m.user_id]: next }));
-  }
-
   async function savePermissionSets(m: WorkspaceMember) {
     setSavingSetsId(m.user_id);
     setError(null);
@@ -189,45 +176,45 @@ export function MembersManager() {
       await apiClient().setMemberPermissionSets(m.user_id, checkedSets(m));
       await refresh();
     } catch (e) {
-      setError(
-        e instanceof ApiError
-          ? e.body.message
-          : "Could not update permission sets",
-      );
+      setError(errorMessage(e));
     } finally {
       setSavingSetsId(null);
     }
   }
 
-  async function revoke(userId: string) {
+  function revoke(m: WorkspaceMember) {
     if (!workspaceId) return;
-    setError(null);
-    try {
-      await apiClient().revokeMember(userId, workspaceId);
-      await refresh();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.body.message : "Revoke failed");
-    }
+    modal.confirm({
+      title: `Gỡ ${m.display_name} khỏi workspace?`,
+      content: "Người này sẽ mất mọi vai trong workspace hiện tại.",
+      okText: "Gỡ",
+      okButtonProps: { danger: true },
+      cancelText: "Hủy",
+      autoFocusButton: "cancel",
+      onOk: async () => {
+        setError(null);
+        try {
+          await apiClient().revokeMember(m.user_id, workspaceId);
+          await refresh();
+        } catch (e) {
+          setError(errorMessage(e));
+        }
+      },
+    });
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <UserPlus className="size-4" /> Members
-        </CardTitle>
-        <CardDescription>
-          Grant access to anyone who has signed in at least once. A new person
-          must sign in themselves before they can be assigned a role.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="flex-1 min-w-[12rem]">
-            <label className="mb-1 block text-xs text-muted-foreground">
-              Email
-            </label>
+    <Card title="Thành viên">
+      <Flex vertical gap="middle">
+        <Typography.Text type="secondary">
+          Cấp quyền cho người đã đăng nhập ít nhất một lần. Người mới phải tự
+          đăng nhập trước khi được giao vai.
+        </Typography.Text>
+        <Flex wrap align="end" gap="small">
+          <Flex vertical gap={4} className="min-w-[12rem] flex-1">
+            <label htmlFor="grant-email">Email</label>
             <EmailPicker
+              id="grant-email"
               value={email}
               onChange={setEmail}
               onOpen={() => void loadCandidates()}
@@ -235,167 +222,154 @@ export function MembersManager() {
                 email: c.email ?? "",
                 display_name: c.display_name,
               }))}
-              placeholder="Pick or type an email…"
+              placeholder="Chọn hoặc gõ email…"
             />
             {candidatesError && (
-              <p className="mt-1 text-xs text-muted-foreground">
+              <Typography.Text type="secondary" className="text-xs">
                 {candidatesError}
-              </p>
+              </Typography.Text>
             )}
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">
-              Role
-            </label>
-            <select
+          </Flex>
+          <Flex vertical gap={4}>
+            <label htmlFor="grant-role">Vai</label>
+            <Select
+              id="grant-role"
+              className="w-44"
               value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="rounded-md border bg-background px-3 py-2 text-sm"
-            >
-              {grantableRoles.map((r) => (
-                <option key={r.key} value={r.key}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Button onClick={() => void grant()} disabled={busy || !email.trim()}>
-            {busy ? <Loader2 className="animate-spin" /> : <UserPlus />}
-            Grant
+              onChange={setRole}
+              options={grantableRoles}
+            />
+          </Flex>
+          <Button
+            type="primary"
+            icon={<UserAddOutlined aria-hidden />}
+            loading={busy}
+            disabled={!email.trim()}
+            onClick={() => void grant()}
+          >
+            Cấp quyền
           </Button>
-        </div>
+        </Flex>
 
-        {error && (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </p>
-        )}
+        {error && <Alert type="error" showIcon title={error} />}
 
-        <div className="divide-y rounded-md border">
-          {loading ? (
-            <p className="px-3 py-4 text-sm text-muted-foreground">Loading…</p>
-          ) : members.length === 0 ? (
-            <p className="px-3 py-4 text-sm text-muted-foreground">
-              No members yet.
-            </p>
-          ) : (
-            members.map((m) => (
-              <div key={m.user_id} className="px-3 py-2 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{m.display_name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {m.email ?? "—"} · {m.department}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <select
-                      value={currentRole(m)}
-                      onChange={(e) =>
-                        setRoleEdits((prev) => ({
-                          ...prev,
-                          [m.user_id]: e.target.value,
-                        }))
-                      }
-                      className="rounded-md border bg-background px-2 py-1.5 text-sm"
+        {members === null ? (
+          <RegionState kind="loading" compact />
+        ) : members.length === 0 ? (
+          <RegionState kind="empty" compact title="Chưa có thành viên" />
+        ) : (
+          <ul className="m-0 list-none p-0">
+            {members.map((m) => {
+              const roleId = `role-${m.user_id}`;
+              return (
+                <li
+                  key={m.user_id}
+                  className="py-2.5"
+                  style={{
+                    borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                  }}
+                >
+                  <Flex wrap justify="space-between" align="center" gap="small">
+                    <div className="min-w-0">
+                      <Typography.Text strong ellipsis className="block">
+                        {m.display_name}
+                      </Typography.Text>
+                      <Typography.Text type="secondary" className="text-xs">
+                        {m.email ?? "—"} · {m.department}
+                      </Typography.Text>
+                    </div>
+                    <Flex
+                      align="center"
+                      gap="small"
+                      wrap
+                      className="max-w-full"
                     >
-                      {grantableRoles.map((r) => (
-                        <option key={r.key} value={r.key}>
-                          {r.label}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void saveRole(m)}
-                      disabled={!m.email || savingId === m.user_id}
-                    >
-                      {savingId === m.user_id ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Check className="size-4" />
-                      )}
-                      Save
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void revoke(m.user_id)}
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                {permissionSets.length > 0 && (
-                  <div className="mt-1.5">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setExpandedSetsId(
-                          expandedSetsId === m.user_id ? null : m.user_id,
-                        )
-                      }
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      <ShieldPlus className="size-3.5" /> Permission sets
-                      {checkedSets(m).length > 0 && (
-                        <span className="rounded-full bg-primary/10 px-1.5 text-[10px] font-medium text-primary">
-                          {checkedSets(m).length}
-                        </span>
-                      )}
-                      <ChevronDown
-                        className={`size-3 transition-transform ${
-                          expandedSetsId === m.user_id ? "rotate-180" : ""
-                        }`}
+                      <Select
+                        id={roleId}
+                        aria-label={`Vai của ${m.display_name}`}
+                        className="w-40"
+                        value={currentRole(m)}
+                        onChange={(value: string) =>
+                          setRoleEdits((prev) => ({
+                            ...prev,
+                            [m.user_id]: value,
+                          }))
+                        }
+                        options={grantableRoles}
                       />
-                    </button>
-                    {expandedSetsId === m.user_id && (
-                      <div className="mt-2 rounded-md bg-muted/40 px-3 py-2">
-                        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                          {permissionSets.map((ps) => (
-                            <label
-                              key={ps.key}
-                              className="flex items-center gap-1.5 text-xs"
-                              title={ps.scopes.join(", ")}
+                      <Button
+                        icon={<SaveOutlined aria-hidden />}
+                        loading={savingId === m.user_id}
+                        disabled={!m.email}
+                        onClick={() => void saveRole(m)}
+                      >
+                        Lưu
+                      </Button>
+                      <Button
+                        type="text"
+                        danger
+                        icon={<DeleteOutlined aria-hidden />}
+                        aria-label={`Gỡ ${m.display_name}`}
+                        onClick={() => revoke(m)}
+                      />
+                    </Flex>
+                  </Flex>
+
+                  {permissionSets.length > 0 && (
+                    <div className="mt-1.5">
+                      <Button
+                        type="link"
+                        size="small"
+                        className="!px-0"
+                        icon={<SafetyCertificateOutlined aria-hidden />}
+                        aria-expanded={expandedSetsId === m.user_id}
+                        onClick={() =>
+                          setExpandedSetsId(
+                            expandedSetsId === m.user_id ? null : m.user_id,
+                          )
+                        }
+                      >
+                        Bộ quyền bổ sung
+                        {checkedSets(m).length > 0 && (
+                          <Tag className="!ms-1">{checkedSets(m).length}</Tag>
+                        )}
+                      </Button>
+                      {expandedSetsId === m.user_id && (
+                        <Flex vertical gap="small" className="mt-2">
+                          <Checkbox.Group
+                            value={checkedSets(m)}
+                            onChange={(next) =>
+                              setSetEdits((prev) => ({
+                                ...prev,
+                                [m.user_id]: next as string[],
+                              }))
+                            }
+                            options={permissionSets.map((ps) => ({
+                              value: ps.key,
+                              label: ps.name,
+                              title: ps.scopes.join(", "),
+                            }))}
+                          />
+                          <div>
+                            <Button
+                              size="small"
+                              icon={<SaveOutlined aria-hidden />}
+                              loading={savingSetsId === m.user_id}
+                              onClick={() => void savePermissionSets(m)}
                             >
-                              <input
-                                type="checkbox"
-                                className="size-3.5 accent-primary"
-                                checked={checkedSets(m).includes(ps.key)}
-                                onChange={(e) =>
-                                  toggleSet(m, ps.key, e.target.checked)
-                                }
-                              />
-                              {ps.name}
-                            </label>
-                          ))}
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-2"
-                          onClick={() => void savePermissionSets(m)}
-                          disabled={savingSetsId === m.user_id}
-                        >
-                          {savingSetsId === m.user_id ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            <Check className="size-4" />
-                          )}
-                          Save permission sets
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      </CardContent>
+                              Lưu bộ quyền
+                            </Button>
+                          </div>
+                        </Flex>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Flex>
     </Card>
   );
 }

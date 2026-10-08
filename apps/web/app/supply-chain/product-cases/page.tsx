@@ -22,7 +22,8 @@ import {
 } from "antd";
 import type { TableColumnsType } from "antd";
 import { CloseOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
-import { PageHeader, RegionState, type RegionFailure } from "@dw/ui";
+import { PageHeader } from "@dw/ui";
+import { LoadError } from "../../../components/load-error";
 import {
   productDevStateSchema,
   type ProductCase,
@@ -49,7 +50,7 @@ import {
 import { useAuth } from "../../../lib/auth/auth-context";
 import { formatDateTime, VN_TIME } from "../../../lib/dates";
 import { memberName, useWorkspaceMembers } from "../../../lib/directory";
-import { errorMessage, regionFailure } from "../../../lib/error-message";
+import { errorMessage } from "../../../lib/error-message";
 import { useOnline } from "../../../lib/hooks/use-online";
 import { newIdempotencyKey } from "../../../lib/idempotency-key";
 import { matches } from "../../../lib/search";
@@ -79,7 +80,7 @@ const STATE_OPTIONS = productDevStateSchema.options.map((value) => ({
 
 type ListState =
   | { kind: "loading" }
-  | { kind: "error"; failure: RegionFailure }
+  | { kind: "error"; error: unknown }
   | {
       kind: "ready";
       items: ProductCase[];
@@ -122,8 +123,8 @@ function ProductCasesView() {
       <PageHeader
         breadcrumb={supplyChainCrumbs("Phát triển SP")}
         title="Hồ sơ phát triển sản phẩm"
-        description="Sản phẩm Cung ứng đề xuất ở bước 1, qua lấy mẫu, R&D test mẫu và BGĐ duyệt (bước 6) tới BM04. Mới nhất trước."
-        extra={<ProposeButton onOpen={() => setProposing(true)} />}
+        subtitle="Sản phẩm Cung ứng đề xuất ở bước 1, qua lấy mẫu, R&D test mẫu và BGĐ duyệt (bước 6) tới BM04. Mới nhất trước."
+        actions={<ProposeButton onOpen={() => setProposing(true)} />}
       />
       <Flex vertical gap="middle">
         <Flex wrap gap="middle" align="center">
@@ -478,7 +479,7 @@ function ProductCaseResults({
         moreError: null,
       });
     } catch (error) {
-      setList({ kind: "error", failure: regionFailure(error) });
+      setList({ kind: "error", error });
     }
   }, [state, picUserId, category]);
 
@@ -509,13 +510,7 @@ function ProductCaseResults({
   };
 
   if (list.kind === "error") {
-    return (
-      <RegionState
-        failure={list.failure}
-        what="hồ sơ phát triển sản phẩm"
-        onRetry={() => void loadFirst()}
-      />
-    );
+    return <LoadError error={list.error} onRetry={() => void loadFirst()} />;
   }
 
   const columns: TableColumnsType<ProductCase> = [

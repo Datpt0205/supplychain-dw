@@ -15,7 +15,7 @@ from dw_supply_chain.domain.delay_impact import DelayImpactExtraction, ImpactedM
 from dw_supply_chain.domain.po_case import POCase, reference_label
 
 PROMPT_ID = "supply_chain.delay_impact_analysis"
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.1.0"
 
 
 async def analyze_delay_impact(
@@ -29,10 +29,11 @@ async def analyze_delay_impact(
 ) -> DelayImpactExtraction:
     """Ask the model for assumptions and mitigation options.
 
-    `impacted` is trusted, code-computed context (not attacker-controlled
-    like `raw_text`), so it is rendered outside the prompt's `<input>` block
-    — same distinction `supplier_update_understanding.py` draws between the
-    raw message and everything the system already knows to be true.
+    `impacted` and `delay_days` are trusted, code-computed context, declared
+    raw in the prompt artifact with the reason, so they are rendered outside
+    any `<input>` block. Everything a person typed — `raw_text`, the
+    supplier's name, the PO reference — is contained by `PromptRegistry`,
+    each in its own escaped block.
     """
     request = ModelRequest(
         task="structured_extraction",

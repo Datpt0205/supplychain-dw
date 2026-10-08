@@ -23,10 +23,13 @@ import sqlalchemy as sa
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.ports import UtcClock
 from dw_knowledge import tables as knowledge_tables
 from dw_memory import tables
 from dw_memory.ranking import MemoryVectorPurgePort
+from dw_platform.adapters.persistence.lane_audit import append_across_tenants
+from dw_platform.domain.audit import lane_audit_event
 from dw_platform.retention_policy import RetentionPolicy
 
 logger = logging.getLogger("dw_memory.retention")
@@ -37,6 +40,10 @@ __all__ = ["SqlMemoryRetention"]
 # the outbox and ingest drains do: a sweep that had to be run once per tenant
 # would need a list of tenants, which is itself a cross-tenant read.
 _SET_DRAIN = text("SELECT set_config('app.worker_drain', 'on', true)")
+
+# The worker registry name this sweep runs under: its actor on the audit log.
+LANE = "retention"
+EXPIRED_ACTION = "memory.item.expired"
 
 
 @dataclass(frozen=True)
@@ -124,13 +131,41 @@ class SqlMemoryRetention:
                 .limit(self.policy.batch_limit)
                 .scalar_subquery()
             )
-            # RETURNING: the ids are what the ranker's store is told to forget.
-            removed = await session.execute(
-                sa.delete(tables.items)
-                .where(tables.items.c.memory_id.in_(doomed))
-                .returning(tables.items.c.memory_id)
+            # RETURNING: the ids are what the ranker's store is told to forget,
+            # and each one is an audit row in its own tenant, in this transaction.
+            removed = (
+                await session.execute(
+                    sa.delete(tables.items)
+                    .where(tables.items.c.memory_id.in_(doomed))
+                    .returning(
+                        tables.items.c.memory_id,
+                        tables.items.c.tenant_id,
+                        tables.items.c.workspace_id,
+                    )
+                )
+            ).all()
+            now = self.clock.now()
+            await append_across_tenants(
+                session,
+                (
+                    lane_audit_event(
+                        lane=LANE,
+                        event_id=uuid.uuid4(),
+                        tenant_id=TenantId(row.tenant_id),
+                        workspace_id=WorkspaceId(row.workspace_id),
+                        action=EXPIRED_ACTION,
+                        resource_type="memory_item",
+                        resource_id=str(row.memory_id),
+                        occurred_at=now,
+                        details={
+                            "retention_class": name,
+                            "policy_version": self.policy.policy_version,
+                        },
+                    )
+                    for row in removed
+                ),
             )
-            return list(removed.scalars().all())
+            return [row.memory_id for row in removed]
 
     async def _delete_orphan_evidence(self, now: datetime) -> int:
         """Delete evidence rows that no memory cites any more.

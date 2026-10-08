@@ -28,9 +28,11 @@ from sqlalchemy.pool import NullPool
 
 from dw_knowledge import tables
 from dw_knowledge.ports import IndexableChunk, TrustedSearchFilter, VectorHit
-from dw_knowledge.retention import SqlKnowledgeRetention
+from dw_knowledge.retention import LANE, PURGED_ACTION, SqlKnowledgeRetention
+from dw_platform.domain.audit import system_actor
 from dw_platform.retention_policy import (
     AuditRetention,
+    ChannelDeliveryRetention,
     CheckpointRetention,
     KnowledgeRetention,
     RetentionClass,
@@ -61,6 +63,7 @@ def _policy() -> RetentionPolicy:
         knowledge=KnowledgeRetention(deleted_grace_days=GRACE_DAYS, orphan_evidence_grace_days=7),
         audit=AuditRetention(months_ahead=1, enforced=False, tables={}),
         checkpoints=CheckpointRetention(superseded_days=7, idle_thread_days=730),
+        channel_deliveries=ChannelDeliveryRetention(pending_expiry_days=7),
         batch_limit=1000,
     )
 
@@ -382,3 +385,31 @@ async def test_a_citation_written_mid_pass_holds_back_only_that_document(
 
     assert await _count(sessions, tables.documents, tables.documents.c.id, late) == 1
     assert await _count(sessions, tables.documents, tables.documents.c.id, ordinary) == 0
+
+
+async def test_a_purged_document_is_on_its_tenants_audit_log_as_the_lane(
+    sweep: tuple[SqlKnowledgeRetention, async_sessionmaker[AsyncSession], _RecordingIndex],
+) -> None:
+    pruner, sessions, _index = sweep
+    doomed = await _document(sessions, status="deleted", deleted_days_ago=GRACE_DAYS + 10)
+    kept = await _document(sessions, status="deleted", deleted_days_ago=1)
+
+    await pruner.prune()
+
+    async with sessions() as session, session.begin():
+        await session.execute(
+            sa.text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(TENANT)}
+        )
+        rows = (
+            await session.execute(
+                sa.text(
+                    "SELECT resource_id, action, actor_id, workspace_id"
+                    " FROM platform.audit_events WHERE resource_type = 'knowledge_document'"
+                    " AND resource_id IN (:a, :b)"
+                ),
+                {"a": str(doomed), "b": str(kept)},
+            )
+        ).all()
+    assert [tuple(row) for row in rows] == [
+        (str(doomed), PURGED_ACTION, system_actor(LANE).value, WORKSPACE)
+    ]

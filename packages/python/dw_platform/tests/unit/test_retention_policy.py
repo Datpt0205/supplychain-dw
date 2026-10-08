@@ -14,6 +14,7 @@ import pytest
 
 from dw_platform.retention_policy import (
     AuditRetention,
+    ChannelDeliveryRetention,
     CheckpointRetention,
     KnowledgeRetention,
     RetentionClass,
@@ -45,6 +46,7 @@ def _policy() -> RetentionPolicy:
             tables={"audit_events": RetentionClass(days=None, description="giữ")},
         ),
         checkpoints=CheckpointRetention(superseded_days=7, idle_thread_days=730),
+        channel_deliveries=ChannelDeliveryRetention(pending_expiry_days=7),
         batch_limit=100,
     )
 
@@ -101,3 +103,11 @@ def test_an_idle_term_shorter_than_the_superseded_one_is_refused() -> None:
     checkpoints expire."""
     with pytest.raises(ValueError, match="idle_thread_days"):
         CheckpointRetention(superseded_days=30, idle_thread_days=7)
+
+
+@pytest.mark.parametrize("days", [0, -1])
+def test_a_pending_delivery_term_is_at_least_a_day(days: int) -> None:
+    """Zero would fail a delivery the moment it is queued, before any lane
+    could try it."""
+    with pytest.raises(ValueError, match="pending_expiry_days"):
+        ChannelDeliveryRetention(pending_expiry_days=days)

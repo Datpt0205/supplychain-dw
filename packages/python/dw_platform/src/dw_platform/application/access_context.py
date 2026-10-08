@@ -14,6 +14,18 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from dw_kernel.autonomy import FAIL_CLOSED_LEVEL, AutonomyLevel
 
 
+class SupportScope(BaseModel):
+    """The customer's grant a support context was built from (ADR 0024)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    grant_id: UUID
+    code: str
+    resource_type: str
+    resource_id: UUID | None
+    scope_set_key: str
+
+
 class AccessContext(BaseModel):
     """Immutable, verified identity + tenancy + entitlement snapshot."""
 
@@ -43,6 +55,10 @@ class AccessContext(BaseModel):
     # not be treated as allowing everything. `record_visibility` above defaults
     # the other way; this deliberately does not follow it.
     max_autonomy_level: AutonomyLevel = FAIL_CLOSED_LEVEL
+    # Set only on a support context (ADR 0024): a support staff member working
+    # under a customer's grant, with no role and the grant's stamped scopes.
+    # Never cached, never built from a membership.
+    support: SupportScope | None = None
 
     @field_validator("plan_id", "clearance")
     @classmethod

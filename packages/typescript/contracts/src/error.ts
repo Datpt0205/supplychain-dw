@@ -18,6 +18,7 @@ export const ErrorCode = {
   ValidationFailed: "validation_failed",
   NotFound: "not_found",
   Conflict: "conflict",
+  Unauthenticated: "unauthenticated",
   PermissionDenied: "permission_denied",
   EntitlementDenied: "entitlement_denied",
   ApprovalRequired: "approval_required",

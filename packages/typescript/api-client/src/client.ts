@@ -261,6 +261,42 @@ type CaseQueryBody =
 /** `POST /po-cases/{id}/packaging-design/steps`' body (slice PK). */
 type TakePackagingStepBody =
   SupplyChainOperations["take_packaging_step_api_v1_supply_chain_po_cases__case_id__packaging_design_steps_post"]["requestBody"]["content"]["application/json"];
+// Customer-granted support access, the operators' side (ADR 0024).
+const supportStaffSchema = z.object({
+  user_id: z.string(),
+  email: z.string().nullable(),
+  display_name: z.string(),
+  note: z.string().nullable(),
+  added_at: z.string(),
+});
+export type SupportStaff = z.infer<typeof supportStaffSchema>;
+
+const supportRequestSchema = z.object({
+  grant_id: z.string(),
+  code: z.string(),
+  tenant_id: z.string(),
+  tenant_name: z.string(),
+  workspace_id: z.string(),
+  workspace_name: z.string(),
+  resource_type: z.string(),
+  resource_label: z.string(),
+  scope_set_key: z.string(),
+  scope_set_label: z.string(),
+  duration_hours: z.number(),
+  reason: z.string(),
+  requested_at: z.string(),
+});
+export type SupportRequest = z.infer<typeof supportRequestSchema>;
+
+const assignedSupportGrantSchema = z.object({
+  grant_id: z.string(),
+  code: z.string(),
+  tenant_id: z.string(),
+  staff_user_id: z.string(),
+  activated_at: z.string(),
+  expires_at: z.string(),
+});
+export type AssignedSupportGrant = z.infer<typeof assignedSupportGrantSchema>;
 
 /** True only when A and B are the same type, both ways. */
 type SameType<A, B> = [A] extends [B]
@@ -438,6 +474,14 @@ const _poCaseMirrorsTheRoute: [
   SameType<keyof OrderPlaced, keyof SupplyChainGenerated["OrderPlacedView"]>,
 ] = [true, true, true, true, true, true, true, true];
 void _poCaseMirrorsTheRoute;
+const _supportOperatorsMirrorTheRoutes: [
+  SameType<SupportStaff, Generated["SupportStaffView"]>,
+  SameType<keyof SupportStaff, keyof Generated["SupportStaffView"]>,
+  SameType<SupportRequest, Generated["SupportRequestView"]>,
+  SameType<keyof SupportRequest, keyof Generated["SupportRequestView"]>,
+  SameType<AssignedSupportGrant, Generated["AssignedSupportGrantView"]>,
+] = [true, true, true, true, true];
+void _supportOperatorsMirrorTheRoutes;
 
 export class ApiClient {
   constructor(private readonly options: ApiClientOptions) {}
@@ -742,7 +786,21 @@ export class ApiClient {
     );
   }
 
-  /** Close the tenant's waiver. 409 while members still hold both sides. */
+  /** Confirm a waiver another admin proposed; until then it lifts nothing.
+   * 409 if the caller proposed it, 404 if none is waiting. */
+  confirmSeparationOfDutiesWaiver(
+    ruleKey: string,
+    reason: string,
+  ): Promise<void> {
+    return this.requestNoContent(
+      "POST",
+      `/api/v1/admin/separation-of-duties/${encodeURIComponent(ruleKey)}/waiver/confirm`,
+      { body: { reason } },
+    );
+  }
+
+  /** Close the tenant's waiver, or withdraw one still waiting for
+   * confirmation. 409 while members still hold both sides. */
   revokeSeparationOfDutiesWaiver(
     ruleKey: string,
     reason: string,
@@ -853,6 +911,52 @@ export class ApiClient {
     return this.requestNoContent(
       "DELETE",
       `/api/v1/platform/operators/${userId}`,
+    );
+  }
+
+  listSupportStaff(): Promise<SupportStaff[]> {
+    return this.request(
+      "GET",
+      "/api/v1/platform/support-staff",
+      z.array(supportStaffSchema),
+    );
+  }
+
+  addSupportStaff(email: string, note?: string): Promise<PlatformUserRef> {
+    return this.request(
+      "POST",
+      "/api/v1/platform/support-staff",
+      userRefSchema,
+      {
+        body: { email, note: note ?? null },
+      },
+    );
+  }
+
+  removeSupportStaff(userId: string): Promise<void> {
+    return this.requestNoContent(
+      "DELETE",
+      `/api/v1/platform/support-staff/${userId}`,
+    );
+  }
+
+  listSupportRequests(): Promise<SupportRequest[]> {
+    return this.request(
+      "GET",
+      "/api/v1/platform/support-requests",
+      z.array(supportRequestSchema),
+    );
+  }
+
+  assignSupportRequest(
+    grantId: string,
+    staffUserId: string,
+  ): Promise<AssignedSupportGrant> {
+    return this.request(
+      "POST",
+      `/api/v1/platform/support-requests/${grantId}/assign`,
+      assignedSupportGrantSchema,
+      { body: { staff_user_id: staffUserId } },
     );
   }
 

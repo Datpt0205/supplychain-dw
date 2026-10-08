@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { App } from "antd";
 import { useAuth } from "./auth/auth-context";
+import { errorMessage } from "./error-message";
 
 /**
  * A tiny in-memory cache for a page's data, shared across the app.
@@ -31,6 +32,8 @@ export function useCachedResource<T>(
   // isolates the cache entry AND changes the effect dependency, so a switch
   // reloads with the new context. `none` covers the pre-ready render.
   const { active } = useAuth();
+  // antd's `App` gives a `message` that reads the theme and the vi_VN locale.
+  const { message } = App.useApp();
   const cacheKey = `${active?.workspaceId ?? "none"}::${rawKey}`;
   const cached = resourceCache.get(cacheKey) as T | undefined;
   const [data, setData] = useState<T | null>(cached ?? null);
@@ -59,9 +62,8 @@ export function useCachedResource<T>(
       })
       .catch((failure: unknown) => {
         if (!cancelled) setError(failure);
-        toast.error(
-          failure instanceof Error ? failure.message : String(failure),
-        );
+        // The server's sentence, never "permission_denied: …".
+        if (!cancelled) message.error(errorMessage(failure));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

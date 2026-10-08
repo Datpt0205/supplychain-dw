@@ -172,7 +172,7 @@ async def notify_duty_holders(
     about has committed; a failed notice is logged and the write stands."""
     try:
         recipients = await holders.holding(
-            context, context.workspace_id, frozenset({duty_scope(duty)})
+            context.tenant_id, context.workspace_id, frozenset({duty_scope(duty)})
         )
         await notifier.deliver(
             context,
@@ -307,7 +307,9 @@ async def require_member(
 ) -> None:
     """A PIC must be a member of the case's workspace (the caller's): a case
     handed to someone who cannot open it is a case nobody works."""
-    if user_id not in await members.members(context, context.workspace_id, frozenset({user_id})):
+    if user_id not in await members.members(
+        context.tenant_id, context.workspace_id, frozenset({user_id})
+    ):
         raise DomainError(
             "the new PIC is not a member of this workspace", details={"field": "pic_user_id"}
         )

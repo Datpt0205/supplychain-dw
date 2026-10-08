@@ -84,6 +84,8 @@ class _Identity:
     email: str | None
     issuer: str = "https://issuer.test/realms/dw"
     name: str | None = None
+    auth_methods: frozenset[str] = frozenset()
+    acr: str | None = None
 
 
 @dataclass(frozen=True)
@@ -330,8 +332,6 @@ async def test_a_coordinator_closes_it_with_an_audit_row_and_it_cannot_be_delete
 async def test_whoever_holds_the_scope_through_a_role_is_a_recipient(stack: _Stack) -> None:
     operator = await _member(stack, "sc_operator")
     owner = await _member(stack, "sc_process_admin")
-    holders = await SqlScopeHolders(stack.sessions).holding(
-        sweep_context(ALPHA, ALPHA_WS), ALPHA_WS, frozenset({RECORDS})
-    )
+    holders = await SqlScopeHolders(stack.sessions).holding(ALPHA, ALPHA_WS, frozenset({RECORDS}))
     assert operator.principal_id in holders
     assert owner.principal_id not in holders

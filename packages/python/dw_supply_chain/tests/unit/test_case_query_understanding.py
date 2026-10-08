@@ -96,7 +96,7 @@ async def test_the_question_reaches_the_model_only_inside_the_input_block() -> N
     await understand_case_query(make_gateway(adapter), make_run_context(), injected)
 
     rendered = adapter.calls[0]
-    start, end = rendered.user.index("<input>"), rendered.user.index("</input>")
+    start, end = rendered.user.index("<input"), rendered.user.index("</input>")
     assert injected in rendered.user[start:end]
     assert rendered.user.count(injected) == 1
     assert injected not in rendered.system

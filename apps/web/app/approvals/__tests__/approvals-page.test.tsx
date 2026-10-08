@@ -86,10 +86,10 @@ async function renderWith(scopes: string[], item: Approval, admin = false) {
   render(<ApprovalsPage />);
   return {
     approve: (await screen.findByRole("button", {
-      name: "Duyệt",
+      name: /^Duyệt$/,
     })) as HTMLButtonElement,
     reject: screen.getByRole("button", {
-      name: "Từ chối",
+      name: /^Từ chối$/,
     }) as HTMLButtonElement,
   };
 }

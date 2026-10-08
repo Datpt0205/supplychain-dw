@@ -13,13 +13,13 @@ import {
 } from "antd";
 import type { PortfolioSummary } from "@dw/contracts";
 import { PageHeader, RegionState } from "@dw/ui";
+import { LoadError } from "../../../components/load-error";
 import { CaseQueryBar } from "../../../components/supply-chain/case-query-bar";
 import {
   CASE_STATE_LABEL,
   CaseStateTag,
 } from "../../../components/supply-chain/case-state-badge";
 import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
-import { regionFailure } from "../../../lib/error-message";
 import { apiClient } from "../../../lib/session";
 import { poCasesHref } from "../../../lib/supply-chain/po-case-filter";
 import { useCachedResource } from "../../../lib/use-cached-resource";
@@ -48,20 +48,20 @@ export default function ControlTowerPage() {
       <PageHeader
         breadcrumb={supplyChainCrumbs("Control Tower")}
         title="Control Tower"
-        description="Mọi Hồ sơ PO đang chạy (bước 10–17), gom theo trạng thái và NCC: chỉ đếm tín hiệu xác định, không chấm điểm."
+        subtitle="Mọi Hồ sơ PO đang chạy (bước 10–17), gom theo trạng thái và NCC: chỉ đếm tín hiệu xác định, không chấm điểm."
       />
       <Flex vertical gap="middle">
         <CaseQueryBar />
         {!summary ? (
           // A failed load is never shown as an empty portfolio: "nothing is
           // running" read off a 403 or an outage is an all-clear nobody gave.
-          <RegionState
-            loading={loading}
-            failure={error != null ? regionFailure(error) : null}
-            what="dữ liệu Control Tower"
-            onRetry={reload}
-            rows={8}
-          />
+          <>
+            {error != null ? (
+              <LoadError error={error} onRetry={reload} />
+            ) : loading ? (
+              <RegionState kind="loading" />
+            ) : null}
+          </>
         ) : summary.active_case_count === 0 ? (
           <Empty description="Chưa có Hồ sơ PO nào đang chạy. Hồ sơ đã hoàn tất hoặc đã hủy không được tính ở đây." />
         ) : (

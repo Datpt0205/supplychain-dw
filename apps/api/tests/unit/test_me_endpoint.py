@@ -84,24 +84,33 @@ async def test_me_returns_access_context() -> None:
     assert body["plan_id"] == "professional"
 
 
-async def test_me_without_token_401() -> None:
-    response = await call_me({"X-Tenant-Id": str(TENANT), "X-Workspace-Id": str(WORKSPACE)})
-    assert response.status_code == 403 or response.status_code == 401
-    assert response.json()["code"] in ("permission_denied", "tenant_context_missing")
-
-
-async def test_me_with_garbage_token_403() -> None:
-    headers = auth_headers()
-    headers["Authorization"] = "Bearer not-a-real-token"
+@pytest.mark.parametrize(
+    "authorization",
+    [None, "", "Bearer", "Bearer   ", "Basic dXNlcjpwYXNz", "Bearer not-a-real-token"],
+    ids=["absent", "empty", "no-token", "blank-token", "wrong-scheme", "unverifiable"],
+)
+async def test_me_without_a_verifiable_token_is_401_with_a_challenge(
+    authorization: str | None,
+) -> None:
+    """401 says "sign in again"; 403 says "you are known and may not". A
+    client cannot choose between re-authenticating and reporting a missing
+    permission unless the two answers differ (RFC 9110 15.5.2: a 401 carries
+    WWW-Authenticate)."""
+    headers = {"X-Tenant-Id": str(TENANT), "X-Workspace-Id": str(WORKSPACE)}
+    if authorization is not None:
+        headers["Authorization"] = authorization
     response = await call_me(headers)
-    assert response.status_code == 403
-    assert response.json()["code"] == "permission_denied"
+    assert response.status_code == 401
+    assert response.json()["code"] == "unauthenticated"
+    assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
 async def test_me_foreign_tenant_denied() -> None:
+    """A valid token without the right stays 403, and is no challenge."""
     response = await call_me(auth_headers(tenant=uuid.uuid4()))
     assert response.status_code == 403
     assert response.json()["code"] == "permission_denied"
+    assert "WWW-Authenticate" not in response.headers
 
 
 async def test_me_missing_tenant_header_401() -> None:

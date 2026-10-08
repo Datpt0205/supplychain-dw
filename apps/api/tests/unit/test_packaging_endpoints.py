@@ -211,7 +211,8 @@ async def test_a_step_needs_a_bearer_token_and_changes_nothing_without_one() -> 
         {"action": "approve_colour"},
         auth=False,
     )
-    assert response.status_code == 403
+    assert response.status_code == 401
+    assert response.json()["code"] == "unauthenticated"
     assert world.designs.rows == {}
 
 

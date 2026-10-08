@@ -1,6 +1,6 @@
 # Mục menu hiện khi người dùng có một trong nhiều scope
 
-Status: ready-for-agent
+Status: resolved
 Area: platform-runtime · Nhánh: `main` (worktree `codebase-main`) · Viết: 3/10/2026
 
 Lát nền tảng, trung tính với sản phẩm. Một context có trang mà hai nhóm người khác nhau
@@ -38,6 +38,6 @@ Không bị chặn bởi gì.
 
 ## Danh sách ticket
 
-| #   | Ticket                                                            | Status          | Blocked by |
-| --- | ----------------------------------------------------------------- | --------------- | ---------- |
-| 01  | [`anyScope` và một hàm hiện mục menu](issues/01-nav-any-scope.md) | ready-for-agent | —          |
+| #   | Ticket                                                            | Status   | Blocked by |
+| --- | ----------------------------------------------------------------- | -------- | ---------- |
+| 01  | [`anyScope` và một hàm hiện mục menu](issues/01-nav-any-scope.md) | resolved | —          |

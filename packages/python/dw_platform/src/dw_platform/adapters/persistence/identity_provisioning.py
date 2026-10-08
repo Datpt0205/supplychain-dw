@@ -100,6 +100,13 @@ class SqlIdentityBootstrap:
                     )
                 )
             ).first() is not None
+            is_support_staff = (
+                await session.execute(
+                    sa.select(tables.support_staff.c.user_id).where(
+                        tables.support_staff.c.user_id == user_id
+                    )
+                )
+            ).first() is not None
 
         return BootstrapView(
             principal_id=user_id,
@@ -108,6 +115,7 @@ class SqlIdentityBootstrap:
             display_name=user_row.display_name,
             memberships=memberships,
             is_platform_operator=is_operator,
+            is_support_staff=is_support_staff,
         )
 
     async def _resolve_user(

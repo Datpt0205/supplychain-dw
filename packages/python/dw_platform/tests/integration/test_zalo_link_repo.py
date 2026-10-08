@@ -416,6 +416,8 @@ async def test_a_bootstrapped_zalo_identity_never_signs_in_as_the_linked_user(
         subject: str
         issuer: str = "zalo"
         email: str | None = None
+        auth_methods: frozenset[str] = frozenset()
+        acr: str | None = None
 
     user, chat = await _user(migrator_engine), _chat()
     token = _claims(user)

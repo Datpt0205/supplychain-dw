@@ -84,7 +84,7 @@ class _Holders:
     held: dict[tuple[uuid.UUID, uuid.UUID], frozenset[str]]
 
     async def holding(
-        self, context: AccessContext, workspace_id: uuid.UUID, scopes: frozenset[str]
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, scopes: frozenset[str]
     ) -> list[uuid.UUID]:
         return [
             user for (ws, user), mine in self.held.items() if ws == workspace_id and mine & scopes

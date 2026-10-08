@@ -11,7 +11,8 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 
-from dw_kernel.errors import PermissionDeniedError
+from dw_kernel.errors import UnauthenticatedError
+from dw_platform.adapters.identity.keycloak import auth_methods
 from dw_platform.application.identity import VerifiedClaims
 
 DEV_ISSUER = "dw-dev"
@@ -41,13 +42,16 @@ class DevTokenVerifier:
                 options={"require": ["exp", "iss", "aud", "sub"]},
             )
         except jwt.PyJWTError as exc:
-            raise PermissionDeniedError(
+            # Unauthenticated, not forbidden: a fresh sign-in is the fix.
+            raise UnauthenticatedError(
                 "invalid bearer token", details={"reason": type(exc).__name__}
             ) from exc
         return VerifiedClaims(
             subject=str(claims["sub"]),
             email=claims.get("email"),
             issuer=str(claims["iss"]),
+            auth_methods=auth_methods(claims.get("amr")),
+            acr=str(claims["acr"]) if claims.get("acr") is not None else None,
         )
 
     def issue(
@@ -56,6 +60,7 @@ class DevTokenVerifier:
         *,
         email: str | None = None,
         ttl: timedelta = timedelta(hours=8),
+        amr: list[str] | None = None,
     ) -> str:
         """Issue a dev token (used by seed output and tests)."""
         now = datetime.now(tz=UTC)
@@ -68,4 +73,6 @@ class DevTokenVerifier:
         }
         if email:
             payload["email"] = email
+        if amr is not None:
+            payload["amr"] = amr
         return jwt.encode(payload, key=self.secret, algorithm="HS256")

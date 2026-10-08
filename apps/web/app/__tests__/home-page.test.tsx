@@ -30,7 +30,7 @@ describe("home page destinations", () => {
     render(<HomePage />);
 
     expect(offered("Duyệt")).toBe(true);
-    expect(offered("Audit log")).toBe(false);
+    expect(offered("Nhật ký kiểm toán")).toBe(false);
   });
 
   it("offers the audit log to a holder of audit.events", () => {
@@ -38,6 +38,6 @@ describe("home page destinations", () => {
     render(<HomePage />);
 
     expect(offered("Duyệt")).toBe(true);
-    expect(offered("Audit log")).toBe(true);
+    expect(offered("Nhật ký kiểm toán")).toBe(true);
   });
 });

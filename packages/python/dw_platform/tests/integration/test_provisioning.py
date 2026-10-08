@@ -163,6 +163,8 @@ async def test_assign_org_admin_after_sign_in(
             email = "newlead@fpt.com"
             issuer = "https://issuer.test/realms/dw"
             name = "New Lead"
+            auth_methods: frozenset[str] = frozenset()
+            acr: str | None = None
 
         await bootstrap.bootstrap(_Id())
     finally:
@@ -196,6 +198,8 @@ async def test_locking_a_tenant_denies_its_members(
             email = "member@lockco.com"
             issuer = "https://issuer.test/realms/dw"
             name = "Member"
+            auth_methods: frozenset[str] = frozenset()
+            acr: str | None = None
 
         view = await bootstrap.bootstrap(_Id())
         await service.assign_org_admin(

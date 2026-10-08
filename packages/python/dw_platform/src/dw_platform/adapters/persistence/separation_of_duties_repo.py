@@ -28,6 +28,7 @@ from dw_platform.domain.audit import AuditEvent
 _NOT_WAIVABLE = "ck_sod_waivers_rule_waivable"
 _ALREADY_OPEN = "uq_sod_waivers_open"
 _IN_USE = "ck_sod_waivers_not_in_use"
+_SECOND_PERSON = "ck_sod_waivers_second_person"
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,8 @@ class SqlSeparationOfDutiesRepository:
                         waivers.c.reason,
                         waivers.c.granted_by,
                         waivers.c.granted_at,
+                        waivers.c.confirmed_by,
+                        waivers.c.confirmed_at,
                     )
                     .select_from(
                         rules.outerjoin(
@@ -74,7 +77,11 @@ class SqlSeparationOfDutiesRepository:
                 waiver=None
                 if row.granted_at is None
                 else SodWaiver(
-                    reason=row.reason, granted_by=row.granted_by, granted_at=row.granted_at
+                    reason=row.reason,
+                    granted_by=row.granted_by,
+                    granted_at=row.granted_at,
+                    confirmed_by=row.confirmed_by,
+                    confirmed_at=row.confirmed_at,
                 ),
             )
             for row in rows
@@ -153,6 +160,44 @@ class SqlSeparationOfDutiesRepository:
                         "memberships still hold both sides of this rule; change their"
                         " roles before revoking the waiver",
                         details={"rule_key": rule_key, "memberships": int(refused[1] or 0)},
+                    ) from exc
+                raise
+            if row is None:
+                return False
+            await SqlAuditRepository(session).append(audit)
+        return True
+
+    async def confirm(
+        self, context: AccessContext, *, rule_key: str, reason: str, audit: AuditEvent
+    ) -> bool:
+        waivers = tables.sod_waivers
+        async with tenant_session(
+            self.session_factory, TenantScope.from_access_context(context)
+        ) as session:
+            try:
+                row = (
+                    await session.execute(
+                        sa.update(waivers)
+                        .where(
+                            waivers.c.tenant_id == context.tenant_id,
+                            waivers.c.rule_key == rule_key,
+                            waivers.c.revoked_at.is_(None),
+                            waivers.c.confirmed_at.is_(None),
+                        )
+                        .values(
+                            confirmed_at=sa.func.now(),
+                            confirmed_by=context.principal_id,
+                            confirm_reason=reason,
+                        )
+                        .returning(waivers.c.id)
+                    )
+                ).first()
+            except IntegrityError as exc:
+                refused = refusal(exc)
+                if refused is not None and refused[0] == _SECOND_PERSON:
+                    raise ConflictError(
+                        "a waiver is confirmed by a second person, not by who proposed it",
+                        details={"rule_key": rule_key},
                     ) from exc
                 raise
             if row is None:

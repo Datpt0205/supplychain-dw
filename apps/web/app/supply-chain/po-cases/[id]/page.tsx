@@ -22,6 +22,8 @@ import {
 } from "antd";
 import type { TableColumnsType } from "antd";
 import { StatusTag, PageHeader, RegionState } from "@dw/ui";
+import { formatCount } from "../../../../lib/money";
+import { LoadError } from "../../../../components/load-error";
 import {
   ApiError,
   type OrderKind,
@@ -57,7 +59,7 @@ import { SupplierEventTag } from "../../../../components/supply-chain/supplier-e
 import { useAuth } from "../../../../lib/auth/auth-context";
 import { formatDateTimeFull } from "../../../../lib/dates";
 import { memberName, useWorkspaceMembers } from "../../../../lib/directory";
-import { errorMessage, regionFailure } from "../../../../lib/error-message";
+import { errorMessage } from "../../../../lib/error-message";
 import { useOnline } from "../../../../lib/hooks/use-online";
 import { useAttemptKey } from "../../../../lib/idempotency-key";
 import { apiClient } from "../../../../lib/session";
@@ -130,17 +132,11 @@ export default function POCaseWorkspacePage() {
           })}
           title="Hồ sơ PO"
         />
-        <RegionState
-          loading={caseResource.loading}
-          failure={
-            caseResource.error != null
-              ? regionFailure(caseResource.error)
-              : null
-          }
-          what="Hồ sơ PO"
-          onRetry={caseResource.reload}
-          rows={8}
-        />
+        {caseResource.error != null ? (
+          <LoadError error={caseResource.error} onRetry={caseResource.reload} />
+        ) : caseResource.loading ? (
+          <RegionState kind="loading" />
+        ) : null}
       </div>
     );
   }
@@ -214,14 +210,16 @@ export default function POCaseWorkspacePage() {
           { title: "Hồ sơ PO", href: "/supply-chain/po-cases" },
           poReferenceLabel(poCase.po_reference),
         )}
-        meta={
-          <Typography.Text type="secondary">
-            Hồ sơ PO · NCC {poCase.supplier_name}
-          </Typography.Text>
-        }
         title={poReferenceLabel(poCase.po_reference)}
-        tags={<CaseStateTag state={poCase.state} />}
-        description={`Tạo lúc ${formatDateTimeFull(poCase.created_at)} · phiên bản ${poCase.version}`}
+        tags={
+          <>
+            <Typography.Text type="secondary">
+              Hồ sơ PO · NCC {poCase.supplier_name}
+            </Typography.Text>
+            <CaseStateTag state={poCase.state} />
+          </>
+        }
+        subtitle={`Tạo lúc ${formatDateTimeFull(poCase.created_at)} · phiên bản ${poCase.version}`}
       />
       <Flex vertical gap="middle">
         <CaseSummary label="Tóm tắt Hồ sơ PO" cells={cells} />
@@ -253,18 +251,17 @@ export default function POCaseWorkspacePage() {
         <Card title="Đang chờ duyệt">
           {relatedApprovalsResource.loading ||
           relatedApprovalsResource.error != null ? (
-            <RegionState
-              compact
-              loading={relatedApprovalsResource.loading}
-              failure={
-                relatedApprovalsResource.error != null
-                  ? regionFailure(relatedApprovalsResource.error)
-                  : null
-              }
-              what="yêu cầu đang chờ duyệt"
-              onRetry={relatedApprovalsResource.reload}
-              rows={1}
-            />
+            <>
+              {relatedApprovalsResource.error != null ? (
+                <LoadError
+                  error={relatedApprovalsResource.error}
+                  onRetry={relatedApprovalsResource.reload}
+                  compact
+                />
+              ) : relatedApprovalsResource.loading ? (
+                <RegionState kind="loading" compact />
+              ) : null}
+            </>
           ) : (
             <List
               dataSource={approvals ?? []}
@@ -301,18 +298,17 @@ export default function POCaseWorkspacePage() {
 
         <Card title="Lịch sử trạng thái">
           {transitionsResource.loading || transitionsResource.error != null ? (
-            <RegionState
-              compact
-              loading={transitionsResource.loading}
-              failure={
-                transitionsResource.error != null
-                  ? regionFailure(transitionsResource.error)
-                  : null
-              }
-              what="lịch sử trạng thái"
-              onRetry={transitionsResource.reload}
-              rows={3}
-            />
+            <>
+              {transitionsResource.error != null ? (
+                <LoadError
+                  error={transitionsResource.error}
+                  onRetry={transitionsResource.reload}
+                  compact
+                />
+              ) : transitionsResource.loading ? (
+                <RegionState kind="loading" compact />
+              ) : null}
+            </>
           ) : !transitionsResource.data?.length ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -345,18 +341,17 @@ export default function POCaseWorkspacePage() {
         <Card title="Cập nhật của NCC">
           {supplierUpdatesResource.loading ||
           supplierUpdatesResource.error != null ? (
-            <RegionState
-              compact
-              loading={supplierUpdatesResource.loading}
-              failure={
-                supplierUpdatesResource.error != null
-                  ? regionFailure(supplierUpdatesResource.error)
-                  : null
-              }
-              what="cập nhật của NCC"
-              onRetry={supplierUpdatesResource.reload}
-              rows={3}
-            />
+            <>
+              {supplierUpdatesResource.error != null ? (
+                <LoadError
+                  error={supplierUpdatesResource.error}
+                  onRetry={supplierUpdatesResource.reload}
+                  compact
+                />
+              ) : supplierUpdatesResource.loading ? (
+                <RegionState kind="loading" compact />
+              ) : null}
+            </>
           ) : (
             <List
               dataSource={supplierUpdatesResource.data ?? []}
@@ -415,18 +410,17 @@ export default function POCaseWorkspacePage() {
 
         <Card title="Phân tích ảnh hưởng trễ tiến độ">
           {delayImpactResource.loading || delayImpactResource.error != null ? (
-            <RegionState
-              compact
-              loading={delayImpactResource.loading}
-              failure={
-                delayImpactResource.error != null
-                  ? regionFailure(delayImpactResource.error)
-                  : null
-              }
-              what="phân tích ảnh hưởng trễ"
-              onRetry={delayImpactResource.reload}
-              rows={3}
-            />
+            <>
+              {delayImpactResource.error != null ? (
+                <LoadError
+                  error={delayImpactResource.error}
+                  onRetry={delayImpactResource.reload}
+                  compact
+                />
+              ) : delayImpactResource.loading ? (
+                <RegionState kind="loading" compact />
+              ) : null}
+            </>
           ) : (
             <List
               dataSource={delayImpactResource.data ?? []}
@@ -541,7 +535,7 @@ function OrderCard({ poCase }: { poCase: POCaseDetail }) {
       dataIndex: "quantity",
       align: "right",
       render: (value: number | null) =>
-        value === null ? "Chưa có" : value.toLocaleString("vi-VN"),
+        value === null ? "Chưa có" : formatCount(value),
     },
   ];
   return (

@@ -1,6 +1,6 @@
 # 01 — Liên kết sang hộp duyệt của context trên `/approvals`
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: .claude/plans/web-ui/antd-shell/issues/03-lib-dates.md, .claude/plans/web-ui/antd-shell/issues/05-ui-test-harness.md
 Area: platform-runtime
 
@@ -29,17 +29,17 @@ hộp đó thay cho nút quyết (spec, Mục tiêu). Một cửa quyết trên 
 
 ## Tiêu chí chấp nhận
 
-- [ ] Vitest `registry.test.ts` cho `findHost`, `approvalInbox` với danh sách host giả: khớp
+- [x] Vitest `registry.test.ts` cho `findHost`, `approvalInbox` với danh sách host giả: khớp
       tiền tố thì trả liên kết; không khớp thì `null`; host không có `inbox` thì `null` và
       `approvalClient` vẫn chọn đúng client; host thiếu `client` thì `apiClient()`; `href`
       tuyệt đối (`https://…`) thì không liên kết.
-- [ ] Vitest `approvals-page.test.tsx` (mock registry có một host với tiền tố `ctx.` và
+- [x] Vitest `approvals-page.test.tsx` (mock registry có một host với tiền tố `ctx.` và
       `inbox`): người có `approvals.decide` thấy approval `ctx.x` với liên kết đúng `label`,
       `href` và không có nút "Approve", "Reject" hay ô ghi chú; approval `tool.y` vẫn có hai
       nút. Gỡ nhánh `approvalInbox` trong trang thì test đỏ (ghi vào Comments).
-- [ ] `HOSTS` rỗng: trang không đổi với dữ liệu hiện có (test trên).
-- [ ] `rg "startsWith" apps/web/lib/approvals` ra đúng một chỗ.
-- [ ] `pnpm lint`, `pnpm typecheck`, `pnpm build` xanh.
+- [x] `HOSTS` rỗng: trang không đổi với dữ liệu hiện có (test trên).
+- [x] `rg "startsWith" apps/web/lib/approvals` ra đúng một chỗ.
+- [x] `pnpm lint`, `pnpm typecheck`, `pnpm build` xanh.
 
 ## Nguồn
 
@@ -47,3 +47,27 @@ hộp đó thay cho nút quyết (spec, Mục tiêu). Một cửa quyết trên 
   `packages/typescript/contracts/src/runs.ts:5-16`.
 
 ## Comments
+
+- 8/10/2026 (nhánh `feat/antd-everywhere`, Đạt giao quyết tạm): 03 và 05 của
+  `antd-shell` chưa xong nhưng không chặn thật: trang đã sang antd ở commit
+  "antd everywhere", `lib/dates.ts` đã tính theo giờ Việt Nam, và vitest đã
+  chạy được với `vitest.setup.ts`.
+- `ApprovalHost.client` không bắt buộc, thêm `inbox`. Registry có ba hàm thuần
+  nhận danh sách host (`findHost`, `clientFor`, `inboxFor`) và hai hàm gắn với
+  `HOSTS` (`approvalClient`, `approvalInbox`). Một phép so tiền tố
+  (`rg "startsWith" apps/web/lib/approvals` ra đúng một chỗ, ngoài test);
+  kiểm "đường dẫn trong ứng dụng" bằng regex `^/(?!/)`, nên `//host` cũng bị từ
+  chối, không chỉ `https://`.
+- Quyết tạm: câu cho `href` sai cấu hình là tiếng Việt, "Yêu cầu này được quyết
+  ở nơi khác." (cả shell đã sang tiếng Việt cùng ngày). `approvalInbox` trả
+  `{ kind: "link" | "misconfigured" }` thay cho `{ label, href } | null`, để
+  trang phân biệt "không có hộp riêng" với "hộp riêng cấu hình sai" mà không
+  đọc lại `href`.
+- Test: `lib/approvals/__tests__/registry.test.ts` (6 ca: khớp, không khớp,
+  host không `inbox`, client của host và mặc định, `https://` và `//`);
+  `app/approvals/__tests__/approvals-inbox.test.tsx` (người có
+  `approvals.decide` thấy liên kết đúng `label`, `href`, thẻ `ctx.x` không có ô
+  nhận xét hay nút quyết, thẻ `tool.y` vẫn đủ). `HOSTS` rỗng: các ca cũ của
+  `approvals-page.test.tsx` không đổi và xanh.
+- Mutation: bỏ điều kiện `inbox === null` ở nhánh quyết trên trang thì test
+  trang đỏ; trả lại thì xanh.

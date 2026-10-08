@@ -16,6 +16,7 @@ class ErrorCode(StrEnum):
     VALIDATION_FAILED = "validation_failed"
     NOT_FOUND = "not_found"
     CONFLICT = "conflict"
+    UNAUTHENTICATED = "unauthenticated"
     PERMISSION_DENIED = "permission_denied"
     ENTITLEMENT_DENIED = "entitlement_denied"
     APPROVAL_REQUIRED = "approval_required"
@@ -62,6 +63,15 @@ class NotFoundError(DWError):
 
 class ConflictError(DWError):
     code = ErrorCode.CONFLICT
+
+
+class UnauthenticatedError(DWError):
+    """The request names no verifiable caller: no bearer token, a malformed
+    one, or one the verifier refuses. Signing in again is the fix, which is
+    what separates it from :class:`PermissionDeniedError` (a known caller
+    without the right)."""
+
+    code = ErrorCode.UNAUTHENTICATED
 
 
 class PermissionDeniedError(DWError):

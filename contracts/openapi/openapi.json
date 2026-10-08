@@ -112,6 +112,32 @@
         "title": "AddOperatorRequest",
         "type": "object"
       },
+      "AddSupportStaffRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "AddSupportStaffRequest",
+        "type": "object"
+      },
       "AdvancePOCaseRequest": {
         "additionalProperties": false,
         "properties": {
@@ -419,6 +445,64 @@
         "title": "AssignOrgAdminRequest",
         "type": "object"
       },
+      "AssignSupportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "staff_user_id": {
+            "format": "uuid",
+            "title": "Staff User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "staff_user_id"
+        ],
+        "title": "AssignSupportRequest",
+        "type": "object"
+      },
+      "AssignedSupportGrantView": {
+        "properties": {
+          "activated_at": {
+            "format": "date-time",
+            "title": "Activated At",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "grant_id": {
+            "format": "uuid",
+            "title": "Grant Id",
+            "type": "string"
+          },
+          "staff_user_id": {
+            "format": "uuid",
+            "title": "Staff User Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grant_id",
+          "code",
+          "tenant_id",
+          "staff_user_id",
+          "activated_at",
+          "expires_at"
+        ],
+        "title": "AssignedSupportGrantView",
+        "type": "object"
+      },
       "AttentionItemView": {
         "properties": {
           "case": {
@@ -668,6 +752,11 @@
           "is_platform_operator": {
             "default": false,
             "title": "Is Platform Operator",
+            "type": "boolean"
+          },
+          "is_support_staff": {
+            "default": false,
+            "title": "Is Support Staff",
             "type": "boolean"
           },
           "memberships": {
@@ -2279,6 +2368,38 @@
         "title": "IntegrationView",
         "type": "object"
       },
+      "InviteMemberRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 120,
+            "minLength": 4,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "memberships": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceRolesBody"
+            },
+            "minItems": 1,
+            "title": "Memberships",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name",
+          "email",
+          "memberships"
+        ],
+        "title": "InviteMemberRequest",
+        "type": "object"
+      },
       "ItemCodeView": {
         "description": "The case's official item code (step 9).",
         "properties": {
@@ -2421,6 +2542,29 @@
         "title": "MeResponse",
         "type": "object"
       },
+      "MemberMembershipsView": {
+        "description": "A person's memberships in this tenant after a change; empty when none is left.",
+        "properties": {
+          "memberships": {
+            "items": {
+              "$ref": "#/components/schemas/MemberWorkspaceView"
+            },
+            "title": "Memberships",
+            "type": "array"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "memberships"
+        ],
+        "title": "MemberMembershipsView",
+        "type": "object"
+      },
       "MemberRefView": {
         "properties": {
           "display_name": {
@@ -2450,6 +2594,33 @@
           "display_name"
         ],
         "title": "MemberRefView",
+        "type": "object"
+      },
+      "MemberWorkspaceView": {
+        "properties": {
+          "role_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Role Keys",
+            "type": "array"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "workspace_name",
+          "role_keys"
+        ],
+        "title": "MemberWorkspaceView",
         "type": "object"
       },
       "MemoryCandidateView": {
@@ -2660,6 +2831,125 @@
           "tradeoff"
         ],
         "title": "MitigationOptionView",
+        "type": "object"
+      },
+      "MySupportGrantModel": {
+        "description": "A grant assigned to the caller: enough to open it, nothing the customer\nwrote (no reason).",
+        "properties": {
+          "activated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "resource_label": {
+            "title": "Resource Label",
+            "type": "string"
+          },
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "scope_set_key": {
+            "title": "Scope Set Key",
+            "type": "string"
+          },
+          "scope_set_label": {
+            "title": "Scope Set Label",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "tenant_name": {
+            "title": "Tenant Name",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "tenant_id",
+          "tenant_name",
+          "workspace_id",
+          "workspace_name",
+          "resource_type",
+          "resource_id",
+          "resource_label",
+          "scope_set_key",
+          "scope_set_label",
+          "state",
+          "activated_at",
+          "expires_at",
+          "revoked_at"
+        ],
+        "title": "MySupportGrantModel",
         "type": "object"
       },
       "NewTenantView": {
@@ -4665,6 +4955,22 @@
         "title": "ReassignPicRequest",
         "type": "object"
       },
+      "RejectSupportGrantBody": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RejectSupportGrantBody",
+        "type": "object"
+      },
       "RenameTenantRequest": {
         "properties": {
           "name": {
@@ -4691,6 +4997,55 @@
           "name"
         ],
         "title": "RenameWorkspaceBody",
+        "type": "object"
+      },
+      "RequestSupportGrantBody": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_hours": {
+            "maximum": 336.0,
+            "minimum": 1.0,
+            "title": "Duration Hours",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "resource_type": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "scope_set_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Scope Set Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope_set_key",
+          "resource_type",
+          "reason",
+          "duration_hours"
+        ],
+        "title": "RequestSupportGrantBody",
         "type": "object"
       },
       "ReviewRaise": {
@@ -5042,6 +5397,23 @@
         "title": "SetManagerBody",
         "type": "object"
       },
+      "SetMembershipsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "memberships": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceRolesBody"
+            },
+            "title": "Memberships",
+            "type": "array"
+          }
+        },
+        "required": [
+          "memberships"
+        ],
+        "title": "SetMembershipsRequest",
+        "type": "object"
+      },
       "SetPermissionSetsBody": {
         "properties": {
           "permission_set_keys": {
@@ -5203,6 +5575,30 @@
       },
       "SodWaiverView": {
         "properties": {
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed At"
+          },
+          "confirmed_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed By"
+          },
           "granted_at": {
             "format": "date-time",
             "title": "Granted At",
@@ -5221,7 +5617,9 @@
         "required": [
           "reason",
           "granted_by",
-          "granted_at"
+          "granted_at",
+          "confirmed_by",
+          "confirmed_at"
         ],
         "title": "SodWaiverView",
         "type": "object"
@@ -5721,6 +6119,360 @@
         "title": "SupplyChainSLAPolicy",
         "type": "object"
       },
+      "SupportGrantModel": {
+        "properties": {
+          "activated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "duration_hours": {
+            "title": "Duration Hours",
+            "type": "integer"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "granted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Granted At"
+          },
+          "granted_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Granted By"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "reject_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Reason"
+          },
+          "rejected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected At"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "resource_label": {
+            "title": "Resource Label",
+            "type": "string"
+          },
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "scope_set_key": {
+            "title": "Scope Set Key",
+            "type": "string"
+          },
+          "scope_set_label": {
+            "title": "Scope Set Label",
+            "type": "string"
+          },
+          "staff_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Staff User Id"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "workspace_id",
+          "resource_type",
+          "resource_id",
+          "resource_label",
+          "scope_set_key",
+          "scope_set_label",
+          "reason",
+          "duration_hours",
+          "status",
+          "state",
+          "requested_by",
+          "requested_at",
+          "granted_by",
+          "granted_at",
+          "rejected_at",
+          "reject_reason",
+          "staff_user_id",
+          "activated_at",
+          "expires_at",
+          "revoked_at"
+        ],
+        "title": "SupportGrantModel",
+        "type": "object"
+      },
+      "SupportRequestView": {
+        "description": "A grant waiting for a person: what the operator chooses by, no more.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "duration_hours": {
+            "title": "Duration Hours",
+            "type": "integer"
+          },
+          "grant_id": {
+            "format": "uuid",
+            "title": "Grant Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "resource_label": {
+            "title": "Resource Label",
+            "type": "string"
+          },
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "scope_set_key": {
+            "title": "Scope Set Key",
+            "type": "string"
+          },
+          "scope_set_label": {
+            "title": "Scope Set Label",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "tenant_name": {
+            "title": "Tenant Name",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grant_id",
+          "code",
+          "tenant_id",
+          "tenant_name",
+          "workspace_id",
+          "workspace_name",
+          "resource_type",
+          "resource_label",
+          "scope_set_key",
+          "scope_set_label",
+          "duration_hours",
+          "reason",
+          "requested_at"
+        ],
+        "title": "SupportRequestView",
+        "type": "object"
+      },
+      "SupportScopeSetView": {
+        "description": "A grantable set: no scope list, only what a person chooses by.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "resource_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Resource Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "resource_types"
+        ],
+        "title": "SupportScopeSetView",
+        "type": "object"
+      },
+      "SupportStaffView": {
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "display_name",
+          "note",
+          "added_at"
+        ],
+        "title": "SupportStaffView",
+        "type": "object"
+      },
       "TakePackagingStepRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5757,6 +6509,50 @@
           "action"
         ],
         "title": "TakePackagingStepRequest",
+        "type": "object"
+      },
+      "TenantMemberView": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "memberships": {
+            "items": {
+              "$ref": "#/components/schemas/MemberWorkspaceView"
+            },
+            "title": "Memberships",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name",
+          "email",
+          "status",
+          "memberships"
+        ],
+        "title": "TenantMemberView",
         "type": "object"
       },
       "TenantSettingsView": {
@@ -6237,6 +7033,10 @@
             "title": "Role Keys",
             "type": "array"
           },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
           "user_id": {
             "format": "uuid",
             "title": "User Id",
@@ -6249,7 +7049,8 @@
           "email",
           "role_keys",
           "permission_set_keys",
-          "department"
+          "department",
+          "status"
         ],
         "title": "WorkspaceMemberView",
         "type": "object"
@@ -6332,6 +7133,29 @@
           "name"
         ],
         "title": "WorkspaceRefView",
+        "type": "object"
+      },
+      "WorkspaceRolesBody": {
+        "additionalProperties": false,
+        "properties": {
+          "role_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Role Keys",
+            "type": "array"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "role_keys"
+        ],
+        "title": "WorkspaceRolesBody",
         "type": "object"
       },
       "WorkspaceSummaryView": {
@@ -6547,7 +7371,93 @@
         ]
       }
     },
+    "/api/v1/admin/invitations": {
+      "post": {
+        "description": "Create the person (no sign-in yet) and their memberships. No email is\nsent: the admin tells the person, who then signs in with that email.",
+        "operationId": "invite_member_api_v1_admin_invitations_post",
+        "parameters": [
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRefView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Invite Member",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/members": {
+      "get": {
+        "description": "Everyone in the caller's tenant, by name (Vietnamese collation), with\ntheir roles in each workspace.",
+        "operationId": "list_members_api_v1_admin_members_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TenantMemberView"
+                  },
+                  "title": "Response List Members Api V1 Admin Members Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Members",
+        "tags": [
+          "admin"
+        ]
+      },
       "post": {
         "operationId": "grant_member_api_v1_admin_members_post",
         "parameters": [
@@ -6667,6 +7577,78 @@
           }
         },
         "summary": "Revoke Member",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/members/{user_id}/memberships": {
+      "put": {
+        "description": "Replace the person's non-administrative roles, workspace by workspace,\nin one transaction. A workspace in the body without a membership gets one;\none left out keeps only its administrative roles, and goes without any.\nAnswers the person's memberships as they now are (empty: none left).",
+        "operationId": "set_memberships_api_v1_admin_members__user_id__memberships_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMembershipsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberMembershipsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Memberships",
         "tags": [
           "admin"
         ]
@@ -6833,6 +7815,51 @@
           }
         },
         "summary": "Waive Separation Of Duties Rule",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/separation-of-duties/{rule_key}/waiver/confirm": {
+      "post": {
+        "operationId": "confirm_separation_of_duties_waiver_api_v1_admin_separation_of_duties__rule_key__waiver_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_key",
+            "required": true,
+            "schema": {
+              "title": "Rule Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaiverDecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Separation Of Duties Waiver",
         "tags": [
           "admin"
         ]
@@ -8217,6 +9244,187 @@
           }
         },
         "summary": "Remove Operator",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/platform/support-requests": {
+      "get": {
+        "description": "Every tenant's grants waiting for assignment (`pending_assignment`), oldest first.",
+        "operationId": "list_support_requests_api_v1_platform_support_requests_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupportRequestView"
+                  },
+                  "title": "Response List Support Requests Api V1 Platform Support Requests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Support Requests",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/platform/support-requests/{grant_id}/assign": {
+      "post": {
+        "description": "409 `support_staff_required` when the person is not support staff, 409\n`support_grant_wrong_status` when the grant is not waiting for assignment.\nNo conflict-of-interest check yet (ADR 0024).",
+        "operationId": "assign_support_request_api_v1_platform_support_requests__grant_id__assign_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignSupportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignedSupportGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Support Request",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/platform/support-staff": {
+      "get": {
+        "operationId": "list_support_staff_api_v1_platform_support_staff_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupportStaffView"
+                  },
+                  "title": "Response List Support Staff Api V1 Platform Support Staff Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Support Staff",
+        "tags": [
+          "platform"
+        ]
+      },
+      "post": {
+        "description": "By the email of an identity that has signed in; idempotent.",
+        "operationId": "add_support_staff_api_v1_platform_support_staff_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddSupportStaffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRefView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Support Staff",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/platform/support-staff/{user_id}": {
+      "delete": {
+        "operationId": "remove_support_staff_api_v1_platform_support_staff__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Support Staff",
         "tags": [
           "platform"
         ]
@@ -11096,6 +12304,337 @@
         "summary": "Set Sla Policy Override Route",
         "tags": [
           "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/support/catalog": {
+      "get": {
+        "operationId": "catalog_api_v1_support_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupportScopeSetView"
+                  },
+                  "title": "Response Catalog Api V1 Support Catalog Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Catalog",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/api/v1/support/grants": {
+      "get": {
+        "description": "`support.grant`: every grant of this workspace. `support.request` only:\nthe caller's own requests.",
+        "operationId": "list_grants_api_v1_support_grants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupportGrantModel"
+                  },
+                  "title": "Response List Grants Api V1 Support Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Grants",
+        "tags": [
+          "support"
+        ]
+      },
+      "post": {
+        "description": "With `support.grant` the grant is made (`pending_assignment`); with only\n`support.request` it waits for a granter (`pending_approval`).",
+        "operationId": "request_grant_api_v1_support_grants_post",
+        "parameters": [
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestSupportGrantBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Grant",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/api/v1/support/grants/{grant_id}/approve": {
+      "post": {
+        "operationId": "approve_grant_api_v1_support_grants__grant_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Grant",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/api/v1/support/grants/{grant_id}/reject": {
+      "post": {
+        "operationId": "reject_grant_api_v1_support_grants__grant_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectSupportGrantBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Grant",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/api/v1/support/grants/{grant_id}/revoke": {
+      "post": {
+        "description": "Takes effect at the staff member's next request.",
+        "operationId": "revoke_grant_api_v1_support_grants__grant_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Grant",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/api/v1/support/my-grants": {
+      "get": {
+        "description": "The caller's grants, in force or ended in the last 30 days. Support\nstaff only (403 `support_staff_required`); no tenant header is read.",
+        "operationId": "my_grants_api_v1_support_my_grants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MySupportGrantModel"
+                  },
+                  "title": "Response My Grants Api V1 Support My Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "My Grants",
+        "tags": [
+          "support"
         ]
       }
     },

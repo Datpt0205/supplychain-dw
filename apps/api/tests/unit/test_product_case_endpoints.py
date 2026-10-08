@@ -183,7 +183,7 @@ class FakeMembers:
     of: dict[uuid.UUID, set[uuid.UUID]] = field(default_factory=dict)
 
     async def members(
-        self, context: AccessContext, workspace_id: uuid.UUID, user_ids: frozenset[uuid.UUID]
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, user_ids: frozenset[uuid.UUID]
     ) -> frozenset[uuid.UUID]:
         return frozenset(user_ids & self.of.get(workspace_id, set()))
 
@@ -555,7 +555,7 @@ class FakeHolders:
     by_scope: dict[str, list[uuid.UUID]] = field(default_factory=dict)
 
     async def holding(
-        self, context: AccessContext, workspace_id: uuid.UUID, scopes: frozenset[str]
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, scopes: frozenset[str]
     ) -> list[uuid.UUID]:
         return sorted({p for scope in scopes for p in self.by_scope.get(scope, [])})
 

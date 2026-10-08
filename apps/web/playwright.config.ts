@@ -34,18 +34,20 @@ export default defineConfig({
   },
   // The viewport list has one owner, here (ui-quality.md 12): 320 px is WCAG
   // reflow, 991/992 the two sides of antd's `lg`, where the navbar becomes a
-  // drawer. The 992 one runs outside Vietnam's zone, so "giờ Việt Nam" is
+  // drawer. The older specs run on the desktop project only. Every project
+  // runs in Vietnam's time zone, so a dev machine and CI agree, except the
+  // Supply Chain one at 992, which runs outside it so "giờ Việt Nam" is
   // tested rather than trusted.
   projects: [
     {
       name: "chromium",
       testIgnore: /supply-chain\.spec\.ts/,
-      use: { ...devices["Desktop Chrome"] },
+      use: { ...devices["Desktop Chrome"], timezoneId: "Asia/Ho_Chi_Minh" },
     },
     ...(
       [
-        ["sc-320", 320, undefined],
-        ["sc-991", 991, undefined],
+        ["sc-320", 320, "Asia/Ho_Chi_Minh"],
+        ["sc-991", 991, "Asia/Ho_Chi_Minh"],
         ["sc-992", 992, "Asia/Tokyo"],
       ] as const
     ).map(([name, width, timezoneId]) => ({
@@ -54,7 +56,23 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width, height: 800 },
-        ...(timezoneId ? { timezoneId } : {}),
+        timezoneId,
+      },
+    })),
+    ...(
+      [
+        ["phone-320", 320, 640],
+        ["narrow-991", 991, 800],
+        ["wide-992", 992, 800],
+      ] as const
+    ).map(([name, width, height]) => ({
+      name,
+      testMatch: /platform-pages\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width, height },
+        hasTouch: width < 400,
+        timezoneId: "Asia/Ho_Chi_Minh",
       },
     })),
   ],

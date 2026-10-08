@@ -180,15 +180,15 @@ async def _call(
     ],
 )
 async def test_without_a_bearer_token_every_route_is_refused(method: str, path: str) -> None:
-    """The platform answers a missing bearer token with 403 ``permission_denied``
+    """The platform answers a missing bearer token with 401 ``unauthenticated``
     (``dw_kernel.http_auth.bearer_token``), on these routes as on every other."""
     store = FakeAccountStore()
     store.links[ALICE] = "alice-chat"
 
     response = await _call(make_container(store), method, path, subject=None)
 
-    assert response.status_code == 403
-    assert response.json()["code"] == "permission_denied"
+    assert response.status_code == 401
+    assert response.json()["code"] == "unauthenticated"
     assert store.links == {ALICE: "alice-chat"} and store.nonces == []
 
 
@@ -349,7 +349,7 @@ async def test_the_routes_exist_only_with_both_the_bot_token_and_the_link_secret
     for method, path in (("GET", "/status"), ("POST", "/connect"), ("POST", "/disconnect")):
         response = await _call(container, method, path, subject=None)
         # Mounted: refused for want of a token. Not mounted: no such route.
-        assert response.status_code == (403 if mounted else 404), (method, path)
+        assert response.status_code == (401 if mounted else 404), (method, path)
 
 
 async def test_an_unwired_container_answers_404() -> None:

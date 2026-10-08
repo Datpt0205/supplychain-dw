@@ -64,6 +64,8 @@ class _Identity:
     email: str | None
     issuer: str = "https://issuer.test/realms/dw"
     name: str | None = None
+    auth_methods: frozenset[str] = frozenset()
+    acr: str | None = None
 
 
 def _admin_context(tenant: uuid.UUID = ALPHA, workspace: uuid.UUID = ALPHA_WS) -> AccessContext:

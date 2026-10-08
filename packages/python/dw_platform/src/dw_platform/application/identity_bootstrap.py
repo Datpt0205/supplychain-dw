@@ -45,6 +45,9 @@ class BootstrapView:
     # ADR-002: a global Platform Operator (provisioning authority). Independent
     # of any tenant membership — an operator may hold none.
     is_platform_operator: bool = False
+    # ADR 0024: on the support team's list. Independent of any membership; a
+    # support staff member holds none (the database refuses one).
+    is_support_staff: bool = False
 
 
 class IdentityBootstrapPort(Protocol):

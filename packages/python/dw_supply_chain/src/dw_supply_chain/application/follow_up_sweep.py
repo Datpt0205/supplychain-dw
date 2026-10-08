@@ -179,7 +179,7 @@ class SweepFollowUps:
         new = [item for item in due if item.key not in open_keys]
         # Whom a `pic` recipient may be: PICs still in the workspace, now.
         present = await self.members.members(
-            context,
+            context.tenant_id,
             context.workspace_id,
             frozenset(
                 item.subject.pic_user_id
@@ -211,13 +211,15 @@ class SweepFollowUps:
             if record.notified_at is not None:
                 continue
             recipients = set(
-                await self.holders.holding(context, record.workspace_id, record.recipient_scopes)
+                await self.holders.holding(
+                    context.tenant_id, record.workspace_id, record.recipient_scopes
+                )
             )
             if record.recipient_user_id is not None:
                 # Stamped when it opened; told only while still a member
                 # (the channel lane checks again before anything leaves).
                 recipients |= await self.members.members(
-                    context, record.workspace_id, frozenset({record.recipient_user_id})
+                    context.tenant_id, record.workspace_id, frozenset({record.recipient_user_id})
                 )
             if not recipients:
                 # Nobody holds a scope it was handed to yet; it stays listed

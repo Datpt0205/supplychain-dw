@@ -1,3 +1,62 @@
 {
-  "extends": ["next/core-web-vitals", "next/typescript"]
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "sonner",
+            "message": "Notices go through antd: const { message, notification } = App.useApp()."
+          },
+          {
+            "name": "radix-ui",
+            "message": "antd is the one component system (CLAUDE.md, Web UI)."
+          },
+          {
+            "name": "lucide-react",
+            "message": "Icons come from @ant-design/icons."
+          },
+          {
+            "name": "class-variance-authority",
+            "message": "antd is the one component system (CLAUDE.md, Web UI)."
+          },
+          {
+            "name": "antd",
+            "importNames": ["message", "notification"],
+            "message": "The static API does not read the theme; use App.useApp()."
+          }
+        ],
+        "patterns": [
+          {
+            "group": ["@radix-ui/*"],
+            "message": "antd is the one component system (CLAUDE.md, Web UI)."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "NewExpression[callee.object.name='Intl'][callee.property.name=/^(NumberFormat|DateTimeFormat)$/]",
+        "message": "Numbers go through lib/money.ts, dates through lib/dates.ts."
+      },
+      {
+        "selector": "CallExpression[callee.property.name=/^toLocale(Date|Time)?String$/]",
+        "message": "Numbers go through lib/money.ts, dates through lib/dates.ts."
+      },
+      {
+        "selector": "Property[key.name='currency'][value.value='VND']",
+        "message": "Money goes through lib/money.ts (đ, never ₫)."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["lib/money.ts", "lib/dates.ts"],
+      "rules": {
+        "no-restricted-syntax": "off"
+      }
+    }
+  ]
 }

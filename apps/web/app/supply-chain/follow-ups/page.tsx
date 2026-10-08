@@ -14,7 +14,8 @@ import {
   Typography,
 } from "antd";
 import type { FollowUp, FollowUpKind } from "@dw/contracts";
-import { PageHeader, RegionState, StatusTag, type StatusTone } from "@dw/ui";
+import { PageHeader, StatusTag, type StatusTone } from "@dw/ui";
+import { LoadError } from "../../../components/load-error";
 import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
 import {
   PoReferenceText,
@@ -22,7 +23,7 @@ import {
 } from "../../../components/supply-chain/po-reference";
 import { milestoneLabel } from "../../../components/supply-chain/sla-status-badge";
 import { formatDateTimeFull } from "../../../lib/dates";
-import { errorMessage, regionFailure } from "../../../lib/error-message";
+import { errorMessage } from "../../../lib/error-message";
 import { useOnline } from "../../../lib/hooks/use-online";
 import { apiClient } from "../../../lib/session";
 import { useCachedResource } from "../../../lib/use-cached-resource";
@@ -76,7 +77,7 @@ export default function FollowUpsPage() {
       <PageHeader
         breadcrumb={supplyChainCrumbs("Việc cần làm")}
         title="Việc cần làm"
-        description="Nhắc NCC, leo thang và trễ SLA đã tới hạn. Việc tự đóng khi tín hiệu hết (NCC gửi cập nhật, hồ sơ qua bước)."
+        subtitle="Nhắc NCC, leo thang và trễ SLA đã tới hạn. Việc tự đóng khi tín hiệu hết (NCC gửi cập nhật, hồ sơ qua bước)."
       />
       <Flex vertical gap="middle">
         <Segmented<"mine" | "all">
@@ -92,11 +93,7 @@ export default function FollowUpsPage() {
           <Skeleton active paragraph={{ rows: 6 }} />
         ) : error != null || !data ? (
           // A failed load is never "nothing to do".
-          <RegionState
-            failure={regionFailure(error)}
-            what="việc cần làm"
-            onRetry={reload}
-          />
+          <LoadError error={error} onRetry={reload} />
         ) : shown.length === 0 ? (
           <Empty
             description={

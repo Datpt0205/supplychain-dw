@@ -16,7 +16,8 @@ import {
 } from "antd";
 import { MessageOutlined } from "@ant-design/icons";
 import type { Approval, ApprovalViewOutcome } from "@dw/contracts";
-import { PageHeader, RegionState, type RegionFailure } from "@dw/ui";
+import { PageHeader, RegionState } from "@dw/ui";
+import { LoadError } from "../../../components/load-error";
 import { ApprovalStatusTag } from "../../../components/approval-status-tag";
 import {
   ToolApprovalPayload,
@@ -28,7 +29,7 @@ import {
   formatDateTimeFull,
   VN_TIME,
 } from "../../../lib/dates";
-import { errorMessage, regionFailure } from "../../../lib/error-message";
+import { errorMessage } from "../../../lib/error-message";
 import { apiClient } from "../../../lib/session";
 
 type Reason = NonNullable<ApprovalViewOutcome["unavailable_reason"]>;
@@ -49,7 +50,7 @@ const BREADCRUMB = [{ title: <Link href="/approvals">Duyệt</Link> }];
 
 type Load =
   | { kind: "loading" }
-  | { kind: "error"; failure: RegionFailure }
+  | { kind: "error"; error: unknown }
   | { kind: "ready"; approval: Approval; view: ApprovalViewOutcome };
 
 /**
@@ -95,7 +96,7 @@ function ApprovalDetail() {
       const view = await client.viewApproval(id, {});
       setState({ kind: "ready", approval, view });
     } catch (error) {
-      setState({ kind: "error", failure: regionFailure(error) });
+      setState({ kind: "error", error });
     }
   }, [id]);
 
@@ -109,12 +110,8 @@ function ApprovalDetail() {
       <div className="mx-auto max-w-3xl">
         <PageHeader breadcrumb={BREADCRUMB} title="Yêu cầu duyệt" />
         <RegionState
-          failure={{
-            code: "not_found",
-            message: "Yêu cầu không thuộc workspace nào của bạn.",
-            requestId: null,
-          }}
-          what="yêu cầu"
+          kind="notfound"
+          description="Yêu cầu không thuộc workspace nào của bạn."
         />
       </div>
     );
@@ -124,12 +121,11 @@ function ApprovalDetail() {
     return (
       <div className="mx-auto max-w-3xl">
         <PageHeader breadcrumb={BREADCRUMB} title="Yêu cầu duyệt" />
-        <RegionState
-          loading={state.kind === "loading"}
-          failure={state.kind === "error" ? state.failure : null}
-          what="yêu cầu"
-          onRetry={() => void load()}
-        />
+        {state.kind === "error" ? (
+          <LoadError error={state.error} onRetry={() => void load()} />
+        ) : (
+          <RegionState kind="loading" />
+        )}
       </div>
     );
   }

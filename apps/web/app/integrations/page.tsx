@@ -1,82 +1,96 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { PlugZap } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Card, Flex, Tag, Typography } from "antd";
+import { ApiOutlined } from "@ant-design/icons";
 import type { Integration } from "@dw/contracts";
-import {
-  Badge,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Skeleton,
-} from "@dw/ui";
-import { EmptyState } from "../../components/empty-state";
-import { PageHeading } from "../../components/page-heading";
+import { PageHeader, RegionState } from "@dw/ui";
+import { LoadError } from "../../components/load-error";
 import { apiClient } from "../../lib/session";
+
+const SIDE_EFFECT: Record<string, string> = {
+  none: "Không ghi gì",
+  internal: "Ghi trong hệ thống",
+  external: "Ra ngoài hệ thống",
+  critical: "Nghiêm trọng",
+};
+
+const APPROVAL: Record<string, string> = {
+  never: "Không cần duyệt",
+  conditional: "Duyệt khi có điều kiện",
+  always: "Luôn cần duyệt",
+};
 
 export default function IntegrationsPage() {
   const [integrations, setIntegrations] = useState<Integration[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setError(null);
     apiClient()
       .listIntegrations()
       .then(setIntegrations)
-      .catch((e: unknown) =>
-        setError(e instanceof Error ? e.message : "unknown error"),
-      );
+      .catch((e: unknown) => setError(e));
   }, []);
+  useEffect(load, [load]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <PageHeading
-        icon={PlugZap}
-        title="Integrations & connectors"
-        description="The capability catalogue the tool executor runs under the current release's policies, scopes and limits."
+    <div className="mx-auto max-w-6xl">
+      <PageHeader
+        icon={<ApiOutlined />}
+        title="Tích hợp và kết nối"
+        subtitle="Danh mục công cụ mà bộ thực thi chạy theo chính sách, quyền và giới hạn của bản phát hành hiện tại."
       />
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {integrations === null && !error && (
-        <Skeleton className="h-56 rounded-2xl" />
-      )}
+      {error != null && <LoadError error={error} onRetry={load} />}
+      {integrations === null && error == null && <RegionState kind="loading" />}
       {integrations?.length === 0 && (
-        <EmptyState
-          icon={PlugZap}
-          title="No connectors yet"
-          description="The list appears once a connector is registered."
+        <RegionState
+          kind="empty"
+          title="Chưa có kết nối nào"
+          description="Danh sách hiện ra khi có một kết nối được đăng ký."
         />
       )}
       <div className="grid gap-4 lg:grid-cols-2">
         {integrations?.map((integration) => (
-          <Card key={`${integration.tool}@${integration.version}`}>
-            <CardHeader>
-              <CardTitle>
+          <Card
+            key={`${integration.tool}@${integration.version}`}
+            size="small"
+            title={
+              <span>
                 {integration.tool}{" "}
-                <span className="font-mono text-xs text-slate-500">
+                <Typography.Text type="secondary" code>
                   v{integration.version}
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <p>{integration.description}</p>
-              <div className="flex flex-wrap gap-1.5 text-xs">
-                <Badge variant="destructive">
-                  side-effect: {integration.side_effect_level}
-                </Badge>
-                <Badge variant="warning">
-                  approval: {integration.approval_policy}
-                </Badge>
+                </Typography.Text>
+              </span>
+            }
+          >
+            <Flex vertical gap="small">
+              <Typography.Text>{integration.description}</Typography.Text>
+              <Flex wrap gap={4}>
+                <Tag color="volcano">
+                  {SIDE_EFFECT[integration.side_effect_level] ??
+                    integration.side_effect_level}
+                </Tag>
+                <Tag color="gold">
+                  {APPROVAL[integration.approval_policy] ??
+                    integration.approval_policy}
+                </Tag>
                 {integration.idempotent && (
-                  <Badge variant="success">idempotent</Badge>
+                  <Tag color="green">Chạy lại an toàn</Tag>
                 )}
-                <Badge variant="secondary">
-                  timeout {integration.timeout_seconds}s
-                </Badge>
-              </div>
-              <p className="text-xs text-slate-500">
-                scopes: {integration.required_scopes.join(", ") || "—"}
-              </p>
-            </CardContent>
+                <Tag>Tối đa {integration.timeout_seconds} giây</Tag>
+              </Flex>
+              <Typography.Text type="secondary" className="text-xs">
+                Quyền cần:{" "}
+                {integration.required_scopes.length > 0
+                  ? integration.required_scopes.map((scope) => (
+                      <Typography.Text key={scope} code className="text-xs">
+                        {scope}
+                      </Typography.Text>
+                    ))
+                  : "—"}
+              </Typography.Text>
+            </Flex>
           </Card>
         ))}
       </div>

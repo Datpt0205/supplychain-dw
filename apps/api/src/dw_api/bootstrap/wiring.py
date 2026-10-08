@@ -89,6 +89,11 @@ from dw_platform.adapters.persistence.scope_holders import SqlScopeHolders
 from dw_platform.adapters.persistence.separation_of_duties_repo import (
     SqlSeparationOfDutiesRepository,
 )
+from dw_platform.adapters.persistence.support_grants import (
+    SqlStaffGrants,
+    SqlSupportGrantRepository,
+)
+from dw_platform.adapters.persistence.tenant_members import SqlTenantMembersRepository
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
 from dw_platform.adapters.persistence.zalo_link_repo import SqlZaloLink
 from dw_platform.application.admin_console import AdminConsoleService
@@ -105,10 +110,21 @@ from dw_platform.application.membership_admin import (
 from dw_platform.application.notifications import NotificationService
 from dw_platform.application.provisioning import ProvisioningService
 from dw_platform.application.separation_of_duties import SeparationOfDutiesService
+from dw_platform.application.support_access import (
+    SupportAccessContextFactory,
+    SupportGrantService,
+)
+from dw_platform.application.tenant_members import TenantMembersService
 
 _LOG = logging.getLogger("dw_api.bootstrap")
 
 _RUN_POLICY = load_worker_run_policy(WORKER_RUN_POLICY)
+
+# Routes open to a support context (ADR 0024), as (method, path template).
+# Empty on the platform: a context adds a route here in the same change as
+# that route's negative test under a support grant. `test_support_routes.py`
+# fails when RequireAccessContextOrSupport appears on any route not listed.
+SUPPORT_ALLOWED_ROUTES: frozenset[tuple[str, str]] = frozenset()
 
 
 def _asyncpg_dsn(url: str) -> str:
@@ -117,6 +133,14 @@ def _asyncpg_dsn(url: str) -> str:
 
 
 def build_container(settings: ApiSettings | None = None) -> ApiContainer:
+    container = _build_container(settings)
+    # Every context has registered its support scope sets by now (the seam
+    # below); nothing may add one while the process serves requests.
+    container.support_catalog.freeze()
+    return container
+
+
+def _build_container(settings: ApiSettings | None) -> ApiContainer:
     settings = settings or ApiSettings()
     settings.validate_for_profile()
 
@@ -205,6 +229,9 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     container.revoke_membership = RevokeMembershipHandler(
         membership_repo, authorization, clock, ids
     )
+    container.tenant_members = TenantMembersService(
+        SqlTenantMembersRepository(session_factory), authorization, clock, ids
+    )
     container.admin_console = AdminConsoleService(
         SqlAdminConsoleRepository(session_factory), authorization, clock, ids
     )
@@ -215,6 +242,23 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         SqlSeparationOfDutiesRepository(session_factory), authorization, clock, ids
     )
     container.notifications = NotificationService(SqlNotificationRepository(session_factory))
+    container.support_grants = SupportGrantService(
+        repo=SqlSupportGrantRepository(session_factory),
+        member_scopes=SqlScopeHolders(session_factory),
+        catalog=container.support_catalog,
+        clock=clock,
+        ids=ids,
+    )
+    staff_grants = SqlStaffGrants(session_factory)
+    container.support_access = SupportAccessContextFactory(
+        grants=staff_grants,
+        member_scopes=SqlScopeHolders(session_factory),
+        clock=clock,
+        ids=ids,
+    )
+    container.support_access_audit = staff_grants
+    container.staff_grants = staff_grants
+    container.support_allowed_routes = SUPPORT_ALLOWED_ROUTES
     # The user's own Zalo link, on the request pool (`dw_app`), which holds the
     # identity-plane grants it needs; never the provisioner engine.
     if settings.zalo_link_enabled:
@@ -851,7 +895,9 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
 
     # Build your context from `container.runtime` (the RuntimeSeam) and attach
     # its handlers, then mount its router in `main.create_app`. Nothing above
-    # this line may import a business package.
+    # this line may import a business package. A context offering support
+    # access registers here too: `container.support_catalog.register(...)`
+    # and `.register_resource(...)` (ADR 0024).
 
     return container
 

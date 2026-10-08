@@ -11,6 +11,7 @@ platform provisioning tables, so nothing here can touch a tenant's business data
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -18,6 +19,8 @@ from uuid import UUID
 
 from dw_kernel.errors import ConflictError, DomainError, NotFoundError
 from dw_kernel.ports import IdGenerator, UtcClock
+from dw_platform.application.support_access import SupportGrant, support_grant_audit
+from dw_platform.domain.audit import AuditEvent
 
 # A tenant slug is a URL-safe handle: lowercase, digits, single hyphens.
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -79,6 +82,37 @@ class OffboardingStatus:
     export_key: str | None
     error: str | None
     updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class SupportStaffRef:
+    user_id: UUID
+    email: str | None
+    display_name: str
+    note: str | None
+    added_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class SupportRequestSummary:
+    """A grant waiting for the operators to pick who carries it.
+
+    What the operator needs to choose a person, and nothing of the customer's
+    business: no content, no figures."""
+
+    grant_id: UUID
+    code: str
+    tenant_id: UUID
+    tenant_name: str
+    workspace_id: UUID
+    workspace_name: str
+    resource_type: str
+    resource_label: str
+    scope_set_key: str
+    scope_set_label: str
+    duration_hours: int
+    reason: str
+    requested_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +193,36 @@ class ProvisioningRepositoryPort(Protocol):
 
     async def remove_operator(self, user_id: UUID) -> bool:
         """Returns False if the user was not an operator."""
+        ...
+
+    async def list_support_staff(self) -> list[SupportStaffRef]: ...
+
+    async def add_support_staff(self, *, user_id: UUID, note: str | None, added_by: UUID) -> None:
+        """Idempotent: adding someone already listed changes nothing."""
+        ...
+
+    async def remove_support_staff(self, user_id: UUID) -> bool:
+        """Returns False if the user was not support staff."""
+        ...
+
+    async def list_support_requests(self) -> list[SupportRequestSummary]:
+        """Every tenant's grants in `pending_assignment`, oldest first."""
+        ...
+
+    async def assign_support_grant(
+        self,
+        *,
+        grant_id: UUID,
+        staff_user_id: UUID,
+        assigned_by: UUID,
+        activated_at: datetime,
+        tenant_audit: Callable[[SupportGrant], AuditEvent],
+        provisioning_audit_id: UUID,
+    ) -> SupportGrant:
+        """Make a `pending_assignment` grant `active` for a support staff
+        member, with the tenant's audit event and the provisioning record, in
+        one transaction. NotFoundError for no such grant; ConflictError when it
+        is not pending assignment or the person is not support staff."""
         ...
 
     async def record_audit(
@@ -373,6 +437,78 @@ class ProvisioningService:
         if not removed:
             raise NotFoundError("not a platform operator", details={"user_id": str(user_id)})
         await self._audit(context, "platform.operator.remove", "operator", str(user_id), {})
+
+    async def list_support_staff(self, context: ProvisioningContext) -> list[SupportStaffRef]:
+        return await self.repo.list_support_staff()
+
+    async def add_support_staff(
+        self, context: ProvisioningContext, *, email: str, note: str | None
+    ) -> UserRef:
+        """List an existing identity as support staff (ADR 0024).
+
+        From then on no membership path can place them in a tenant
+        (`platform.refuse_support_staff_membership`); a membership they held
+        before stays, and a support context never merges with it."""
+        if note is not None and len(note) > 200:
+            raise DomainError("a note is at most 200 characters")
+        user = await self.repo.find_user_by_email(email)
+        if user is None:
+            raise NotFoundError(
+                "no user with that email has signed in yet", details={"email": email}
+            )
+        await self.repo.add_support_staff(
+            user_id=user.user_id, note=note, added_by=context.principal_id
+        )
+        await self._audit(
+            context, "platform.support_staff.add", "support_staff", str(user.user_id), {}
+        )
+        return user
+
+    async def remove_support_staff(self, context: ProvisioningContext, *, user_id: UUID) -> None:
+        """Their grants stay assigned and stop working at the next request:
+        the support context requires a listed staff member."""
+        removed = await self.repo.remove_support_staff(user_id)
+        if not removed:
+            raise NotFoundError("not support staff", details={"user_id": str(user_id)})
+        await self._audit(
+            context, "platform.support_staff.remove", "support_staff", str(user_id), {}
+        )
+
+    async def list_support_requests(
+        self, context: ProvisioningContext
+    ) -> list[SupportRequestSummary]:
+        return await self.repo.list_support_requests()
+
+    async def assign_support_request(
+        self, context: ProvisioningContext, *, grant_id: UUID, staff_user_id: UUID
+    ) -> SupportGrant:
+        """Pick who carries a granted support access; it starts now.
+
+        **No conflict-of-interest check** (support-access spec, open question
+        2): nothing here asks whether this person serves a competitor of the
+        customer. That check needs a decision on how it is made; until then
+        only tenants with the `support_access` flag can be assigned at all.
+        The customer never chooses the person and never sees a refusal."""
+        now = self.clock.now()
+
+        def tenant_audit(grant: SupportGrant) -> AuditEvent:
+            return support_grant_audit(
+                event_id=self.ids.new_uuid(),
+                grant=grant,
+                actor_id=context.principal_id,
+                action="support.grant.assigned",
+                occurred_at=now,
+                extra={"staff_user_id": str(staff_user_id)},
+            )
+
+        return await self.repo.assign_support_grant(
+            grant_id=grant_id,
+            staff_user_id=staff_user_id,
+            assigned_by=context.principal_id,
+            activated_at=now,
+            tenant_audit=tenant_audit,
+            provisioning_audit_id=self.ids.new_uuid(),
+        )
 
     async def _audit(
         self,

@@ -2,13 +2,24 @@
 
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { usePathname } from "next/navigation";
-import { toast } from "sonner";
-import { ImagePlus, Loader2, Send, X } from "lucide-react";
-import { Button, Select, Textarea } from "@dw/ui";
-import { ApiError } from "@dw/api-client";
+import {
+  App,
+  Button,
+  Flex,
+  Input,
+  Modal,
+  Select,
+  Typography,
+  theme,
+} from "antd";
+import {
+  CloseOutlined,
+  PictureOutlined,
+  SendOutlined,
+} from "@ant-design/icons";
+import { errorMessage } from "../../lib/error-message";
 import { apiClient } from "../../lib/session";
 import { NAV_ITEMS } from "../../lib/nav/registry";
-import { Modal } from "../modal";
 
 /**
  * The feedback form (spec 003 US5): exactly four things — which module, what
@@ -74,12 +85,14 @@ function accept(
 
 export function FeedbackDialog({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
+  const { message } = App.useApp();
+  const { token } = theme.useToken();
   const modules = useMemo(
     () => [...new Set(NAV_ITEMS.map((item) => item.label)), OTHER_MODULE],
     [],
   );
   const [module, setModule] = useState(() => moduleForPath(pathname));
-  const [message, setMessage] = useState("");
+  const [text, setText] = useState("");
   const [suggestion, setSuggestion] = useState("");
   const [images, setImages] = useState<Picked[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -110,38 +123,58 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
   }
 
   async function submit() {
-    const text = message.trim();
-    if (!text) return;
+    const body = text.trim();
+    if (!body) return;
     setSending(true);
     try {
       await apiClient().submitFeedback({
         module,
-        message: text,
+        message: body,
         suggestion: suggestion.trim() || undefined,
         page_path: pathname,
         images: images.map((image) => image.file),
       });
-      toast.success("Cảm ơn — phản hồi đã tới quản trị viên.");
+      message.success("Cảm ơn — phản hồi đã tới quản trị viên.");
       onClose();
     } catch (error) {
-      toast.error(
-        error instanceof ApiError ? error.message : "Không gửi được phản hồi.",
-      );
+      message.error(errorMessage(error) || "Không gửi được phản hồi.");
     } finally {
       setSending(false);
     }
   }
 
+  const required = (
+    <span aria-hidden style={{ color: token.colorErrorText }}>
+      {" "}
+      *
+    </span>
+  );
+
   return (
     <Modal
       open
-      onClose={onClose}
+      onCancel={onClose}
       title="Gửi phản hồi"
-      subtitle="Bạn gặp lỗi ở đâu, lỗi gì, và bạn muốn nó ra sao — kèm ảnh màn hình nếu có."
-      className="max-w-xl"
+      footer={
+        <Flex justify="end" gap="small">
+          <Button onClick={onClose} disabled={sending}>
+            Hủy
+          </Button>
+          <Button
+            type="primary"
+            icon={<SendOutlined aria-hidden />}
+            loading={sending}
+            disabled={!text.trim()}
+            onClick={() => void submit()}
+          >
+            Gửi
+          </Button>
+        </Flex>
+      }
     >
-      <div
-        className="space-y-4"
+      <Flex
+        vertical
+        gap="middle"
         onPaste={(event) => {
           const files = Array.from(event.clipboardData.files);
           if (files.length > 0) {
@@ -150,102 +183,101 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
           }
         }}
       >
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">
-            Module đang gặp lỗi <span className="text-rose-500">*</span>
-          </span>
+        <Typography.Text type="secondary">
+          Bạn gặp lỗi ở đâu, lỗi gì, và bạn muốn nó ra sao — kèm ảnh màn hình
+          nếu có.
+        </Typography.Text>
+        <Flex vertical gap={4}>
+          <label htmlFor="feedback-module">Module đang gặp lỗi{required}</label>
           <Select
+            id="feedback-module"
             value={module}
-            onChange={(event) => setModule(event.target.value)}
-          >
-            {modules.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </Select>
-        </label>
-
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">
-            Mô tả lỗi <span className="text-rose-500">*</span>
-          </span>
-          <Textarea
+            onChange={setModule}
+            options={modules.map((item) => ({ value: item, label: item }))}
+          />
+        </Flex>
+        <Flex vertical gap={4}>
+          <label htmlFor="feedback-message">Mô tả lỗi{required}</label>
+          <Input.TextArea
+            id="feedback-message"
             rows={4}
             maxLength={TEXT_MAX}
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
             placeholder="Bạn làm gì, chuyện gì xảy ra, bạn mong đợi gì?"
           />
-        </label>
-
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">
+        </Flex>
+        <Flex vertical gap={4}>
+          <label htmlFor="feedback-suggestion">
             Đề xuất giải pháp / Khuyến nghị
-          </span>
-          <Textarea
+          </label>
+          <Input.TextArea
+            id="feedback-suggestion"
             rows={2}
             maxLength={TEXT_MAX}
             value={suggestion}
             onChange={(event) => setSuggestion(event.target.value)}
             placeholder="Không bắt buộc"
           />
-        </label>
-
-        <div>
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">
-            Ảnh đính kèm
-          </span>
+        </Flex>
+        <Flex vertical gap={4}>
+          <span>Ảnh đính kèm</span>
           <div
             role="group"
             aria-label="Ảnh đính kèm"
             onDragOver={(event) => event.preventDefault()}
             onDrop={onDrop}
-            className="rounded-xl border border-dashed bg-muted/20 p-3"
+            className="border border-dashed p-3"
+            style={{
+              borderColor: token.colorBorder,
+              borderRadius: token.borderRadiusLG,
+            }}
           >
             {images.length > 0 && (
-              <ul className="mb-3 flex flex-wrap gap-2">
+              <ul className="m-0 mb-3 flex list-none flex-wrap gap-2 p-0">
                 {images.map((image, index) => (
                   <li key={image.url} className="relative">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={image.url}
                       alt={image.file.name}
-                      className="size-20 rounded-lg border object-cover"
+                      className="size-20 object-cover"
+                      style={{ borderRadius: token.borderRadius }}
                     />
-                    <button
-                      type="button"
+                    <Button
+                      size="small"
+                      shape="circle"
+                      icon={<CloseOutlined aria-hidden />}
                       aria-label={`Xoá ${image.file.name}`}
                       onClick={() =>
                         setImages((previous) =>
                           previous.filter((_, at) => at !== index),
                         )
                       }
-                      className="absolute -right-1.5 -top-1.5 rounded-full border bg-background p-0.5 text-muted-foreground shadow hover:text-foreground"
-                    >
-                      <X className="size-3" />
-                    </button>
+                      className="!absolute -right-2 -top-2"
+                    />
                   </li>
                 ))}
               </ul>
             )}
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Flex wrap align="center" gap="small">
               <Button
-                type="button"
-                size="sm"
-                variant="outline"
+                size="small"
+                icon={<PictureOutlined aria-hidden />}
                 onClick={() => fileInput.current?.click()}
               >
-                <ImagePlus className="size-4" /> Chọn ảnh
+                Chọn ảnh
               </Button>
-              <span>hoặc kéo-thả / dán ảnh (Ctrl+V) vào đây.</span>
-            </div>
+              <Typography.Text type="secondary" className="text-xs">
+                hoặc kéo-thả / dán ảnh (Ctrl+V) vào đây.
+              </Typography.Text>
+            </Flex>
             <input
               ref={fileInput}
               type="file"
               accept="image/*"
               multiple
-              className="hidden"
+              hidden
               onChange={(event) => {
                 if (event.target.files) add(event.target.files);
                 event.target.value = "";
@@ -253,29 +285,12 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
           {imageError && (
-            <span className="mt-1 block text-xs text-rose-600">
+            <Typography.Text type="danger" className="text-xs">
               {imageError}
-            </span>
+            </Typography.Text>
           )}
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={sending}>
-            Huỷ
-          </Button>
-          <Button
-            onClick={() => void submit()}
-            disabled={sending || !message.trim()}
-          >
-            {sending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Send className="size-4" />
-            )}
-            Gửi
-          </Button>
-        </div>
-      </div>
+        </Flex>
+      </Flex>
     </Modal>
   );
 }

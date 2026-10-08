@@ -1,6 +1,6 @@
 # 01 — `anyScope` và một hàm hiện mục menu
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: —
 Area: platform-runtime
 
@@ -21,14 +21,14 @@ roles })` gồm `operatorOnly`, `scope`, `anyScope`, `roles`. Danh sách rỗng 
 
 ## Tiêu chí chấp nhận
 
-- [ ] Vitest cho `isNavItemVisible`: mục có `anyScope` hiện với người có một scope trong danh
+- [x] Vitest cho `isNavItemVisible`: mục có `anyScope` hiện với người có một scope trong danh
       sách, ẩn với người không có scope nào; có cả `scope` và `anyScope` thì cần cả hai;
       `anyScope: []` → ẩn; `operatorOnly`, `roles` giữ hành vi cũ. Gỡ nhánh `anyScope` → test
       đỏ.
-- [ ] `rg "item.scope \|\| hasScope" apps/web` ra 0 chỗ ngoài `visibility.ts`.
-- [ ] Menu và trang đầu không đổi với registry hiện có (Playwright hoặc vitest của
+- [x] `rg "item.scope \|\| hasScope" apps/web` ra 0 chỗ ngoài `visibility.ts`.
+- [x] Menu và trang đầu không đổi với registry hiện có (Playwright hoặc vitest của
       `app-frame`).
-- [ ] `pnpm lint`, `pnpm typecheck`, `pnpm build` xanh.
+- [x] `pnpm lint`, `pnpm typecheck`, `pnpm build` xanh.
 
 ## Nguồn
 
@@ -36,3 +36,11 @@ roles })` gồm `operatorOnly`, `scope`, `anyScope`, `roles`. Danh sách rỗng 
   `apps/web/app/page.tsx:24-30`.
 
 ## Comments
+
+- 8/10/2026 (nhánh `feat/antd-everywhere`): `NavItem.anyScope`, một hàm
+  `isNavItemVisible` ở `apps/web/lib/nav/visibility.ts`; `app-frame.tsx` và
+  `app/page.tsx` cùng gọi nó, không còn bộ lọc viết tay
+  (`rg "item.scope \|\| hasScope" apps/web` ra 0). `anyScope: []` trả `false`.
+  Vitest `lib/nav/__tests__/visibility.test.ts` 4 ca. Mutation: gỡ nhánh
+  `anyScope` thì 3/4 ca đỏ; trả lại thì xanh. Menu và trang đầu với registry
+  hiện có không đổi: `home-page.test.tsx` và `app-frame-gate.test.tsx` xanh.

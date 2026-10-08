@@ -17,7 +17,7 @@ from dw_agent_runtime.ports import ModelGateway, ModelRequest
 from dw_supply_chain.domain.product_proposal import ProductProposalIntent
 
 PROMPT_ID = "supply_chain.product_proposal_understanding"
-PROMPT_VERSION = "1.1.0"
+PROMPT_VERSION = "1.2.0"
 
 
 def message_as_data(message: str) -> str:

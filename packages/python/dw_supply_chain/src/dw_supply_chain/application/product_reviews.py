@@ -287,10 +287,14 @@ class EnsureProductApproval:
         workspace = case.workspace_id.value
         try:
             stamped = set(
-                await self.holders.holding(context, workspace, frozenset({approval.required_scope}))
+                await self.holders.holding(
+                    context.tenant_id, workspace, frozenset({approval.required_scope})
+                )
             )
             deciders = set(
-                await self.holders.holding(context, workspace, frozenset({APPROVALS_DECIDE}))
+                await self.holders.holding(
+                    context.tenant_id, workspace, frozenset({APPROVALS_DECIDE})
+                )
             )
             title, body = wait.notice_of(case, approval)
             await self.notifier.deliver(

@@ -1,39 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Scale } from "lucide-react";
+import { Alert, Button, Card, Flex, Input, Tag, Typography } from "antd";
+import { SplitCellsOutlined } from "@ant-design/icons";
 import type { AdminSodRule } from "@dw/contracts";
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Textarea,
-} from "@dw/ui";
-import { ApiError } from "@dw/api-client";
+import { PageHeader, RegionState } from "@dw/ui";
 import { apiClient } from "../../../lib/session";
 import { useAuth } from "../../../lib/auth/auth-context";
-import { PageHeading } from "../../../components/page-heading";
-import { EmptyState } from "../../../components/empty-state";
-
-function errorText(error: unknown): string {
-  return error instanceof ApiError
-    ? error.body.message
-    : "Something went wrong";
-}
+import { formatDateTime } from "../../../lib/dates";
+import { errorMessage as errorText } from "../../../lib/error-message";
 
 export default function SeparationOfDutiesPage() {
   const { hasScope } = useAuth();
 
   if (!hasScope("platform.roles.read")) {
     return (
-      <EmptyState
-        icon={Scale}
-        title="No access"
-        description="You need the role-catalog permission to view this page."
+      <RegionState
+        kind="forbidden"
+        description="Cần quyền xem danh mục vai để xem trang này."
       />
     );
   }
@@ -54,42 +38,36 @@ function RuleList({ canDecide }: { canDecide: boolean }) {
   useEffect(load, [load]);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <PageHeading
-        icon={Scale}
-        title="Separation of duties"
-        description="Pairs of duties no single person may hold. A company too small to staff both sides may waive a rule that allows it, with a reason. Every waiver and revocation is recorded in the audit log."
+    <div className="mx-auto max-w-3xl">
+      <PageHeader
+        icon={<SplitCellsOutlined />}
+        title="Tách nhiệm"
+        subtitle="Những cặp nhiệm vụ không một người nào được giữ cùng lúc. Công ty quá nhỏ để chia hai bên có thể miễn một luật cho phép miễn, kèm lý do; một quản trị viên thứ hai phải xác nhận thì miễn trừ mới có hiệu lực. Mọi lần miễn, xác nhận và thu hồi đều ghi vào nhật ký kiểm toán."
       />
-
-      {error && (
-        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      )}
-
-      {rules === null ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading…
-        </div>
-      ) : rules.length === 0 ? (
-        <EmptyState
-          icon={Scale}
-          title="No rules"
-          description="No separation-of-duty rule is installed."
-        />
-      ) : (
-        rules.map((rule) => (
-          <RuleCard
-            key={rule.key}
-            rule={rule}
-            canDecide={canDecide}
-            onDecided={() => {
-              setError(null);
-              load();
-            }}
+      <Flex vertical gap="middle">
+        {error && <Alert type="error" showIcon title={error} />}
+        {rules === null ? (
+          <RegionState kind="loading" />
+        ) : rules.length === 0 ? (
+          <RegionState
+            kind="empty"
+            title="Chưa có luật nào"
+            description="Chưa cài luật tách nhiệm nào."
           />
-        ))
-      )}
+        ) : (
+          rules.map((rule) => (
+            <RuleCard
+              key={rule.key}
+              rule={rule}
+              canDecide={canDecide}
+              onDecided={() => {
+                setError(null);
+                load();
+              }}
+            />
+          ))
+        )}
+      </Flex>
     </div>
   );
 }
@@ -107,14 +85,18 @@ function RuleCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const waived = rule.waiver !== null;
+  // Proposed by one admin, not yet confirmed by another: it lifts nothing.
+  const pending = rule.waiver !== null && rule.waiver.confirmed_at === null;
 
-  const decide = async () => {
+  const decide = async (action: "waive" | "confirm" | "revoke") => {
     if (!reason.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      if (waived) {
+      if (action === "revoke") {
         await apiClient().revokeSeparationOfDutiesWaiver(rule.key, reason);
+      } else if (action === "confirm") {
+        await apiClient().confirmSeparationOfDutiesWaiver(rule.key, reason);
       } else {
         await apiClient().waiveSeparationOfDutiesRule(rule.key, reason);
       }
@@ -127,81 +109,115 @@ function RuleCard({
     }
   };
 
+  const reasonId = `sod-reason-${rule.key}`;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between gap-3 text-base">
-          {rule.description}
-          {waived ? (
-            <Badge variant="warning">Waived</Badge>
-          ) : rule.waivable ? (
-            <Badge variant="secondary">Enforced</Badge>
-          ) : (
-            <Badge variant="outline">Always enforced</Badge>
-          )}
-        </CardTitle>
-        <CardDescription className="font-mono text-xs">
+    <Card
+      title={rule.description}
+      extra={
+        pending ? (
+          <Tag color="processing">Chờ xác nhận</Tag>
+        ) : waived ? (
+          <Tag color="warning">Đang miễn</Tag>
+        ) : rule.waivable ? (
+          <Tag>Đang áp dụng</Tag>
+        ) : (
+          <Tag bordered={false}>Luôn áp dụng</Tag>
+        )
+      }
+    >
+      <Flex vertical gap="middle">
+        <Typography.Text code className="text-xs">
           {rule.key}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm">
+        </Typography.Text>
         <div className="grid gap-2 sm:grid-cols-2">
-          <ScopeList title="One side" scopes={rule.left_scopes} />
-          <ScopeList title="Other side" scopes={rule.right_scopes} />
+          <ScopeList title="Một bên" scopes={rule.left_scopes} />
+          <ScopeList title="Bên kia" scopes={rule.right_scopes} />
         </div>
 
         {rule.waiver && (
-          <p className="rounded-md bg-muted px-3 py-2">
-            Waived on {new Date(rule.waiver.granted_at).toLocaleString()}:{" "}
-            {rule.waiver.reason}
-          </p>
+          <Alert
+            type={pending ? "info" : "warning"}
+            title={
+              <>
+                {pending ? "Đề xuất" : "Miễn"} lúc{" "}
+                {formatDateTime(rule.waiver.granted_at)}: {rule.waiver.reason}
+                {pending &&
+                  " Một quản trị viên khác phải xác nhận; tới lúc đó luật vẫn áp dụng."}
+              </>
+            }
+          />
         )}
 
         {!rule.waivable && (
-          <p className="text-xs text-muted-foreground">
-            The platform does not let any tenant waive this rule.
-          </p>
+          <Typography.Text type="secondary">
+            Nền tảng không cho công ty nào miễn luật này.
+          </Typography.Text>
         )}
 
         {canDecide && (rule.waivable || waived) && (
-          <div className="space-y-2">
-            <Textarea
+          <Flex vertical gap="small">
+            <label htmlFor={reasonId}>
+              <Typography.Text strong>Lý do</Typography.Text>
+            </label>
+            <Input.TextArea
+              id={reasonId}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder={
-                waived
-                  ? "Why the waiver is no longer needed"
-                  : "Why this company cannot keep these duties apart"
+                pending
+                  ? "Vì sao bạn xác nhận (hoặc rút) miễn trừ này"
+                  : waived
+                    ? "Vì sao không cần miễn trừ nữa"
+                    : "Vì sao công ty không tách được hai nhiệm vụ này"
               }
               rows={2}
             />
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button
-              variant={waived ? "outline" : "destructive"}
-              onClick={() => void decide()}
-              disabled={busy || !reason.trim()}
-            >
-              {busy && <Loader2 className="size-4 animate-spin" />}
-              {waived ? "Revoke waiver" : "Waive for this tenant"}
-            </Button>
-          </div>
+            {error && <Alert type="error" showIcon title={error} />}
+            <Flex wrap gap="small">
+              {pending && (
+                <Button
+                  danger
+                  type="primary"
+                  loading={busy}
+                  disabled={!reason.trim()}
+                  onClick={() => void decide("confirm")}
+                >
+                  Xác nhận miễn trừ
+                </Button>
+              )}
+              <Button
+                danger={!waived}
+                loading={busy && !pending}
+                disabled={busy || !reason.trim()}
+                onClick={() => void decide(waived ? "revoke" : "waive")}
+              >
+                {pending
+                  ? "Rút đề xuất"
+                  : waived
+                    ? "Thu hồi miễn trừ"
+                    : "Đề xuất miễn trừ"}
+              </Button>
+            </Flex>
+          </Flex>
         )}
-      </CardContent>
+      </Flex>
     </Card>
   );
 }
 
 function ScopeList({ title, scopes }: { title: string; scopes: string[] }) {
   return (
-    <div>
-      <p className="mb-1 text-xs font-medium text-muted-foreground">{title}</p>
-      <div className="flex flex-wrap gap-1">
+    <Flex vertical gap={4}>
+      <Typography.Text type="secondary" className="text-xs">
+        {title}
+      </Typography.Text>
+      <Flex wrap gap={4}>
         {scopes.map((scope) => (
-          <Badge key={scope} variant="outline" className="font-mono text-xs">
+          <Tag key={scope} className="font-mono">
             {scope}
-          </Badge>
+          </Tag>
         ))}
-      </div>
-    </div>
+      </Flex>
+    </Flex>
   );
 }

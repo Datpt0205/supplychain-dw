@@ -41,6 +41,7 @@ from sqlalchemy.pool import NullPool
 from dw_platform.adapters.persistence.partition_maintenance import SqlPartitionMaintenance
 from dw_platform.retention_policy import (
     AuditRetention,
+    ChannelDeliveryRetention,
     CheckpointRetention,
     KnowledgeRetention,
     RetentionClass,
@@ -76,6 +77,7 @@ def _policy(**audit: object) -> RetentionPolicy:
         knowledge=KnowledgeRetention(deleted_grace_days=30, orphan_evidence_grace_days=7),
         audit=AuditRetention.model_validate(fields),
         checkpoints=CheckpointRetention(superseded_days=7, idle_thread_days=730),
+        channel_deliveries=ChannelDeliveryRetention(pending_expiry_days=7),
         batch_limit=1000,
     )
 

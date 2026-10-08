@@ -59,3 +59,12 @@ nền tảng; chữ của băng, menu và trang chặn trong ngữ cảnh hỗ t
 - `spec.md` của lát này: Mục tiêu 3.
 
 ## Comments
+
+- 8/10/2026: chưa làm. Đã có điều ticket này chờ: antd ở mọi trang, `RegionState`
+  (`@dw/ui`), thông báo qua `App.useApp()`, `lib/dates.ts` theo giờ Việt Nam,
+  `GET /support/my-grants` và `is_support_staff` (ticket 02). Còn nguyên bước
+  1–7: phiên quyền trong `sessionStorage`, header `X-DW-Support-Grant` trong
+  `clientOptions`, `supportStaffOnly`, chỗ cắm băng, registry trang đích, trang
+  `/support`, `useSupportGrant()`. Lưu ý từ ticket 02: lần đăng nhập đầu sau khi
+  cài OTP, token chỉ có `["pwd"]`, nên trang `/support` phải hiện trang chặn
+  `support_mfa_required` kèm lời "đăng nhập lại".

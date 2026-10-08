@@ -2,17 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, LogIn } from "lucide-react";
+import { Alert, Button, Card, Flex, Tag, Typography } from "antd";
+import { LoginOutlined } from "@ant-design/icons";
 import type { DemoUser } from "@dw/contracts";
-import { Badge, Button, Card, CardContent } from "@dw/ui";
 import { AUTH_MODE } from "../../lib/auth/config";
+import { errorMessage } from "../../lib/error-message";
+import { roleLabel } from "../../lib/nav/roles";
 import { apiClient, loginAsDev } from "../../lib/session";
-
-const ROLE_LABEL: Record<string, string> = {
-  member: "Staff",
-  approver: "Manager",
-  platform_admin: "Admin",
-};
 
 /** Dev-only one-click login (host `make dev` without Keycloak). */
 export default function DevLoginPage() {
@@ -32,9 +28,7 @@ export default function DevLoginPage() {
     apiClient()
       .listDemoUsers()
       .then(setUsers)
-      .catch((e: unknown) =>
-        setError(e instanceof Error ? e.message : "could not load"),
-      );
+      .catch((e: unknown) => setError(errorMessage(e)));
   }, [router]);
 
   if (AUTH_MODE !== "dev") return null;
@@ -45,53 +39,58 @@ export default function DevLoginPage() {
       await loginAsDev(subject);
       window.location.href = "/";
     } catch (e) {
-      setError(e instanceof Error ? e.message : "sign-in failed");
+      setError(errorMessage(e));
       setBusy(null);
     }
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-6 p-6">
-      <div className="flex items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-          <Bot className="size-5" />
-        </span>
-        <div>
-          <h1 className="text-xl font-semibold">Sign in (dev mode)</h1>
-          <p className="text-sm text-muted-foreground">
-            Pick a demo account to enter quickly.
-          </p>
-        </div>
+    <Flex
+      vertical
+      justify="center"
+      gap="large"
+      className="mx-auto min-h-screen max-w-2xl p-6"
+    >
+      <div>
+        <Typography.Title level={3} className="!mb-1">
+          Đăng nhập (chế độ dev)
+        </Typography.Title>
+        <Typography.Text type="secondary">
+          Chọn một tài khoản demo để vào nhanh.
+        </Typography.Text>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <Alert type="error" showIcon title={error} />}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {users?.map((u) => (
-          <Card key={u.subject}>
-            <CardContent className="flex flex-col gap-3 pt-5">
+          <Card key={u.subject} size="small">
+            <Flex vertical gap="small">
               <div>
-                <p className="font-medium">{u.display_name}</p>
-                <p className="text-xs text-muted-foreground">{u.tenant_name}</p>
+                <Typography.Text strong className="block">
+                  {u.display_name}
+                </Typography.Text>
+                <Typography.Text type="secondary" className="text-xs">
+                  {u.tenant_name}
+                </Typography.Text>
               </div>
-              <div className="flex flex-wrap gap-1">
+              <Flex wrap gap={4}>
                 {u.roles.map((r) => (
-                  <Badge key={r} variant="secondary">
-                    {ROLE_LABEL[r] ?? r}
-                  </Badge>
+                  <Tag key={r}>{roleLabel(r)}</Tag>
                 ))}
-              </div>
+              </Flex>
               <Button
-                size="sm"
-                disabled={busy === u.subject}
+                type="primary"
+                icon={<LoginOutlined aria-hidden />}
+                loading={busy === u.subject}
                 onClick={() => void pick(u.subject)}
               >
-                <LogIn /> {busy === u.subject ? "Entering…" : "Sign in"}
+                Đăng nhập
               </Button>
-            </CardContent>
+            </Flex>
           </Card>
         ))}
       </div>
-    </div>
+    </Flex>
   );
 }

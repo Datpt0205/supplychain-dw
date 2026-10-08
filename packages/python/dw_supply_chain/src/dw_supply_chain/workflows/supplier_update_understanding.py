@@ -18,7 +18,7 @@ from dw_agent_runtime.ports import ModelGateway, ModelRequest
 from dw_supply_chain.domain.supplier_update import SupplierUpdateExtraction
 
 PROMPT_ID = "supply_chain.supplier_update_understanding"
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.1.0"
 
 
 async def understand_supplier_update(

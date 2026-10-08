@@ -108,7 +108,7 @@ describe("Cần chú ý", () => {
     api.listAttentionQueue.mockRejectedValue(FORBIDDEN);
     render(<AttentionQueuePage />);
     expect(
-      await screen.findByText("Bạn chưa được xem danh sách cần chú ý"),
+      await screen.findByText("Bạn không có quyền xem mục này"),
     ).toBeTruthy();
     expect(screen.queryByText(/không được tính/)).toBeNull();
   });
@@ -150,7 +150,9 @@ describe("Bản tin hôm nay", () => {
     fresh();
     api.getDailyBrief.mockRejectedValue(FORBIDDEN);
     render(<DailyBriefPage />);
-    expect(await screen.findByText("Bạn chưa được xem bản tin")).toBeTruthy();
+    expect(
+      await screen.findByText("Bạn không có quyền xem mục này"),
+    ).toBeTruthy();
     expect(screen.queryByText(/Không có việc nào cần xử lý/)).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Tóm tắt bằng AI" }),

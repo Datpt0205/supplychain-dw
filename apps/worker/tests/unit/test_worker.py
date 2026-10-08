@@ -120,7 +120,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
     `spend_guard_retention` is the fifth, and reads no policy file at all —
     unlike audit/memory/knowledge, its window answers no compliance question,
     so it is a technical constant in code, not a term in
-    `retention@1.6.0.yaml` (see `SqlSpendGuardRetention`'s docstring).
+    `retention@1.7.0.yaml` (see `SqlSpendGuardRetention`'s docstring).
     `notifications_retention` is the sixth, on the same footing: the in-app
     inbox's 90 days live in `platform.prune_notifications()` itself.
     `checkpoint_retention` is the seventh, and reads the policy file again:

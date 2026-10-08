@@ -8,8 +8,9 @@ never share the ``dw_app`` pool.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 import sqlalchemy as sa
@@ -20,12 +21,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from dw_kernel.errors import ConflictError, NotFoundError
 from dw_platform.adapters.persistence import tables
+from dw_platform.adapters.persistence.repositories import SqlAuditRepository
+from dw_platform.adapters.persistence.support_grants import grant_from_row, support_staff_conflict
 from dw_platform.application.provisioning import (
     OffboardingStatus,
     OperatorRef,
+    SupportRequestSummary,
+    SupportStaffRef,
     TenantSummary,
     UserRef,
 )
+from dw_platform.application.support_access import (
+    GrantStatus,
+    SupportGrant,
+    SupportRefusal,
+)
+from dw_platform.domain.audit import AuditEvent
 
 # Matched by name, like every other constraint-driven error mapping in this
 # package (see admin_console_repo.py, run_store.py) — Postgres embeds the
@@ -270,30 +281,37 @@ class SqlProvisioningRepository:
                     )
                 )
             ).first()
-            if existing is None:
-                await session.execute(
-                    sa.insert(tables.memberships).values(
-                        id=membership_id,
-                        tenant_id=tenant_id,
-                        workspace_id=workspace_id,
-                        user_id=user_id,
-                        role_keys=[role],
-                        department="general",
+            try:
+                if existing is None:
+                    await session.execute(
+                        sa.insert(tables.memberships).values(
+                            id=membership_id,
+                            tenant_id=tenant_id,
+                            workspace_id=workspace_id,
+                            user_id=user_id,
+                            role_keys=[role],
+                            department="general",
+                        )
                     )
-                )
-                return
-            roles = list(existing.role_keys)
-            if role not in roles:
-                roles.append(role)
-                await session.execute(
-                    sa.update(tables.memberships)
-                    .where(
-                        tables.memberships.c.tenant_id == tenant_id,
-                        tables.memberships.c.workspace_id == workspace_id,
-                        tables.memberships.c.user_id == user_id,
+                    return
+                roles = list(existing.role_keys)
+                if role not in roles:
+                    roles.append(role)
+                    await session.execute(
+                        sa.update(tables.memberships)
+                        .where(
+                            tables.memberships.c.tenant_id == tenant_id,
+                            tables.memberships.c.workspace_id == workspace_id,
+                            tables.memberships.c.user_id == user_id,
+                        )
+                        .values(role_keys=roles)
                     )
-                    .values(role_keys=roles)
-                )
+            except IntegrityError as exc:
+                # A support staff member is never placed in a tenant (ADR 0024).
+                conflict = support_staff_conflict(exc)
+                if conflict is None:
+                    raise
+                raise conflict from exc
 
     async def list_operators(self) -> list[OperatorRef]:
         stmt = (
@@ -352,6 +370,172 @@ class SqlProvisioningRepository:
             )
         assert isinstance(result, CursorResult)
         return bool(result.rowcount)
+
+    async def list_support_staff(self) -> list[SupportStaffRef]:
+        staff = tables.support_staff
+        stmt = (
+            sa.select(
+                staff.c.user_id,
+                staff.c.note,
+                staff.c.added_at,
+                tables.users.c.email,
+                tables.users.c.display_name,
+            )
+            .select_from(staff.join(tables.users, staff.c.user_id == tables.users.c.id))
+            .order_by(staff.c.added_at)
+        )
+        async with self.session_factory() as session:
+            rows = (await session.execute(stmt)).all()
+        return [
+            SupportStaffRef(
+                user_id=row.user_id,
+                email=row.email,
+                display_name=row.display_name,
+                note=row.note,
+                added_at=row.added_at,
+            )
+            for row in rows
+        ]
+
+    async def add_support_staff(self, *, user_id: UUID, note: str | None, added_by: UUID) -> None:
+        async with self.session_factory() as session, session.begin():
+            await session.execute(
+                pg_insert(tables.support_staff)
+                .values(user_id=user_id, note=note, added_by=added_by)
+                .on_conflict_do_nothing(index_elements=["user_id"])
+            )
+
+    async def remove_support_staff(self, user_id: UUID) -> bool:
+        async with self.session_factory() as session, session.begin():
+            result = await session.execute(
+                sa.delete(tables.support_staff).where(tables.support_staff.c.user_id == user_id)
+            )
+        assert isinstance(result, CursorResult)
+        return bool(result.rowcount)
+
+    async def list_support_requests(self) -> list[SupportRequestSummary]:
+        grants = tables.support_grants
+        stmt = (
+            sa.select(
+                grants.c.id,
+                grants.c.code,
+                grants.c.tenant_id,
+                tables.tenants.c.name.label("tenant_name"),
+                grants.c.workspace_id,
+                tables.workspaces.c.name.label("workspace_name"),
+                grants.c.resource_type,
+                grants.c.resource_label,
+                grants.c.scope_set_key,
+                grants.c.scope_set_label,
+                grants.c.duration_hours,
+                grants.c.reason,
+                grants.c.requested_at,
+            )
+            .select_from(
+                grants.join(tables.tenants, tables.tenants.c.id == grants.c.tenant_id).join(
+                    tables.workspaces, tables.workspaces.c.id == grants.c.workspace_id
+                )
+            )
+            .where(grants.c.status == GrantStatus.PENDING_ASSIGNMENT.value)
+            .order_by(grants.c.requested_at, grants.c.id)
+        )
+        async with self.session_factory() as session:
+            rows = (await session.execute(stmt)).all()
+        return [
+            SupportRequestSummary(
+                grant_id=row.id,
+                code=row.code,
+                tenant_id=row.tenant_id,
+                tenant_name=row.tenant_name,
+                workspace_id=row.workspace_id,
+                workspace_name=row.workspace_name,
+                resource_type=row.resource_type,
+                resource_label=row.resource_label,
+                scope_set_key=row.scope_set_key,
+                scope_set_label=row.scope_set_label,
+                duration_hours=row.duration_hours,
+                reason=row.reason,
+                requested_at=row.requested_at,
+            )
+            for row in rows
+        ]
+
+    async def assign_support_grant(
+        self,
+        *,
+        grant_id: UUID,
+        staff_user_id: UUID,
+        assigned_by: UUID,
+        activated_at: datetime,
+        tenant_audit: Callable[[SupportGrant], AuditEvent],
+        provisioning_audit_id: UUID,
+    ) -> SupportGrant:
+        grants = tables.support_grants
+        async with self.session_factory() as session, session.begin():
+            current = (
+                await session.execute(
+                    sa.select(grants.c.status, grants.c.duration_hours)
+                    .where(grants.c.id == grant_id)
+                    .with_for_update()
+                )
+            ).first()
+            if current is None:
+                raise NotFoundError("support grant not found", details={"grant_id": str(grant_id)})
+            if current.status != GrantStatus.PENDING_ASSIGNMENT.value:
+                raise ConflictError(
+                    "only a grant waiting for assignment can be assigned",
+                    details={
+                        "reason_code": SupportRefusal.WRONG_STATUS.value,
+                        "status": current.status,
+                    },
+                )
+            # Not locked: someone removed from the list a moment later holds a
+            # grant they cannot use, because the support context requires a
+            # listed staff member on every request.
+            listed = (
+                await session.execute(
+                    sa.select(tables.support_staff.c.user_id).where(
+                        tables.support_staff.c.user_id == staff_user_id
+                    )
+                )
+            ).first()
+            if listed is None:
+                raise ConflictError(
+                    "a grant is only ever assigned to support staff",
+                    details={"reason_code": SupportRefusal.STAFF_REQUIRED.value},
+                )
+            row = (
+                await session.execute(
+                    sa.update(grants)
+                    .where(grants.c.id == grant_id)
+                    .values(
+                        status=GrantStatus.ACTIVE.value,
+                        staff_user_id=staff_user_id,
+                        assigned_by=assigned_by,
+                        activated_at=activated_at,
+                        expires_at=activated_at + timedelta(hours=current.duration_hours),
+                    )
+                    .returning(*grants.c)
+                )
+            ).one()
+            grant = grant_from_row(row)
+            await SqlAuditRepository(session).append(tenant_audit(grant))
+            await session.execute(
+                sa.insert(tables.provisioning_audit).values(
+                    id=provisioning_audit_id,
+                    actor_id=assigned_by,
+                    action="platform.support_grant.assign",
+                    target_type="support_grant",
+                    target_id=str(grant_id),
+                    details={
+                        "tenant_id": str(grant.tenant_id),
+                        "code": grant.code,
+                        "staff_user_id": str(staff_user_id),
+                    },
+                    occurred_at=activated_at,
+                )
+            )
+        return grant
 
     async def record_audit(
         self,

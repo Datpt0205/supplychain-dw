@@ -1,166 +1,176 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { DisconnectOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, Button, Result, Skeleton, Typography } from "antd";
+import {
+  ClockCircleOutlined,
+  DisconnectOutlined,
+  ExclamationCircleOutlined,
+  FileSearchOutlined,
+  InboxOutlined,
+  LockOutlined,
+  StopOutlined,
+  SwapOutlined,
+} from "@ant-design/icons";
+import { Flex, Skeleton, Typography, theme } from "antd";
+import type { ErrorCodeValue } from "@dw/contracts";
 
-/** Why a region could not show its content, as the app read the failure. */
-export interface RegionFailure {
-  /** The server's machine code (the app's `errorCode()`), null when none. */
-  code: string | null;
-  /** The server's sentence (the app's `errorMessage()`), never the code. */
-  message: string;
-  /** The server's `request_id`, for a person reporting the failure. */
-  requestId?: string | null;
-  /** The request never reached the server. */
-  offline?: boolean;
-}
-
+/** What a page or a region is showing instead of its content. */
 export type RegionKind =
-  "offline" | "forbidden" | "entitlement" | "notFound" | "conflict" | "error";
+  | "loading"
+  | "empty"
+  | "error"
+  | "forbidden"
+  | "notfound"
+  | "conflict"
+  | "entitlement"
+  | "session"
+  | "offline";
 
 /**
- * The one mapping from an error code to the state a region draws
- * (ui-quality §4); anything else is the error state. Entitlement is not
- * forbidden: what the plan includes and what a role may do are separate
- * concerns (CLAUDE.md).
+ * The server's error code, mapped to what the region shows: the ONLY place
+ * that mapping is made. `satisfies` makes a code added to the contract and not
+ * here a type error, not a silent fall-through.
  */
-export const REGION_STATE_BY_CODE: Readonly<Record<string, RegionKind>> = {
+export const ERROR_STATE = {
+  validation_failed: "error",
+  not_found: "notfound",
+  conflict: "conflict",
+  unauthenticated: "session",
   permission_denied: "forbidden",
   entitlement_denied: "entitlement",
-  not_found: "notFound",
-  conflict: "conflict",
-};
+  approval_required: "error",
+  tenant_context_missing: "session",
+  idempotency_conflict: "conflict",
+  rate_limited: "error",
+  payload_too_large: "error",
+  unsupported_media_type: "error",
+  timeout: "error",
+  upstream_unavailable: "error",
+  internal: "error",
+} as const satisfies Record<ErrorCodeValue, RegionKind>;
 
-export function regionKind(failure: RegionFailure): RegionKind {
-  if (failure.offline) return "offline";
-  return (failure.code && REGION_STATE_BY_CODE[failure.code]) || "error";
+export interface RegionError {
+  code: string;
+  /** The server's sentence, already written for a person. */
+  message: string;
+  requestId?: string | null;
 }
 
-type Copy = { title?: ReactNode; subTitle?: ReactNode };
+/**
+ * The region for a failed call. A code this build does not know (a server
+ * newer than the web) is an `error`, never content.
+ */
+export function stateForError(error: RegionError | "offline"): {
+  kind: RegionKind;
+  message?: string;
+  requestId?: string | null;
+} {
+  if (error === "offline") return { kind: "offline" };
+  const kind = Object.prototype.hasOwnProperty.call(ERROR_STATE, error.code)
+    ? ERROR_STATE[error.code as ErrorCodeValue]
+    : "error";
+  return { kind, message: error.message, requestId: error.requestId };
+}
+
+const DEFAULTS: Record<
+  Exclude<RegionKind, "loading">,
+  { title: string; icon: ReactNode }
+> = {
+  empty: { title: "Chưa có gì ở đây", icon: <InboxOutlined /> },
+  error: {
+    title: "Không tải được dữ liệu",
+    icon: <ExclamationCircleOutlined />,
+  },
+  forbidden: {
+    title: "Bạn không có quyền xem mục này",
+    icon: <LockOutlined />,
+  },
+  notfound: { title: "Không tìm thấy", icon: <FileSearchOutlined /> },
+  conflict: {
+    title: "Dữ liệu vừa được người khác thay đổi",
+    icon: <SwapOutlined />,
+  },
+  entitlement: {
+    title: "Gói dịch vụ chưa gồm tính năng này",
+    icon: <StopOutlined />,
+  },
+  session: {
+    title: "Phiên làm việc đã hết, hãy đăng nhập lại",
+    icon: <ClockCircleOutlined />,
+  },
+  offline: { title: "Mất kết nối mạng", icon: <DisconnectOutlined /> },
+};
 
 export interface RegionStateProps {
-  /** Until the first response: a skeleton shaped like the content. */
-  loading?: boolean;
-  failure?: RegionFailure | null;
-  /** What the region holds, in the reader's words ("danh sách Hồ sơ PO"). */
-  what: string;
-  onRetry?: () => void;
-  /** Words for a state where the default sentence is not enough. */
-  copy?: Partial<Record<RegionKind, Copy>>;
-  /** Skeleton paragraph rows. */
-  rows?: number;
-  /** Inside a card: an alert in place of a full-page result. */
+  kind: RegionKind;
+  /** Overrides the kind's default title. */
+  title?: ReactNode;
+  description?: ReactNode;
+  /** The server's request id, shown on an `error` so support can find it. */
+  requestId?: string | null;
+  /** Buttons: a retry, a way back. */
+  action?: ReactNode;
+  /** Inside a card or a table rather than a whole page. */
   compact?: boolean;
 }
 
-function defaults(
-  what: string,
-  failure: RegionFailure,
-): Record<RegionKind, Copy> {
-  return {
-    offline: {
-      title: "Mất kết nối mạng",
-      subTitle: `Chưa tải được ${what}. Kết nối lại rồi bấm Thử lại.`,
-    },
-    forbidden: {
-      title: `Bạn chưa được xem ${what}`,
-      subTitle:
-        "Vai của bạn chưa có quyền này. Liên hệ quản trị workspace để được cấp.",
-    },
-    entitlement: {
-      title: `Gói hiện tại chưa mở ${what}`,
-      subTitle: failure.message,
-    },
-    notFound: {
-      title: `Không tìm thấy ${what}`,
-      subTitle: "Không có trong workspace đang mở.",
-    },
-    conflict: {
-      title: `Có người vừa thay đổi ${what}`,
-      subTitle: failure.message,
-    },
-    error: { title: `Không tải được ${what}`, subTitle: failure.message },
-  };
-}
-
-const RESULT_STATUS = {
-  offline: "warning",
-  forbidden: "403",
-  entitlement: "info",
-  notFound: "404",
-  conflict: "warning",
-  error: "500",
-} as const;
-
 /**
- * Every state of a region that loads on its own except its content and its
- * empty (which is antd `Empty` with the region's own first action): loading,
- * offline, forbidden, the plan's limit, not found, conflict and error, from
- * one table. Renders nothing when the region is ready. Error and offline
- * offer "Thử lại"; error shows the server's sentence and its request id.
+ * One component for what a page or a region shows when it is not showing its
+ * data: loading, empty, and every failure the server names. An `error` is an
+ * alert (read out at once); the rest are status.
  */
 export function RegionState({
-  loading,
-  failure,
-  what,
-  onRetry,
-  copy,
-  rows = 4,
-  compact,
+  kind,
+  title,
+  description,
+  requestId,
+  action,
+  compact = false,
 }: RegionStateProps) {
-  if (!failure) {
-    return loading ? <Skeleton active paragraph={{ rows }} /> : null;
-  }
-  const kind = regionKind(failure);
-  const { title, subTitle } = {
-    ...defaults(what, failure)[kind],
-    ...copy?.[kind],
-  };
-  const retryable =
-    kind === "error" || kind === "offline" || kind === "conflict";
-  const retry =
-    retryable && onRetry ? (
-      <Button icon={<ReloadOutlined aria-hidden />} onClick={onRetry}>
-        Thử lại
-      </Button>
-    ) : null;
-  const requestId =
-    kind === "error" && failure.requestId ? (
-      <Typography.Text>Mã yêu cầu: {failure.requestId}</Typography.Text>
-    ) : null;
-
-  if (compact) {
+  const { token } = theme.useToken();
+  if (kind === "loading") {
     return (
-      <Alert
-        type={kind === "error" ? "error" : "warning"}
-        showIcon
-        icon={
-          kind === "offline" ? <DisconnectOutlined aria-hidden /> : undefined
-        }
-        title={title}
-        description={
-          <>
-            {subTitle}
-            {requestId ? <div>{requestId}</div> : null}
-          </>
-        }
-        action={retry}
-      />
+      <div role="status" aria-label="Đang tải" aria-busy="true">
+        <Skeleton active paragraph={{ rows: compact ? 2 : 5 }} />
+      </div>
     );
   }
+  const preset = DEFAULTS[kind];
   return (
-    <Result
-      status={RESULT_STATUS[kind]}
-      icon={kind === "offline" ? <DisconnectOutlined aria-hidden /> : undefined}
-      title={title}
-      subTitle={
-        <>
-          {subTitle}
-          {requestId ? <div>{requestId}</div> : null}
-        </>
-      }
-      extra={retry}
-    />
+    <Flex
+      vertical
+      align="center"
+      gap={8}
+      role={kind === "error" ? "alert" : "status"}
+      className={`text-center ${compact ? "px-4 py-6" : "rounded-xl border border-dashed px-6 py-12"}`}
+      style={compact ? undefined : { background: token.colorBgContainer }}
+    >
+      <span
+        aria-hidden
+        style={{
+          fontSize: compact ? token.fontSizeHeading4 : token.fontSizeHeading2,
+          color:
+            kind === "error" ? token.colorErrorText : token.colorTextTertiary,
+        }}
+      >
+        {preset.icon}
+      </span>
+      <Typography.Text strong>{title ?? preset.title}</Typography.Text>
+      {description && (
+        <Typography.Text type="secondary" className="max-w-md">
+          {description}
+        </Typography.Text>
+      )}
+      {kind === "error" && requestId && (
+        <Typography.Text type="secondary">
+          Mã yêu cầu: <Typography.Text code>{requestId}</Typography.Text>
+        </Typography.Text>
+      )}
+      {action && (
+        <Flex wrap gap="small" justify="center" className="mt-2">
+          {action}
+        </Flex>
+      )}
+    </Flex>
   );
 }

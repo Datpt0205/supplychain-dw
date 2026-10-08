@@ -21,9 +21,9 @@ import {
   UploadOutlined,
 } from "@ant-design/icons";
 import type { CaseDocument, DocumentType } from "@dw/api-client";
-import { RegionState, type RegionFailure } from "@dw/ui";
 import { formatDateTime, VN_TIME } from "../../lib/dates";
-import { errorMessage, regionFailure } from "../../lib/error-message";
+import { errorMessage } from "../../lib/error-message";
+import { LoadError } from "../load-error";
 import { newIdempotencyKey } from "../../lib/idempotency-key";
 import { useOnline } from "../../lib/hooks/use-online";
 import { apiClient } from "../../lib/session";
@@ -105,7 +105,7 @@ function saveBlob(blob: Blob, filename: string): void {
 
 type ListState =
   | { kind: "loading" }
-  | { kind: "error"; failure: RegionFailure }
+  | { kind: "error"; error: unknown }
   | { kind: "ready"; documents: CaseDocument[] };
 
 /** One press's identity: a retry of the same type and file reuses its key. */
@@ -198,7 +198,7 @@ export function CaseDocumentsCard({
     try {
       setList({ kind: "ready", documents: await api.list(caseId) });
     } catch (error) {
-      setList({ kind: "error", failure: regionFailure(error) });
+      setList({ kind: "error", error });
     }
   }, [api, caseId]);
 
@@ -310,12 +310,7 @@ export function CaseDocumentsCard({
     >
       <Flex vertical gap="middle">
         {list.kind === "error" ? (
-          <RegionState
-            compact
-            failure={list.failure}
-            what="chứng từ"
-            onRetry={() => void load()}
-          />
+          <LoadError compact error={list.error} onRetry={() => void load()} />
         ) : (
           <Table<CaseDocument>
             rowKey="id"

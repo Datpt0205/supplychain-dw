@@ -5,7 +5,10 @@ recipient the notification was inserted for who holds a chat link; a repeat of
 the `source_key` queues nothing. The table is workspace-narrowed: another
 tenant, and another workspace of the same tenant, neither read nor change a
 row. `dw_app` cannot insert or delete one, nor touch anything but its delivery
-state. Pruning removes finished rows past 90 days, never a pending one.
+state. Pruning removes finished rows past 90 days, never a pending one; a row
+still pending past the retention policy's term (no lane ever sent it: the
+channel is not configured) is failed as `channel_unconfigured`, with an audit
+row in its own tenant, so nothing waits forever.
 Offboarding exports the tenant's rows and leaves none behind.
 """
 
@@ -14,6 +17,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import timedelta
 
 import pytest
 import sqlalchemy as sa
@@ -24,6 +28,8 @@ from sqlalchemy.pool import NullPool
 
 from dw_platform.adapters.persistence import tables
 from dw_platform.adapters.persistence.channel_deliveries import (
+    RETENTION_LANE,
+    UNCONFIGURED,
     DeliveryScope,
     SqlChannelDeliveryRetention,
     SqlChannelOutbox,
@@ -31,10 +37,12 @@ from dw_platform.adapters.persistence.channel_deliveries import (
 from dw_platform.adapters.persistence.notifications import SqlNotificationRepository
 from dw_platform.adapters.persistence.offboarding import SqlTenantOffboarding
 from dw_platform.application.access_context import AccessContext
+from dw_platform.domain.audit import system_actor, system_actor_label
 
 pytestmark = pytest.mark.integration
 
 _d = tables.channel_deliveries
+PENDING_TERM = timedelta(days=7)
 
 
 @pytest.fixture
@@ -381,10 +389,109 @@ async def test_pruning_removes_finished_rows_past_ninety_days_never_a_pending_on
             sa.update(_d).where(_d.c.source_key == keys["fresh"]).values(status="failed")
         )
 
-    await SqlChannelDeliveryRetention(async_sessionmaker(app)).prune()
+    await SqlChannelDeliveryRetention(async_sessionmaker(app), PENDING_TERM).prune()
 
     left = {name for name, key in keys.items() if await _rows(migrator, key)}
     assert left == {"old_pending", "fresh"}
+
+
+async def _age(migrator: AsyncEngine, key: str, days: int, status: str = "pending") -> None:
+    async with migrator.begin() as conn:
+        await conn.execute(
+            sa.update(_d)
+            .where(_d.c.source_key == key)
+            .values(
+                status=status,
+                external_message_id="m" if status == "sent" else None,
+                created_at=sa.text(f"now() - interval '{days} days'"),
+            )
+        )
+
+
+async def _state(
+    migrator: AsyncEngine, key: str
+) -> tuple[str, str | None, list[tuple[str, uuid.UUID, dict[str, object]]]]:
+    a = tables.audit_events
+    async with migrator.connect() as conn:
+        row = (
+            await conn.execute(
+                sa.select(_d.c.id, _d.c.status, _d.c.last_error, _d.c.tenant_id).where(
+                    _d.c.source_key == key
+                )
+            )
+        ).one()
+        audits = (
+            await conn.execute(
+                sa.select(a.c.action, a.c.actor_id, a.c.tenant_id, a.c.details).where(
+                    a.c.resource_type == "channel_delivery", a.c.resource_id == str(row.id)
+                )
+            )
+        ).all()
+    assert all(audit.tenant_id == row.tenant_id for audit in audits)
+    return (
+        row.status,
+        row.last_error,
+        [(audit.action, audit.actor_id, audit.details) for audit in audits],
+    )
+
+
+async def test_a_delivery_pending_past_its_term_fails_as_unconfigured_never_waiting_forever(
+    app: AsyncEngine, migrator: AsyncEngine
+) -> None:
+    """No lane sends while the bot token is unset, so a queued row would stay
+    pending for good. Past the policy's term it is failed, on the record."""
+    (place,) = await _tenant(migrator)
+    (other,) = await _tenant(migrator)
+    linked = await _person(migrator, place, zalo=f"z-{uuid.uuid4()}")
+    elsewhere = await _person(migrator, other, zalo=f"z-{uuid.uuid4()}")
+    keys = {name: f"test:{name}:{uuid.uuid4()}" for name in ("stale", "young", "sent", "other")}
+    for name, key in keys.items():
+        if name == "other":
+            await _notify(app, other, elsewhere, key=key)
+        else:
+            await _notify(app, place, linked, key=key)
+    await _age(migrator, keys["stale"], 8)
+    await _age(migrator, keys["other"], 8)
+    await _age(migrator, keys["young"], 6)
+    await _age(migrator, keys["sent"], 8, status="sent")
+
+    await SqlChannelDeliveryRetention(async_sessionmaker(app), PENDING_TERM).prune()
+
+    lane = system_actor(RETENTION_LANE).value
+    for name in ("stale", "other"):
+        status, last_error, audits = await _state(migrator, keys[name])
+        assert (status, last_error) == ("failed", UNCONFIGURED)
+        [(action, actor, details)] = audits
+        assert (action, actor) == ("channel_delivery.failed", lane)
+        assert details["reason"] == UNCONFIGURED
+        assert details["actor"] == system_actor_label(RETENTION_LANE)
+    assert await _state(migrator, keys["young"]) == ("pending", None, [])
+    status, _, audits = await _state(migrator, keys["sent"])
+    assert (status, audits) == ("sent", [])
+
+    # A second pass finds nothing more to fail and writes nothing more.
+    await SqlChannelDeliveryRetention(async_sessionmaker(app), PENDING_TERM).prune()
+    assert len((await _state(migrator, keys["stale"]))[2]) == 1
+
+
+async def test_the_application_cannot_fail_deliveries_across_tenants_except_through_the_lane(
+    app: AsyncEngine,
+) -> None:
+    """The function crosses tenants; only the role the lane runs as may call it."""
+    async with app.connect() as conn:
+        allowed = await conn.scalar(
+            sa.text(
+                "SELECT has_function_privilege('dw_app',"
+                " 'platform.expire_pending_channel_deliveries(interval, uuid, text)', 'EXECUTE')"
+            )
+        )
+        public = await conn.scalar(
+            sa.text(
+                "SELECT has_function_privilege('public',"
+                " 'platform.expire_pending_channel_deliveries(interval, uuid, text)', 'EXECUTE')"
+            )
+        )
+    assert (allowed, public) == (True, False)
 
 
 async def test_offboarding_exports_the_tenants_deliveries_and_leaves_none(

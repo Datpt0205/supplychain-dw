@@ -29,6 +29,7 @@ import {
   unmetLock,
 } from "./product-case-labels";
 import { useAuth } from "../../lib/auth/auth-context";
+import { formatCount } from "../../lib/money";
 import { errorMessage } from "../../lib/error-message";
 import { useOnline } from "../../lib/hooks/use-online";
 import { useAttemptKey } from "../../lib/idempotency-key";
@@ -188,7 +189,7 @@ export function ItemCodingCard({
       dataIndex: "planned_quantity",
       align: "right",
       render: (value: number | null) =>
-        value === null ? "—" : value.toLocaleString("vi-VN"),
+        value === null ? "—" : formatCount(value),
     },
     {
       title: "",

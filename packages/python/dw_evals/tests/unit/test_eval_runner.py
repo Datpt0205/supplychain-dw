@@ -24,7 +24,7 @@ DATASETS = sorted(DATASETS_DIR.glob("*.json"))
 
 
 def test_datasets_exist() -> None:
-    assert {p.name for p in DATASETS} >= {"platform@1.1.0.json"}
+    assert {p.name for p in DATASETS} >= {"platform@1.2.0.json"}
 
 
 @pytest.mark.parametrize("path", DATASETS, ids=lambda p: p.stem)
@@ -33,7 +33,7 @@ def test_dataset_has_full_security_coverage(path: Path) -> None:
 
 
 def test_platform_dataset_passes_with_the_platform_table() -> None:
-    report = run_dataset(load_dataset(DATASETS_DIR / "platform@1.1.0.json"), REPO_ROOT, GRADERS)
+    report = run_dataset(load_dataset(DATASETS_DIR / "platform@1.2.0.json"), REPO_ROOT, GRADERS)
     assert report.ok, [(r.case_id, r.details) for r in report.results if not r.passed]
 
 

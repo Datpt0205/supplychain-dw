@@ -25,6 +25,10 @@ class VerifiedClaims:
     email: str | None
     issuer: str
     name: str | None = None
+    # `amr` and `acr`. Empty / None when the token carries neither: no second
+    # factor is ever assumed.
+    auth_methods: frozenset[str] = frozenset()
+    acr: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

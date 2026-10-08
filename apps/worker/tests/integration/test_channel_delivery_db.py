@@ -36,10 +36,11 @@ from sqlalchemy.pool import NullPool
 
 from dw_connectors.ports import ChatRecipientUnreachableError
 from dw_platform.adapters.persistence import tables
-from dw_platform.adapters.persistence.channel_deliveries import SqlChannelOutbox
+from dw_platform.adapters.persistence.channel_deliveries import LANE, SqlChannelOutbox
 from dw_platform.adapters.persistence.notifications import SqlNotificationRepository
 from dw_platform.adapters.persistence.zalo_link_repo import SqlZaloLink
 from dw_platform.application.access_context import AccessContext
+from dw_platform.domain.audit import system_actor, system_actor_label
 from dw_worker.consumers.channel_delivery import MAX_ATTEMPTS, build_channel_delivery_consumer
 
 pytestmark = pytest.mark.integration
@@ -390,3 +391,30 @@ async def test_someone_who_lost_the_workspace_after_the_notice_is_sent_nothing(
     assert await _state(migrator, key) == _State(
         "cancelled", 0, "recipient_not_member", None, ("channel_delivery.cancelled",)
     )
+
+
+async def test_the_lane_is_the_actor_and_the_recipient_is_named_in_the_details(
+    sessions: async_sessionmaker[AsyncSession], migrator: AsyncEngine
+) -> None:
+    place = await _place(migrator)
+    user, _ = await _linked_member(migrator, place)
+    key = await _notify(sessions, place, user)
+
+    await _lane(sessions, _Chat())()
+
+    a = tables.audit_events
+    async with migrator.connect() as conn:
+        (actor_id, details) = (
+            await conn.execute(
+                sa.select(a.c.actor_id, a.c.details).where(
+                    a.c.resource_type == "channel_delivery",
+                    a.c.resource_id
+                    == sa.select(sa.cast(_d.c.id, sa.Text))
+                    .where(_d.c.source_key == key)
+                    .scalar_subquery(),
+                )
+            )
+        ).one()
+    assert actor_id == system_actor(LANE).value != user
+    assert details["recipient_user_id"] == str(user)
+    assert details["actor"] == system_actor_label(LANE)

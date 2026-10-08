@@ -38,6 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "AuditRetention",
+    "ChannelDeliveryRetention",
     "CheckpointRetention",
     "KnowledgeRetention",
     "RetentionClass",
@@ -144,6 +145,21 @@ class CheckpointRetention(BaseModel):
         return self
 
 
+class ChannelDeliveryRetention(BaseModel):
+    """How long a queued chat delivery may stay `pending` before it is failed.
+
+    Not a legal term like the rest of this file: a liveness bound. A delivery is
+    queued whether or not any host sends, so with the channel unconfigured a row
+    would wait forever. A sending lane settles a row within hours, so a row
+    pending this long was never going to be sent; it is failed as
+    `channel_unconfigured`, on the audit log.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    pending_expiry_days: int = Field(ge=1)
+
+
 class RetentionPolicy(BaseModel):
     """The versioned answer to "how long do you keep our data"."""
 
@@ -156,6 +172,7 @@ class RetentionPolicy(BaseModel):
     knowledge: KnowledgeRetention
     audit: AuditRetention
     checkpoints: CheckpointRetention
+    channel_deliveries: ChannelDeliveryRetention
     batch_limit: int = Field(gt=0, le=10_000)
 
     def cutoff_for(self, name: str, *, now: datetime) -> datetime | None:

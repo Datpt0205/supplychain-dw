@@ -1,7 +1,7 @@
 "use client";
 
-import { Bot, LogIn } from "lucide-react";
-import { Button } from "@dw/ui";
+import { Alert, Button, Card, Flex, Typography, theme } from "antd";
+import { LoginOutlined, RobotOutlined } from "@ant-design/icons";
 import { useAuth } from "../lib/auth/auth-context";
 
 /**
@@ -12,32 +12,42 @@ import { useAuth } from "../lib/auth/auth-context";
  */
 export function LoginScreen() {
   const { login, error } = useAuth();
+  const { token } = theme.useToken();
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
-      <div className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-sm">
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <span className="flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Bot className="size-6" />
+    <Flex align="center" justify="center" className="min-h-screen p-6">
+      <Card className="w-full max-w-md">
+        <Flex vertical align="center" gap="small" className="mb-6 text-center">
+          <span
+            className="flex size-12 items-center justify-center text-2xl"
+            style={{
+              background: token.colorPrimary,
+              color: token.colorTextLightSolid,
+              borderRadius: token.borderRadiusLG,
+            }}
+          >
+            <RobotOutlined aria-hidden />
           </span>
-          <div>
-            <h1 className="text-xl font-semibold">Digital Worker Platform</h1>
-            <p className="text-sm text-muted-foreground">
-              Taking you to the sign-in page…
-            </p>
-          </div>
-        </div>
-
+          <Typography.Title level={4} className="!mb-0">
+            Digital Worker Platform
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            Đang chuyển tới trang đăng nhập…
+          </Typography.Text>
+        </Flex>
         {error && (
-          <p className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </p>
+          <Alert type="error" showIcon title={error} className="mb-4" />
         )}
-
-        <Button size="lg" className="w-full" onClick={login}>
-          <LogIn /> Sign in
+        <Button
+          type="primary"
+          size="large"
+          block
+          icon={<LoginOutlined aria-hidden />}
+          onClick={login}
+        >
+          Đăng nhập
         </Button>
-      </div>
-    </div>
+      </Card>
+    </Flex>
   );
 }

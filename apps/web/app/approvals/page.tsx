@@ -17,6 +17,7 @@ import {
 import {
   CheckOutlined,
   CloseOutlined,
+  ExportOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
 import type { Approval } from "@dw/contracts";
@@ -27,7 +28,7 @@ import {
   ToolApprovalPayload,
   approvalTitle,
 } from "../../components/tool-approval";
-import { approvalClient } from "../../lib/approvals/registry";
+import { approvalClient, approvalInbox } from "../../lib/approvals/registry";
 import { useAuth } from "../../lib/auth/auth-context";
 import { formatDateTime, formatDateTimeFull, VN_TIME } from "../../lib/dates";
 import { errorMessage } from "../../lib/error-message";
@@ -144,8 +145,8 @@ export default function ApprovalsPage() {
     <div className="mx-auto max-w-6xl">
       <PageHeader
         title="Duyệt"
-        description="Một việc muốn thay đổi thứ gì đó bên ngoài hệ thống dừng ở đây tới khi một người quyết. Chưa việc nào trên trang này đã xảy ra."
-        extra={
+        subtitle="Một việc muốn thay đổi thứ gì đó bên ngoài hệ thống dừng ở đây tới khi một người quyết. Chưa việc nào trên trang này đã xảy ra."
+        actions={
           <Button icon={<ReloadOutlined aria-hidden />} onClick={reload}>
             Làm mới
           </Button>
@@ -167,6 +168,8 @@ export default function ApprovalsPage() {
         )}
 
         {pending.map((approval) => {
+          // A context with its own inbox decides there: one door per approval.
+          const inbox = approvalInbox(approval);
           const lacking = missingScope(approval);
           const lockReason =
             lacking === null
@@ -217,7 +220,23 @@ export default function ApprovalsPage() {
                   </Typography.Text>
                 </Flex>
                 <ToolApprovalPayload payload={approval.payload} />
-                {!canDecide ? (
+                {inbox?.kind === "link" && (
+                  <div>
+                    <Button
+                      type="primary"
+                      href={inbox.href}
+                      icon={<ExportOutlined aria-hidden />}
+                    >
+                      {inbox.label}
+                    </Button>
+                  </div>
+                )}
+                {inbox?.kind === "misconfigured" && (
+                  <Typography.Text type="secondary">
+                    Yêu cầu này được quyết ở nơi khác.
+                  </Typography.Text>
+                )}
+                {inbox !== null ? null : !canDecide ? (
                   <Typography.Text>
                     Vai của bạn không có quyền approvals.decide, nên yêu cầu này
                     chỉ để xem.

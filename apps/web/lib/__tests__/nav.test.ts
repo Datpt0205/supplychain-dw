@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NAV_ITEMS } from "../nav/registry";
-import { barNav, visibleNav, type NavViewer } from "../nav/visible";
+import { barNav, visibleNav, type NavViewer } from "../nav/visibility";
 
 function viewer(scopes: string[], roles: string[] = []): NavViewer {
   return {

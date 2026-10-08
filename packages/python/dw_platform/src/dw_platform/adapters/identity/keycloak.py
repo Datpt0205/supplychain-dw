@@ -12,8 +12,15 @@ from functools import cached_property
 import jwt
 from jwt import PyJWKClient
 
-from dw_kernel.errors import PermissionDeniedError
+from dw_kernel.errors import UnauthenticatedError
 from dw_platform.application.identity import VerifiedClaims
+
+
+def auth_methods(amr: object) -> frozenset[str]:
+    """`amr` as a set of method names; anything but a list of strings is none."""
+    if not isinstance(amr, list):
+        return frozenset()
+    return frozenset(m for m in amr if isinstance(m, str))
 
 
 class KeycloakTokenVerifier:
@@ -49,7 +56,8 @@ class KeycloakTokenVerifier:
                 options={"require": ["exp", "iss", "sub"]},
             )
         except jwt.PyJWTError as exc:
-            raise PermissionDeniedError(
+            # Unauthenticated, not forbidden: a fresh sign-in is the fix.
+            raise UnauthenticatedError(
                 "invalid bearer token", details={"reason": type(exc).__name__}
             ) from exc
         return VerifiedClaims(
@@ -57,6 +65,8 @@ class KeycloakTokenVerifier:
             email=claims.get("email"),
             issuer=str(claims["iss"]),
             name=claims.get("name") or claims.get("preferred_username"),
+            auth_methods=auth_methods(claims.get("amr")),
+            acr=str(claims["acr"]) if claims.get("acr") is not None else None,
         )
 
     async def verify(self, token: str) -> VerifiedClaims:

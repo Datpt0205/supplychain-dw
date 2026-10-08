@@ -1,0 +1,43 @@
+{
+  "dataset_id": "platform_smoke",
+  "dataset_version": "1.2.0",
+  "worker_id": "dw.platform",
+  "cases": [
+    {
+      "case_id": "pf-exception-side-effect-approval",
+      "category": "exception",
+      "description": "ToolDefinition: external policy=always và critical policy=never đều bắt buộc approval",
+      "input_ref": "evals/fixtures/cases/pf_side_effect.json",
+      "expected_ref": "evals/expected/pf_side_effect.json",
+      "grader": "runtime.side_effect_approval",
+      "tags": ["tooling", "approval"]
+    },
+    {
+      "case_id": "pf-sec-prompt-injection",
+      "category": "prompt_injection",
+      "description": "Chỉ thị độc trong dữ liệu người dùng bị giam trong block untrusted",
+      "input_ref": "evals/fixtures/cases/pf_prompt_injection.json",
+      "expected_ref": "evals/expected/pf_prompt_injection.json",
+      "grader": "runtime.prompt_injection",
+      "tags": ["security"]
+    },
+    {
+      "case_id": "pf-sec-cross-tenant",
+      "category": "cross_tenant_attack",
+      "description": "SearchQuery mang tenant_id của kẻ tấn công bị từ chối",
+      "input_ref": "evals/fixtures/cases/pf_cross_tenant.json",
+      "expected_ref": "evals/expected/pf_cross_tenant.json",
+      "grader": "knowledge.cross_tenant_rejected",
+      "tags": ["security"]
+    },
+    {
+      "case_id": "pf-sec-missing-evidence-memory",
+      "category": "missing_evidence",
+      "description": "Memory không provenance bị reject, restricted hoặc chỉ một nguồn phải review",
+      "input_ref": "evals/fixtures/cases/pf_memory_policy.json",
+      "expected_ref": "evals/expected/pf_memory_policy.json",
+      "grader": "memory.write_policy",
+      "tags": ["security", "memory"]
+    }
+  ]
+}

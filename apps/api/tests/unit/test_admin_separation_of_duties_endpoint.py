@@ -67,9 +67,19 @@ class FakeMembershipLookup:
 class FakeRepo:
     """Answers like the SQL repository and records what it was asked to write."""
 
-    def __init__(self, *, open_waiver: bool = False, in_use: int = 0) -> None:
+    def __init__(
+        self,
+        *,
+        open_waiver: bool = False,
+        in_use: int = 0,
+        proposed_by: uuid.UUID | None = None,
+        confirmed: bool = False,
+    ) -> None:
         self.open_waiver = open_waiver
         self.in_use = in_use
+        # Who proposed the open waiver: the database refuses their confirmation.
+        self.proposed_by = proposed_by or uuid.uuid4()
+        self.confirmed = confirmed
         self.written: list[tuple[str, str, str]] = []
 
     async def list_rules(self, context: AccessContext) -> list[SodRuleStatus]:
@@ -111,6 +121,20 @@ class FakeRepo:
         if not self.open_waiver:
             return False
         self.written.append(("revoke", rule_key, reason))
+        return True
+
+    async def confirm(
+        self, context: AccessContext, *, rule_key: str, reason: str, audit: AuditEvent
+    ) -> bool:
+        if not self.open_waiver or self.confirmed:
+            return False
+        if context.principal_id == self.proposed_by:
+            raise ConflictError(
+                "a waiver is confirmed by a second person, not by who proposed it",
+                details={"rule_key": rule_key},
+            )
+        self.confirmed = True
+        self.written.append(("confirm", rule_key, reason))
         return True
 
 
@@ -215,3 +239,50 @@ async def test_revoking_without_an_open_waiver_is_not_found() -> None:
         make_container(FakeRepo(), DECIDE), "POST", f"/{RULE}/waiver/revoke", {"reason": "x"}
     )
     assert response.status_code == 404
+
+
+async def test_a_second_admin_confirms_a_waiver_with_a_reason() -> None:
+    repo = FakeRepo(open_waiver=True)
+    response = await _call(
+        make_container(repo, DECIDE), "POST", f"/{RULE}/waiver/confirm", {"reason": " đồng ý "}
+    )
+
+    assert response.status_code == 204
+    assert repo.written == [("confirm", RULE, "đồng ý")]
+
+
+async def test_the_proposer_confirming_their_own_waiver_is_a_conflict() -> None:
+    repo = FakeRepo(open_waiver=True, proposed_by=PRINCIPAL)
+    response = await _call(
+        make_container(repo, DECIDE), "POST", f"/{RULE}/waiver/confirm", {"reason": "ok"}
+    )
+
+    assert response.status_code == 409
+    assert repo.written == []
+
+
+@pytest.mark.parametrize(
+    ("repo", "scopes", "body", "status"),
+    [
+        (FakeRepo(open_waiver=True), READ, {"reason": "ok"}, 403),
+        (FakeRepo(open_waiver=True), DECIDE, {"reason": "  "}, 422),
+        (FakeRepo(), DECIDE, {"reason": "ok"}, 404),
+        (FakeRepo(open_waiver=True, confirmed=True), DECIDE, {"reason": "ok"}, 404),
+    ],
+    ids=["no-scope", "no-reason", "no-waiver", "already-confirmed"],
+)
+async def test_a_confirmation_is_refused_without_scope_reason_or_waiting_waiver(
+    repo: FakeRepo, scopes: frozenset[str], body: dict[str, str], status: int
+) -> None:
+    response = await _call(make_container(repo, scopes), "POST", f"/{RULE}/waiver/confirm", body)
+
+    assert response.status_code == status
+    assert repo.written == []
+
+
+async def test_the_listing_says_whether_a_waiver_is_confirmed() -> None:
+    response = await _call(make_container(FakeRepo(open_waiver=True), READ), "GET", "")
+
+    (rule,) = response.json()
+    assert rule["waiver"]["confirmed_by"] is None
+    assert rule["waiver"]["confirmed_at"] is None

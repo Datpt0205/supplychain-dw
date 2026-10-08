@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { MessageSquarePlus } from "lucide-react";
+import { FloatButton } from "antd";
+import { MessageOutlined } from "@ant-design/icons";
 import { FeedbackDialog } from "./dialog";
 
 /**
@@ -14,15 +15,14 @@ export function FeedbackLauncher() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button
-        type="button"
-        aria-label="Feedback"
-        title="Gửi phản hồi"
+      <FloatButton
+        type="primary"
+        icon={<MessageOutlined aria-hidden />}
+        aria-label="Gửi phản hồi"
+        tooltip="Gửi phản hồi"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 left-5 z-40 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition hover:scale-105 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      >
-        <MessageSquarePlus className="size-5" />
-      </button>
+        style={{ insetInlineStart: 20, insetInlineEnd: "auto", bottom: 20 }}
+      />
       {open && <FeedbackDialog onClose={() => setOpen(false)} />}
     </>
   );

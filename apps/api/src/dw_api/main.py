@@ -27,6 +27,7 @@ from dw_api.exception_handlers import register_exception_handlers
 from dw_api.middleware.rate_limit import RateLimitMiddleware
 from dw_api.middleware.request_id import RequestIdMiddleware
 from dw_api.routes.v1.admin_console import router as admin_console_router
+from dw_api.routes.v1.admin_members import invitations_router as admin_invitations_router
 from dw_api.routes.v1.admin_members import router as admin_members_router
 from dw_api.routes.v1.approvals import router as approvals_router
 from dw_api.routes.v1.audit import router as audit_router
@@ -41,6 +42,7 @@ from dw_api.routes.v1.memory import router as memory_router
 from dw_api.routes.v1.notifications import router as notifications_router
 from dw_api.routes.v1.platform import router as platform_router
 from dw_api.routes.v1.runs import router as runs_router
+from dw_api.routes.v1.support import router as support_router
 from dw_api.routes.v1.zalo import router as zalo_router
 from dw_api.routes.v1.zalo import webhook_router as zalo_webhook_router
 
@@ -53,6 +55,8 @@ _CORS_HEADERS = [
     "Content-Type",
     "X-Tenant-Id",
     "X-Workspace-Id",
+    # The customer's grant a support staff member acts under (ADR 0024).
+    "X-DW-Support-Grant",
     "Idempotency-Key",
 ]
 _CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
@@ -145,6 +149,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
         notifications_router,
         directory_router,
         admin_members_router,
+        admin_invitations_router,
         admin_console_router,
         approvals_router,
         runs_router,
@@ -153,6 +158,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
         knowledge_router,
         memory_router,
         integrations_router,
+        support_router,
     ):
         app.include_router(router, prefix="/api/v1")
 
