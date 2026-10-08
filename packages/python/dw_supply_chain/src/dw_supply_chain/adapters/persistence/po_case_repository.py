@@ -42,6 +42,7 @@ from dw_platform.adapters.persistence.tenant_session import TenantScope, tenant_
 from dw_platform.application.access_context import AccessContext
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence import tables
+from dw_supply_chain.adapters.persistence.suppliers import resolve_supplier
 from dw_supply_chain.application.ports import PO_REFERENCE_PADDING, POCaseListFilter
 from dw_supply_chain.domain.po_case import (
     TERMINAL_STATES,
@@ -96,9 +97,12 @@ def reference_refusal(exc: IntegrityError, case: POCase) -> ConflictError | None
     )
 
 
-async def insert_po_case(session: AsyncSession, case: POCase) -> datetime:
+async def insert_po_case(session: AsyncSession, context: AccessContext, case: POCase) -> datetime:
     """The case's row and its lines, in the caller's transaction; returns when
-    the row was written."""
+    the row was written. The supplier is resolved to the workspace's master
+    record first (created if new), and the case takes its stored name."""
+    supplier = await resolve_supplier(session, context, case.workspace_id.value, case.supplier_name)
+    case.supplier_name = supplier.name
     created_at: datetime = (
         await session.execute(
             sa.insert(tables.po_cases)
@@ -107,7 +111,8 @@ async def insert_po_case(session: AsyncSession, case: POCase) -> datetime:
                 tenant_id=case.tenant_id.value,
                 workspace_id=case.workspace_id.value,
                 po_reference=case.po_reference,
-                supplier_name=case.supplier_name,
+                supplier_id=supplier.id,
+                supplier_name=supplier.name,
                 state=case.state.value,
                 interrupted_state=(
                     case.interrupted_state.value if case.interrupted_state else None
@@ -250,7 +255,7 @@ class SqlPOCaseRepository:
         scope = TenantScope.from_access_context(context)
         try:
             async with tenant_session(self.session_factory, scope) as session:
-                created_at = await insert_po_case(session, case)
+                created_at = await insert_po_case(session, context, case)
                 await self._insert_pending_transitions(session, case)
                 if audit is not None:
                     await SqlAuditRepository(session).append(audit)
@@ -307,8 +312,9 @@ class SqlPOCaseRepository:
                         tables.po_cases.c.version == case.version - 1,
                     )
                     .values(
+                        # The supplier is set when the case is created and
+                        # never changed by a step, so a save does not write it.
                         po_reference=case.po_reference,
-                        supplier_name=case.supplier_name,
                         state=case.state.value,
                         interrupted_state=(
                             case.interrupted_state.value if case.interrupted_state else None
@@ -400,12 +406,11 @@ class SqlPOCaseRepository:
         )
 
     async def list_supplier_names(self, context: AccessContext) -> list[str]:
+        """The workspace's suppliers (the master record), by stored name."""
         scope = TenantScope.from_access_context(context)
         async with tenant_session(self.session_factory, scope) as session:
             result = await session.execute(
-                sa.select(tables.po_cases.c.supplier_name)
-                .distinct()
-                .order_by(tables.po_cases.c.supplier_name)
+                sa.select(tables.suppliers.c.name).order_by(tables.suppliers.c.name)
             )
             return list(result.scalars())
 

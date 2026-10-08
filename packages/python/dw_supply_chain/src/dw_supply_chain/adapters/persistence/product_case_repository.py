@@ -51,6 +51,7 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence import tables
 from dw_supply_chain.adapters.persistence.po_case_repository import insert_po_case
+from dw_supply_chain.adapters.persistence.suppliers import ResolvedSupplier, resolve_supplier
 from dw_supply_chain.application.ports import ProductCaseListFilter
 from dw_supply_chain.domain.daily_brief import ClosedRound
 from dw_supply_chain.domain.po_case import POCase
@@ -239,6 +240,18 @@ async def _with_skus(
     for case in cases:
         case.skus = tuple(by_case.get(case.id.value, ()))
     return cases
+
+
+async def _supplier_of(
+    session: AsyncSession, context: AccessContext, case: ProductDevelopmentCase
+) -> ResolvedSupplier | None:
+    """The case's supplier as the workspace's master record (step 2 names it;
+    None before), the case taking its stored name."""
+    if case.supplier_name is None:
+        return None
+    supplier = await resolve_supplier(session, context, context.workspace_id, case.supplier_name)
+    case.supplier_name = supplier.name
+    return supplier
 
 
 def _position(case: ProductDevelopmentCase) -> CursorPosition:
@@ -434,6 +447,7 @@ class SqlProductCaseRepository:
                     # First, so a second "Đồng ý" racing this one waits on the
                     # row lock and then finds nothing to consume.
                     await _consume_draft(session, context, consume)
+                supplier = await _supplier_of(session, context, case)
                 row = (
                     await session.execute(
                         sa.insert(_c)
@@ -444,7 +458,8 @@ class SqlProductCaseRepository:
                             proposal_code=case.proposal_code,
                             product_name=case.product_name,
                             category=case.category,
-                            supplier_name=case.supplier_name,
+                            supplier_id=supplier.id if supplier else None,
+                            supplier_name=supplier.name if supplier else None,
                             pic_user_id=case.pic_user_id,
                             state=case.state.value,
                             sample_round=case.sample_round,
@@ -499,6 +514,7 @@ class SqlProductCaseRepository:
             async with tenant_session(
                 self.session_factory, TenantScope.from_access_context(context)
             ) as session:
+                supplier = await _supplier_of(session, context, case)
                 result = await session.execute(
                     sa.update(_c)
                     .where(
@@ -507,7 +523,8 @@ class SqlProductCaseRepository:
                         _c.c.version == case.version - 1,
                     )
                     .values(
-                        supplier_name=case.supplier_name,
+                        supplier_id=supplier.id if supplier else None,
+                        supplier_name=supplier.name if supplier else None,
                         state=case.state.value,
                         interrupted_state=(
                             case.interrupted_state.value if case.interrupted_state else None
@@ -568,7 +585,7 @@ class SqlProductCaseRepository:
                         details={"case_id": str(case.id)},
                     )
                 await self._write_steps(session, context, case, steps)
-                po_case.created_at = await insert_po_case(session, po_case)
+                po_case.created_at = await insert_po_case(session, context, po_case)
                 audit_log = SqlAuditRepository(session)
                 for audit in audits:
                     await audit_log.append(audit)

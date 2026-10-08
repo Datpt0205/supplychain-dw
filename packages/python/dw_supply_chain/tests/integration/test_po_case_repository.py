@@ -348,22 +348,33 @@ async def test_list_page_filters_by_state(
     assert ids == [waiting[1].id, waiting[0].id]
 
 
-async def test_list_page_filters_by_the_exact_supplier_name(
+async def test_list_page_filters_by_the_suppliers_stored_name(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Exact, as stored — the same identity the Control Tower groups by, so
-    near-spellings are other suppliers here too, never a fuzzy match."""
+    """Exact on the stored name — the same identity the Control Tower groups
+    by. A spelling that differs only in case or spaces is the same supplier
+    (the master record, a0035e9faf32), so its case carries the stored name
+    and is listed; a different name is another supplier, never a fuzzy
+    match."""
     tenant, workspace = uuid.uuid4(), uuid.uuid4()
     repo = SqlPOCaseRepository(sessions)
     context = _context(tenant=tenant, workspace=workspace)
     exact = _case(tenant=tenant, workspace=workspace, supplier_name="Elmich Co.")
     await repo.add(context, exact)
-    for near in ("elmich co.", "Elmich Co. ", "Elmich"):
-        await repo.add(context, _case(tenant=tenant, workspace=workspace, supplier_name=near))
+    same = [
+        _case(tenant=tenant, workspace=workspace, supplier_name=spelling)
+        for spelling in ("elmich co.", "Elmich  Co. ")
+    ]
+    for case in same:
+        await repo.add(context, case)
+    other = _case(tenant=tenant, workspace=workspace, supplier_name="Elmich")
+    await repo.add(context, other)
 
     ids, _ = await _list(repo, context, POCaseListFilter(supplier_name="Elmich Co."))
 
-    assert ids == [exact.id]
+    assert ids == [same[1].id, same[0].id, exact.id]
+    assert [case.supplier_name for case in same] == ["Elmich Co.", "Elmich Co."]
+    assert await repo.list_supplier_names(context) == ["Elmich", "Elmich Co."]
 
 
 async def test_list_page_active_only_leaves_out_completed_and_cancelled(

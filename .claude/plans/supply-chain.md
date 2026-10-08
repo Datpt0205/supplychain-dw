@@ -78,6 +78,7 @@ means platform code, an upstream candidate (ADR 0011).
 | HR1   | `hardening/issues/01-unbounded-reads.md`                                  | partly  | resolved        | —                                   |
 | HR2   | `hardening/issues/02-follow-up-sweep-audits-as-its-lane.md`               | no      | resolved        | platform ADR 0011 (M3)              |
 | HR3   | `hardening/issues/03-step-17-sla-clock.md`                                | no      | resolved        | QE-14 provisional                   |
+| HR4   | `hardening/issues/04-supplier-master-record.md`                           | no      | resolved        | —                                   |
 
 **Next:** H2 (the domain the webhook needs; runbook `docs/deploy/host.md`);
 Z4p when a real photo update exists; ZL measures the webhook header (Z3).
@@ -134,6 +135,7 @@ email as a second channel.
 | HR1    | HR1       | Paged reads: active cases a page at a time (bulk reads bind one page of ids), transitions `Page` newest first, brief reads only the 10 it shows (`entries_shown`), `GET /po-cases/{id}/approvals` filtered on the server (platform `payload_match`); `d9e136c14d83` indexes.                                                                                                       |
 | HR2    | HR2       | Follow-up sweep audits its own open/resolve as `system:supply_chain_follow_ups` (`lane_audit_event`), in the row's transaction, only for rows it changed; lane registered by `FOLLOW_UP_SWEEP_LANE`.                                                                                                                                                                              |
 | HR3    | HR3       | Step 17's `warehouse_receipt` runs from payment to goods in stock: mapped on `warehouse_receiving` too, its clock starts at the latest entry into `payment_completed` (`sla_clock_start_state`, SQL built from it); ports renamed `*_sla_clock_started_at`; ADR 0019 amended.                                                                                                   |
+| HR4    | HR4       | Supplier master record `a0035e9faf32`: `suppliers` (workspace RLS, DB-owned `normalize_supplier_name`, generated UNIQUE `normalized_name`, optional `code`), cases reference it by `(supplier_id, supplier_name)` with ON UPDATE CASCADE so the name cannot drift; resolve-or-create in the case write's transaction (audited); backfill; case questions resolve against it.               |
 | M3     | `4890979` | Platform `ab33703` merged: prompts through the containing registry (5 new versions, delay analysis raw only for days and milestones, hostile-value tests; `supply_chain@1.8.0`); decision audit with channel decisions; SoD second person and role recheck (two Open items closed); `sc_*` role labels; one `@dw/ui` PageHeader/RegionState in this theme; merge head `cee9cf387387`. |
 
 ## Open — named, not fixed, still true after the port
@@ -148,7 +150,8 @@ after P before acting on one.
 - **Provisional domain values:** `SupplierEventType`'s seven values; the
   supplier-update cadence 1d/2d; uniform delay propagation; SLA
   `not_applicable` while interrupted.
-- **Suppliers have no master record;** two spellings are two suppliers.
+- **Suppliers:** a master record exists (HR4) but nothing renames, merges or codes
+  one yet; marks are significant ("Đông Á" ≠ "Dong A").
 - **Context ADRs sit in `docs/adr/`** (0016–0019, 0021); `docs/agents/domain.md`
   puts them in `packages/python/dw_supply_chain/docs/adr/`. Move them once P
   is resolved, and fix the links.

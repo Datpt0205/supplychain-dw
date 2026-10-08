@@ -404,19 +404,42 @@ async def test_another_tenant_or_workspace_does_not_find_the_case(db: _Db, other
     assert await _po_rows(db, case.id.value) == 0
 
 
+async def _supplier(db: _Db, caller: AccessContext) -> uuid.UUID:
+    """The caller's workspace's supplier 'NCC', for a row written by SQL."""
+    async with tenant_session(db.sessions, TenantScope.from_access_context(caller)) as session:
+        found = await session.scalar(
+            sa.text(
+                "SELECT id FROM supply_chain.suppliers"
+                " WHERE normalized_name = supply_chain.normalize_supplier_name('NCC')"
+            )
+        )
+        if found is not None:
+            return uuid.UUID(str(found))
+        supplier_id = uuid.uuid4()
+        await session.execute(
+            sa.text(
+                "INSERT INTO supply_chain.suppliers (id, tenant_id, workspace_id, name)"
+                " VALUES (:i, :t, :w, 'NCC')"
+            ),
+            {"i": supplier_id, "t": caller.tenant_id, "w": caller.workspace_id},
+        )
+    return supplier_id
+
+
 # --- what the table refuses ---------------------------------------------------------------
 
 
 async def test_a_po_case_past_order_requested_without_a_reference_is_refused(db: _Db) -> None:
     caller = _fresh()
+    supplier = await _supplier(db, caller)
     async with tenant_session(db.sessions, TenantScope.from_access_context(caller)) as session:
         await session.execute(
             sa.text(
-                "INSERT INTO supply_chain.po_cases"
-                " (id, tenant_id, workspace_id, po_reference, supplier_name, state, order_kind)"
-                " VALUES (:i, :t, :w, NULL, 'NCC', 'order_requested', 'new')"
+                "INSERT INTO supply_chain.po_cases (id, tenant_id, workspace_id, po_reference,"
+                " supplier_id, supplier_name, state, order_kind)"
+                " VALUES (:i, :t, :w, NULL, :s, 'NCC', 'order_requested', 'new')"
             ),
-            {"i": uuid.uuid4(), "t": caller.tenant_id, "w": caller.workspace_id},
+            {"i": uuid.uuid4(), "t": caller.tenant_id, "w": caller.workspace_id, "s": supplier},
         )
     for state in ("po_created", "production", "completed"):
         with pytest.raises(IntegrityError, match="ck_po_cases_po_reference"):
@@ -426,13 +449,14 @@ async def test_a_po_case_past_order_requested_without_a_reference_is_refused(db:
                 await session.execute(
                     sa.text(
                         "INSERT INTO supply_chain.po_cases (id, tenant_id, workspace_id,"
-                        " po_reference, supplier_name, state, order_kind)"
-                        " VALUES (:i, :t, :w, NULL, 'NCC', :s, 'reorder')"
+                        " po_reference, supplier_id, supplier_name, state, order_kind)"
+                        " VALUES (:i, :t, :w, NULL, :n, 'NCC', :s, 'reorder')"
                     ),
                     {
                         "i": uuid.uuid4(),
                         "t": caller.tenant_id,
                         "w": caller.workspace_id,
+                        "n": supplier,
                         "s": state,
                     },
                 )
@@ -444,6 +468,7 @@ async def test_a_second_po_case_for_one_product_case_is_refused(db: _Db) -> None
     owner = _fresh(ORDERING)
     case = await _ready(db, owner)
     await _place_order(db.sessions).handle(owner, case_id=case.id)
+    supplier = await _supplier(db, owner)
 
     with pytest.raises(
         IntegrityError, match="uq_po_cases_tenant_id_workspace_id_product_dev_case_id"
@@ -452,14 +477,16 @@ async def test_a_second_po_case_for_one_product_case_is_refused(db: _Db) -> None
             await session.execute(
                 sa.text(
                     "INSERT INTO supply_chain.po_cases (id, tenant_id, workspace_id,"
-                    " po_reference, supplier_name, state, order_kind, product_dev_case_id,"
-                    " pic_user_id, category)"
-                    " VALUES (:i, :t, :w, NULL, 'NCC', 'order_requested', 'new', :c, :p, 'Nồi')"
+                    " po_reference, supplier_id, supplier_name, state, order_kind,"
+                    " product_dev_case_id, pic_user_id, category)"
+                    " VALUES (:i, :t, :w, NULL, :s, 'NCC', 'order_requested', 'new', :c, :p,"
+                    " 'Nồi')"
                 ),
                 {
                     "i": uuid.uuid4(),
                     "t": owner.tenant_id,
                     "w": owner.workspace_id,
+                    "s": supplier,
                     "c": case.id.value,
                     "p": owner.principal_id,
                 },

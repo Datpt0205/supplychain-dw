@@ -627,3 +627,30 @@ async def test_support_access_privileges(db_urls: DatabaseUrls) -> None:
                 assert not await table("dw_provisioner", "audit_events", verb), verb
     finally:
         await migrator.dispose()
+
+
+async def test_the_application_reads_and_creates_suppliers_and_never_renames_one(
+    db_urls: DatabaseUrls,
+) -> None:
+    """`supply_chain.suppliers` (migration a0035e9faf32): `dw_app` reads and
+    creates a supplier, and may DELETE only so the offboarding purge empties
+    the table (every case RESTRICTs its supplier); it never UPDATEs one, so no
+    code path renames a supplier until a reviewed one is added. Asked of the
+    catalog, so a later blanket GRANT goes red."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+            for verb, held in (
+                ("SELECT", True),
+                ("INSERT", True),
+                ("DELETE", True),
+                ("UPDATE", False),
+                ("TRUNCATE", False),
+            ):
+                granted = await conn.scalar(
+                    sa.text("SELECT has_table_privilege('dw_app', 'supply_chain.suppliers', :v)"),
+                    {"v": verb},
+                )
+                assert bool(granted) is held, verb
+    finally:
+        await migrator.dispose()
