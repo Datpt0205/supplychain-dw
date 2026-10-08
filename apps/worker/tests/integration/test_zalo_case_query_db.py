@@ -29,6 +29,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 from pg_test_db import DatabaseUrls
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -314,13 +315,29 @@ async def _po(
     pic: uuid.UUID | None = None,
 ) -> uuid.UUID:
     case_id = uuid.uuid4()
+    suppliers = sc_tables.suppliers
     async with migrator.begin() as conn:
+        # The workspace's supplier master record (a0035e9faf32), which a case
+        # must name; reused when this name was already written.
+        await conn.execute(
+            pg_insert(suppliers)
+            .values(id=uuid.uuid4(), tenant_id=tenant, workspace_id=workspace, name=supplier)
+            .on_conflict_do_nothing()
+        )
+        supplier_id = await conn.scalar(
+            sa.select(suppliers.c.id).where(
+                suppliers.c.tenant_id == tenant,
+                suppliers.c.workspace_id == workspace,
+                suppliers.c.name == supplier,
+            )
+        )
         await conn.execute(
             sa.insert(sc_tables.po_cases).values(
                 id=case_id,
                 tenant_id=tenant,
                 workspace_id=workspace,
                 po_reference=reference,
+                supplier_id=supplier_id,
                 supplier_name=supplier,
                 state=state,
                 order_kind="reorder",
