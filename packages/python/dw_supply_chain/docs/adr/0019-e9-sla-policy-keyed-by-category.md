@@ -2,9 +2,9 @@
 status: Accepted
 date: 2026-10-05
 source:
-    - ../products/elmich/process.md#32-bảng-17-bước # đoạn dưới bảng: SLA theo Cate
-    - ../../configs/policies/supply_chain_sla@2.0.0.yaml
-    - ../../packages/python/dw_supply_chain/src/dw_supply_chain/domain/sla_evaluation.py # bản đồ mốc → trạng thái
+    - ../../../../../docs/products/elmich/process.md#32-bảng-17-bước # đoạn dưới bảng: SLA theo Cate
+    - ../../../../../configs/policies/supply_chain_sla@2.0.0.yaml
+    - ../../src/dw_supply_chain/domain/sla_evaluation.py # bản đồ mốc → trạng thái
 ---
 
 # E9. Chính sách SLA có chiều Category; số của Elmich là override của tenant
@@ -115,7 +115,7 @@ mutation ở Comments của
 ## Sửa đổi 2026-10-08 (HR3, Đạt giao quyết tạm): đồng hồ bước 17
 
 `warehouse_receipt` đo **từ lúc thanh toán xong tới lúc hàng vào kho** (QE-14, tạm), không
-còn từ thanh toán tới lúc *bắt đầu* nhập: mốc gắn cả `payment_completed` và
+còn từ thanh toán tới lúc _bắt đầu_ nhập: mốc gắn cả `payment_completed` và
 `warehouse_receiving`; đồng hồ của `warehouse_receiving` bắt đầu ở lần vào
 `payment_completed` gần nhất (`domain/sla_evaluation.py`, `SLA_CLOCK_STARTS_IN` và
 `sla_clock_start_state`, một chủ; SQL của repository dựng từ bảng đó); `completed` là
@@ -126,4 +126,3 @@ tạm dừng lúc `payment_completed` rồi tiếp tục thì vẫn tính lại 
 `get_sla_clock_started_at` / `bulk_sla_clock_started_at`. Mô tả chữ của mốc trong
 `supply_chain_sla@2.0.0.yaml` ("PAYMENT_COMPLETED → WAREHOUSE_RECEIVING") đã cũ nhưng không
 sửa tại chỗ: file đã phát hành, checksum ghim trong release manifest; bản policy kế tiếp sửa.
-

@@ -43,7 +43,7 @@ của NCC; hồ sơ sang tạo mã hàng.
 
 - 2026-10-07 (lát S3, quyết định tạm của implementer; Đạt ủy quyền quyết các điểm mở).
   Đoạn sửa đổi ở
-  [ADR 0016](../../../../../docs/adr/0016-e6-stage-1-is-a-product-development-case-inside-dw-supply-chain.md)
+  [ADR 0016](../../../../../packages/python/dw_supply_chain/docs/adr/0016-e6-stage-1-is-a-product-development-case-inside-dw-supply-chain.md)
   (mục "Sửa đổi 2026-10-07"). Mỗi điểm ghi chỗ nó nằm trong code và test giữ nó.
     1. **Trạng thái, hành động:** `supplier_confirmation`, `item_coding`;
        `complete_profile` (`profile_in_progress` → `supplier_confirmation`),

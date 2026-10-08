@@ -2,9 +2,9 @@
 status: Accepted
 date: 2026-10-05
 source:
-    - ../products/elmich/process.md#32-bảng-17-bước # bước 1-9
-    - ../products/elmich/process.md#4-đối-chiếu-với-code-và-ticket
-    - ../../packages/python/dw_supply_chain/src/dw_supply_chain/domain/po_case.py # CaseState, apply_action
+    - ../../../../../docs/products/elmich/process.md#32-bảng-17-bước # bước 1-9
+    - ../../../../../docs/products/elmich/process.md#4-đối-chiếu-với-code-và-ticket
+    - ../../src/dw_supply_chain/domain/po_case.py # CaseState, apply_action
     - ../../configs/policies/supply_chain_action_duties@1.0.0.yaml
 ---
 
@@ -55,7 +55,7 @@ không bao giờ suy lại (quy tắc PIC của Elmich, process.md mục 3). Đ�
 **Duty và vai:** bước của Cung ứng dùng duty `ordering` sẵn có (cùng người làm
 bước 10–16); thêm duty `rnd` (vai `sc_rnd`) và `supply_lead` (vai `sc_supply_lead`,
 TP Cung ứng). BGĐ và Kế toán không có duty: họ quyết approval, giới hạn bằng
-`required_scope` ([ADR 0020](0020-e10-approval-decider-stamped-as-required-scope.md)).
+`required_scope` ([ADR 0020](../../../../../docs/adr/0020-e10-approval-decider-stamped-as-required-scope.md)).
 
 ## Vì sao cùng context, và vì sao aggregate riêng
 

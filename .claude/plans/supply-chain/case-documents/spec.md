@@ -2,7 +2,7 @@
 
 Area: supply-chain · Nhánh: `main` · Viết: 5/10/2026
 
-Riêng của context. Quyết định: [ADR 0021](../../../../docs/adr/0021-e11-case-documents-through-an-object-storage-port.md).
+Riêng của context. Quyết định: [ADR 0021](../../../../packages/python/dw_supply_chain/docs/adr/0021-e11-case-documents-through-an-object-storage-port.md).
 
 ## Mục tiêu
 

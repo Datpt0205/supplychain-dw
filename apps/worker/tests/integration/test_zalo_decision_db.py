@@ -149,8 +149,8 @@ class _Lane:
 
     def __post_init__(self) -> None:
         settings = WorkerSettings(
-            zalo_link_secret=_LINK_SECRET,  # type: ignore[arg-type]
-            approval_code_secret=self.code_secret,  # type: ignore[arg-type]
+            zalo_link_secret=_LINK_SECRET,
+            approval_code_secret=self.code_secret,
             product_name="Cổng thử",
             public_web_url="https://portal.example",
             model_provider="mock",

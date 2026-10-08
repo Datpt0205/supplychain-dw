@@ -29,7 +29,7 @@ Open). Người đóng tay (`close_done`) thì đã có audit; việc hệ thố
   hàm `audit(draft)` / `audit(record)` và chỉ gọi cho dòng thật sự đổi
   (`INSERT … ON CONFLICT DO NOTHING RETURNING id`, `UPDATE … RETURNING id`), nên một
   episode trùng không sinh audit. Port đổi: `open(..., *, audit)`, `resolve(context,
-  records, *, audit) -> int` (đếm số thật sự đóng).
+records, *, audit) -> int` (đếm số thật sự đóng).
 - **Tên lane một chủ:** `FOLLOW_UP_SWEEP_LANE` trong `application/follow_up_sweep.py`;
   worker đăng ký lane bằng hằng này, nên đổi tên lane là đổi actor, có chủ đích.
 - **Không audit:** gửi thông báo (inbox và outbox kênh đã ghi mỗi lần giao), và

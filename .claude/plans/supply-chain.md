@@ -10,7 +10,9 @@ This repo is the Elmich product: bounded context
   steps) transcribed on 2026-10-05, with the step-to-code map and open points.
   Part B (Product MKT content) is out of scope (Đạt, 2026-10-05).
 - **Glossary:** `packages/python/dw_supply_chain/CONTEXT.md`.
-- **Decisions:** `docs/adr/0011`–`0023` (E1–E13), all Proposed.
+- **Decisions:** E1–E13, Accepted with dated amendments (QO-2). The generic ones in
+  `docs/adr/` (0011–0015, 0020, 0022, 0023); the context-only ones (E6–E9, E11:
+  0016–0019, 0021) in `packages/python/dw_supply_chain/docs/adr/` since HR6.
 - **History:** the context was built on the platform repo's `supply-chain`
   branch until 2026-09-28 and is kept at branch `archive-supply-chain` / tag
   `archive/supply-chain-2026-09-28` (`5d24c25`). Its slice log (slices 0–20)
@@ -80,6 +82,7 @@ means platform code, an upstream candidate (ADR 0011).
 | HR3   | `hardening/issues/03-step-17-sla-clock.md`                                | no      | resolved        | QE-14 provisional                   |
 | HR4   | `hardening/issues/04-supplier-master-record.md`                           | no      | resolved        | —                                   |
 | HR5   | `hardening/issues/05-ops-and-settings-screen.md`                          | partly  | resolved        | H                                   |
+| HR6   | `hardening/issues/06-cleanup.md`                                          | partly  | resolved        | —                                   |
 
 **Next:** H2 (the domain the webhook needs; runbook `docs/deploy/host.md`);
 Z4p when a real photo update exists; ZL measures the webhook header (Z3).
@@ -133,11 +136,12 @@ email as a second channel.
 | PK     | `435bd63` | Step 12 sub-flow on the PO case: `packaging_designs` + history (workspace RLS, order CHECK, report FK), 3 doc types, duties 1.2.0 + override data step, `supply_chain_packaging@1.0.0` gate asked by `AdvancePOCase` and the graph's apply node, Elmich override on, step-12 card; ADR 0021 amended.                                                                                  |
 | H      | `9b068dc` | Hosted overlay: Caddy 2.11.7 (digest, trivy 0) on `DW_WEB_HOST`/`DW_API_HOST`/`DW_AUTH_HOST`, `/api/*` and Keycloak public paths only, X-Forwarded-* trusted from Caddy's fixed IP (real client IP for rate limits); deployed URLs must be https; realm URLs from `DW_PUBLIC_WEB_URL`; `docs/deploy/host.md`; ADR 0023 amended.                                                       |
 | M2     | `7502a96` | Platform `2ebd50f` merged: one copy of the channel work (platform wording, ADR 0005–0009 twins of 0012–0015/0023); decide command takes subjects + strict prefixes from the product; five twin migrations idempotent, head `c2d7fc0648be`; dev DB migrated in place, each object once.                                                                                                |
-| HR1    | HR1       | Paged reads: active cases a page at a time (bulk reads bind one page of ids), transitions `Page` newest first, brief reads only the 10 it shows (`entries_shown`), `GET /po-cases/{id}/approvals` filtered on the server (platform `payload_match`); `d9e136c14d83` indexes.                                                                                                       |
-| HR2    | HR2       | Follow-up sweep audits its own open/resolve as `system:supply_chain_follow_ups` (`lane_audit_event`), in the row's transaction, only for rows it changed; lane registered by `FOLLOW_UP_SWEEP_LANE`.                                                                                                                                                                              |
-| HR3    | HR3       | Step 17's `warehouse_receipt` runs from payment to goods in stock: mapped on `warehouse_receiving` too, its clock starts at the latest entry into `payment_completed` (`sla_clock_start_state`, SQL built from it); ports renamed `*_sla_clock_started_at`; ADR 0019 amended.                                                                                                   |
-| HR4    | HR4       | Supplier master record `a0035e9faf32`: `suppliers` (workspace RLS, DB-owned `normalize_supplier_name`, generated UNIQUE `normalized_name`, optional `code`), cases reference it by `(supplier_id, supplier_name)` with ON UPDATE CASCADE so the name cannot drift; resolve-or-create in the case write's transaction (audited); backfill; case questions resolve against it.               |
-| HR5    | HR5       | Backup dumps `dw` and `keycloak` (restore `--latest` per database); `deploy.sh … hosted` adds the host overlay and its health gate asks by service; chat URL build arg gone; approval code secret documented; `/supply-chain/settings` reads and sets SLA and the pre-production rule, locked with reasons without the write scopes.                                    |
+| HR1    | HR1       | Paged reads: active cases a page at a time (bulk reads bind one page of ids), transitions `Page` newest first, brief reads only the 10 it shows (`entries_shown`), `GET /po-cases/{id}/approvals` filtered on the server (platform `payload_match`); `d9e136c14d83` indexes.                                                                                                          |
+| HR2    | HR2       | Follow-up sweep audits its own open/resolve as `system:supply_chain_follow_ups` (`lane_audit_event`), in the row's transaction, only for rows it changed; lane registered by `FOLLOW_UP_SWEEP_LANE`.                                                                                                                                                                                  |
+| HR3    | HR3       | Step 17's `warehouse_receipt` runs from payment to goods in stock: mapped on `warehouse_receiving` too, its clock starts at the latest entry into `payment_completed` (`sla_clock_start_state`, SQL built from it); ports renamed `*_sla_clock_started_at`; ADR 0019 amended.                                                                                                         |
+| HR4    | HR4       | Supplier master record `a0035e9faf32`: `suppliers` (workspace RLS, DB-owned `normalize_supplier_name`, generated UNIQUE `normalized_name`, optional `code`), cases reference it by `(supplier_id, supplier_name)` with ON UPDATE CASCADE so the name cannot drift; resolve-or-create in the case write's transaction (audited); backfill; case questions resolve against it.          |
+| HR5    | HR5       | Backup dumps `dw` and `keycloak` (restore `--latest` per database); `deploy.sh … hosted` adds the host overlay and its health gate asks by service; chat URL build arg gone; approval code secret documented; `/supply-chain/settings` reads and sets SLA and the pre-production rule, locked with reasons without the write scopes.                                                  |
+| HR6    | HR6       | `dw_provisioner` grants have one owner (`platform.grant_provisioner_privileges()`, `f38f027d8342`; users/plans read-only); ADRs 0016–0019, 0021 moved into the package; Playwright removes its `E2E-…` case (`e2e-cleanup`); mypy covers the apps' integration tests; the slow vitest query replaced (11 s → 0.7 s).                                                                  |
 | M3     | `4890979` | Platform `ab33703` merged: prompts through the containing registry (5 new versions, delay analysis raw only for days and milestones, hostile-value tests; `supply_chain@1.8.0`); decision audit with channel decisions; SoD second person and role recheck (two Open items closed); `sc_*` role labels; one `@dw/ui` PageHeader/RegionState in this theme; merge head `cee9cf387387`. |
 
 ## Open — named, not fixed, still true after the port
@@ -147,6 +151,8 @@ after P before acting on one.
 
 - **Follow-ups:** recipients are members of the case's own workspace; each
   sweep re-assesses every active case of every tenant.
+- **`po-case-pages.test.tsx`** prints an unhandled "message.error is not a
+  function" (a list page rendered outside `<App>`); the tests pass. Seen in HR6.
 - **Model accuracy is unmeasured;** the mock cannot read.
   `delay_impact_analysis` has no eval case.
 - **Provisional domain values:** `SupplierEventType`'s seven values; the
@@ -154,11 +160,6 @@ after P before acting on one.
   `not_applicable` while interrupted.
 - **Suppliers:** a master record exists (HR4) but nothing renames, merges or codes
   one yet; marks are significant ("Đông Á" ≠ "Dong A").
-- **Context ADRs sit in `docs/adr/`** (0016–0019, 0021); `docs/agents/domain.md`
-  puts them in `packages/python/dw_supply_chain/docs/adr/`. Move them once P
-  is resolved, and fix the links.
-- **The provisioner's grant list has three copies that disagree** (baseline,
-  `create_provisioner_role.py`, `test_provisioning.py`) for users and plans.
 
 ## Decisions recorded, and why
 
@@ -316,7 +317,9 @@ them: "tự quyết định cho hướng tốt nhất"); see "Decided on 2026-10
   `127.0.0.1`, not `localhost`.
 - **Local browser run** (from the archive, re-check after P): `make db-migrate`,
   `scripts/seed_supply_chain_demo.py seed` (personas An, Bình, Diệu, Giang, Hà,
-  Chi; PO-DEMO-001..004), `scripts/keycloak_dev_users.py`, `make dev`.
+  Chi; PO-DEMO-001..004), `scripts/keycloak_dev_users.py`, `make dev`. The
+  Playwright spec removes its own `E2E-…` case; `seed_supply_chain_demo.py
+e2e-cleanup` removes what a crashed run left.
 - **Test database:** supply chain uses `dw_test_supply_chain`, recreated per
   pytest session; an RLS mutation check goes into the migration file.
 - **Windows:** `next build`'s standalone copy fails with EPERM here (CI builds

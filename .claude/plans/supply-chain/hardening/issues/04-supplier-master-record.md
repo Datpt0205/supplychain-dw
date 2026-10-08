@@ -37,8 +37,8 @@ record" phần Open).
 - **Dấu được giữ:** "Đông Á" và "Dong A" là hai NCC. Gộp chúng là việc của màn gộp (chưa
   làm), không phải đoán của hàm chuẩn hóa.
 - **Hồ sơ giữ cột `supplier_name`**, nhưng FK `(tenant_id, workspace_id, supplier_id,
-  supplier_name)` → `suppliers (tenant_id, workspace_id, id, name)` `ON UPDATE CASCADE ON
-  DELETE RESTRICT` bắt nó luôn bằng tên đã lưu của NCC. Hai bản sao không thể lệch nhau,
+supplier_name)` → `suppliers (tenant_id, workspace_id, id, name)` `ON UPDATE CASCADE ON
+DELETE RESTRICT` bắt nó luôn bằng tên đã lưu của NCC. Hai bản sao không thể lệch nhau,
   thay vì thêm join vào mọi câu đọc; mọi bộ lọc, nhóm và index theo tên giữ nguyên và
   nay khớp mọi cách viết đã quy về một NCC. `po_cases.supplier_id` NOT NULL; hồ sơ phát
   triển NULL tới bước 2 (`ck_product_dev_cases_supplier`: cả hai hoặc không).

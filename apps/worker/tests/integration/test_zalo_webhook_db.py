@@ -76,7 +76,7 @@ def _drain(sessions: async_sessionmaker[AsyncSession], bot: _Bot, command: _Comm
     commands.register("probe", command)
     inbound = build_zalo_inbound(
         WorkerSettings(
-            zalo_link_secret=_SECRET,  # type: ignore[arg-type]
+            zalo_link_secret=_SECRET,
             product_name=_PRODUCT,
             public_web_url="https://portal.example",
             zalo_updates_mode="webhook",

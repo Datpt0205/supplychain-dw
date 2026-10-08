@@ -8,7 +8,7 @@ Area: supply-chain
 
 SLA đọc theo Category của hồ sơ; hai mốc `bm04`, `supplier_confirmation` có người đọc;
 quá hạn báo cả PIC; PIC đổi được có lý do
-([ADR 0019](../../../../../docs/adr/0019-e9-sla-policy-keyed-by-category.md)).
+([ADR 0019](../../../../../packages/python/dw_supply_chain/docs/adr/0019-e9-sla-policy-keyed-by-category.md)).
 
 ## Việc cần làm
 

@@ -46,7 +46,7 @@ không, làm các bước dưới.
 
 ## Nguồn
 
-- `docs/adr/0017-e7-hand-off-via-order-requested.md` điểm 4 ("Mục mở").
+- `packages/python/dw_supply_chain/docs/adr/0017-e7-hand-off-via-order-requested.md` điểm 4 ("Mục mở").
 - `.claude/plans/supply-chain/stage-1/issues/05-place-order-hand-off.md` bước 5.
 - `.claude/plans/supply-chain/zalo-channel/issues/06-read-only-qa.md` Comments (Z6).
 

@@ -3,13 +3,13 @@
 Area: supply-chain · Nhánh: `main` · Viết: 5/10/2026
 
 Riêng của context. Đặc tả nghiệp vụ: `docs/products/elmich/process.md` mục 3 và 4.
-Quyết định: [ADR 0016](../../../../docs/adr/0016-e6-stage-1-is-a-product-development-case-inside-dw-supply-chain.md)
+Quyết định: [ADR 0016](../../../../packages/python/dw_supply_chain/docs/adr/0016-e6-stage-1-is-a-product-development-case-inside-dw-supply-chain.md)
 (aggregate riêng, trạng thái, duty),
-[ADR 0017](../../../../docs/adr/0017-e7-hand-off-via-order-requested.md) (bàn giao ĐẶT HÀNG),
-[ADR 0018](../../../../docs/adr/0018-e8-item-code-and-sku-uniqueness-owned-by-the-database.md)
-(mã hàng, SKU), [ADR 0019](../../../../docs/adr/0019-e9-sla-policy-keyed-by-category.md)
+[ADR 0017](../../../../packages/python/dw_supply_chain/docs/adr/0017-e7-hand-off-via-order-requested.md) (bàn giao ĐẶT HÀNG),
+[ADR 0018](../../../../packages/python/dw_supply_chain/docs/adr/0018-e8-item-code-and-sku-uniqueness-owned-by-the-database.md)
+(mã hàng, SKU), [ADR 0019](../../../../packages/python/dw_supply_chain/docs/adr/0019-e9-sla-policy-keyed-by-category.md)
 (SLA theo Category), [ADR 0020](../../../../docs/adr/0020-e10-approval-decider-stamped-as-required-scope.md)
-(người quyết), [ADR 0021](../../../../docs/adr/0021-e11-case-documents-through-an-object-storage-port.md)
+(người quyết), [ADR 0021](../../../../packages/python/dw_supply_chain/docs/adr/0021-e11-case-documents-through-an-object-storage-port.md)
 (chứng từ). Từ ngữ theo `packages/python/dw_supply_chain/CONTEXT.md`.
 
 ## Mục tiêu

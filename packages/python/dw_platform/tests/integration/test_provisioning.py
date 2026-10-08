@@ -7,8 +7,9 @@ business schema** — proven by a SELECT on sales_crm.accounts being refused.
 
 Migrations run as dw_migrator, which has no CREATEROLE, and the migration's
 grants are guarded on the role existing — so a fixture creates dw_provisioner as
-the superuser and grants exactly the platform tables (the same list as migration
-0066) and nothing else.
+the superuser and calls `platform.grant_provisioner_privileges()`, the one owner
+of its grants (migration f38f027d8342), as `scripts/create_provisioner_role.py`
+does: no list of its own to drift.
 
 It ALTERs the password when the role is already there. `infra/compose/init/
 init-databases.sh` creates dw_provisioner at cluster init with the deployment
@@ -41,21 +42,6 @@ from dw_platform.testing.seed_env import seed_test_env
 pytestmark = pytest.mark.integration
 
 PROVISIONER_PW = "test-provisioner-pw"
-# Same grant list as migration 0066 — platform provisioning tables only.
-_PLATFORM_GRANTS = (
-    "GRANT USAGE ON SCHEMA platform TO dw_provisioner",
-    "GRANT SELECT, INSERT, UPDATE, DELETE ON platform.tenants TO dw_provisioner",
-    "GRANT SELECT, INSERT, UPDATE, DELETE ON platform.workspaces TO dw_provisioner",
-    "GRANT SELECT, INSERT, UPDATE, DELETE ON platform.memberships TO dw_provisioner",
-    "GRANT SELECT, INSERT, UPDATE, DELETE ON platform.entitlements TO dw_provisioner",
-    "GRANT SELECT, INSERT, DELETE ON platform.platform_operators TO dw_provisioner",
-    "GRANT SELECT, INSERT ON platform.provisioning_audit TO dw_provisioner",
-    # Migration 5d9d89ffc716.
-    "GRANT SELECT, INSERT, UPDATE ON platform.tenant_offboarding_requests TO dw_provisioner",
-    "GRANT SELECT ON platform.roles TO dw_provisioner",
-    "GRANT SELECT ON platform.users TO dw_provisioner",
-    "GRANT SELECT ON platform.plans TO dw_provisioner",
-)
 
 
 def _admin_dw_url(db_urls: DatabaseUrls) -> str:
@@ -90,8 +76,7 @@ async def provisioner_engine(db_urls: DatabaseUrls) -> AsyncIterator[AsyncEngine
                     "END IF; END $$;"
                 )
             )
-            for grant in _PLATFORM_GRANTS:
-                await conn.execute(sa.text(grant))
+            await conn.execute(sa.text("SELECT platform.grant_provisioner_privileges()"))
     finally:
         await admin.dispose()
 
@@ -328,3 +313,80 @@ async def test_provisioner_cannot_read_business_data(provisioner_engine: AsyncEn
     async with provisioner_engine.connect() as conn:
         with pytest.raises(ProgrammingError):
             await conn.execute(sa.text("SELECT count(*) FROM sales_crm.accounts"))
+
+
+# What the provisioner may do, table by table, as the catalog answers it. A
+# security expectation stated by the test (as `test_privileges.py` states its
+# own), not a copy the code reads: the code reads the function.
+_HELD = {
+    "platform.tenants": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+    "platform.workspaces": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+    "platform.memberships": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+    "platform.entitlements": {"SELECT", "INSERT", "UPDATE", "DELETE"},
+    "platform.platform_operators": {"SELECT", "INSERT", "DELETE"},
+    "platform.support_staff": {"SELECT", "INSERT", "DELETE"},
+    "platform.provisioning_audit": {"SELECT", "INSERT"},
+    "platform.audit_events": {"INSERT"},
+    "platform.tenant_offboarding_requests": {"SELECT", "INSERT", "UPDATE"},
+    "platform.support_grants": {"SELECT"},
+    "platform.roles": {"SELECT"},
+    "platform.users": {"SELECT"},
+    "platform.plans": {"SELECT"},
+}
+
+
+async def test_the_provisioner_holds_exactly_its_list_and_nothing_on_a_business_table(
+    provisioner_engine: AsyncEngine, db_urls: DatabaseUrls
+) -> None:
+    """After the one owner ran (twice: it is idempotent), the catalog holds
+    exactly `_HELD` at table level, the assignment columns of a support grant,
+    and nothing on any other table of any schema — a business table above all.
+    A widening the function did not make (a stray GRANT in a later migration)
+    goes red here."""
+    admin = create_async_engine(_admin_dw_url(db_urls), isolation_level="AUTOCOMMIT")
+    try:
+        async with admin.connect() as conn:
+            await conn.execute(sa.text("SELECT platform.grant_provisioner_privileges()"))
+            rows = (
+                await conn.execute(
+                    sa.text(
+                        "SELECT table_schema || '.' || table_name AS tbl, privilege_type AS priv"
+                        " FROM information_schema.role_table_grants"
+                        " WHERE grantee = 'dw_provisioner'"
+                    )
+                )
+            ).all()
+            columns = (
+                await conn.execute(
+                    sa.text(
+                        "SELECT table_schema || '.' || table_name AS tbl, column_name AS col,"
+                        " privilege_type AS priv FROM information_schema.column_privileges"
+                        " WHERE grantee = 'dw_provisioner' AND privilege_type = 'UPDATE'"
+                        " AND table_name = 'support_grants'"
+                    )
+                )
+            ).all()
+            business = await conn.scalar(
+                sa.text(
+                    "SELECT count(*) FROM pg_class c JOIN pg_namespace n"
+                    " ON n.oid = c.relnamespace WHERE c.relkind IN ('r', 'p', 'v', 'm')"
+                    " AND n.nspname NOT IN ('platform', 'pg_catalog', 'information_schema')"
+                    " AND n.nspname NOT LIKE 'pg\\_%'"
+                    " AND has_any_column_privilege('dw_provisioner', c.oid, 'SELECT')"
+                )
+            )
+    finally:
+        await admin.dispose()
+
+    held: dict[str, set[str]] = {}
+    for row in rows:
+        held.setdefault(row.tbl, set()).add(row.priv)
+    assert held == _HELD
+    assert {row.col for row in columns} == {
+        "status",
+        "staff_user_id",
+        "assigned_by",
+        "activated_at",
+        "expires_at",
+    }
+    assert business == 0

@@ -6,6 +6,7 @@ Usage (reads `.env`; `make` exports it, a plain shell needs `set -a; source .env
     uv run python scripts/seed_supply_chain_demo.py elmich-sla
     uv run python scripts/seed_supply_chain_demo.py elmich-packaging
     uv run python scripts/seed_supply_chain_demo.py e2e-fixtures
+    uv run python scripts/seed_supply_chain_demo.py e2e-cleanup [E2E-<code>]
 
 `seed` is idempotent:
 - the platform demo roster (tenants, workspaces, users, memberships, plans),
@@ -58,6 +59,16 @@ needs beyond `seed`: Khánh linked to a Zalo chat that does not exist
 written, and a second Alpha workspace ("Kho Hưng Yên") he is also BGĐ of, so
 /settings shows the "Workspace dùng cho Zalo" select. A worker polling a real
 bot would fail to deliver to that chat and say so; nothing else reads it.
+
+`e2e-cleanup` removes what that suite leaves behind, so the dev database does
+not collect one product case per run: Alpha's product cases proposed as
+`E2E-…` (or exactly the code given), with the approvals raised for them (their
+decisions and view receipts cascade) and the notices linking to them. The case's
+children go by its cascade; an uploaded paper's object is left to the orphan
+sweep (`supply_chain_document_orphans`). Audit rows stay: the audit log is
+append-only, and a record of what a test did is still a record. A case that
+reached ĐẶT HÀNG is kept (its PO case RESTRICTs it) and named. The browser suite
+runs it after its walk with the walk's own code.
 
 Refuses to run unless DW_API_PROFILE is explicitly `local` (unset is refused):
 it writes through the migrator role and backdates rows, which no deployed
@@ -391,6 +402,54 @@ async def e2e_fixtures(migrator: AsyncEngine) -> None:
     print(f"e2e fixtures: {E2E_BOD} linked to Zalo, member of workspace Kho Hưng Yên")
 
 
+_E2E_PREFIX = "E2E-"
+
+
+async def e2e_cleanup(migrator: AsyncEngine, code: str | None) -> None:
+    if code is not None and not code.startswith(_E2E_PREFIX):
+        sys.exit(f"refusing to clean up {code!r}: only {_E2E_PREFIX}… cases are the suite's")
+    async with migrator.begin() as conn:
+        cases = (
+            await conn.execute(
+                sa.text(
+                    "SELECT c.id, c.proposal_code,"
+                    " EXISTS (SELECT 1 FROM supply_chain.po_cases p"
+                    "         WHERE p.product_dev_case_id = c.id) AS ordered"
+                    " FROM supply_chain.product_dev_cases c"
+                    " WHERE c.tenant_id = :t AND c.proposal_code LIKE :pattern"
+                ),
+                {
+                    "t": ALPHA,
+                    "pattern": code if code is not None else f"{_E2E_PREFIX}%",
+                },
+            )
+        ).all()
+        kept = [row.proposal_code for row in cases if row.ordered]
+        ids = [row.id for row in cases if not row.ordered]
+        if ids:
+            await conn.execute(
+                sa.text(
+                    "DELETE FROM platform.approval_requests WHERE tenant_id = :t"
+                    " AND payload ->> 'product_dev_case_id' = ANY(:ids)"
+                ),
+                {"t": ALPHA, "ids": [str(i) for i in ids]},
+            )
+            await conn.execute(
+                sa.text(
+                    "DELETE FROM platform.notifications WHERE tenant_id = :t"
+                    " AND split_part(link, '?', 1) = ANY(:links)"
+                ),
+                {"t": ALPHA, "links": [f"/supply-chain/product-cases/{i}" for i in ids]},
+            )
+            await conn.execute(
+                sa.text("DELETE FROM supply_chain.product_dev_cases WHERE id = ANY(:ids)"),
+                {"ids": ids},
+            )
+    print(f"e2e cleanup: {len(ids)} product case(s) removed")
+    if kept:
+        print(f"kept, ordered (a PO case holds each): {', '.join(sorted(kept))}")
+
+
 async def main(argv: list[str]) -> None:
     migrator_url, app_url = _urls()
     migrator = create_async_engine(migrator_url, poolclass=NullPool)
@@ -406,6 +465,8 @@ async def main(argv: list[str]) -> None:
             await elmich_packaging(migrator, app)
         elif argv == ["e2e-fixtures"]:
             await e2e_fixtures(migrator)
+        elif argv[:1] == ["e2e-cleanup"] and len(argv) <= 2:
+            await e2e_cleanup(migrator, argv[1] if len(argv) == 2 else None)
         else:
             sys.exit(__doc__)
     finally:

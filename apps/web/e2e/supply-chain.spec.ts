@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 /**
@@ -18,6 +20,9 @@ import { expect, test, type Page } from "@playwright/test";
  *   uv run python scripts/keycloak_dev_users.py
  *
  * with the API holding `DW_APPROVAL_CODE_SECRET`, so a code can be issued.
+ * After the walk, each project removes the case it proposed (`e2e-cleanup
+ * <code>`), so the dev database does not collect one `E2E-…` case per run;
+ * `e2e-cleanup` with no code removes any a crashed run left.
  * The walk is one product case from proposal to BGĐ's review: An proposes it
  * and asks for a sample, Linh receives and passes it with its evaluation
  * uploaded inside the step's form, Khánh asks for a Zalo code on the review.
@@ -32,6 +37,26 @@ const PRODUCT = `Nồi thử E2E ${PROPOSAL}`;
 
 test.describe.configure({ mode: "serial" });
 test.skip(!PASSWORD, "DW_DEV_USER_PASSWORD is not set (source .env)");
+
+// The repository root, where `uv` finds the workspace and the seed script.
+const REPO = path.resolve(__dirname, "../../..");
+
+test.afterAll(() => {
+  // The case this project's walk proposed, whatever step it reached; its
+  // approvals and notices go with it. Through the seed script, which owns
+  // what the suite writes beyond what a person could undo in the browser.
+  execFileSync(
+    "uv",
+    [
+      "run",
+      "python",
+      "scripts/seed_supply_chain_demo.py",
+      "e2e-cleanup",
+      PROPOSAL,
+    ],
+    { cwd: REPO, stdio: "inherit" },
+  );
+});
 
 async function signIn(page: Page, email: string): Promise<void> {
   await page.goto("/");

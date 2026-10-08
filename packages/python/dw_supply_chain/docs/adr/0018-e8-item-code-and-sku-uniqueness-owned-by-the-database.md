@@ -2,8 +2,8 @@
 status: Accepted
 date: 2026-10-05
 source:
-    - ../products/elmich/process.md#32-bảng-17-bước # bước 9: kiểm tra không trùng mã hàng/mã SKU
-    - ../../.claude/rules/code-quality.md # Single responsibility: database refuses by constraint
+    - ../../../../../docs/products/elmich/process.md#32-bảng-17-bước # bước 9: kiểm tra không trùng mã hàng/mã SKU
+    - ../../../../../.claude/rules/code-quality.md # Single responsibility: database refuses by constraint
 ---
 
 # E8. Cơ sở dữ liệu sở hữu việc không trùng mã hàng và mã SKU

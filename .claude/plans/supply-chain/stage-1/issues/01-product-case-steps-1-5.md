@@ -8,7 +8,7 @@ Area: supply-chain
 
 Cung ứng đề xuất một sản phẩm và trở thành PIC của nó; R&D nhận mẫu, test, yêu cầu
 chỉnh sửa hoặc hủy, tới khi mẫu đạt và hồ sơ chờ BGĐ duyệt
-([ADR 0016](../../../../../docs/adr/0016-e6-stage-1-is-a-product-development-case-inside-dw-supply-chain.md)).
+([ADR 0016](../../../../../packages/python/dw_supply_chain/docs/adr/0016-e6-stage-1-is-a-product-development-case-inside-dw-supply-chain.md)).
 
 ## Việc cần làm
 

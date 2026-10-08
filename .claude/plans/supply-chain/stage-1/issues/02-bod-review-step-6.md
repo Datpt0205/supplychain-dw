@@ -76,7 +76,7 @@ không duyệt thì hủy có lý do.
 
 - 2026-10-05 (lát S2, quyết định tạm của lead; chờ Đạt duyệt ở QO-2). Mỗi điểm ghi chỗ
   nó nằm trong code và test giữ nó. Điểm đổi ADR có đoạn sửa đổi trong
-  [ADR 0016](../../../../../docs/adr/0016-e6-stage-1-is-a-product-development-case-inside-dw-supply-chain.md)
+  [ADR 0016](../../../../../packages/python/dw_supply_chain/docs/adr/0016-e6-stage-1-is-a-product-development-case-inside-dw-supply-chain.md)
   và [ADR 0020](../../../../../docs/adr/0020-e10-approval-decider-stamped-as-required-scope.md)
   (mục "Sửa đổi 2026-10-05").
     1. **QE-08 (tạm):** `bod_reject` → `cancelled`, nhận xét của BGĐ là lý do (thêm vào

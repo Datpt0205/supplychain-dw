@@ -28,6 +28,20 @@ import {
   type ProductCaseDetail,
 } from "@dw/api-client";
 
+/**
+ * The list page's "Đề xuất sản phẩm" buttons, the header's first. Found by their
+ * label's text rather than by role and name: `getAllByRole` computes every
+ * element's accessible name and whether it is hidden (a `getComputedStyle` per
+ * ancestor), which measured 4.6 s per call on this page under jsdom; a `waitFor`
+ * polled it, so the proposing test took 11 s alone and crossed its 30 s budget
+ * on a loaded run. The label is what a person reads on the button.
+ */
+function proposeButtons(): HTMLButtonElement[] {
+  return screen
+    .getAllByText("Đề xuất sản phẩm", { selector: "button span" })
+    .map((label) => label.closest("button") as HTMLButtonElement);
+}
+
 const ME = "99999999-9999-4999-8999-999999999999";
 const CASE_ID = "11111111-1111-4111-8111-111111111111";
 let scopes = new Set<string>();
@@ -361,7 +375,7 @@ describe("Hồ sơ phát triển sản phẩm: danh sách", () => {
 
     const reason = await screen.findByText(/cần nhiệm vụ Cung ứng/);
     expect(reason).toBeTruthy();
-    const buttons = screen.getAllByRole("button", { name: /Đề xuất sản phẩm/ });
+    const buttons = proposeButtons();
     expect((buttons[0] as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -374,7 +388,7 @@ describe("Hồ sơ phát triển sản phẩm: danh sách", () => {
       /cần quyền mở hồ sơ phát triển sản phẩm/,
     );
     expect(reason).toBeTruthy();
-    const buttons = screen.getAllByRole("button", { name: /Đề xuất sản phẩm/ });
+    const buttons = proposeButtons();
     expect((buttons[0] as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -386,10 +400,7 @@ describe("Hồ sơ phát triển sản phẩm: danh sách", () => {
 
     // Re-queried each time: the locked button is a different element (inside
     // its tooltip) from the open one.
-    const header = () =>
-      screen.getAllByRole("button", {
-        name: /Đề xuất sản phẩm/,
-      })[0] as HTMLButtonElement;
+    const header = () => proposeButtons()[0]!;
     await waitFor(() => expect(header().disabled).toBe(false));
     fireEvent.click(header());
     const dialog = await screen.findByRole("dialog");
@@ -1273,10 +1284,7 @@ describe("Category và SLA (ticket 06)", () => {
     listProductCategories.mockReset();
     listProductCategories.mockRejectedValue(new Error("mạng"));
 
-    const header = () =>
-      screen.getAllByRole("button", {
-        name: /Đề xuất sản phẩm/,
-      })[0] as HTMLButtonElement;
+    const header = () => proposeButtons()[0]!;
     await waitFor(() => expect(header().disabled).toBe(false));
     fireEvent.click(header());
     const dialog = await screen.findByRole("dialog");

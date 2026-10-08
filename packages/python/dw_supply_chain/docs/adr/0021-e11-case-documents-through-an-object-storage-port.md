@@ -2,9 +2,9 @@
 status: Accepted
 date: 2026-10-05
 source:
-    - ../products/elmich/process.md#2-danh-mục-tài-liệuchứng-từ-nghiệp-vụ-chính
-    - ../../packages/python/dw_platform/src/dw_platform/application/ports.py # FeedbackAttachmentStoragePort dòng 212
-    - ../../CLAUDE.md # Tenancy: object paths include tenant/workspace
+    - ../../../../../docs/products/elmich/process.md#2-danh-mục-tài-liệuchứng-từ-nghiệp-vụ-chính
+    - ../../../dw_platform/src/dw_platform/application/ports.py # FeedbackAttachmentStoragePort dòng 212
+    - ../../../../../CLAUDE.md # Tenancy: object paths include tenant/workspace
 ---
 
 # E11. Chứng từ của hồ sơ đi qua một port lưu trữ đối tượng

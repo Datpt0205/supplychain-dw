@@ -98,9 +98,9 @@ async def test_spellings_the_database_calls_equal_are_one_supplier_with_one_name
     variants = [
         "CÔNG TY ĐÔNG Á",
         "  công   ty đông á ",
-        "Công ty Đông Á",
+        "Công\u00a0ty Đông Á",
         # "ô" and "á" as a letter plus a combining mark (NFD).
-        "Công ty Đông Á",
+        "Co\u0302ng ty Đông A\u0301",
     ]
     cases = [_case(context, spelling) for spelling in variants]
     for case in cases:

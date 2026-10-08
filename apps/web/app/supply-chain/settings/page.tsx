@@ -367,11 +367,7 @@ function PackagingCard({ canWrite }: { canWrite: boolean }) {
     >
       {!policy ? (
         resource.error != null ? (
-          <LoadError
-            compact
-            error={resource.error}
-            onRetry={resource.reload}
-          />
+          <LoadError compact error={resource.error} onRetry={resource.reload} />
         ) : (
           <RegionState kind="loading" compact />
         )

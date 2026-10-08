@@ -2,9 +2,9 @@
 status: Accepted
 date: 2026-10-05
 source:
-    - ../products/elmich/process.md#32-bảng-17-bước # bước 9, 10
-    - ../../packages/python/dw_supply_chain/src/dw_supply_chain/domain/po_case.py # POCase, po_reference
-    - ../../db/migrations/versions/fddd7579ba27_supply_chain_schema_po_cases.py
+    - ../../../../../docs/products/elmich/process.md#32-bảng-17-bước # bước 9, 10
+    - ../../src/dw_supply_chain/domain/po_case.py # POCase, po_reference
+    - ../../../../../db/migrations/versions/fddd7579ba27_supply_chain_schema_po_cases.py
 ---
 
 # E7. Bàn giao ĐẶT HÀNG tạo Hồ sơ PO ở trạng thái `order_requested`, số PO để trống tới bước 10

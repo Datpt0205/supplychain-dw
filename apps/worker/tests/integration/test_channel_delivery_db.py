@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 
 import pytest
@@ -157,7 +157,9 @@ async def _notify(
     return key
 
 
-def _lane(sessions: async_sessionmaker[AsyncSession], chat: _Chat, batch: int = 20):  # type: ignore[no-untyped-def]
+def _lane(
+    sessions: async_sessionmaker[AsyncSession], chat: _Chat, batch: int = 20
+) -> Callable[[], Awaitable[None]]:
     return build_channel_delivery_consumer(
         SqlChannelOutbox(sessions),
         channel="zalo",
@@ -315,7 +317,7 @@ async def test_two_workers_at_once_send_each_row_once(
     gate = asyncio.Event()
     chat = _Chat(hold=gate)
 
-    workers = [asyncio.create_task(_lane(sessions, chat)()) for _ in range(2)]
+    workers = [asyncio.ensure_future(_lane(sessions, chat)()) for _ in range(2)]
     await asyncio.sleep(0.3)  # both are inside a claim or past it
     gate.set()
     await asyncio.gather(*workers)
@@ -334,7 +336,7 @@ async def test_a_held_row_is_skipped_not_waited_on(
     gate = asyncio.Event()
     holding = _Chat(hold=gate)
 
-    one = asyncio.create_task(_lane(sessions, holding, batch=1)())
+    one = asyncio.ensure_future(_lane(sessions, holding, batch=1)())
     await asyncio.wait_for(holding.entered.wait(), timeout=5)  # row 1 locked, mid-send
     other = _Chat()
     try:

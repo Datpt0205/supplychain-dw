@@ -8,7 +8,7 @@ Area: supply-chain
 
 Cung ứng tạo mã hàng chính thức và các SKU, không trùng trong công ty; hồ sơ được ký
 theo thứ tự tenant cấu hình; ký đủ thì sẵn sàng đặt hàng
-([ADR 0018](../../../../../docs/adr/0018-e8-item-code-and-sku-uniqueness-owned-by-the-database.md)).
+([ADR 0018](../../../../../packages/python/dw_supply_chain/docs/adr/0018-e8-item-code-and-sku-uniqueness-owned-by-the-database.md)).
 
 ## Việc cần làm
 
@@ -67,8 +67,8 @@ theo thứ tự tenant cấu hình; ký đủ thì sẵn sàng đặt hàng
 
 - 2026-10-07 (lát S4, quyết định tạm của implementer; Đạt ủy quyền quyết các điểm mở,
   "an toàn nhất"). Đoạn sửa đổi ở
-  [ADR 0016](../../../../../docs/adr/0016-e6-stage-1-is-a-product-development-case-inside-dw-supply-chain.md),
-  [ADR 0018](../../../../../docs/adr/0018-e8-item-code-and-sku-uniqueness-owned-by-the-database.md)
+  [ADR 0016](../../../../../packages/python/dw_supply_chain/docs/adr/0016-e6-stage-1-is-a-product-development-case-inside-dw-supply-chain.md),
+  [ADR 0018](../../../../../packages/python/dw_supply_chain/docs/adr/0018-e8-item-code-and-sku-uniqueness-owned-by-the-database.md)
   và [ADR 0020](../../../../../docs/adr/0020-e10-approval-decider-stamped-as-required-scope.md)
   (mục "Sửa đổi 2026-10-07, lát S4"). Mỗi điểm ghi chỗ nó nằm trong code và test giữ nó.
     1. **QE-10 (tạm): tuần tự BGĐ rồi Kế toán, cả hai bắt buộc.** Policy

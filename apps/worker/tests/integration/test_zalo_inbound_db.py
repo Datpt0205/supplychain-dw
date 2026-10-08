@@ -116,7 +116,7 @@ class _Lane:
         commands.register("probe", self.command)
         return build_zalo_inbound(
             WorkerSettings(
-                zalo_link_secret=_SECRET,  # type: ignore[arg-type]
+                zalo_link_secret=_SECRET,
                 product_name=_PRODUCT,
                 public_web_url="https://portal.example",
             ),
@@ -367,7 +367,7 @@ async def test_with_no_command_a_linked_person_is_told_it_was_not_handled(
     await _link(lane, user, chat)
     bot = _Bot([_update(chat, "xin chào", uuid.uuid4().hex)])
     inbound = build_zalo_inbound(
-        WorkerSettings(zalo_link_secret=_SECRET, product_name=_PRODUCT),  # type: ignore[arg-type]
+        WorkerSettings(zalo_link_secret=_SECRET, product_name=_PRODUCT),
         sessions,
         bot,
         SystemClock(),

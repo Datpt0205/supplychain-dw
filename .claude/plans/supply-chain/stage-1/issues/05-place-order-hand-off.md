@@ -8,7 +8,7 @@ Area: supply-chain
 
 Nút ĐẶT HÀNG tạo đúng một Hồ sơ PO chờ tạo PO, mang PIC, Category, SKU của sản phẩm;
 bước 10 đặt số PO và loại đơn; từ đó bước 11–17 chạy như cũ. 17 bước thành một luồng
-([ADR 0017](../../../../../docs/adr/0017-e7-hand-off-via-order-requested.md)).
+([ADR 0017](../../../../../packages/python/dw_supply_chain/docs/adr/0017-e7-hand-off-via-order-requested.md)).
 
 ## Việc cần làm
 
@@ -97,7 +97,7 @@ bước 10 đặt số PO và loại đơn; từ đó bước 11–17 chạy nh�
 
 - 2026-10-07 (lát S5, quyết định tạm của implementer; Đạt ủy quyền quyết các điểm mở,
   "an toàn nhất"). Đoạn sửa đổi ở
-  [ADR 0017](../../../../../docs/adr/0017-e7-hand-off-via-order-requested.md) (mục "Sửa
+  [ADR 0017](../../../../../packages/python/dw_supply_chain/docs/adr/0017-e7-hand-off-via-order-requested.md) (mục "Sửa
   đổi 2026-10-07, lát S5"). Mỗi điểm ghi chỗ nó nằm trong code và test giữ nó.
     1. **QE-12 (tạm): một hồ sơ phát triển, một Hồ sơ PO.** Câu cập nhật có điều kiện của
        ADR 0017 (`SqlProductCaseRepository.place_order`: `WHERE id AND version = :v AND

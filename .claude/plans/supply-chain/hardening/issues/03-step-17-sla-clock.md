@@ -6,7 +6,7 @@ Area: supply-chain
 
 ## Mục tiêu
 
-`warehouse_receipt` chỉ gắn `payment_completed`, nên đo từ thanh toán tới lúc *bắt đầu*
+`warehouse_receipt` chỉ gắn `payment_completed`, nên đo từ thanh toán tới lúc _bắt đầu_
 nhập kho; vào `warehouse_receiving` thì mốc biến mất (not_applicable) và việc nhập kho
 kéo dài không ai thấy. QE-14 (tạm): đồng hồ bắt đầu lúc thanh toán xong, dừng khi hàng
 vào kho.
