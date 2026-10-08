@@ -46,24 +46,24 @@ trị mẫu:
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-| Biến                                                                                               | Giá trị                                  | Ghi chú                                                                                                                                   |
-| -------------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `DW_WEB_HOST`, `DW_API_HOST`, `DW_AUTH_HOST`                                                       | tên máy, không scheme                    | overlay đòi cả ba                                                                                                                         |
-| `DW_CADDY_LOCAL_CERTS`                                                                             | để trống                                 | `local_certs` chỉ để chạy thử không DNS                                                                                                   |
-| `POSTGRES_PASSWORD`, `DW_DB_*_PASSWORD`, `MINIO_ROOT_PASSWORD`, `KEYCLOAK_ADMIN_PASSWORD`          | secret mới                               | `DW_DB_*` chỉ có tác dụng ở lần khởi tạo volume đầu                                                                                       |
-| `DW_API_AUTH_MODE`                                                                                 | `oidc`                                   | `dev` bị từ chối khi deployed                                                                                                             |
-| `DW_API_DEV_SECRET`                                                                                | để trống                                 |                                                                                                                                           |
-| `DW_MODEL_PROVIDER`                                                                                | `openai_compatible`                      | `mock` bị từ chối                                                                                                                         |
-| `OPENAI_BASE_URL`, `OPENAI_API_KEY`                                                                | gateway và khóa                          |                                                                                                                                           |
-| `DW_API_MODEL_PROFILE`                                                                             | một file trong `configs/models/`         | không phải `balanced` (là mock)                                                                                                           |
-| `DW_API_EMBEDDING_PROVIDER`                                                                        | `openai_compatible`                      | `hash` bị từ chối                                                                                                                         |
-| `DW_API_RERANK_PROVIDER`, `DW_API_RERANK_BASE_URL`, `DW_API_RERANK_API_KEY`, `DW_API_RERANK_MODEL` | `cohere_compatible` và khóa, hoặc `none` |                                                                                                                                           |
-| `DW_TASK_CONNECTOR`                                                                                | `none`                                   | `mock` bị từ chối                                                                                                                         |
-| `DW_APPROVAL_CODE_SECRET`                                                                          | secret mới, ≥ 32 ký tự                   | api và worker cùng giá trị (compose truyền cả hai); dưới 16 byte thì không dựng được khóa mã duyệt; trống = chỉ duyệt trên web (ADR 0014) |
-| `ZALO_BOT_TOKEN`, `ZALO_LINK_SECRET`, `ZALO_BOT_LINK`                                              | của bot                                  | trống = không có Zalo                                                                                                                     |
-| `ZALO_UPDATES_MODE`                                                                                | `poll` lúc đầu                           | sang `webhook` ở bước 8                                                                                                                   |
-| `ZALO_WEBHOOK_SECRET`                                                                              | secret mới, ≥ 32 ký tự                   | API từ chối khởi động nếu ngắn hơn trong chế độ `webhook`                                                                                 |
-| `DW_APPROVAL_REMINDER_SECONDS`                                                                     | SLA thật (ví dụ 1800)                    | 5 là số demo                                                                                                                              |
+| Biến                                                                                               | Giá trị                                            | Ghi chú                                                                                                                                                                                         |
+| -------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DW_WEB_HOST`, `DW_API_HOST`, `DW_AUTH_HOST`                                                       | tên máy, không scheme                              | overlay đòi cả ba                                                                                                                                                                               |
+| `DW_CADDY_LOCAL_CERTS`                                                                             | để trống                                           | `local_certs` chỉ để chạy thử không DNS                                                                                                                                                         |
+| `POSTGRES_PASSWORD`, `DW_DB_*_PASSWORD`, `MINIO_ROOT_PASSWORD`, `KEYCLOAK_ADMIN_PASSWORD`          | secret mới                                         | `DW_DB_*` chỉ có tác dụng ở lần khởi tạo volume đầu                                                                                                                                             |
+| `DW_API_AUTH_MODE`                                                                                 | `oidc`                                             | `dev` bị từ chối khi deployed                                                                                                                                                                   |
+| `DW_API_DEV_SECRET`                                                                                | để trống                                           |                                                                                                                                                                                                 |
+| `DW_MODEL_PROVIDER`                                                                                | `openai_compatible`                                | `mock` bị từ chối                                                                                                                                                                               |
+| `OPENAI_BASE_URL`, `OPENAI_API_KEY`                                                                | gateway và khóa                                    |                                                                                                                                                                                                 |
+| `DW_API_MODEL_PROFILE`                                                                             | một file trong `configs/models/`                   | không phải `balanced` (là mock)                                                                                                                                                                 |
+| `DW_API_EMBEDDING_PROVIDER`                                                                        | `openai_compatible`                                | `hash` bị từ chối                                                                                                                                                                               |
+| `DW_API_RERANK_PROVIDER`, `DW_API_RERANK_BASE_URL`, `DW_API_RERANK_API_KEY`, `DW_API_RERANK_MODEL` | `cohere_compatible` và khóa, hoặc `none`           |                                                                                                                                                                                                 |
+| `DW_TASK_CONNECTOR`                                                                                | `none`                                             | `mock` bị từ chối                                                                                                                                                                               |
+| `DW_APPROVAL_CODE_SECRET`                                                                          | secret mới, ≥ 32 ký tự, không bao giờ ghi vào repo | api và worker cùng giá trị (compose truyền cả hai); dưới 16 byte thì không dựng được khóa mã duyệt; trống = chỉ duyệt trên web (ADR 0014); đổi khóa thì mọi mã đang hiện (10 phút) hết hiệu lực |
+| `ZALO_BOT_TOKEN`, `ZALO_LINK_SECRET`, `ZALO_BOT_LINK`                                              | của bot                                            | trống = không có Zalo                                                                                                                                                                           |
+| `ZALO_UPDATES_MODE`                                                                                | `poll` lúc đầu                                     | sang `webhook` ở bước 8                                                                                                                                                                         |
+| `ZALO_WEBHOOK_SECRET`                                                                              | secret mới, ≥ 32 ký tự                             | API từ chối khởi động nếu ngắn hơn trong chế độ `webhook`                                                                                                                                       |
+| `DW_APPROVAL_REMINDER_SECONDS`                                                                     | SLA thật (ví dụ 1800)                              | 5 là số demo                                                                                                                                                                                    |
 
 **Không** đặt trong `.env` khi dùng overlay host (overlay tự dựng từ ba tên máy):
 `KC_HOSTNAME`, `DW_API_OIDC_ISSUER_URL`, `DW_API_CORS_ORIGINS`, `DW_API_PUBLIC_BASE_URL`,
@@ -91,7 +91,9 @@ $C ps
   supply-chain đến từ migration, không có bước seed riêng.
 - Image web đóng `NEXT_PUBLIC_*` lúc build: đổi tên máy là `up --build` lại, không phải
   restart.
-- `scripts/deploy.sh` chưa biết overlay host; lần đầu chạy lệnh trên bằng tay.
+- Các lần sau: `scripts/deploy.sh <nhánh> production hosted` (hoặc `uat hosted`) dựng
+  đúng ba file trên theo thứ tự base, profile, host, rồi chờ `api`, `worker`, `web`,
+  `caddy` báo healthy (hỏi theo tên service, không theo tên container).
 
 API từ chối khởi động khi cấu hình deployed sai (`validate_for_profile`): xem
 `$C logs api | tail`. Thông báo nêu đúng biến.
@@ -204,16 +206,24 @@ lệnh gọi bị 403 nghĩa là không, khi đó `zalo_webhook.py delete` và q
 
 ## 9. Sao lưu
 
-- **Postgres `dw`**: cron `scripts/backup_postgres.sh` (dòng mẫu trong đầu file). Cần
-  `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`; dump ra `BACKUP_DIR` và chép sang bucket
-  `dw-pg-backups`. Bucket này nằm trên **cùng máy**: chép thêm ra ngoài máy là việc phải
-  làm (ngoài phạm vi lát này).
-- **Postgres `keycloak`**: script mặc định chỉ dump `dw`. Thêm một dòng cron với
-  `PG_DB=keycloak`; mất database này là mất mọi người dùng và realm.
+- **Postgres `dw` và `keycloak`**: một dòng cron chạy `scripts/backup_postgres.sh`, dump
+  cả hai (mất `keycloak` là mất mọi người dùng và realm):
+
+    ```cron
+    15 2 * * *  cd /home/ubuntu/base_agent && set -a && . ./.env && set +a && scripts/backup_postgres.sh >> /home/ubuntu/pg_backups/backup.log 2>&1
+    ```
+
+    `.env` cấp `COMPOSE_PROJECT_NAME`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`; thiếu khóa
+    S3 thì script dừng trước khi dump. Mỗi database một tên file (`dw_…`, `keycloak_…`),
+    xoay vòng riêng, chép sang bucket `dw-pg-backups`. Bucket này nằm trên **cùng máy**:
+    chép thêm ra ngoài máy là việc phải làm (ngoài phạm vi lát này).
+
 - **Volume `caddy-data`**: chứng chỉ và tài khoản ACME. Mất thì Caddy xin lại, nhưng CA
   giới hạn số lần cấp lại.
 - **Khôi phục**: `scripts/restore_postgres.sh <file>` hoặc `--latest` (`pg_restore --clean`,
-  ghi đè). Chạy thử khôi phục một lần trước khi có dữ liệu thật.
+  ghi đè); `--latest` chỉ lấy bản mới nhất của database đang khôi phục. Keycloak:
+  `PG_DB=keycloak scripts/restore_postgres.sh --latest`. Chạy thử khôi phục một lần trước
+  khi có dữ liệu thật.
 
 ## Chạy thử không DNS
 

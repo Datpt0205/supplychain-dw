@@ -1,6 +1,7 @@
 import {
   ControlOutlined,
   ExperimentOutlined,
+  SettingOutlined,
   FileSearchOutlined,
   ReadOutlined,
   ScheduleOutlined,
@@ -67,6 +68,18 @@ export const supplyChainNav: NavItem[] = [
     hint: "Mọi Hồ sơ PO đang chạy theo trạng thái và NCC",
     icon: ControlOutlined,
     scope: "supply_chain.po_case.read",
+    context: SUPPLY_CHAIN,
+  },
+  {
+    href: "/supply-chain/settings",
+    label: "Cấu hình",
+    hint: "SLA theo Category và quy tắc test tiền sản xuất của công ty",
+    icon: SettingOutlined,
+    // Either policy's reader finds the page; each card checks its own scope.
+    anyScope: [
+      "supply_chain.sla_policy.read",
+      "supply_chain.action_duties.read",
+    ],
     context: SUPPLY_CHAIN,
   },
 ];

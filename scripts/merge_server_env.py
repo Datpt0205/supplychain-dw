@@ -96,7 +96,6 @@ PRESERVE_LOCAL = frozenset(
         # the server's URLs here would make a local UI test exercise the
         # server's build instead of the working tree.
         "NEXT_PUBLIC_API_BASE_URL",
-        "NEXT_PUBLIC_CHAT_BASE_URL",
         "DW_PUBLIC_WEB_URL",
     }
 )

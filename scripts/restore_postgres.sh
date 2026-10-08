@@ -54,7 +54,9 @@ if [ "$1" = "--latest" ]; then
   fi
   mkdir -p "$DEST"
   # Names are `<db>_<YYYYmmdd_HHMMSS>.dump.gz`, so the lexical last is the newest.
-  latest="$(s3 lsf "s3:$S3_BUCKET_PG_BACKUPS/" | sort | tail -n1)"
+  # The bucket holds every database's dumps (dw_…, keycloak_…): the newest of
+  # THIS one, never whichever database happened to be dumped last.
+  latest="$(s3 lsf "s3:$S3_BUCKET_PG_BACKUPS/" | grep "^${DB}_" | sort | tail -n1 || true)"
   [ -n "$latest" ] || { echo "no objects found in s3:$S3_BUCKET_PG_BACKUPS/" >&2; exit 1; }
   dump="$DEST/$latest"
   echo "[$(date -Is)] fetching s3:$S3_BUCKET_PG_BACKUPS/$latest -> $dump"

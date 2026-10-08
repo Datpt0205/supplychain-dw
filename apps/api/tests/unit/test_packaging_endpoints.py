@@ -305,6 +305,11 @@ async def test_the_packaging_policy_is_set_by_whoever_sets_duties_and_strictly_t
     }
     refused = await _send(world.container(ORDERING), "PUT", "/packaging-policy", document)
     assert refused.status_code == 403
+    # A reader of the rule (the settings screen shows it locked) is refused the
+    # write at the route, whatever the screen offers.
+    reader = world.container(frozenset({ACTION_DUTIES_READ}))
+    assert (await _send(reader, "GET", "/packaging-policy")).status_code == 200
+    assert (await _send(reader, "PUT", "/packaging-policy", document)).status_code == 403
     admin = world.container(frozenset({ACTION_DUTIES_READ, ACTION_DUTIES_WRITE}))
     loose = await _send(
         admin, "PUT", "/packaging-policy", {**document, "require_pre_production_test": "yes"}

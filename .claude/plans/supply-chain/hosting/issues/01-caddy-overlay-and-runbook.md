@@ -86,7 +86,7 @@ deployed sai (spec, Mục tiêu). Ứng viên đưa ngược.
       `DW_API_CORS_ORIGINS: '["https://app.example.test"]'`; chỉ Caddy mở cổng ngoài
       loopback; Caddy ở `dw-ingress` + `dw-proxy`, không ở `dw-internal`/`dw-edge`.
       Còn sót, ngoài phạm vi: build arg `NEXT_PUBLIC_CHAT_BASE_URL=http://localhost:8100`
-      không ai trong `apps/web` đọc.
+      không ai trong `apps/web` đọc (bỏ ở HR5, `hardening/issues/05`).
     - **Chạy thử** (project `dwhost`, base + host, profile `local`, image có sẵn
       `--no-build`, `DW_CADDY_LOCAL_CERTS=local_certs`, `curl --ssl-no-revoke --resolve
 <host>:443:127.0.0.1 --cacert root.crt`; đã `down -v`, không còn container):

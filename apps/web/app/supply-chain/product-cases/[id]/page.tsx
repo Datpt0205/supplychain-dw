@@ -34,7 +34,6 @@ import {
   type PendingReview,
   type ProductActionOption,
   type ProductCaseDetail,
-  type ProductCaseTransition,
   type SampleRound,
 } from "@dw/api-client";
 import {

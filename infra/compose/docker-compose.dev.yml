@@ -95,6 +95,5 @@ services:
     # for SSR.
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?}
-      NEXT_PUBLIC_CHAT_BASE_URL: ${NEXT_PUBLIC_CHAT_BASE_URL:?}
     ports: !override
       - "0.0.0.0:23000:3000"

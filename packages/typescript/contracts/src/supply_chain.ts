@@ -843,3 +843,45 @@ export const packagingDesignSchema = packagingStateSchema.extend({
   history: z.array(packagingEventSchema),
 });
 export type PackagingDesign = z.infer<typeof packagingDesignSchema>;
+
+// ---- the tenant's own policies (settings screen) ---------------------------
+
+/** Whether a milestone's number is in force (`confirmed`) or still waiting for
+ * the customer (`pending_business_confirmation`: never evaluated). */
+export const slaConfirmationStatusSchema = z.enum([
+  "confirmed",
+  "pending_business_confirmation",
+]);
+export type SLAConfirmationStatus = z.infer<typeof slaConfirmationStatusSchema>;
+
+/** One SLA milestone: `duration` is whole days written `<n>d`. */
+export const slaMilestoneSchema = z.object({
+  duration: z.string().regex(/^\d+d$/),
+  status: slaConfirmationStatusSchema,
+  description: z.string(),
+});
+export type SLAMilestone = z.infer<typeof slaMilestoneSchema>;
+
+/** The tenant's SLA policy, read and replaced whole (`PUT /sla-policy`). */
+export const slaPolicySchema = z.object({
+  schema_version: z.string(),
+  policy_id: z.string(),
+  policy_version: z.string(),
+  categories: z.array(productCategorySchema),
+  default: z.record(z.string(), slaMilestoneSchema),
+  by_category: z.record(z.string(), z.record(z.string(), slaMilestoneSchema)),
+  supplier_update: z.object({
+    reminder_after: z.string().regex(/^\d+d$/),
+    escalation_after: z.string().regex(/^\d+d$/),
+  }),
+});
+export type SLAPolicy = z.infer<typeof slaPolicySchema>;
+
+/** Step 13's rule: whether production waits for a passed pre-production test. */
+export const packagingPolicySchema = z.object({
+  schema_version: z.string(),
+  policy_id: z.string(),
+  policy_version: z.string(),
+  require_pre_production_test: z.boolean(),
+});
+export type PackagingPolicy = z.infer<typeof packagingPolicySchema>;

@@ -23,6 +23,8 @@ import {
   missingUpdateStatusSchema,
   caseTransitionSchema,
   caseApprovalsSchema,
+  slaPolicySchema,
+  packagingPolicySchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -80,6 +82,8 @@ import {
   type MissingUpdateStatus,
   type CaseTransition,
   type CaseApprovals,
+  type SLAPolicy,
+  type PackagingPolicy,
   type AttentionItem,
   type FollowUp,
   type CaseDocument,
@@ -384,6 +388,25 @@ const _caseApprovalsMirrorsTheRoute: [
   >,
 ] = [true, true];
 void _caseApprovalsMirrorsTheRoute;
+
+// The settings screen's two policies: every field of each, as the routes have them.
+const _policiesMirrorTheRoutes: [
+  SameType<keyof SLAPolicy, keyof SupplyChainGenerated["SupplyChainSLAPolicy"]>,
+  SameType<
+    keyof SLAPolicy["default"][string],
+    keyof SupplyChainGenerated["SLAMilestone"]
+  >,
+  SameType<
+    SLAPolicy["default"][string]["status"],
+    SupplyChainGenerated["SLAConfirmationStatus"]
+  >,
+  SameType<
+    keyof SLAPolicy["supplier_update"],
+    keyof SupplyChainGenerated["SupplierUpdateCadence"]
+  >,
+  SameType<PackagingPolicy, SupplyChainGenerated["SupplyChainPackagingPolicy"]>,
+] = [true, true, true, true, true];
+void _policiesMirrorTheRoutes;
 
 const _briefSummaryMirrorsTheRoute: [
   SameType<DailyBriefSummary, SupplyChainGenerated["DailyBriefSummaryView"]>,
@@ -1368,6 +1391,46 @@ export class ApiClient {
     );
   }
 
+  /** The tenant's effective SLA policy: its own override, else the platform's. */
+  getSLAPolicy(): Promise<SLAPolicy> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/sla-policy",
+      slaPolicySchema,
+    );
+  }
+
+  /** Replace the tenant's SLA policy, whole (needs `sla_policy.write`). */
+  setSLAPolicy(policy: SLAPolicy): Promise<SLAPolicy> {
+    return this.request(
+      "PUT",
+      "/api/v1/supply-chain/sla-policy",
+      slaPolicySchema,
+      {
+        body: policy,
+      },
+    );
+  }
+
+  /** Step 13's rule for the tenant: its own override, else the platform's. */
+  getPackagingPolicy(): Promise<PackagingPolicy> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/packaging-policy",
+      packagingPolicySchema,
+    );
+  }
+
+  /** Replace the tenant's step-13 rule, whole (needs `action_duties.write`). */
+  setPackagingPolicy(policy: PackagingPolicy): Promise<PackagingPolicy> {
+    return this.request(
+      "PUT",
+      "/api/v1/supply-chain/packaging-policy",
+      packagingPolicySchema,
+      { body: policy },
+    );
+  }
+
   /** The pending approvals naming one PO case, filtered by the server. */
   listPOCaseApprovals(caseId: string): Promise<CaseApprovals> {
     return this.request(
@@ -1715,6 +1778,8 @@ export type {
   MissingUpdateStatus,
   CaseTransition,
   CaseApprovals,
+  SLAPolicy,
+  PackagingPolicy,
   AttentionItem,
   PortfolioSummary,
   POCaseListFilter,

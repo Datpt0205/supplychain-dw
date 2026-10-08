@@ -16,14 +16,22 @@
 # proves dump -> restore -> migrate-heads round-trips; that is not the same
 # claim as a human having run restore_postgres.sh against this specific host.
 #
-# Install (on the server, as the ubuntu user):
-#   crontab -e   →   15 2 * * *  /home/ubuntu/base_agent/scripts/backup_postgres.sh >> /home/ubuntu/pg_backups/backup.log 2>&1
+# Two databases, one run: `dw` (every tenant's data) and `keycloak` (every user,
+# credential and the realm). Losing the second is losing every login, so it is
+# dumped by default, not by a second cron line somebody has to remember. Each
+# database's dumps carry its own name (`dw_…`, `keycloak_…`), rotate on their
+# own, and restore one at a time (`PG_DB=keycloak scripts/restore_postgres.sh …`).
+#
+# Install (on the server, as the ubuntu user), one line for both databases:
+#   crontab -e   →   15 2 * * *  cd /home/ubuntu/base_agent && set -a && . ./.env && set +a && scripts/backup_postgres.sh >> /home/ubuntu/pg_backups/backup.log 2>&1
+# (`.env` supplies COMPOSE_PROJECT_NAME, MINIO_ROOT_USER and MINIO_ROOT_PASSWORD.)
 set -euo pipefail
 
 # This checkout's own container: compose names it after the project, and
 # a second dw-based checkout on the same host owns "dw-postgres-1".
 CONTAINER="${PG_CONTAINER:-${COMPOSE_PROJECT_NAME:-dw}-postgres-1}"
-DB="${PG_DB:-dw}"
+# PG_DBS lists the databases; PG_DB (one name) is kept for a manual run.
+DBS="${PG_DBS:-${PG_DB:-dw keycloak}}"
 PG_USER="${PG_USER:-dw_admin}"
 DEST="${BACKUP_DIR:-/home/ubuntu/pg_backups}"
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
@@ -42,36 +50,41 @@ s3() {
 }
 
 mkdir -p "$DEST"
-stamp="$(date +%Y%m%d_%H%M%S)"
-out="$DEST/${DB}_${stamp}.dump.gz"
 
-echo "[$(date -Is)] backup start → $out"
-# -Fc = custom format (compressible, selective restore); piped through gzip.
-# A tmp file + atomic mv so a crashed dump never leaves a truncated "backup".
-tmp="$out.partial"
-if sudo docker exec "$CONTAINER" pg_dump -U "$PG_USER" -Fc "$DB" | gzip > "$tmp"; then
-  mv "$tmp" "$out"
-  echo "[$(date -Is)] backup ok: $(du -h "$out" | cut -f1)"
-else
-  rm -f "$tmp"
-  echo "[$(date -Is)] backup FAILED" >&2
-  exit 1
-fi
-
-# Rotate: drop dumps older than KEEP_DAYS. Runs only after a successful dump so a
-# run of failures never deletes the last good copy.
-find "$DEST" -name "${DB}_*.dump.gz" -mtime "+${KEEP_DAYS}" -print -delete
-
-# Off-box copy — the part that survives losing the box. Required, not best-effort:
-# a local-only dump is exactly the single-volume risk this script exists to close,
-# so a failed upload fails the whole run (cron mail/log picks it up) rather than
-# silently leaving last night as the newest off-box copy.
+# The off-box copy is required (below), so its credentials are checked before
+# any dump starts rather than after the first one is already on disk.
 if [ -z "${MINIO_ROOT_USER:-}" ] || [ -z "${MINIO_ROOT_PASSWORD:-}" ]; then
   echo "[$(date -Is)] MINIO_ROOT_USER/MINIO_ROOT_PASSWORD not set; refusing to" \
     "finish with a local-only backup" >&2
   exit 1
 fi
-s3 copyto "$out" "s3:$S3_BUCKET_PG_BACKUPS/$(basename "$out")"
-echo "[$(date -Is)] off-box copy ok: s3:$S3_BUCKET_PG_BACKUPS/$(basename "$out")"
+
+stamp="$(date +%Y%m%d_%H%M%S)"
+for DB in $DBS; do
+  out="$DEST/${DB}_${stamp}.dump.gz"
+
+  echo "[$(date -Is)] backup start → $out"
+  # -Fc = custom format (compressible, selective restore); piped through gzip.
+  # A tmp file + atomic mv so a crashed dump never leaves a truncated "backup".
+  tmp="$out.partial"
+  if sudo docker exec "$CONTAINER" pg_dump -U "$PG_USER" -Fc "$DB" | gzip > "$tmp"; then
+    mv "$tmp" "$out"
+    echo "[$(date -Is)] backup ok: $(du -h "$out" | cut -f1)"
+  else
+    rm -f "$tmp"
+    echo "[$(date -Is)] backup FAILED: $DB" >&2
+    exit 1
+  fi
+
+  # Rotate: drop this database's dumps older than KEEP_DAYS. Runs only after a
+  # successful dump so a run of failures never deletes the last good copy.
+  find "$DEST" -name "${DB}_*.dump.gz" -mtime "+${KEEP_DAYS}" -print -delete
+
+  # Off-box copy — the part that survives losing the box. Required, not
+  # best-effort: a failed upload fails the whole run (cron mail/log picks it
+  # up) rather than silently leaving last night as the newest off-box copy.
+  s3 copyto "$out" "s3:$S3_BUCKET_PG_BACKUPS/$(basename "$out")"
+  echo "[$(date -Is)] off-box copy ok: s3:$S3_BUCKET_PG_BACKUPS/$(basename "$out")"
+done
 
 echo "[$(date -Is)] done"

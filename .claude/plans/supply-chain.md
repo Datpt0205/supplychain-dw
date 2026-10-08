@@ -79,6 +79,7 @@ means platform code, an upstream candidate (ADR 0011).
 | HR2   | `hardening/issues/02-follow-up-sweep-audits-as-its-lane.md`               | no      | resolved        | platform ADR 0011 (M3)              |
 | HR3   | `hardening/issues/03-step-17-sla-clock.md`                                | no      | resolved        | QE-14 provisional                   |
 | HR4   | `hardening/issues/04-supplier-master-record.md`                           | no      | resolved        | —                                   |
+| HR5   | `hardening/issues/05-ops-and-settings-screen.md`                          | partly  | resolved        | H                                   |
 
 **Next:** H2 (the domain the webhook needs; runbook `docs/deploy/host.md`);
 Z4p when a real photo update exists; ZL measures the webhook header (Z3).
@@ -136,6 +137,7 @@ email as a second channel.
 | HR2    | HR2       | Follow-up sweep audits its own open/resolve as `system:supply_chain_follow_ups` (`lane_audit_event`), in the row's transaction, only for rows it changed; lane registered by `FOLLOW_UP_SWEEP_LANE`.                                                                                                                                                                              |
 | HR3    | HR3       | Step 17's `warehouse_receipt` runs from payment to goods in stock: mapped on `warehouse_receiving` too, its clock starts at the latest entry into `payment_completed` (`sla_clock_start_state`, SQL built from it); ports renamed `*_sla_clock_started_at`; ADR 0019 amended.                                                                                                   |
 | HR4    | HR4       | Supplier master record `a0035e9faf32`: `suppliers` (workspace RLS, DB-owned `normalize_supplier_name`, generated UNIQUE `normalized_name`, optional `code`), cases reference it by `(supplier_id, supplier_name)` with ON UPDATE CASCADE so the name cannot drift; resolve-or-create in the case write's transaction (audited); backfill; case questions resolve against it.               |
+| HR5    | HR5       | Backup dumps `dw` and `keycloak` (restore `--latest` per database); `deploy.sh … hosted` adds the host overlay and its health gate asks by service; chat URL build arg gone; approval code secret documented; `/supply-chain/settings` reads and sets SLA and the pre-production rule, locked with reasons without the write scopes.                                    |
 | M3     | `4890979` | Platform `ab33703` merged: prompts through the containing registry (5 new versions, delay analysis raw only for days and milestones, hostile-value tests; `supply_chain@1.8.0`); decision audit with channel decisions; SoD second person and role recheck (two Open items closed); `sc_*` role labels; one `@dw/ui` PageHeader/RegionState in this theme; merge head `cee9cf387387`. |
 
 ## Open — named, not fixed, still true after the port
