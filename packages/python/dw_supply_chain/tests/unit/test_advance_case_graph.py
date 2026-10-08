@@ -54,7 +54,7 @@ class FakePOCaseRepository:
         self.saved = case
         self.audits.append(audit)
 
-    async def get_current_state_entered_at(self, context: AccessContext, case_id: POCaseId) -> None:
+    async def get_sla_clock_started_at(self, context: AccessContext, case_id: POCaseId) -> None:
         raise NotImplementedError("not exercised by this graph")
 
     async def list_page(
@@ -73,7 +73,7 @@ class FakePOCaseRepository:
     async def find_by_reference(self, context: AccessContext, po_reference: str) -> list[POCase]:
         raise NotImplementedError("not exercised by this graph")
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
         raise NotImplementedError("not exercised by this graph")

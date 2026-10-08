@@ -14,9 +14,16 @@ entry for the milestone, or the policy's `default`.
 Uses `state`, never `interrupted_state` — a case currently `BLOCKED` mid-
 `WAITING_DEPOSIT` is reported `NOT_APPLICABLE` rather than still evaluated
 against the deposit SLA, and its clock starts again from the resume (the
-caller passes the latest transition into the current state). Stated
+caller passes the latest transition into the clock's start state). Stated
 simplification, provisional until Elmich answers QE-14: the doc gives no
 guidance on how an interrupt should affect an SLA clock.
+
+A milestone may span more than one state. `warehouse_receipt` (step 17,
+QE-14 provisional) measures payment to goods in stock: its clock starts when
+the case entered `PAYMENT_COMPLETED` and runs on through `WAREHOUSE_RECEIVING`
+until the case is `COMPLETED`, so starting to receive does not restart it.
+`sla_clock_start_state` names the state each clock starts at; it is the one
+place that says so, and the repository's SQL is built from it.
 """
 
 from __future__ import annotations
@@ -34,7 +41,22 @@ _MILESTONE_FOR_STATE: dict[CaseState, str] = {
     CaseState.IN_TRANSIT: "port_arrival",
     CaseState.WAITING_PAYMENT: "payment",
     CaseState.PAYMENT_COMPLETED: "warehouse_receipt",
+    CaseState.WAREHOUSE_RECEIVING: "warehouse_receipt",
 }
+
+# A state whose milestone's clock started in an earlier state: the state it
+# started in. Every other state's clock starts when the case entered it.
+SLA_CLOCK_STARTS_IN: dict[CaseState, CaseState] = {
+    CaseState.WAREHOUSE_RECEIVING: CaseState.PAYMENT_COMPLETED,
+}
+
+
+def sla_clock_start_state(state: CaseState) -> CaseState:
+    """The state whose latest entry starts the SLA clock of a case in
+    `state`: `PAYMENT_COMPLETED` while goods are being received (the receipt
+    clock runs from payment), `state` itself otherwise."""
+    return SLA_CLOCK_STARTS_IN.get(state, state)
+
 
 # Stage 1. A separate table, not one keyed by both enums: the two share
 # string values ("blocked", "cancelled"), and a StrEnum member is equal to its

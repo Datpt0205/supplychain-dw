@@ -201,7 +201,7 @@ class FakePOCaseRepository:
     ) -> None:
         self.by_id[case.id.value] = case
 
-    async def get_current_state_entered_at(
+    async def get_sla_clock_started_at(
         self, context: AccessContext, case_id: POCaseId
     ) -> datetime | None:
         return None
@@ -252,7 +252,7 @@ class FakePOCaseRepository:
             key=lambda c: c.po_reference or "",
         )
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
         return {}

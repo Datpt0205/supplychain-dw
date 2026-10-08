@@ -188,7 +188,7 @@ class FakePOCaseRepository:
         if audit is not None:
             self.audits.append(audit)
 
-    async def get_current_state_entered_at(
+    async def get_sla_clock_started_at(
         self, context: AccessContext, case_id: POCaseId
     ) -> datetime | None:
         return self.current_state_entered_at.get(case_id.value)
@@ -240,7 +240,7 @@ class FakePOCaseRepository:
             key=lambda c: c.po_reference or "",
         )
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
         return {
@@ -3735,11 +3735,11 @@ class _CountingPOCases(FakePOCaseRepository):
         super().__init__()
         self.bulk_sizes: list[int] = []
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
         self.bulk_sizes.append(len(case_ids))
-        return await super().bulk_current_state_entered_at(context, case_ids)
+        return await super().bulk_sla_clock_started_at(context, case_ids)
 
 
 async def test_active_cases_are_assessed_a_page_at_a_time_with_bounded_bulk_reads(

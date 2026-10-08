@@ -92,7 +92,7 @@ class InMemoryPOCases:
     async def save(self, context: AccessContext, case: POCase, *, audit: Any = None) -> None:
         raise NotImplementedError(_NOT_A_QUESTION)
 
-    async def get_current_state_entered_at(
+    async def get_sla_clock_started_at(
         self, context: AccessContext, case_id: POCaseId
     ) -> datetime | None:
         raise NotImplementedError(_NOT_A_QUESTION)
@@ -102,7 +102,7 @@ class InMemoryPOCases:
     ) -> Page[CaseTransition]:
         raise NotImplementedError(_NOT_A_QUESTION)
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
         raise NotImplementedError(_NOT_A_QUESTION)

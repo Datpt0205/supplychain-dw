@@ -1276,7 +1276,7 @@ class GetSLAEvaluation:
             raise NotFoundError("PO case not found", details={"case_id": str(po_case_id)})
         assert case.created_at is not None  # persisted rows always carry it
 
-        entered_at = await self.po_case_repo.get_current_state_entered_at(context, po_case_id)
+        entered_at = await self.po_case_repo.get_sla_clock_started_at(context, po_case_id)
         policy = await resolve_sla_policy(
             context, self.policy_override_repo, self.platform_default_policy
         )
@@ -1323,7 +1323,7 @@ async def assess_active_cases(
     shared input of the Attention Queue and the Control Tower, so the two
     can never evaluate the same case two different ways.
 
-    `POCaseRepositoryPort.bulk_current_state_entered_at`/
+    `POCaseRepositoryPort.bulk_sla_clock_started_at`/
     `SupplierUpdateRepositoryPort.bulk_latest` are the bulk counterparts of
     the single-case methods `GetSLAEvaluation`/`GetMissingUpdateStatus`
     already call, so a tenant with many cases costs three queries here, not
@@ -1342,7 +1342,7 @@ async def assess_active_cases(
         # by how many cases a tenant has (asyncpg refuses a statement of more
         # than 32 767 parameters).
         case_ids = [case.id for case in cases]
-        entered_at_by_case = await po_case_repo.bulk_current_state_entered_at(context, case_ids)
+        entered_at_by_case = await po_case_repo.bulk_sla_clock_started_at(context, case_ids)
         latest_update_by_case = await supplier_update_repo.bulk_latest(context, case_ids)
         for case in cases:
             assert case.created_at is not None  # persisted rows always carry it

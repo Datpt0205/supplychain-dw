@@ -136,14 +136,15 @@ class POCaseRepositoryPort(Protocol):
         already taken in the tenant is a `ConflictError`."""
         ...
 
-    async def get_current_state_entered_at(
+    async def get_sla_clock_started_at(
         self, context: AccessContext, case_id: POCaseId
     ) -> datetime | None:
-        """When the case entered its CURRENT state, or `None` if it has never
-        transitioned (still in `PO_CREATED` with no history row) — the
-        caller falls back to `POCase.created_at` in that case, same shape
-        `missing_update_status`'s own reference-point fallback already
-        uses."""
+        """When the SLA clock of the case's current state started: its latest
+        entry into `sla_clock_start_state(state)` — the current state itself,
+        except while receiving goods, whose clock started at payment (step
+        17). `None` if it has never transitioned (still in `PO_CREATED` with no
+        history row); the caller falls back to `POCase.created_at`, same shape
+        `missing_update_status`'s own reference-point fallback already uses."""
         ...
 
     async def list_page(
@@ -178,10 +179,10 @@ class POCaseRepositoryPort(Protocol):
         guess."""
         ...
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
-        """`get_current_state_entered_at`, for many cases in one round trip
+        """`get_sla_clock_started_at`, for many cases in one round trip
         — a case with no entry here has never transitioned, same as that
         method's own `None` case; the caller falls back to `POCase.
         created_at` per case, same fallback `GetSLAEvaluation` already uses
@@ -563,7 +564,7 @@ class ActiveProductCasesPort(Protocol):
     ) -> dict[uuid.UUID, datetime]:
         """When each case made its latest transition (into the state it is in
         now, a resume included): where its SLA clock starts, as a PO case's
-        does (`POCaseRepositoryPort.bulk_current_state_entered_at`)."""
+        does (`POCaseRepositoryPort.bulk_sla_clock_started_at`)."""
         ...
 
 

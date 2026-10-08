@@ -8,6 +8,7 @@ from dw_supply_chain.domain.sla_evaluation import (
     SLAEvaluationStatus,
     evaluate_product_sla,
     evaluate_sla,
+    sla_clock_start_state,
 )
 from dw_supply_chain.sla_policy import (
     ProductCategory,
@@ -62,7 +63,6 @@ def _pending(duration_days: int) -> SLAMilestone:
         CaseState.PRODUCTION,
         CaseState.QC,
         CaseState.ARRIVED_PORT,
-        CaseState.WAREHOUSE_RECEIVING,
         CaseState.COMPLETED,
         CaseState.BLOCKED,
         CaseState.WAITING_EXTERNAL,
@@ -87,6 +87,8 @@ def test_a_state_with_no_milestone_mapping_is_not_applicable(state: CaseState) -
         (CaseState.IN_TRANSIT, "port_arrival"),
         (CaseState.WAITING_PAYMENT, "payment"),
         (CaseState.PAYMENT_COMPLETED, "warehouse_receipt"),
+        # Step 17: the receipt clock runs on while goods are received.
+        (CaseState.WAREHOUSE_RECEIVING, "warehouse_receipt"),
     ],
 )
 def test_each_mapped_state_names_its_own_milestone(state: CaseState, milestone: str) -> None:
@@ -276,3 +278,12 @@ def test_a_category_whose_own_number_is_pending_is_not_evaluated_on_the_default(
         policy=policy,
     )
     assert evaluation.status is SLAEvaluationStatus.NOT_EVALUABLE
+
+
+def test_the_receipt_clock_starts_at_payment_and_every_other_clock_at_its_own_state() -> None:
+    """Step 17 measures payment to goods in stock (QE-14, provisional): while
+    goods are received, the clock is the one that started at payment."""
+    assert sla_clock_start_state(CaseState.WAREHOUSE_RECEIVING) is CaseState.PAYMENT_COMPLETED
+    for state in CaseState:
+        if state is not CaseState.WAREHOUSE_RECEIVING:
+            assert sla_clock_start_state(state) is state

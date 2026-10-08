@@ -111,3 +111,19 @@ mutation ở Comments của
     không NCC; thân tin trong ứng dụng giữ NCC như trước.
 11. **Chưa làm ở S6:** báo cáo hằng ngày cho TP Cung ứng (QE-19, không thuộc ticket; làm
     tạm ở S8, ADR 0016 sửa đổi S8); giao diện đổi PIC (API có, trang chưa có nút).
+
+## Sửa đổi 2026-10-08 (HR3, Đạt giao quyết tạm): đồng hồ bước 17
+
+`warehouse_receipt` đo **từ lúc thanh toán xong tới lúc hàng vào kho** (QE-14, tạm), không
+còn từ thanh toán tới lúc *bắt đầu* nhập: mốc gắn cả `payment_completed` và
+`warehouse_receiving`; đồng hồ của `warehouse_receiving` bắt đầu ở lần vào
+`payment_completed` gần nhất (`domain/sla_evaluation.py`, `SLA_CLOCK_STARTS_IN` và
+`sla_clock_start_state`, một chủ; SQL của repository dựng từ bảng đó); `completed` là
+trạng thái kết thúc nên đồng hồ dừng. Tạm dừng trong lúc nhập kho rồi tiếp tục về
+`warehouse_receiving` không khởi động lại đồng hồ (đồng hồ là của khoảng từ thanh toán);
+tạm dừng lúc `payment_completed` rồi tiếp tục thì vẫn tính lại như mục 6. Port đổi tên
+`get_current_state_entered_at` / `bulk_current_state_entered_at` thành
+`get_sla_clock_started_at` / `bulk_sla_clock_started_at`. Mô tả chữ của mốc trong
+`supply_chain_sla@2.0.0.yaml` ("PAYMENT_COMPLETED → WAREHOUSE_RECEIVING") đã cũ nhưng không
+sửa tại chỗ: file đã phát hành, checksum ghim trong release manifest; bản policy kế tiếp sửa.
+

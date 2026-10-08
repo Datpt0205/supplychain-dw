@@ -553,7 +553,7 @@ async def test_current_state_entered_at_is_none_before_any_transition(
     case = _case()
     await repo.add(context, case)
 
-    assert await repo.get_current_state_entered_at(context, case.id) is None
+    assert await repo.get_sla_clock_started_at(context, case.id) is None
 
 
 async def test_save_persists_the_transition_and_current_state_entered_at_reads_it_back(
@@ -567,7 +567,7 @@ async def test_save_persists_the_transition_and_current_state_entered_at_reads_i
     case.request_deposit()
     await repo.save(context, case)
 
-    entered_at = await repo.get_current_state_entered_at(context, case.id)
+    entered_at = await repo.get_sla_clock_started_at(context, case.id)
     assert entered_at is not None
 
 
@@ -584,11 +584,11 @@ async def test_current_state_entered_at_reflects_the_latest_transition_only(
 
     case.request_deposit()
     await repo.save(context, case)
-    first_entered_at = await repo.get_current_state_entered_at(context, case.id)
+    first_entered_at = await repo.get_sla_clock_started_at(context, case.id)
 
     case.confirm_deposit()
     await repo.save(context, case)
-    second_entered_at = await repo.get_current_state_entered_at(context, case.id)
+    second_entered_at = await repo.get_sla_clock_started_at(context, case.id)
 
     assert first_entered_at is not None
     assert second_entered_at is not None
@@ -724,7 +724,7 @@ async def test_another_tenant_cannot_read_the_transition_history(
     case.request_deposit()
     await repo.save(_context(tenant=TENANT_A, workspace=WORKSPACE_A), case)
 
-    entered_at = await repo.get_current_state_entered_at(
+    entered_at = await repo.get_sla_clock_started_at(
         _context(tenant=TENANT_B, workspace=WORKSPACE_B), case.id
     )
     assert entered_at is None
@@ -755,8 +755,56 @@ async def test_rls_hides_transition_rows_even_from_a_query_with_no_tenant_filter
     assert rows == []
 
 
-# -- list_active / bulk_current_state_entered_at: the Attention Queue's own
+# -- list_active / bulk_sla_clock_started_at: the Attention Queue's own
 #    bulk reads ------------------------------------------------------------
+
+
+async def test_receiving_goods_keeps_the_receipt_clock_that_started_at_payment(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """Step 17's SLA measures payment to goods in stock: starting to receive
+    does not restart it, and the SQL names the same start state as the domain
+    (`sla_clock_start_state`)."""
+    tenant, workspace = uuid.uuid4(), uuid.uuid4()
+    repo = SqlPOCaseRepository(sessions)
+    context = _context(tenant=tenant, workspace=workspace)
+    case = _case(tenant=tenant, workspace=workspace)
+    await repo.add(context, case)
+    for step in (
+        case.request_deposit,
+        case.confirm_deposit,
+        case.start_pre_production,
+        lambda: case.start_production(
+            ProductionGate(required=False, test=PreProductionTest.PENDING)
+        ),
+        case.send_to_qc,
+        case.pass_qc,
+        case.arrive_at_port,
+        case.request_final_payment,
+        case.confirm_payment,
+    ):
+        step()
+        await repo.save(context, case)
+    (paid,) = [
+        t
+        for t in await oldest_first(lambda r: repo.list_transitions(context, case.id, r))
+        if t.to_state is CaseState.PAYMENT_COMPLETED
+    ]
+    assert await repo.get_sla_clock_started_at(context, case.id) == paid.occurred_at
+
+    case.start_warehouse_receiving()
+    await repo.save(context, case)
+    history = await oldest_first(lambda r: repo.list_transitions(context, case.id, r))
+    assert history[-1].to_state is CaseState.WAREHOUSE_RECEIVING
+    assert history[-1].occurred_at > paid.occurred_at
+
+    assert await repo.get_sla_clock_started_at(context, case.id) == paid.occurred_at
+    assert await repo.bulk_sla_clock_started_at(context, [case.id]) == {
+        case.id.value: paid.occurred_at
+    }
+    # Another workspace asking for the same case id gets no clock at all.
+    other = _context(tenant=tenant, workspace=uuid.uuid4())
+    assert await repo.bulk_sla_clock_started_at(other, [case.id]) == {}
 
 
 async def _walk_to_completed(
@@ -830,7 +878,7 @@ async def test_list_active_only_returns_the_callers_tenant(
     assert [c.id for c in result] == [mine.id]
 
 
-async def test_bulk_current_state_entered_at_reflects_each_cases_own_latest_transition(
+async def test_bulk_sla_clock_started_at_reflects_each_cases_own_latest_transition(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     tenant, workspace = uuid.uuid4(), uuid.uuid4()
@@ -846,21 +894,19 @@ async def test_bulk_current_state_entered_at_reflects_each_cases_own_latest_tran
     never_transitioned = _case(tenant=tenant, workspace=workspace)
     await repo.add(context, never_transitioned)
 
-    result = await repo.bulk_current_state_entered_at(
-        context, [transitioned.id, never_transitioned.id]
-    )
+    result = await repo.bulk_sla_clock_started_at(context, [transitioned.id, never_transitioned.id])
 
     assert transitioned.id.value in result
     assert never_transitioned.id.value not in result
-    direct = await repo.get_current_state_entered_at(context, transitioned.id)
+    direct = await repo.get_sla_clock_started_at(context, transitioned.id)
     assert result[transitioned.id.value] == direct
 
 
-async def test_bulk_current_state_entered_at_with_no_case_ids_makes_no_query(
+async def test_bulk_sla_clock_started_at_with_no_case_ids_makes_no_query(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     repo = SqlPOCaseRepository(sessions)
-    assert await repo.bulk_current_state_entered_at(_context(), []) == {}
+    assert await repo.bulk_sla_clock_started_at(_context(), []) == {}
 
 
 @pytest.mark.parametrize("padding", ["\t", "\u00a0", " \r\n"])

@@ -104,7 +104,7 @@ class FakeCases:
         ]
         return newest_first_page(active, request, case_position)
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
         return {i.value: self.entered_at[i.value] for i in case_ids if i.value in self.entered_at}
@@ -122,7 +122,7 @@ class FakeCases:
     ) -> None:
         raise NotImplementedError("not exercised by the sweep")
 
-    async def get_current_state_entered_at(
+    async def get_sla_clock_started_at(
         self, context: AccessContext, case_id: POCaseId
     ) -> datetime | None:
         raise NotImplementedError("not exercised by the sweep")

@@ -52,6 +52,7 @@ from dw_supply_chain.domain.po_case import (
     POCaseId,
     POCaseLine,
 )
+from dw_supply_chain.domain.sla_evaluation import SLA_CLOCK_STARTS_IN
 
 _lines = tables.po_case_lines
 PO_REFERENCE_CONSTRAINT = "uq_po_cases_tenant_id_po_reference"
@@ -181,6 +182,18 @@ def _is_active(state: sa.ColumnElement[str]) -> sa.ColumnElement[bool]:
     time by `handlers.assess_active_cases`) and its drill-down use, so the
     count and the list it links to cannot come apart."""
     return state.notin_([terminal.value for terminal in TERMINAL_STATES])
+
+
+def _clock_start_state(state: sa.ColumnElement[str]) -> sa.ColumnElement[str]:
+    """`sla_clock_start_state`, in SQL: built from the domain's own table, so
+    the two cannot name different states."""
+    if not SLA_CLOCK_STARTS_IN:
+        return state
+    return sa.case(
+        {current.value: start.value for current, start in SLA_CLOCK_STARTS_IN.items()},
+        value=state,
+        else_=state,
+    )
 
 
 def _row_position(row: Row[tuple]) -> CursorPosition:  # type: ignore[type-arg]
@@ -326,19 +339,11 @@ class SqlPOCaseRepository:
                 raise
             raise refusal from exc
 
-    async def get_current_state_entered_at(
+    async def get_sla_clock_started_at(
         self, context: AccessContext, case_id: POCaseId
     ) -> datetime | None:
-        scope = TenantScope.from_access_context(context)
-        async with tenant_session(self.session_factory, scope) as session:
-            result = await session.execute(
-                sa.select(tables.po_case_state_transitions.c.occurred_at)
-                .where(tables.po_case_state_transitions.c.po_case_id == case_id.value)
-                .order_by(tables.po_case_state_transitions.c.occurred_at.desc())
-                .limit(1)
-            )
-            row = result.first()
-            return row.occurred_at if row else None
+        found = await self.bulk_sla_clock_started_at(context, [case_id])
+        return found.get(case_id.value)
 
     async def list_page(
         self, context: AccessContext, request: PageRequest, case_filter: POCaseListFilter
@@ -419,23 +424,37 @@ class SqlPOCaseRepository:
             )
             return [_case_from_row(row) for row in result]
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
+        """The latest entry of each case into the state its SLA clock starts
+        in (`sla_clock_start_state` of its current state, as SQL)."""
         if not case_ids:
             return {}
         scope = TenantScope.from_access_context(context)
         ids = [case_id.value for case_id in case_ids]
+        transitions, cases = tables.po_case_state_transitions, tables.po_cases
         async with tenant_session(self.session_factory, scope) as session:
             result = await session.execute(
                 sa.select(
-                    tables.po_case_state_transitions.c.po_case_id,
-                    sa.func.max(tables.po_case_state_transitions.c.occurred_at).label(
-                        "occurred_at"
-                    ),
+                    transitions.c.po_case_id,
+                    sa.func.max(transitions.c.occurred_at).label("occurred_at"),
                 )
-                .where(tables.po_case_state_transitions.c.po_case_id.in_(ids))
-                .group_by(tables.po_case_state_transitions.c.po_case_id)
+                .select_from(
+                    transitions.join(
+                        cases,
+                        sa.and_(
+                            cases.c.tenant_id == transitions.c.tenant_id,
+                            cases.c.workspace_id == transitions.c.workspace_id,
+                            cases.c.id == transitions.c.po_case_id,
+                        ),
+                    )
+                )
+                .where(
+                    transitions.c.po_case_id.in_(ids),
+                    transitions.c.to_state == _clock_start_state(cases.c.state),
+                )
+                .group_by(transitions.c.po_case_id)
             )
             return {row.po_case_id: row.occurred_at for row in result}
 

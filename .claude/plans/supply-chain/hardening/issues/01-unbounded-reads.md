@@ -9,7 +9,7 @@ Area: supply-chain
 Bốn chỗ đọc không có trần (mục "Unbounded reads" và "Pending-approvals card" trong
 `.claude/plans/supply-chain.md`, phần Open):
 
-- `list_active` đọc mọi hồ sơ PO đang chạy, rồi `bulk_current_state_entered_at` và
+- `list_active` đọc mọi hồ sơ PO đang chạy, rồi `bulk_sla_clock_started_at` và
   `bulk_latest` bind một tham số cho mỗi hồ sơ: quá 32 767 thì asyncpg từ chối, API
   trả 500 (fail closed, nhưng là một trang chết).
 - Lịch sử chuyển trạng thái của một hồ sơ (PO và hồ sơ phát triển) trả cả lịch sử.

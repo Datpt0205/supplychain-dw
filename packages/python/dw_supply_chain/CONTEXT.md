@@ -176,7 +176,9 @@ NCC).
 
 **Mốc SLA** (milestone):
 Thời hạn của một trạng thái, đo từ lần chuyển gần nhất vào trạng thái đó (tiếp tục sau
-tạm dừng tính lại; đang tạm dừng thì không áp dụng, QE-14). Policy
+tạm dừng tính lại; đang tạm dừng thì không áp dụng, QE-14). Riêng `warehouse_receipt`
+(bước 17) trải hai trạng thái: đồng hồ bắt đầu lúc vào `payment_completed`, chạy tiếp qua
+`warehouse_receiving`, dừng khi `completed` (`sla_clock_start_state`). Policy
 `supply_chain_sla@2.0.0`, gắn trong `sla_evaluation.py`: Hồ sơ PO `deposit`,
 `port_arrival`, `payment`, `warehouse_receipt`; hồ sơ phát triển `sample_collection`
 (`sample_requested`), `sample_testing`, `bod_review` (`pending_bod_review`), `bm04`
@@ -223,7 +225,7 @@ Một lần gửi một thông báo tới một người qua một kênh, có tr
 | `arrived_port`        | Đã đến cảng          | Bước 15                                      |
 | `waiting_payment`     | Chờ thanh toán       | Bước 16; mốc `payment`                       |
 | `payment_completed`   | Đã thanh toán        | Bước 16; mốc `warehouse_receipt`             |
-| `warehouse_receiving` | Đang nhập kho        | Bước 17                                      |
+| `warehouse_receiving` | Đang nhập kho        | Bước 17; mốc `warehouse_receipt` chạy tiếp   |
 | `completed`           | Hoàn tất             | Kết thúc                                     |
 | `waiting_external`    | Chờ bên ngoài        | Ngắt; `resume` về trạng thái trước           |
 | `blocked`             | Đang bị chặn         | Ngắt                                         |

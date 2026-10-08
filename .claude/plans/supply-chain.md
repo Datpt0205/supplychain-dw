@@ -77,6 +77,7 @@ means platform code, an upstream candidate (ADR 0011).
 | H2    | `hosting/issues/02-live-domain.md`                                        | —       | ready-for-human | H                                   |
 | HR1   | `hardening/issues/01-unbounded-reads.md`                                  | partly  | resolved        | —                                   |
 | HR2   | `hardening/issues/02-follow-up-sweep-audits-as-its-lane.md`               | no      | resolved        | platform ADR 0011 (M3)              |
+| HR3   | `hardening/issues/03-step-17-sla-clock.md`                                | no      | resolved        | QE-14 provisional                   |
 
 **Next:** H2 (the domain the webhook needs; runbook `docs/deploy/host.md`);
 Z4p when a real photo update exists; ZL measures the webhook header (Z3).
@@ -132,6 +133,7 @@ email as a second channel.
 | M2     | `7502a96` | Platform `2ebd50f` merged: one copy of the channel work (platform wording, ADR 0005–0009 twins of 0012–0015/0023); decide command takes subjects + strict prefixes from the product; five twin migrations idempotent, head `c2d7fc0648be`; dev DB migrated in place, each object once.                                                                                                |
 | HR1    | HR1       | Paged reads: active cases a page at a time (bulk reads bind one page of ids), transitions `Page` newest first, brief reads only the 10 it shows (`entries_shown`), `GET /po-cases/{id}/approvals` filtered on the server (platform `payload_match`); `d9e136c14d83` indexes.                                                                                                       |
 | HR2    | HR2       | Follow-up sweep audits its own open/resolve as `system:supply_chain_follow_ups` (`lane_audit_event`), in the row's transaction, only for rows it changed; lane registered by `FOLLOW_UP_SWEEP_LANE`.                                                                                                                                                                              |
+| HR3    | HR3       | Step 17's `warehouse_receipt` runs from payment to goods in stock: mapped on `warehouse_receiving` too, its clock starts at the latest entry into `payment_completed` (`sla_clock_start_state`, SQL built from it); ports renamed `*_sla_clock_started_at`; ADR 0019 amended.                                                                                                   |
 | M3     | `4890979` | Platform `ab33703` merged: prompts through the containing registry (5 new versions, delay analysis raw only for days and milestones, hostile-value tests; `supply_chain@1.8.0`); decision audit with channel decisions; SoD second person and role recheck (two Open items closed); `sc_*` role labels; one `@dw/ui` PageHeader/RegionState in this theme; merge head `cee9cf387387`. |
 
 ## Open — named, not fixed, still true after the port
@@ -147,9 +149,6 @@ after P before acting on one.
   supplier-update cadence 1d/2d; uniform delay propagation; SLA
   `not_applicable` while interrupted.
 - **Suppliers have no master record;** two spellings are two suppliers.
-- **Step 17's SLA** (`warehouse_receipt`) runs while the case sits in
-  `payment_completed`, so it measures payment to start of receiving, not to
-  goods in stock.
 - **Context ADRs sit in `docs/adr/`** (0016–0019, 0021); `docs/agents/domain.md`
   puts them in `packages/python/dw_supply_chain/docs/adr/`. Move them once P
   is resolved, and fix the links.
