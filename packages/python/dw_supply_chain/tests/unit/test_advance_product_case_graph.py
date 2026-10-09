@@ -164,9 +164,21 @@ async def test_starting_pauses_with_the_minimal_payload_and_applies_nothing() ->
         "product_name",
         "sample_round",
         "required_scope",
+        # Ticket ai-automation/10: the tờ trình's draft (id, hash, gaps; never a
+        # price), or null when none was prepared.
+        "bod_submission",
     }
+    assert payload["bod_submission"] is None
     assert (payload["product_dev_case_id"], payload["sample_round"]) == (str(case.id), 2)
     assert cases.steps == [] and cases.audits == []
+
+
+async def test_the_review_names_the_submission_prepared_before_it() -> None:
+    case = _waiting()
+    run = Run(FakeReviewCases(case))
+    submission = {"draft_id": "d", "content_sha256": "a" * 64, "gaps": ["recommendation"]}
+    state = await run.start(_input(case, bod_submission=submission))
+    assert state["__interrupt__"][0].value["bod_submission"] == submission
 
 
 async def test_approving_moves_the_case_to_the_profile_as_the_decider() -> None:

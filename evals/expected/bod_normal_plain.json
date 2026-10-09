@@ -1,0 +1,12 @@
+{
+  "model_calls": 1,
+  "drafted": true,
+  "fields": {
+    "product_name": "Noi inox 3 day 24cm",
+    "evaluation_result": "Đạt (vòng 1)"
+  },
+  "prompt_must_not_contain": [
+    "245.000",
+    "245000"
+  ]
+}

@@ -78,6 +78,9 @@ class ProductReviewState(TypedDict, total=False):
     product_name: str
     sample_round: int
     required_scope: str
+    # The tờ trình AI drafted before the review was raised (ticket
+    # ai-automation/10): its draft id, content hash and gaps; None: none.
+    bod_submission: dict[str, Any] | None
     approved: bool
     approver_comment: str
     decided_by: str
@@ -97,6 +100,9 @@ def _request_review(state: ProductReviewState) -> ProductReviewState:
             "product_name": state["product_name"],
             "sample_round": state["sample_round"],
             "required_scope": state["required_scope"],
+            # Written by code, never a model: the draft BGĐ reads beside the
+            # decision (prices redacted per reader), or null ("chưa có tờ trình").
+            "bod_submission": state.get("bod_submission"),
         }
     )
     approved = decision.get("approved")

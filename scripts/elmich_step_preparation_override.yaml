@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_step_preparation
-policy_version: "1.2.0"
+policy_version: "1.3.0"
 
 # Override của TENANT ELMICH (không phải platform default): các bước AI chuẩn bị
 # (ADR 0025, ticket ai-automation/05). Ghi bằng
@@ -56,3 +56,7 @@ supplier_messages:
     supplier_confirmation,
     sample_revision_request,
   ]
+# 1.3.0 (ticket ai-automation/10): bước 6, AI soạn tờ trình BGĐ (tóm tắt, rủi
+# ro, đề xuất có dẫn chứng; mã, tên, kết quả đánh giá, giá do code điền) trước
+# khi trình BGĐ duyệt; người không có quyền xem giá thấy giá bị ẩn.
+bod_submission: true

@@ -198,6 +198,9 @@ class SupplyChainStepPreparation(BaseModel):
     # ai-automation/07), worded by `supply_chain_supplier_messages`; a person
     # copies and sends each. Empty: none is drafted.
     supplier_messages: tuple[MessagePurpose, ...] = ()
+    # The tờ trình BGĐ AI drafts before BGĐ's review is raised (ticket
+    # ai-automation/10). False: the review is raised without one.
+    bod_submission: bool = False
 
     @model_validator(mode="after")
     def _each_state_once(self) -> SupplyChainStepPreparation:

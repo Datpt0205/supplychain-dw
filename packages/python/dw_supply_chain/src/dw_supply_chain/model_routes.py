@@ -31,6 +31,7 @@ from dw_supply_chain.domain.case_document import DocumentType
 from dw_supply_chain.domain.extraction import EXTRACTION_SPECS
 
 __all__ = [
+    "BOD_SUBMISSION_TASK",
     "DRAFTING_TASKS",
     "MODEL_ROUTES_POLICY_ID",
     "MODEL_TASKS",
@@ -54,7 +55,8 @@ PROPOSAL_LIST_TASK = extraction_task(DocumentType.PROPOSAL_LIST)
 # The drafts a model writes, each graded by its own gate cases.
 SUPPLIER_MESSAGE_TASK = "draft.supplier_message"
 SAMPLE_EVALUATION_TASK = "draft.sample_evaluation"
-DRAFTING_TASKS = frozenset({SUPPLIER_MESSAGE_TASK, SAMPLE_EVALUATION_TASK})
+BOD_SUBMISSION_TASK = "draft.bod_submission"
+DRAFTING_TASKS = frozenset({SUPPLIER_MESSAGE_TASK, SAMPLE_EVALUATION_TASK, BOD_SUBMISSION_TASK})
 
 # Every model task of this context, by name: what a route and a gate case name.
 MODEL_TASKS = (

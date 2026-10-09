@@ -124,6 +124,7 @@ from dw_supply_chain.adapters.persistence.supplier_update_repository import (
 )
 from dw_supply_chain.adapters.storage.minio_case_documents import MinioCaseDocumentStorage
 from dw_supply_chain.application.approval_subject import ProductCaseApprovalSubject
+from dw_supply_chain.application.bod_submissions import PrepareBodSubmission
 from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.daily_report import SendStageOneReport
 from dw_supply_chain.application.document_drafts import (
@@ -160,6 +161,7 @@ from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.step_proposal import STEP_PROPOSAL_PREFIX
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
 from dw_supply_chain.model_routes import (
+    BOD_SUBMISSION_TASK,
     PROPOSAL_LIST_TASK,
     SAMPLE_EVALUATION_TASK,
     SUPPLIER_MESSAGE_TASK,
@@ -590,10 +592,55 @@ def build_product_review_reconcile(
     runner: LangGraphWorkflowRunner,
     configs_dir: Path,
     ids: IdGenerator,
+    gateway: ModelGateway | None = None,
+    model_profile: str | None = None,
+    gates_dir: Path | None = None,
+    clock: UtcClock | None = None,
 ) -> ReconcileProductApprovals:
     """The reconcile lane, starting reviews on `runner`
-    (`build_product_review_runner`)."""
+    (`build_product_review_runner`). Given `gateway` (the one-call gateway),
+    it drafts the tờ trình BGĐ reads before raising BGĐ's review (ticket
+    ai-automation/10), on the route `supply_chain_model_routes` gives it."""
     product_cases = SqlProductCaseRepository(sessions)
+    submissions = None
+    if gateway is not None and clock is not None:
+        routes = load_supply_chain_model_routes(
+            configs_dir / "policies" / MODEL_ROUTES_POLICY_FILE,
+            gates_dir or configs_dir.parent / "evals" / "gates",
+        )
+        drafts = SqlDocumentDraftRepository(sessions)
+        registry = DocTemplateRegistry(inspector=DocxTemplateInspector())
+        registry.load_directory(configs_dir / "doc_templates")
+        templates = TenantDocTemplates(
+            registry=registry, overrides=SqlDocTemplateOverrides(sessions)
+        )
+        submissions = PrepareBodSubmission(
+            cases=product_cases,
+            documents=SqlCaseDocumentRepository(sessions),
+            readings=SqlExtractionReadings(sessions),
+            drafts=drafts,
+            prepare_draft=PrepareDocumentDraft(
+                cases={
+                    CaseKind.PO: SqlPOCaseRepository(sessions),
+                    CaseKind.PRODUCT: product_cases,
+                },
+                drafts=drafts,
+                templates=templates,
+                ids=ids,
+                clock=clock,
+            ),
+            plans=SqlTenantPlans(sessions),
+            gateway=gateway,
+            ids=ids,
+            clock=clock,
+            worker_id=product_review_graph.WORKER_ID,
+            worker_version=product_review_graph.WORKER_VERSION,
+            policy_override_repo=SqlPolicyOverrideRepository(sessions),
+            platform_default_policy=load_supply_chain_step_preparation(
+                configs_dir / "policies" / STEP_PREPARATION_POLICY_FILE
+            ),
+            model_profile=routes.profile_for(BOD_SUBMISSION_TASK) or model_profile,
+        )
     # Only `raised_by_payload` is asked here, which no audience narrows; the
     # authorization is the query's constructor argument all the same.
     approvals = SqlPendingApprovalQuery(sessions, ScopeAuthorizationService())
@@ -611,6 +658,7 @@ def build_product_review_reconcile(
                 configs_dir / "policies" / PRODUCT_APPROVALS_POLICY_FILE
             ),
             ids=ids,
+            submissions=submissions,
         ),
     )
 

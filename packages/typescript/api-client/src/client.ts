@@ -1864,6 +1864,15 @@ export class ApiClient {
     );
   }
 
+  /** One version of a draft, prices hidden per the caller's scope. */
+  getDraft(draftId: string): Promise<DocumentDraft> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/drafts/${encodeURIComponent(draftId)}`,
+      documentDraftSchema,
+    );
+  }
+
   /** A person's edit of a draft: the named fields replaced, a new version. */
   reviseDraft(
     draftId: string,

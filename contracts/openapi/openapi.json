@@ -9253,6 +9253,11 @@
       "SupplyChainStepPreparation": {
         "additionalProperties": false,
         "properties": {
+          "bod_submission": {
+            "default": false,
+            "title": "Bod Submission",
+            "type": "boolean"
+          },
           "policy_id": {
             "title": "Policy Id",
             "type": "string"

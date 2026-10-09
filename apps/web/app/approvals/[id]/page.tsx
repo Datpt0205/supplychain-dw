@@ -20,6 +20,10 @@ import { PageHeader, RegionState } from "@dw/ui";
 import { LoadError } from "../../../components/load-error";
 import { ApprovalStatusTag } from "../../../components/approval-status-tag";
 import {
+  BOD_REVIEW_APPROVAL_TYPE,
+  BodSubmissionPanel,
+} from "../../../components/supply-chain/bod-submission-panel";
+import {
   ToolApprovalPayload,
   approvalTitle,
 } from "../../../components/tool-approval";
@@ -173,6 +177,9 @@ function ApprovalDetail() {
             <ToolApprovalPayload payload={approval.payload} />
           </Flex>
         </Card>
+        {approval.approval_type === BOD_REVIEW_APPROVAL_TYPE && (
+          <BodSubmissionPanel payload={approval.payload} />
+        )}
         <ZaloDecision approval={approval} view={view} />
         <Typography.Text>
           Quyết trên web: <Link href="/approvals">mở trang Duyệt</Link>.

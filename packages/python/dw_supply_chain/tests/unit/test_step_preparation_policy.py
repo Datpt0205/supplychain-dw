@@ -59,6 +59,7 @@ def test_elmichs_override_loads_and_prepares_two_steps() -> None:
     ]
     assert policy.steps[0].physical and policy.steps[0].result_fields
     assert set(policy.supplier_messages) == set(MessagePurpose)
+    assert policy.bod_submission
 
 
 def test_the_platform_drafts_no_supplier_message_and_a_purpose_is_listed_once() -> None:

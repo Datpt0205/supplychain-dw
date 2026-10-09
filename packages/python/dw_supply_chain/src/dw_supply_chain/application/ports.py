@@ -364,6 +364,19 @@ class ProductApprovalPort(Protocol):
     ) -> ReviewRaise: ...
 
 
+class SubmissionRefLike(Protocol):
+    def as_json(self) -> dict[str, Any]: ...
+
+
+class BodSubmissionPort(Protocol):
+    """Drafts the tờ trình BGĐ reads beside its review (ticket
+    ai-automation/10), or None when there is none to be had."""
+
+    async def prepare(
+        self, context: AccessContext, case: ProductDevelopmentCase
+    ) -> SubmissionRefLike | None: ...
+
+
 class ReviewRunStarterPort(Protocol):
     """Starts the review graph's run. `dw_agent_runtime`'s runner satisfies it;
     `uq_worker_runs_active_thread` refuses a second unfinished run on one

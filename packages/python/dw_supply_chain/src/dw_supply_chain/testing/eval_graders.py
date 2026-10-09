@@ -109,6 +109,7 @@ from dw_supply_chain.sla_policy import (
     SupplyChainSLAPolicy,
     load_supply_chain_sla_policy,
 )
+from dw_supply_chain.testing.bod_submission_eval import grade_bod_submission
 from dw_supply_chain.testing.extraction_eval import grade_document_extraction
 from dw_supply_chain.testing.po_cases import InMemoryPOCases
 from dw_supply_chain.testing.preparation_eval import grade_step_preparation
@@ -1019,4 +1020,5 @@ SUPPLY_CHAIN_GRADERS: dict[str, Grader] = {
     "supply_chain.step_preparation": grade_step_preparation,
     "supply_chain.supplier_message": grade_supplier_message,
     "supply_chain.proposal_list": grade_proposal_list,
+    "supply_chain.bod_submission": grade_bod_submission,
 }

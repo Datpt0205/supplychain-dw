@@ -192,3 +192,21 @@ Profile `qwen` là chỗ giữ, chưa đo.
    hình (không plan, hết lượt, sai schema) thì bản nháp vẫn có bảng của code và các ô trống
    có tên. Trường do mô hình viết mang nguồn `ai_written` với các khóa nó dẫn; trang hiện "AI
    viết, đã kiểm dẫn chứng", không bao giờ như giá trị máy đọc hay người kiểm.
+
+## Sửa đổi 2026-10-09 (tạm, lát AI-10; tờ trình BGĐ)
+
+1. **Tờ trình gắn vào approval có sẵn, không phải đề xuất bước.** Bước 6 không có hành
+   động một người bấm (`bod_approve`, `bod_reject` là của graph); `pass_sample` vẫn làm
+   hồ sơ chờ BGĐ và lane đối soát vẫn trình approval `supply_chain.product_action.bod_review`.
+   Trước khi khởi động run duyệt (nên trước khi báo BGĐ), `EnsureProductApproval` hỏi
+   `PrepareBodSubmission`; payload của approval mang `bod_submission` (id bản nháp, sha256,
+   khoảng trống) hay null. Thêm một khóa payload là thay đổi tương thích: graph giữ phiên bản
+   1.0.0 để run đang chờ duyệt vẫn resume được.
+2. **Tờ trình là bản nháp, không thành chứng từ.** Giá là trường của bản nháp, nên ai đọc
+   (trang duyệt, xem trước) thấy theo scope của mình; không có file nào in giá cho người đọc
+   chứng từ (điểm 7 của sửa đổi AI-05 không bị mở rộng).
+3. **Mô hình không thấy giá.** Bằng chứng gồm hồ sơ, lịch sử, biên bản đã duyệt và báo giá
+   đã đọc bỏ mọi trường giá; đơn giá, tiền tệ, MOQ do code điền từ bản đọc có trích dẫn.
+4. **Bật theo tenant** (`bod_submission` của policy chuẩn bị bước; nền tảng: tắt). Chỉ host
+   có gateway (worker) soạn; API trình duyệt khi người bấm bước bằng tay thì không có tờ
+   trình. Mô hình hỏng, hết lượt, sai schema: không tờ trình, duyệt vẫn trình.

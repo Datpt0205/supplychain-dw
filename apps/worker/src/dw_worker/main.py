@@ -622,7 +622,21 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         )
         product_review_reconcile = build_product_review_reconcile_consumer(
             build_product_review_reconcile(
-                sessions, runner=review_runner, configs_dir=REPO_ROOT / "configs", ids=ids
+                sessions,
+                runner=review_runner,
+                configs_dir=REPO_ROOT / "configs",
+                ids=ids,
+                # The tờ trình BGĐ reads beside its review (ticket
+                # ai-automation/10), drafted before the review is raised.
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                model_profile=settings.model_profile,
+                gates_dir=REPO_ROOT / "evals" / "gates",
+                clock=clock,
             )
         )
         # Lists of proposed products read into rows (ticket ai-automation/08):

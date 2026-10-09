@@ -3621,6 +3621,11 @@ export interface components {
         };
         /** SupplyChainStepPreparation */
         SupplyChainStepPreparation: {
+            /**
+             * Bod Submission
+             * @default false
+             */
+            bod_submission: boolean;
             /** Policy Id */
             policy_id: string;
             /** Policy Version */

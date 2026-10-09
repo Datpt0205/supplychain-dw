@@ -45,6 +45,7 @@ import logging
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from dw_agent_runtime.contracts import RunContext
 from dw_kernel.errors import ConflictError
@@ -56,6 +57,7 @@ from dw_platform.domain.approval import APPROVALS_DECIDE, approval_link
 from dw_supply_chain.application.follow_up_sweep import sweep_context
 from dw_supply_chain.application.handlers import resolve_product_approvals
 from dw_supply_chain.application.ports import (
+    BodSubmissionPort,
     PendingApprovalRecord,
     ProductCaseListFilter,
     ProductCaseRepositoryPort,
@@ -209,6 +211,9 @@ class EnsureProductApproval:
     policy_override_repo: PolicyOverridePort
     platform_default_approvals: SupplyChainProductApprovals
     ids: IdGenerator
+    # The tờ trình AI drafts before BGĐ's review is raised (ticket
+    # ai-automation/10); a host without one raises the review without it.
+    submissions: BodSubmissionPort | None = None
 
     async def pending(
         self, context: AccessContext, case: ProductDevelopmentCase
@@ -240,6 +245,9 @@ class EnsureProductApproval:
             context, self.policy_override_repo, self.platform_default_approvals
         )
         thread_id = _thread_id(case.id.value, wait.kind, wait.round_of(case))
+        input_payload = wait.input_of(case, policy)
+        if wait.kind == "bod_review":
+            input_payload["bod_submission"] = await self._submission(context, case)
         run_id = self.ids.new_uuid()
         try:
             await self.runner.start(
@@ -258,7 +266,7 @@ class EnsureProductApproval:
                     trace_id=str(run_id),
                     subject_ref=f"product_dev_case:{case.id}",
                 ),
-                input_payload=wait.input_of(case, policy),
+                input_payload=input_payload,
             )
         except ConflictError as exc:
             # Only the thread's own claim means "someone else is raising it".
@@ -271,6 +279,21 @@ class EnsureProductApproval:
             return ReviewRaise.NOT_RAISED
         await self.notify(context, case, raised, requester.principal_id)
         return ReviewRaise.RAISED
+
+    async def _submission(
+        self, context: AccessContext, case: ProductDevelopmentCase
+    ) -> dict[str, Any] | None:
+        """The tờ trình's draft, prepared BEFORE the review is raised and BGĐ
+        told; none (no drafter here, or it failed) does not hold the review
+        back: the approval then says there is no tờ trình."""
+        if self.submissions is None:
+            return None
+        try:
+            ref = await self.submissions.prepare(context, case)
+        except Exception:
+            logger.exception("tờ trình not prepared", extra={"case_id": str(case.id)})
+            return None
+        return None if ref is None else ref.as_json()
 
     async def notify(
         self,

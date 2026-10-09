@@ -312,6 +312,8 @@ async def test_raising_starts_one_run_stamped_with_the_tenants_scope_and_the_tes
         "product_name": "Nồi inox 3 đáy 24cm",
         "sample_round": 2,
         "required_scope": BOD_SCOPE,
+        # No drafter wired here: the review is raised without a tờ trình.
+        "bod_submission": None,
     }
 
 
