@@ -315,6 +315,20 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # Document drafts and templates (ticket ai-automation/03): own router.
+    if container.supply_chain_drafts is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.draft_routes import build_draft_router
+
+        app.include_router(
+            build_draft_router(
+                container.supply_chain_drafts,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
     # Product-development cases (stage 1): their own router on their own guard,
     # as the documents router is.
     if (

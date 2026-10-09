@@ -501,6 +501,8 @@ export const documentTypeSchema = z.enum([
   "pre_production_test_report",
   // A supplier's quotation or specification (ai-automation/02).
   "supplier_quotation",
+  // The submission to BGĐ at step 6 (tờ trình; ai-automation/03).
+  "bod_submission",
 ]);
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 
@@ -1011,3 +1013,88 @@ export const poCommercialSchema = z.object({
   can_edit: z.boolean(),
 });
 export type POCommercial = z.infer<typeof poCommercialSchema>;
+
+// ---- document drafts (ADR 0025 point 4, ticket ai-automation/03) -----------
+
+export const templateFieldKindSchema = z.enum([
+  "text",
+  "number",
+  "date",
+  "table",
+]);
+export type TemplateFieldKind = z.infer<typeof templateFieldKindSchema>;
+
+/** What a draft version is: open, decided, or replaced by a newer version. */
+export const draftStatusSchema = z.enum([
+  "open",
+  "confirmed",
+  "rejected",
+  "superseded",
+]);
+export type DraftStatus = z.infer<typeof draftStatusSchema>;
+
+export const draftColumnSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  kind: templateFieldKindSchema,
+});
+export type DraftColumn = z.infer<typeof draftColumnSchema>;
+
+/** Where a value came from: a document and its quote, or the person who
+ * typed it; null when code computed it from stored data. */
+export const draftFieldSourceSchema = z.object({
+  document_id: z.string().uuid().nullable(),
+  quote: z.string().nullable(),
+  edited_by: z.string().uuid().nullable(),
+});
+export type DraftFieldSource = z.infer<typeof draftFieldSourceSchema>;
+
+/** Mirrors `DraftFieldView`. A hidden price is `value: null, redacted: true`
+ * (a table names its hidden columns in `redacted_columns`). */
+export const draftFieldSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  kind: templateFieldKindSchema,
+  required: z.boolean(),
+  value: z.string().nullable(),
+  rows: z.array(z.record(z.string(), z.string().nullable())).nullable(),
+  columns: z.array(draftColumnSchema).nullable(),
+  redacted: z.boolean(),
+  redacted_columns: z.array(z.string()),
+  gap: z.boolean(),
+  source: draftFieldSourceSchema.nullable(),
+});
+export type DraftField = z.infer<typeof draftFieldSchema>;
+
+export const draftSourceSchema = z.object({
+  document_id: z.string().uuid(),
+  sha256: z.string(),
+  extraction_id: z.string().uuid().nullable(),
+});
+export type DraftSource = z.infer<typeof draftSourceSchema>;
+
+/** Mirrors `DraftView`: one version of a draft document. */
+export const documentDraftSchema = z.object({
+  id: z.string().uuid(),
+  lineage_id: z.string().uuid(),
+  version: z.number().int(),
+  case_kind: z.enum(["po", "product"]),
+  case_id: z.string().uuid(),
+  doc_type: documentTypeSchema,
+  template_id: z.string(),
+  template_version: z.string(),
+  title: z.string(),
+  status: draftStatusSchema,
+  decision_reason: z.string().nullable(),
+  prompt_id: z.string().nullable(),
+  prompt_version: z.string().nullable(),
+  content_sha256: z.string(),
+  gaps: z.array(z.string()),
+  sources: z.array(draftSourceSchema),
+  fields: z.array(draftFieldSchema),
+  prices_visible: z.boolean(),
+  can_edit: z.boolean(),
+  created_by: z.string().uuid(),
+  created_at: z.string(),
+});
+export type DocumentDraft = z.infer<typeof documentDraftSchema>;

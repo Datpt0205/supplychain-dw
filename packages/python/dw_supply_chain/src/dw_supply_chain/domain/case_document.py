@@ -60,6 +60,9 @@ class DocumentType(StrEnum):
     # A supplier's quotation or specification (ticket ai-automation/02): read
     # by the extraction lane into cited fields.
     SUPPLIER_QUOTATION = "supplier_quotation"
+    # The submission to BGĐ at step 6 (tờ trình; ai-automation/03): drafted
+    # from a template, a document once a person approves it.
+    BOD_SUBMISSION = "bod_submission"
 
 
 class CaseKind(StrEnum):

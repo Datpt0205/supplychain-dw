@@ -956,6 +956,7 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "pydantic" },
+    { name = "python-docx" },
     { name = "pyyaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
@@ -973,6 +974,7 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=1,<2" },
     { name = "langgraph", specifier = ">=0.6,<2" },
     { name = "pydantic", specifier = ">=2.10,<3" },
+    { name = "python-docx", specifier = ">=1.1,<2" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36,<2.1" },
 ]

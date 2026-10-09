@@ -1,7 +1,8 @@
 """Generate the immutable release manifest.
 
 Collects every versioned artifact — platform, API, workers, graphs, prompt
-bundles, toolsets, policies, knowledge index, eval datasets — plus the git SHA,
+bundles, toolsets, policies, document templates, knowledge index, eval datasets —
+plus the git SHA,
 canonicalizes to JSON and derives a content-addressed reference:
 
     sha256:<hex>          → contracts/release/manifest.json
@@ -188,6 +189,32 @@ def _rubrics() -> list[dict[str, str]]:
     return rubrics
 
 
+def _doc_templates() -> list[dict[str, str]]:
+    """Document templates (declaration + DOCX), pinned by content.
+
+    A draft names the template version it was rendered from; a release that
+    changed a form's wording has to be identifiable afterwards, like a prompt.
+    The checksum is the one `dw_agent_runtime.doc_templates` computes, so the
+    manifest and a loaded registry agree on what a version is.
+    """
+    from dw_agent_runtime.doc_templates import template_checksum
+
+    templates = []
+    for path in sorted((REPO_ROOT / "configs" / "doc_templates").rglob("*.yaml")):
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        templates.append(
+            {
+                "template_id": raw["template_id"],
+                "version": raw["version"],
+                "doc_type": raw["doc_type"],
+                "checksum": template_checksum(
+                    path.read_bytes(), path.with_suffix(".docx").read_bytes()
+                ),
+            }
+        )
+    return templates
+
+
 def _eval_datasets() -> list[dict[str, str]]:
     datasets = []
     for path in sorted((REPO_ROOT / "evals" / "datasets").glob("*.json")):
@@ -219,6 +246,7 @@ def build_manifest() -> dict[str, Any]:
         "toolsets": _toolsets(),
         "rubrics": _rubrics(),
         "policies": _policies(),
+        "doc_templates": _doc_templates(),
         "knowledge_index_version": INDEX_VERSION,
         "memory_policy_version": MemoryWritePolicy().policy_version,
         # What turns a run's autonomy level into approve/do-not-approve. A run

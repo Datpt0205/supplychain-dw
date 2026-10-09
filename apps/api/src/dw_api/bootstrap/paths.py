@@ -49,6 +49,9 @@ SUPPLY_CHAIN_ACTION_DUTIES = POLICIES_DIR / "supply_chain_action_duties@1.2.0.ya
 SUPPLY_CHAIN_PACKAGING_POLICY = POLICIES_DIR / "supply_chain_packaging@1.0.0.yaml"
 # BM04 as fields (ADR 0026): the schema of a profile's attributes, per tenant.
 SUPPLY_CHAIN_BM04_SCHEMA = POLICIES_DIR / "supply_chain_bm04_schema@1.0.0.yaml"
+# Document templates (ticket ai-automation/03): the platform layer, loaded at
+# start; a tenant's own versions come from storage at run time.
+DOC_TEMPLATES_DIR = POLICIES_DIR.parent / "doc_templates"
 SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES = POLICIES_DIR / PRODUCT_ACTION_DUTIES_POLICY_FILE
 SUPPLY_CHAIN_PRODUCT_APPROVALS = POLICIES_DIR / PRODUCT_APPROVALS_POLICY_FILE
 SUPPLY_CHAIN_ADVANCE_CASE_WORKER = WORKERS_DIR / "supply_chain_advance_case.yaml"

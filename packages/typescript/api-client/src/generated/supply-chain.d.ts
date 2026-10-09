@@ -209,6 +209,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/doc-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Doc Templates */
+        get: operations["list_doc_templates_api_v1_supply_chain_doc_templates_get"];
+        /**
+         * Set Doc Template
+         * @description The tenant's own version of a platform template: its declaration
+         *     (YAML) and its DOCX. A version is never replaced; add a new one.
+         */
+        put: operations["set_doc_template_api_v1_supply_chain_doc_templates_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/documents/{document_id}/content": {
         parameters: {
             query?: never;
@@ -220,6 +242,74 @@ export interface paths {
         get: operations["download_case_document_api_v1_supply_chain_documents__document_id__content_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document Draft */
+        get: operations["get_document_draft_api_v1_supply_chain_drafts__draft_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/drafts/{draft_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Render Document Draft */
+        get: operations["render_document_draft_api_v1_supply_chain_drafts__draft_id__file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/drafts/{draft_id}/rejection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Document Draft */
+        post: operations["reject_document_draft_api_v1_supply_chain_drafts__draft_id__rejection_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/drafts/{draft_id}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revise Document Draft */
+        post: operations["revise_document_draft_api_v1_supply_chain_drafts__draft_id__revisions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -438,6 +528,23 @@ export interface paths {
         put?: never;
         /** Upload Case Document */
         post: operations["upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/po-cases/{case_id}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Po Case Drafts */
+        get: operations["list_po_case_drafts_api_v1_supply_chain_po_cases__case_id__drafts_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -680,6 +787,23 @@ export interface paths {
         put?: never;
         /** Upload Product Case Document */
         post: operations["upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/product-cases/{case_id}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Product Case Drafts */
+        get: operations["list_product_case_drafts_api_v1_supply_chain_product_cases__case_id__drafts_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -957,6 +1081,13 @@ export interface components {
          * @enum {string}
          */
         Bm04FieldKind: "text" | "number" | "integer" | "boolean" | "choice";
+        /** Body_set_doc_template_api_v1_supply_chain_doc_templates_put */
+        Body_set_doc_template_api_v1_supply_chain_doc_templates_put: {
+            /** Document */
+            document: string;
+            /** Spec */
+            spec: string;
+        };
         /** Body_upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post */
         Body_upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post: {
             doc_type: components["schemas"]["DocumentType"];
@@ -1285,6 +1416,19 @@ export interface components {
              */
             supplier_update_id: string;
         };
+        /** DocTemplateView */
+        DocTemplateView: {
+            /** Doc Type */
+            doc_type: string;
+            /** Overridden */
+            overridden: boolean;
+            /** Template Id */
+            template_id: string;
+            /** Title */
+            title: string;
+            /** Version */
+            version: string;
+        };
         /**
          * DocumentType
          * @description ADR 0021's fourteen document types, from process.md section 2, the
@@ -1292,7 +1436,128 @@ export interface components {
          *     (ai-automation/02).
          * @enum {string}
          */
-        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report" | "supplier_quotation";
+        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report" | "supplier_quotation" | "bod_submission";
+        /** DraftColumnView */
+        DraftColumnView: {
+            kind: components["schemas"]["TemplateFieldKind"];
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * DraftFieldSourceView
+         * @description Where a value came from: a document and the quote read in it, or the
+         *     person who typed it. Null: computed by code from stored data.
+         */
+        DraftFieldSourceView: {
+            /** Document Id */
+            document_id: string | null;
+            /** Edited By */
+            edited_by: string | null;
+            /** Quote */
+            quote: string | null;
+        };
+        /** DraftFieldView */
+        DraftFieldView: {
+            /** Columns */
+            columns: components["schemas"]["DraftColumnView"][] | null;
+            /** Gap */
+            gap: boolean;
+            kind: components["schemas"]["TemplateFieldKind"];
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /** Redacted */
+            redacted: boolean;
+            /** Redacted Columns */
+            redacted_columns: string[];
+            /** Required */
+            required: boolean;
+            /** Rows */
+            rows: {
+                [key: string]: string | null;
+            }[] | null;
+            source: components["schemas"]["DraftFieldSourceView"] | null;
+            /** Value */
+            value: string | null;
+        };
+        /** DraftSourceView */
+        DraftSourceView: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Extraction Id */
+            extraction_id: string | null;
+            /** Sha256 */
+            sha256: string;
+        };
+        /**
+         * DraftStatus
+         * @description What a version is, read from its decision and its place in the lineage.
+         * @enum {string}
+         */
+        DraftStatus: "open" | "confirmed" | "rejected" | "superseded";
+        /** DraftView */
+        DraftView: {
+            /** Can Edit */
+            can_edit: boolean;
+            /**
+             * Case Id
+             * Format: uuid
+             */
+            case_id: string;
+            case_kind: components["schemas"]["CaseKind"];
+            /** Content Sha256 */
+            content_sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /** Decision Reason */
+            decision_reason: string | null;
+            doc_type: components["schemas"]["DocumentType"];
+            /** Fields */
+            fields: components["schemas"]["DraftFieldView"][];
+            /** Gaps */
+            gaps: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Lineage Id
+             * Format: uuid
+             */
+            lineage_id: string;
+            /** Prices Visible */
+            prices_visible: boolean;
+            /** Prompt Id */
+            prompt_id: string | null;
+            /** Prompt Version */
+            prompt_version: string | null;
+            /** Sources */
+            sources: components["schemas"]["DraftSourceView"][];
+            status: components["schemas"]["DraftStatus"];
+            /** Template Id */
+            template_id: string;
+            /** Template Version */
+            template_version: string;
+            /** Title */
+            title: string;
+            /** Version */
+            version: number;
+        };
         /**
          * FollowUpItemView
          * @description An open follow-up. `mine`: it was handed to the caller (a stamped scope
@@ -2171,6 +2436,11 @@ export interface components {
             /** Value */
             value: string | null;
         };
+        /** RejectDraftRequest */
+        RejectDraftRequest: {
+            /** Reason */
+            reason: string;
+        };
         /**
          * ReviewRaise
          * @description What asking for the approval a case waits on (BGĐ's review at step 6,
@@ -2183,6 +2453,16 @@ export interface components {
          * @enum {string}
          */
         ReviewStatus: "pending" | "revision_requested" | "approved";
+        /**
+         * ReviseDraftRequest
+         * @description The fields to replace, by name; a table is its full list of rows.
+         */
+        ReviseDraftRequest: {
+            /** Values */
+            values: {
+                [key: string]: unknown;
+            };
+        };
         /**
          * SLAConfirmationStatus
          * @description Whether a milestone's duration is real policy yet.
@@ -2604,6 +2884,11 @@ export interface components {
             reason?: string | null;
         };
         /**
+         * TemplateFieldKind
+         * @enum {string}
+         */
+        TemplateFieldKind: "text" | "number" | "date" | "table";
+        /**
          * UnderstoodView
          * @description What the answer applied, each value decided by code: a supplier is
          *     always a stored name, never the model's mention; a PO reference or a
@@ -2974,6 +3259,59 @@ export interface operations {
             };
         };
     };
+    list_doc_templates_api_v1_supply_chain_doc_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocTemplateView"][];
+                };
+            };
+        };
+    };
+    set_doc_template_api_v1_supply_chain_doc_templates_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_set_doc_template_api_v1_supply_chain_doc_templates_put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocTemplateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     download_case_document_api_v1_supply_chain_documents__document_id__content_get: {
         parameters: {
             query?: never;
@@ -2991,6 +3329,142 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_draft_api_v1_supply_chain_drafts__draft_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    render_document_draft_api_v1_supply_chain_drafts__draft_id__file_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The draft rendered by its template, as an attachment. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_document_draft_api_v1_supply_chain_drafts__draft_id__rejection_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revise_document_draft_api_v1_supply_chain_drafts__draft_id__revisions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviseDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3493,6 +3967,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CaseDocumentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_po_case_drafts_api_v1_supply_chain_po_cases__case_id__drafts_get: {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["CaseKind"];
+            };
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"][];
                 };
             };
             /** @description Validation Error */
@@ -4105,6 +4612,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CaseDocumentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_product_case_drafts_api_v1_supply_chain_product_cases__case_id__drafts_get: {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["CaseKind"];
+            };
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"][];
                 };
             };
             /** @description Validation Error */

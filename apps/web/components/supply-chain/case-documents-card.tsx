@@ -51,6 +51,7 @@ export const DOC_TYPE_LABEL: Record<DocumentType, string> = {
   packaging_design: "Thiết kế bao bì",
   pre_production_test_report: "Biên bản test trước SX",
   supplier_quotation: "Báo giá, thông số NCC",
+  bod_submission: "Tờ trình BGĐ",
 };
 
 const DOC_TYPE_OPTIONS = (Object.keys(DOC_TYPE_LABEL) as DocumentType[]).map(
@@ -95,7 +96,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
 }
 
-function saveBlob(blob: Blob, filename: string): void {
+export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

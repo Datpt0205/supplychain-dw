@@ -838,6 +838,27 @@ async def test_the_supply_lead_cannot_complete_the_bm04() -> None:
     assert stack.cases.rows[case.id.value].state is ProductDevState.PROFILE_IN_PROGRESS
 
 
+async def test_a_bm04_draft_never_satisfies_step_7_only_a_case_document_does() -> None:
+    """ADR 0025 point 4, ticket ai-automation/03: a step reads its paper from
+    the case's documents and nowhere else. A draft lives in its own table and
+    becomes a document only when a person approves it (ticket 05), so a draft's
+    id offered as the step's paper is the same 409 as no paper at all. The
+    step has no way to read drafts: it is given none."""
+    assert not any("draft" in name for name in AdvanceProductCase.__dataclass_fields__)
+    stack = Stack()
+    case = await stack.profiling()
+    draft_id = uuid.uuid4()  # the id a BM04 draft of this case would carry
+    with pytest.raises(ConflictError) as raised:
+        await stack.advance().handle(
+            _context(SC_RND),
+            case_id=case.id,
+            action=ProductAction.COMPLETE_PROFILE,
+            document_id=draft_id,
+        )
+    assert raised.value.details["missing_document_type"] == "product_profile_bm04"
+    assert stack.cases.rows[case.id.value].state is ProductDevState.PROFILE_IN_PROGRESS
+
+
 @pytest.mark.parametrize(
     ("action", "doc_type", "caller"),
     [

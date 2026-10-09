@@ -474,3 +474,62 @@ document_extractions = sa.Table(
         "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )
+
+# Drafts of a case's documents (cbebad572558, ADR 0025 point 4): one row per
+# version, append-only, and at most one decision per version.
+document_drafts = sa.Table(
+    "document_drafts",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("po_case_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("lineage_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("doc_type", sa.Text, nullable=False),
+    sa.Column("template_id", sa.Text, nullable=False),
+    sa.Column("template_version", sa.Text, nullable=False),
+    sa.Column("prompt_id", sa.Text, nullable=True),
+    sa.Column("prompt_version", sa.Text, nullable=True),
+    sa.Column("fields", JSONB, nullable=False),
+    sa.Column("gaps", JSONB, nullable=False),
+    sa.Column("sources", JSONB, nullable=False),
+    sa.Column("content_sha256", sa.Text, nullable=False),
+    sa.Column("created_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+document_draft_decisions = sa.Table(
+    "document_draft_decisions",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("draft_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("decision", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text, nullable=True),
+    sa.Column("decided_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "decided_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+# A tenant's own version of a platform document template (tenant-wide).
+doc_template_overrides = sa.Table(
+    "doc_template_overrides",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("template_id", sa.Text, nullable=False),
+    sa.Column("version", sa.Text, nullable=False),
+    sa.Column("spec", sa.Text, nullable=False),
+    sa.Column("docx", sa.LargeBinary, nullable=False),
+    sa.Column("checksum", sa.Text, nullable=False),
+    sa.Column("uploaded_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)

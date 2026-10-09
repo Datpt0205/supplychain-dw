@@ -58,6 +58,7 @@ import {
 } from "../../../../components/supply-chain/item-coding-card";
 import { Bm04ProfileCard } from "../../../../components/supply-chain/bm04-profile-card";
 import { supplyChainCrumbs } from "../../../../components/supply-chain/crumbs";
+import { DraftsCard } from "../../../../components/supply-chain/drafts-card";
 import {
   categoryLabel,
   useProductCategories,
@@ -254,6 +255,7 @@ function CaseView({
         )}
 
         <Bm04ProfileCard caseId={detail.id} />
+        <DraftsCard caseKind="product" caseId={detail.id} />
         <RoundsCard rounds={detail.rounds} who={who} />
         <HistoryCard caseId={detail.id} tick={historyTick} who={who} />
         <CaseDocumentsCard

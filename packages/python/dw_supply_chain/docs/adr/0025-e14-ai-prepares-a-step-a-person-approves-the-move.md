@@ -74,3 +74,29 @@ nháp phiếu chỉnh sửa, tờ trình, BM04, email chốt NCC, PO mà không 
   bản; skill registry ở nền tảng; ticket `.claude/plans/supply-chain/ai-automation/`.
 - `process.md` mục 4 có cột AI; mỗi bước nói AI chuẩn bị gì.
 - Đo được: tỷ lệ bản nháp duyệt nguyên, sửa, từ chối (AI-20).
+
+## Sửa đổi 2026-10-09 (tạm, lát AI-03; bản nháp và mẫu chứng từ)
+
+1. **Dựng trong tiến trình, sau một port.** `DocumentRendererPort` và registry mẫu
+   (`dw_agent_runtime.doc_templates`, ứng viên upstream) có một adapter python-docx
+   (`adapters.docx_templates`), không qua sandbox docgen: docgen là một shell, không phải
+   trình dựng mẫu, và cần Docker. Adapter docgen sau này thay adapter này mà không đổi bên
+   gọi. Chưa ra PDF (cần LibreOffice; để adapter docgen).
+2. **Không lưu file dựng của bản nháp.** Xem trước dựng lại từ trường và mẫu đã ghim ở mỗi
+   lần tải (`GET /drafts/{id}/file`), nên không có loại đối tượng mồ côi mới (failure-modes
+   #6) và bản xem trước luôn khớp trường. `document_drafts` không có `object_key`; thay
+   vào đó `content_sha256` (loại + mẫu + trường, JSON chuẩn) là thứ approval của ticket 05
+   gắn vào. Khi người duyệt, ticket 05 dựng file và lưu thành `case_documents`
+   (`origin = ai_prepared`, `draft_id`).
+3. **Override mẫu của tenant lưu trong PostgreSQL** (`supply_chain.doc_template_overrides`:
+   khai báo + DOCX ≤ 5 MiB, chỉ thêm), không trong bucket: không phải lo mồ côi, offboarding
+   theo tenant như `platform.policy_overrides` (cascade từ `platform.tenants`), RLS theo
+   tenant (mẫu của công ty dùng cho mọi workspace). Tải lên bằng `PUT /doc-templates`
+   (`action_duties.write`), phải thay một mẫu nền tảng cùng mã và cùng loại chứng từ, kiểm
+   như file nền tảng (trường khai báo đúng bằng placeholder, không macro).
+4. **Loại chứng từ `bod_submission`** (tờ trình BGĐ) thêm vào `DocumentType` để bản nháp
+   tờ trình có đích. Mẫu nào cho loại nào: `DRAFT_TEMPLATES` trong domain (một chủ); policy
+   chuẩn bị bước (ticket 05) sẽ ghim phiên bản.
+5. **Quyết định trên bản nháp:** từ chối (lý do bắt buộc) có ở lát này; duyệt chỉ qua
+   approval của bước (ticket 05), trong giao dịch thêm chứng từ. Sửa trường tạo phiên bản
+   mới; phiên bản cũ đọc được, trạng thái `superseded`.

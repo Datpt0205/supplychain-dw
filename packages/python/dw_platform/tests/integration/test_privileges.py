@@ -731,3 +731,29 @@ async def test_document_extractions_are_append_only_and_the_queue_is_executable(
             )
     finally:
         await migrator.dispose()
+
+
+async def test_drafts_decisions_and_template_overrides_are_append_only(
+    db_urls: DatabaseUrls,
+) -> None:
+    """Migration cbebad572558: `dw_app` reads and inserts drafts, their
+    decisions and a tenant's template versions, and never edits or deletes
+    one (each leaves with its case, or its tenant, by cascade)."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+            for table in ("document_drafts", "document_draft_decisions", "doc_template_overrides"):
+                for verb, held in (
+                    ("SELECT", True),
+                    ("INSERT", True),
+                    ("UPDATE", False),
+                    ("DELETE", False),
+                    ("TRUNCATE", False),
+                ):
+                    granted = await conn.scalar(
+                        sa.text("SELECT has_table_privilege('dw_app', :t, :v)"),
+                        {"t": f"supply_chain.{table}", "v": verb},
+                    )
+                    assert bool(granted) is held, (table, verb)
+    finally:
+        await migrator.dispose()

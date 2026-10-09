@@ -1,0 +1,50 @@
+schema_version: '1.0'
+template_id: supply_chain.product_profile_bm04
+version: 1.0.0
+title: HỒ SƠ SẢN PHẨM (BM04)
+doc_type: product_profile_bm04
+description: 'Bước 7: hồ sơ sản phẩm dựng từ biểu mẫu BM04 trong ứng dụng.'
+fields:
+- name: proposal_code
+  label: Mã đề xuất
+- name: product_name
+  label: Tên sản phẩm
+  required: true
+- name: model_code
+  label: Mã model của NCC
+- name: material
+  label: Chất liệu
+- name: dimensions
+  label: Kích thước
+- name: net_weight_g
+  label: Trọng lượng tịnh (g)
+  kind: number
+- name: capacity_ml
+  label: Dung tích (ml)
+  kind: number
+- name: colours
+  label: Màu sắc
+- name: packaging
+  label: Quy cách đóng gói
+- name: units_per_carton
+  label: Số sản phẩm mỗi thùng
+  kind: number
+- name: origin_country
+  label: Xuất xứ
+- name: certifications
+  label: Chứng nhận, tiêu chuẩn
+- name: unit_price
+  label: Đơn giá
+  kind: number
+- name: currency
+  label: Tiền tệ
+- name: moq
+  label: MOQ
+  kind: number
+- name: lead_time_days
+  label: Thời gian sản xuất (ngày)
+  kind: number
+- name: incoterm
+  label: Incoterm
+- name: notes
+  label: Ghi chú

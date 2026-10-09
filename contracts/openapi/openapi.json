@@ -683,6 +683,26 @@
         "title": "Bm04FieldKind",
         "type": "string"
       },
+      "Body_set_doc_template_api_v1_supply_chain_doc_templates_put": {
+        "properties": {
+          "document": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Document",
+            "type": "string"
+          },
+          "spec": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Spec",
+            "type": "string"
+          }
+        },
+        "required": [
+          "spec",
+          "document"
+        ],
+        "title": "Body_set_doc_template_api_v1_supply_chain_doc_templates_put",
+        "type": "object"
+      },
       "Body_submit_feedback_api_v1_feedback_post": {
         "properties": {
           "images": {
@@ -1916,6 +1936,39 @@
         "title": "DevSessionResponse",
         "type": "object"
       },
+      "DocTemplateView": {
+        "properties": {
+          "doc_type": {
+            "title": "Doc Type",
+            "type": "string"
+          },
+          "overridden": {
+            "title": "Overridden",
+            "type": "boolean"
+          },
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_id",
+          "version",
+          "title",
+          "doc_type",
+          "overridden"
+        ],
+        "title": "DocTemplateView",
+        "type": "object"
+      },
       "DocumentType": {
         "description": "ADR 0021's fourteen document types, from process.md section 2, the\nthree papers of step 12's sub-flow (slice PK) and the supplier's quotation\n(ai-automation/02).",
         "enum": [
@@ -1936,10 +1989,376 @@
           "colour_sample",
           "packaging_design",
           "pre_production_test_report",
-          "supplier_quotation"
+          "supplier_quotation",
+          "bod_submission"
         ],
         "title": "DocumentType",
         "type": "string"
+      },
+      "DraftColumnView": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TemplateFieldKind"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "kind"
+        ],
+        "title": "DraftColumnView",
+        "type": "object"
+      },
+      "DraftFieldSourceView": {
+        "description": "Where a value came from: a document and the quote read in it, or the\nperson who typed it. Null: computed by code from stored data.",
+        "properties": {
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "edited_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edited By"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          }
+        },
+        "required": [
+          "document_id",
+          "quote",
+          "edited_by"
+        ],
+        "title": "DraftFieldSourceView",
+        "type": "object"
+      },
+      "DraftFieldView": {
+        "properties": {
+          "columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DraftColumnView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Columns"
+          },
+          "gap": {
+            "title": "Gap",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TemplateFieldKind"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "redacted": {
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "redacted_columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Redacted Columns",
+            "type": "array"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "rows": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftFieldSourceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "kind",
+          "required",
+          "value",
+          "rows",
+          "columns",
+          "redacted",
+          "redacted_columns",
+          "gap",
+          "source"
+        ],
+        "title": "DraftFieldView",
+        "type": "object"
+      },
+      "DraftSourceView": {
+        "properties": {
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "extraction_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Id"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "sha256",
+          "extraction_id"
+        ],
+        "title": "DraftSourceView",
+        "type": "object"
+      },
+      "DraftStatus": {
+        "description": "What a version is, read from its decision and its place in the lineage.",
+        "enum": [
+          "open",
+          "confirmed",
+          "rejected",
+          "superseded"
+        ],
+        "title": "DraftStatus",
+        "type": "string"
+      },
+      "DraftView": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "case_kind": {
+            "$ref": "#/components/schemas/CaseKind"
+          },
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "decision_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Reason"
+          },
+          "doc_type": {
+            "$ref": "#/components/schemas/DocumentType"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/DraftFieldView"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "gaps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "lineage_id": {
+            "format": "uuid",
+            "title": "Lineage Id",
+            "type": "string"
+          },
+          "prices_visible": {
+            "title": "Prices Visible",
+            "type": "boolean"
+          },
+          "prompt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Id"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DraftSourceView"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DraftStatus"
+          },
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "template_version": {
+            "title": "Template Version",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "lineage_id",
+          "version",
+          "case_kind",
+          "case_id",
+          "doc_type",
+          "template_id",
+          "template_version",
+          "title",
+          "status",
+          "decision_reason",
+          "prompt_id",
+          "prompt_version",
+          "content_sha256",
+          "gaps",
+          "sources",
+          "fields",
+          "prices_visible",
+          "can_edit",
+          "created_by",
+          "created_at"
+        ],
+        "title": "DraftView",
+        "type": "object"
       },
       "FeedbackAttachmentView": {
         "properties": {
@@ -5728,6 +6147,22 @@
         "title": "RedactableAmount",
         "type": "object"
       },
+      "RejectDraftRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RejectDraftRequest",
+        "type": "object"
+      },
       "RejectSupportGrantBody": {
         "additionalProperties": false,
         "properties": {
@@ -5840,6 +6275,24 @@
         ],
         "title": "ReviewStatus",
         "type": "string"
+      },
+      "ReviseDraftRequest": {
+        "additionalProperties": false,
+        "description": "The fields to replace, by name; a table is its full list of rows.",
+        "properties": {
+          "values": {
+            "additionalProperties": true,
+            "maxProperties": 200,
+            "minProperties": 1,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "title": "ReviseDraftRequest",
+        "type": "object"
       },
       "RoleView": {
         "properties": {
@@ -7694,6 +8147,16 @@
         ],
         "title": "TakePackagingStepRequest",
         "type": "object"
+      },
+      "TemplateFieldKind": {
+        "enum": [
+          "text",
+          "number",
+          "date",
+          "table"
+        ],
+        "title": "TemplateFieldKind",
+        "type": "string"
       },
       "TenantMemberView": {
         "properties": {
@@ -11538,6 +12001,71 @@
         ]
       }
     },
+    "/api/v1/supply-chain/doc-templates": {
+      "get": {
+        "operationId": "list_doc_templates_api_v1_supply_chain_doc_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocTemplateView"
+                  },
+                  "title": "Response List Doc Templates Api V1 Supply Chain Doc Templates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Doc Templates",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "description": "The tenant's own version of a platform template: its declaration\n(YAML) and its DOCX. A version is never replaced; add a new one.",
+        "operationId": "set_doc_template_api_v1_supply_chain_doc_templates_put",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_set_doc_template_api_v1_supply_chain_doc_templates_put"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocTemplateView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Doc Template",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/documents/{document_id}/content": {
       "get": {
         "operationId": "download_case_document_api_v1_supply_chain_documents__document_id__content_get",
@@ -11569,6 +12097,227 @@
           }
         },
         "summary": "Download Case Document",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/drafts/{draft_id}": {
+      "get": {
+        "operationId": "get_document_draft_api_v1_supply_chain_drafts__draft_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Draft",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/drafts/{draft_id}/file": {
+      "get": {
+        "operationId": "render_document_draft_api_v1_supply_chain_drafts__draft_id__file_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The draft rendered by its template, as an attachment."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Render Document Draft",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/drafts/{draft_id}/rejection": {
+      "post": {
+        "operationId": "reject_document_draft_api_v1_supply_chain_drafts__draft_id__rejection_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Document Draft",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/drafts/{draft_id}/revisions": {
+      "post": {
+        "operationId": "revise_document_draft_api_v1_supply_chain_drafts__draft_id__revisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviseDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revise Document Draft",
         "tags": [
           "supply_chain"
         ]
@@ -12372,6 +13121,62 @@
           }
         },
         "summary": "Upload Case Document",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/drafts": {
+      "get": {
+        "operationId": "list_po_case_drafts_api_v1_supply_chain_po_cases__case_id__drafts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CaseKind",
+              "default": "po"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DraftView"
+                  },
+                  "title": "Response List Po Case Drafts Api V1 Supply Chain Po Cases  Case Id  Drafts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Po Case Drafts",
         "tags": [
           "supply_chain"
         ]
@@ -13446,6 +14251,62 @@
           }
         },
         "summary": "Upload Product Case Document",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/product-cases/{case_id}/drafts": {
+      "get": {
+        "operationId": "list_product_case_drafts_api_v1_supply_chain_product_cases__case_id__drafts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CaseKind",
+              "default": "product"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DraftView"
+                  },
+                  "title": "Response List Product Case Drafts Api V1 Supply Chain Product Cases  Case Id  Drafts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Product Case Drafts",
         "tags": [
           "supply_chain"
         ]

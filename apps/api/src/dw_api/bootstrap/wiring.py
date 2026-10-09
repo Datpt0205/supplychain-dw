@@ -45,6 +45,7 @@ from dw_agent_runtime.model.run_policy import load_worker_run_policy
 from dw_api.bootstrap.container import ApiContainer
 from dw_api.bootstrap.identity import build_token_verifier
 from dw_api.bootstrap.paths import (
+    DOC_TEMPLATES_DIR,
     SUPPLY_CHAIN_ACTION_DUTIES,
     SUPPLY_CHAIN_ADVANCE_CASE_WORKER,
     SUPPLY_CHAIN_ADVANCE_PRODUCT_CASE_WORKER,
@@ -804,6 +805,65 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
     profiles = SqlProductProfileRepository(wiring.seam.session_factory)
     po_commercial = SqlPOCommercialRepository(wiring.seam.session_factory)
     supplier_records = SqlSupplierRecords(wiring.seam.session_factory)
+    # Document drafts and templates (ticket ai-automation/03): the platform's
+    # templates load here, once, and fail the start if one is malformed; a
+    # tenant's own versions load from storage the first time it asks.
+    from dw_agent_runtime.adapters.docx_templates import DocxRenderer, DocxTemplateInspector
+    from dw_agent_runtime.doc_templates import DocTemplateRegistry
+    from dw_supply_chain.adapters.persistence.document_draft_repository import (
+        SqlDocTemplateOverrides,
+        SqlDocumentDraftRepository,
+    )
+    from dw_supply_chain.application import document_drafts as sc_drafts
+    from dw_supply_chain.presentation.draft_routes import DraftHandlers
+
+    template_inspector = DocxTemplateInspector()
+    template_registry = DocTemplateRegistry(inspector=template_inspector)
+    template_registry.load_directory(DOC_TEMPLATES_DIR)
+    template_overrides = SqlDocTemplateOverrides(wiring.seam.session_factory)
+    tenant_templates = sc_drafts.TenantDocTemplates(
+        registry=template_registry, overrides=template_overrides
+    )
+    draft_repo = SqlDocumentDraftRepository(wiring.seam.session_factory)
+    container.supply_chain_drafts = DraftHandlers(
+        list_drafts=sc_drafts.ListCaseDrafts(
+            cases=case_lookups, drafts=draft_repo, templates=tenant_templates, authz=authorization
+        ),
+        get_draft=sc_drafts.GetDocumentDraft(
+            drafts=draft_repo, templates=tenant_templates, authz=authorization
+        ),
+        revise=sc_drafts.ReviseDocumentDraft(
+            drafts=draft_repo,
+            templates=tenant_templates,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        reject=sc_drafts.RejectDocumentDraft(
+            drafts=draft_repo,
+            templates=tenant_templates,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        render=sc_drafts.RenderDocumentDraft(
+            drafts=draft_repo,
+            templates=tenant_templates,
+            renderer=DocxRenderer(),
+            authz=authorization,
+        ),
+        list_templates=sc_drafts.ListDocTemplates(
+            registry=template_registry, overrides=template_overrides, authz=authorization
+        ),
+        set_template=sc_drafts.SetDocTemplateOverride(
+            registry=template_registry,
+            inspector=template_inspector,
+            overrides=template_overrides,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+    )
     container.supply_chain_commercial = CommercialHandlers(
         get_profile=sc_commercial.GetProductProfile(
             cases=product_case_repo, profiles=profiles, schemas=bm04_schemas, authz=authorization

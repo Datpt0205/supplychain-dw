@@ -29,6 +29,7 @@ import {
   productProfileSchema,
   poCommercialSchema,
   poPaymentSchema,
+  documentDraftSchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -97,6 +98,10 @@ import {
   type POCommercial,
   type POPayment,
   type RedactableAmount,
+  type DocumentDraft,
+  type DraftField,
+  type DraftStatus,
+  type TemplateFieldKind,
   type AttentionItem,
   type FollowUp,
   type CaseDocument,
@@ -407,6 +412,19 @@ export type SetPOCommercialBody =
 /** `POST /po-cases/{id}/payments`'s body. */
 export type RecordPaymentBody =
   SupplyChainOperations["record_po_payment_api_v1_supply_chain_po_cases__case_id__payments_post"]["requestBody"]["content"]["application/json"];
+
+// Ticket ai-automation/03: document drafts.
+const _draftsMirrorTheRoute: [
+  SameType<DocumentDraft, SupplyChainGenerated["DraftView"]>,
+  SameType<keyof DocumentDraft, keyof SupplyChainGenerated["DraftView"]>,
+  SameType<
+    keyof DocumentDraft["fields"][number],
+    keyof SupplyChainGenerated["DraftFieldView"]
+  >,
+  SameType<DraftStatus, SupplyChainGenerated["DraftStatus"]>,
+  SameType<TemplateFieldKind, SupplyChainGenerated["TemplateFieldKind"]>,
+] = [true, true, true, true, true];
+void _draftsMirrorTheRoute;
 
 const _dailyBriefMirrorsTheRoute: [
   SameType<DailyBrief, SupplyChainGenerated["DailyBriefView"]>,
@@ -1662,6 +1680,56 @@ export class ApiClient {
     );
   }
 
+  /** The latest version of each draft of a case (`po` or `product`). */
+  listCaseDrafts(
+    caseKind: "po" | "product",
+    caseId: string,
+  ): Promise<DocumentDraft[]> {
+    const segment = caseKind === "po" ? "po-cases" : "product-cases";
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/${segment}/${encodeURIComponent(caseId)}/drafts`,
+      z.array(documentDraftSchema),
+    );
+  }
+
+  /** A person's edit of a draft: the named fields replaced, a new version. */
+  reviseDraft(
+    draftId: string,
+    values: Record<string, unknown>,
+    idempotencyKey: string,
+  ): Promise<DocumentDraft> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/drafts/${encodeURIComponent(draftId)}/revisions`,
+      documentDraftSchema,
+      { body: { values }, idempotencyKey },
+    );
+  }
+
+  /** Rejects a draft version, with its reason. */
+  rejectDraft(
+    draftId: string,
+    reason: string,
+    idempotencyKey: string,
+  ): Promise<DocumentDraft> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/drafts/${encodeURIComponent(draftId)}/rejection`,
+      documentDraftSchema,
+      { body: { reason }, idempotencyKey },
+    );
+  }
+
+  /** The draft as its template prints it (DOCX), prices hidden per scope. */
+  async downloadDraft(draftId: string): Promise<Blob> {
+    const response = await this.rawRequest(
+      "GET",
+      `/api/v1/supply-chain/drafts/${encodeURIComponent(draftId)}/file`,
+    );
+    return response.blob();
+  }
+
   /** One document's bytes, read with the session's token (read scope). */
   async downloadCaseDocument(documentId: string): Promise<Blob> {
     const response = await this.rawRequest(
@@ -1871,6 +1939,10 @@ export class ApiClient {
 }
 
 export type {
+  DocumentDraft,
+  DraftField,
+  DraftStatus,
+  TemplateFieldKind,
   Bm04Field,
   Bm04Schema,
   Incoterm,

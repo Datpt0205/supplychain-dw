@@ -1,0 +1,41 @@
+schema_version: '1.0'
+template_id: supply_chain.sample_revision_request
+version: 1.0.0
+title: PHIẾU YÊU CẦU CHỈNH SỬA MẪU
+doc_type: sample_revision_request
+description: 'Bước 4: R&D yêu cầu nhà cung cấp chỉnh sửa mẫu theo từng tiêu chí trượt.'
+fields:
+- name: proposal_code
+  label: Mã đề xuất
+  required: true
+- name: product_name
+  label: Tên sản phẩm
+  required: true
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: sample_round
+  label: Vòng mẫu
+  kind: number
+- name: requested_on
+  label: Ngày yêu cầu
+  kind: date
+  required: true
+- name: requested_by
+  label: Người yêu cầu
+- name: items
+  label: Hạng mục chỉnh sửa
+  kind: table
+  columns:
+  - name: criterion
+    label: Tiêu chí
+  - name: finding
+    label: Hiện trạng
+  - name: requirement
+    label: Yêu cầu chỉnh sửa
+  required: true
+- name: due_date
+  label: Hạn gửi mẫu chỉnh sửa
+  kind: date
+- name: notes
+  label: Ghi chú
