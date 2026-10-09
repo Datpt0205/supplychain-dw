@@ -220,3 +220,19 @@ chứng từ của nó.
    chỗ che; schema của lời đọc cấm khóa đó, nên mô hình không cài được digest.
 3. Ảnh và PDF quét vẫn `unreadable` (chưa có OCR): PI, hóa đơn, UNC chụp ảnh không được đọc; trang
    nêu "máy không đọc được, người kiểm bằng mắt".
+
+## Sửa đổi 2026-10-10 (lát AI-21; OCR cục bộ đã đo, chưa dùng)
+
+Mục tiêu: ảnh và PDF quét đọc bằng OCR trong tiến trình, văn bản qua đúng đường che tài khoản và
+grounding của PDF có lớp chữ. Đã đo trước khi dựa vào (ticket `ai-automation/21`): RapidOCR (có
+trong lock qua extra `parsers`, cũng là OCR docling chọn) **không viết được chữ tiếng Việt**: từ
+điển PP-OCRv6 thiếu 88/120 nguyên âm mang thanh, `latin` PP-OCRv5 thiếu 93; trên trang sạch chỉ
+29–36% từ có dấu đúng, trong khi mọi dòng vẫn có điểm tin cậy ≥ 0,81, nên đánh dấu độ tin thấp
+không bắt được lỗi, và grounding (kiểm trích dẫn trên chính văn bản OCR) chấp nhận một giá trị sai.
+
+Quyết định tạm: **giữ điểm 2 của sửa đổi AI-02**: ảnh, PDF quét và MSG vẫn `unreadable`, không mã
+nào thay đổi. Khi có một bộ OCR đạt ngưỡng của ticket (≥ 90% từ có dấu đúng trên trang sạch, điểm
+tin cậy phân biệt được dòng sai; EasyOCR `vi` đo được 96–98%, chưa trong lock: Đạt quyết), văn bản
+OCR đi qua `DocumentTextPort` như mọi văn bản khác: che trước lượt gọi, grounding sau; dòng điểm thấp
+thành khoảng trống, không thành giá trị; với loại `reads_accounts`, digest tài khoản không đọc từ
+văn bản OCR.

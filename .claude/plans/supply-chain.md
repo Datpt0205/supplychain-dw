@@ -109,6 +109,7 @@ means platform code, an upstream candidate (ADR 0011).
 | ON-02 | `onboarding/issues/02-import-open-cases.md` (M)                           | no      | ready-for-agent | ON-01                               |
 | AI-19 | `ai-automation/issues/19-case-assistant.md` (L)                           | partly  | ready-for-agent | AI-02, AI-04                        |
 | AI-20 | `ai-automation/issues/20-reports-and-acceptance.md` (M)                   | no      | ready-for-agent | AI-05                               |
+| AI-21 | `ai-automation/issues/21-local-ocr.md` (M)                                | no      | needs-info      | Đạt: OCR engine                     |
 | UAT-1 | `uat/issues/01-uat-plan-and-training.md` (M)                              | no      | ready-for-agent | AI-05                               |
 | UAT-2 | `uat/issues/02-uat-with-elmich.md` (S)                                    | —       | ready-for-human | UAT-1, ON-02, H2, ZL                |
 
