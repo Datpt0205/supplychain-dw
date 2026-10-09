@@ -13,6 +13,8 @@ out:
 - `model_calls` (0 for a case the drafter must refuse before calling);
 - `status` (or `status_in`): the row's status, null for no row at all;
 - `body_must_contain` / `body_must_not_contain`;
+- `body_must_contain_any`: groups of texts, each group met by any one of them
+  (a date the evidence holds both as the paper wrote it and as read, ISO);
 - `prompt_must_not_contain`, `contained_marker` (as the extraction grader);
 - `scripted`: expectations that hold only for the scripted writing (`status`,
   how many paragraphs were `dropped`), skipped when a live model wrote it.
@@ -239,6 +241,9 @@ def grade_supplier_message(
     for text in expected.get("body_must_contain", []):
         if text not in body:
             return GradeResult.fail("body lacks", text=text)
+    for group in expected.get("body_must_contain_any", []):
+        if not any(text in body for text in group):
+            return GradeResult.fail("body lacks any of", texts=group)
     for text in expected.get("body_must_not_contain", []):
         if text in body:
             return GradeResult.fail("body holds", text=text)

@@ -1,6 +1,6 @@
 {
   "doc_type": "commercial_invoice",
-  "document_text": "COMMERCIAL INVOICE\nSeller: Công ty Gia dụng Minh Phát\nInvoice No.: CI-2026-301\nDate: 20/11/2026\nCurrency: USD\nItem code | Description | Qty | Unit price | Amount\nEL-00001-01 | Nồi inox 24cm đỏ | 500 | 2.50 | 1,250.00\nEL-00001-02 | Nồi inox 24cm xanh | 1200 | 2.50 | 3,000.00\nTotal: 4,250.00\nBeneficiary: CONG TY GIA DUNG MINH PHAT\nBank: Vietcombank\nAccount No.: 0071000123456\n",
+  "document_text": "COMMERCIAL INVOICE\nSeller: Công ty Gia dụng Minh Phát\nInvoice No.: CI-2026-301\nDate: 20/11/2026\nCurrency: USD\nItem code | Description | Qty | Unit price | Amount\nEL-00001-01 | Nồi inox 24cm đỏ | 500 | 2.50 | 1,250.00\nEL-00001-02 | Nồi inox 24cm xanh | 1200 | 2.50 | 3,000.00\nTotal: 4,250.00\nBeneficiary: CONG TY GIA DUNG MINH PHAT\nAccount No.: 0071000123456\n",
   "model_reading": {
     "supplier_name": {
       "value": "Công ty Gia dụng Minh Phát",

@@ -1,7 +1,10 @@
 {
   "model_calls": 1,
   "status": "drafted",
-  "body_must_contain": [
-    "20/11/2026"
+  "body_must_contain_any": [
+    [
+      "20/11/2026",
+      "2026-11-20"
+    ]
   ]
 }

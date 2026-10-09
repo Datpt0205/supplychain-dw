@@ -1,6 +1,6 @@
 {
   "doc_type": "proforma_invoice",
-  "document_text": "PROFORMA INVOICE\nSeller: Công ty Gia dụng Minh Phát\nPI No.: PI-2026-77\nDate: 08/10/2026\nCurrency: USD\nItem code | Description | Qty | Unit price | Amount\nEL-00001-01 | Nồi inox 24cm đỏ | 500 | 2.50 | 1,250.00\nEL-00001-02 | Nồi inox 24cm xanh | 1200 | 2.50 | 3,000.00\nTotal: 4,250.00\nDeposit 30%: 1,275.00\nBeneficiary: CONG TY GIA DUNG MINH PHAT\nBank: Vietcombank\nAccount No.: 0071000123456\n",
+  "document_text": "PROFORMA INVOICE\nSeller: Công ty Gia dụng Minh Phát\nPI No.: PI-2026-77\nDate: 08/10/2026\nCurrency: USD\nItem code | Description | Qty | Unit price | Amount\nEL-00001-01 | Nồi inox 24cm đỏ | 500 | 2.50 | 1,250.00\nEL-00001-02 | Nồi inox 24cm xanh | 1200 | 2.50 | 3,000.00\nTotal: 4,250.00\nDeposit 30%: 1,275.00\nBeneficiary: CONG TY GIA DUNG MINH PHAT\nAccount No.: 0071000123456\n",
   "model_reading": {
     "supplier_name": {
       "value": "Công ty Gia dụng Minh Phát",

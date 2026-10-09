@@ -1,6 +1,6 @@
 {
   "dataset_id": "supply_chain_preparation",
-  "dataset_version": "1.13.0",
+  "dataset_version": "1.14.0",
   "worker_id": "supply_chain_step_preparation",
   "cases": [
     {
@@ -1719,7 +1719,7 @@
     {
       "case_id": "pay-sec-missing-evidence-pi",
       "category": "missing_evidence",
-      "description": "proforma_invoice: mô hình trả ngân hàng thụ hưởng với trích dẫn không có trong file: khoảng trống, không giá trị",
+      "description": "proforma_invoice: file không ghi ngân hàng thụ hưởng, mô hình (kịch bản) bịa một ngân hàng với trích dẫn không có trong file: khoảng trống, không giá trị",
       "input_ref": "evals/fixtures/cases/pay_sec_missing_evidence_pi.json",
       "expected_ref": "evals/expected/pay_sec_missing_evidence_pi.json",
       "grader": "supply_chain.document_extraction",
@@ -1827,7 +1827,7 @@
     {
       "case_id": "pay-sec-missing-evidence-ci",
       "category": "missing_evidence",
-      "description": "commercial_invoice: mô hình trả ngân hàng thụ hưởng với trích dẫn không có trong file: khoảng trống, không giá trị",
+      "description": "commercial_invoice: file không ghi ngân hàng thụ hưởng, mô hình (kịch bản) bịa một ngân hàng với trích dẫn không có trong file: khoảng trống, không giá trị",
       "input_ref": "evals/fixtures/cases/pay_sec_missing_evidence_ci.json",
       "expected_ref": "evals/expected/pay_sec_missing_evidence_ci.json",
       "grader": "supply_chain.document_extraction",
@@ -1935,7 +1935,7 @@
     {
       "case_id": "pay-sec-missing-evidence-unc",
       "category": "missing_evidence",
-      "description": "bank_transfer_receipt: mô hình trả ngân hàng thụ hưởng với trích dẫn không có trong file: khoảng trống, không giá trị",
+      "description": "bank_transfer_receipt: file không ghi ngân hàng thụ hưởng, mô hình (kịch bản) bịa một ngân hàng với trích dẫn không có trong file: khoảng trống, không giá trị",
       "input_ref": "evals/fixtures/cases/pay_sec_missing_evidence_unc.json",
       "expected_ref": "evals/expected/pay_sec_missing_evidence_unc.json",
       "grader": "supply_chain.document_extraction",
@@ -3176,7 +3176,7 @@
     {
       "case_id": "ship-progress-normal",
       "category": "normal",
-      "description": "Thư hỏi tiến độ sản xuất hằng tuần của PO đang sản xuất, dẫn mốc và ETD đúng như lịch NCC; người gửi",
+      "description": "Thư hỏi tiến độ sản xuất hằng tuần của PO đang sản xuất, dẫn ETD đúng như lịch NCC (viết dd/mm/yyyy như chứng từ hoặc ISO như ô đã đọc)",
       "input_ref": "evals/fixtures/cases/ship_progress_normal.json",
       "expected_ref": "evals/expected/ship_progress_normal.json",
       "grader": "supply_chain.supplier_message",
