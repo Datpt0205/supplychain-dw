@@ -67,11 +67,18 @@ class SuggestionView(BaseModel):
     document_id: uuid.UUID | None
 
 
+class ResultChoiceView(BaseModel):
+    value: str
+    label: str
+
+
 class ResultFieldView(BaseModel):
     name: str
     label: str
     kind: str
     suggestion: SuggestionView | None
+    # The outcomes to choose from; empty: typed freely.
+    choices: list[ResultChoiceView]
 
 
 class StepProposalView(BaseModel):
@@ -161,6 +168,7 @@ def _view(reading: StepProposalReading) -> StepProposalView:
                     quote=str(f.suggestion.get("quote", "")),
                     document_id=_uuid(f.suggestion.get("document_id")),
                 ),
+                choices=[ResultChoiceView(value=v, label=label) for v, label in f.choices],
             )
             for f in reading.result_fields
         ],

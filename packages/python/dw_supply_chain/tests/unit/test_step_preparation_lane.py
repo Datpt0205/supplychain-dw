@@ -334,3 +334,39 @@ def _record(lane: Lane, case: Any, entered: Any, outcome: str, reason: str | Non
             reason=reason or ("person said no" if outcome == "rejected" else None),
         ),
     )
+
+
+async def test_outcomes_of_different_duties_raise_no_approval() -> None:
+    """Elmich's steps 3-5 (ticket ai-automation/09) choose among three steps
+    in one approval, which carries ONE stamped scope. A tenant whose duty
+    policy gives them to different duties gets no run, and the case says why:
+    never an approval stamped with one of them."""
+    from dw_supply_chain.testing.step_preparation import SAMPLE_ROUND
+
+    lane = Lane()
+    lane.overrides.by_tenant[TENANT] = {**POLICY, "steps": [SAMPLE_ROUND.model_dump(mode="json")]}
+    lane.case()
+    raw = DUTIES.model_dump(mode="json")
+    mixed = type(DUTIES).model_validate(
+        {**raw, "action_duties": {**raw["action_duties"], "request_revision": "ordering"}}
+    )
+    built = lane.build()
+    outcome = await PrepareSteps(
+        **{
+            **{f: getattr(built, f) for f in built.__dataclass_fields__},
+            "platform_default_duties": mixed,
+        }
+    ).run()
+    assert lane.runner.started == [] and outcome.not_started == 1
+    assert lane.records.rows[-1][2].reason == "outcome_duties_differ"
+
+
+async def test_outcomes_of_one_duty_stamp_that_duty() -> None:
+    from dw_supply_chain.testing.step_preparation import SAMPLE_ROUND
+
+    lane = Lane()
+    lane.overrides.by_tenant[TENANT] = {**POLICY, "steps": [SAMPLE_ROUND.model_dump(mode="json")]}
+    lane.case()
+    await lane.build().run()
+    ((_, payload),) = lane.runner.started
+    assert payload["required_scope"] == "supply_chain.duty.rnd"

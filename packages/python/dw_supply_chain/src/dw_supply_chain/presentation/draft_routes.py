@@ -61,12 +61,15 @@ class DraftColumnView(BaseModel):
 
 
 class DraftFieldSourceView(BaseModel):
-    """Where a value came from: a document and the quote read in it, or the
-    person who typed it. Null: computed by code from stored data."""
+    """Where a value came from: a document and the quote read in it, the
+    person who typed it, or words a model wrote that checked out against the
+    evidence they cite (`ai_written`, `cites`). Null: computed by code."""
 
     document_id: uuid.UUID | None
     quote: str | None
     edited_by: uuid.UUID | None
+    ai_written: bool
+    cites: list[str]
 
 
 class DraftFieldView(BaseModel):
@@ -128,6 +131,8 @@ def _source(raw: object) -> DraftFieldSourceView | None:
         document_id=_uuid(raw.get("document_id")),
         quote=raw.get("quote") if isinstance(raw.get("quote"), str) else None,
         edited_by=_uuid(raw.get("edited_by")),
+        ai_written=bool(raw.get("ai_written")),
+        cites=[str(c) for c in raw.get("cites") or []],
     )
 
 

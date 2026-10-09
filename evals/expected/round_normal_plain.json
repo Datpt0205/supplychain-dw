@@ -1,0 +1,16 @@
+{
+  "outcome": "proposed",
+  "model_calls": 1,
+  "draft_fields": {
+    "conclusion": null,
+    "evaluated_on": null
+  },
+  "suggestions": {
+    "conclusion": "Đạt"
+  },
+  "tables": {
+    "sample_revision_request": {
+      "items": []
+    }
+  }
+}

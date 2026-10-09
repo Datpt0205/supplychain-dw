@@ -80,6 +80,12 @@ function Source({ field }: { field: DraftField }) {
   const source = field.source;
   if (source === null) return null;
   if (source.edited_by) return <Typography.Text>Người sửa</Typography.Text>;
+  if (source.ai_written)
+    return (
+      <Tooltip title={`Dẫn: ${source.cites.join(", ")}`}>
+        <Typography.Text>AI viết, đã kiểm dẫn chứng</Typography.Text>
+      </Tooltip>
+    );
   if (source.quote)
     return (
       <Tooltip title={source.quote}>

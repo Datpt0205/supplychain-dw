@@ -1,0 +1,18 @@
+{
+  "outcome": "proposed",
+  "tables": {
+    "sample_revision_request": {
+      "items": [
+        {
+          "criterion": "Độ dày đáy",
+          "finding": "Đo được 2.5 mm, chuẩn ≥ 3 mm"
+        }
+      ]
+    }
+  },
+  "notes_must_not_contain": [
+    "Làm dày đáy hơn.",
+    "Sửa theo biên bản hồ sơ khác.",
+    "Làm lại phần đáy nồi."
+  ]
+}

@@ -888,6 +888,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/product-cases/{case_id}/sample-checklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Sample Checklist */
+        get: operations["get_sample_checklist_api_v1_supply_chain_product_cases__case_id__sample_checklist_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/product-cases/{case_id}/sample-measurements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Sample Measurement */
+        post: operations["record_sample_measurement_api_v1_supply_chain_product_cases__case_id__sample_measurements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/product-cases/{case_id}/step-proposal": {
         parameters: {
             query?: never;
@@ -1047,6 +1081,24 @@ export interface paths {
         put?: never;
         /** Propose From List */
         post: operations["propose_from_list_api_v1_supply_chain_proposal_lists__list_id__rows__index__proposal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/sample-criteria-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Sample Criteria Policy */
+        get: operations["get_sample_criteria_policy_api_v1_supply_chain_sample_criteria_policy_get"];
+        /** Set Sample Criteria Policy */
+        put: operations["set_sample_criteria_policy_api_v1_supply_chain_sample_criteria_policy_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1500,6 +1552,27 @@ export interface components {
             reason: string | null;
             to_state: components["schemas"]["CaseState"];
         };
+        /** ChecklistRowView */
+        ChecklistRowView: {
+            /** Key */
+            key: string;
+            kind: components["schemas"]["CriterionKind"];
+            /** Label */
+            label: string;
+            /** Max */
+            max: string | null;
+            /** Min */
+            min: string | null;
+            /** Note */
+            note: string | null;
+            /** Standard */
+            standard: string;
+            /** Unit */
+            unit: string | null;
+            /** Value */
+            value: string | null;
+            verdict: components["schemas"]["Verdict"];
+        };
         /**
          * CitationView
          * @description The question's own words one field was grounded in — reported
@@ -1550,6 +1623,11 @@ export interface components {
             /** Po Reference */
             po_reference: string;
         };
+        /**
+         * CriterionKind
+         * @enum {string}
+         */
+        CriterionKind: "number" | "check";
         /** DailyBriefSummaryView */
         DailyBriefSummaryView: {
             brief: components["schemas"]["DailyBriefView"];
@@ -1638,10 +1716,15 @@ export interface components {
         };
         /**
          * DraftFieldSourceView
-         * @description Where a value came from: a document and the quote read in it, or the
-         *     person who typed it. Null: computed by code from stored data.
+         * @description Where a value came from: a document and the quote read in it, the
+         *     person who typed it, or words a model wrote that checked out against the
+         *     evidence they cite (`ai_written`, `cites`). Null: computed by code.
          */
         DraftFieldSourceView: {
+            /** Ai Written */
+            ai_written: boolean;
+            /** Cites */
+            cites: string[];
             /** Document Id */
             document_id: string | null;
             /** Edited By */
@@ -1682,7 +1765,7 @@ export interface components {
          *     result field a person types is never filled.
          * @enum {string}
          */
-        DraftRecipe: "case_facts";
+        DraftRecipe: "case_facts" | "sample_evaluation" | "revision_request";
         /** DraftSourceView */
         DraftSourceView: {
             /**
@@ -1877,6 +1960,15 @@ export interface components {
             /** Content Sha256 */
             content_sha256: string;
         };
+        /** MeasurementRequest */
+        MeasurementRequest: {
+            /** Criterion */
+            criterion: string;
+            /** Note */
+            note?: string | null;
+            /** Value */
+            value: string;
+        };
         /**
          * MessageCitationView
          * @description One paragraph AI wrote and code kept, with the evidence it cites.
@@ -1891,7 +1983,7 @@ export interface components {
          * MessagePurpose
          * @enum {string}
          */
-        MessagePurpose: "sample_request" | "supplier_reminder" | "supplier_confirmation";
+        MessagePurpose: "sample_request" | "supplier_reminder" | "supplier_confirmation" | "sample_revision_request";
         /**
          * MessageStatus
          * @enum {string}
@@ -2314,6 +2406,12 @@ export interface components {
              * @default []
              */
             drafts: components["schemas"]["PreparedDraft"][];
+            /** Outcome Field */
+            outcome_field?: string | null;
+            /** Outcomes */
+            outcomes?: {
+                [key: string]: components["schemas"]["StepOutcome"];
+            };
             /**
              * Physical
              * @default false
@@ -2830,8 +2928,17 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** ResultChoiceView */
+        ResultChoiceView: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+        };
         /** ResultFieldView */
         ResultFieldView: {
+            /** Choices */
+            choices: components["schemas"]["ResultChoiceView"][];
             /** Kind */
             kind: string;
             /** Label */
@@ -2938,6 +3045,48 @@ export interface components {
             /** Duration */
             duration: string;
             status: components["schemas"]["SLAConfirmationStatus"];
+        };
+        /** SampleChecklistView */
+        SampleChecklistView: {
+            /** Can Record */
+            can_record: boolean;
+            /**
+             * Case Id
+             * Format: uuid
+             */
+            case_id: string;
+            /** Rows */
+            rows: components["schemas"]["ChecklistRowView"][];
+            /** Sample Round */
+            sample_round: number;
+        };
+        /** SampleCriterion */
+        "SampleCriterion-Input": {
+            /** Key */
+            key: string;
+            kind: components["schemas"]["CriterionKind"];
+            /** Label */
+            label: string;
+            /** Max */
+            max?: number | string | null;
+            /** Min */
+            min?: number | string | null;
+            /** Unit */
+            unit?: string | null;
+        };
+        /** SampleCriterion */
+        "SampleCriterion-Output": {
+            /** Key */
+            key: string;
+            kind: components["schemas"]["CriterionKind"];
+            /** Label */
+            label: string;
+            /** Max */
+            max?: string | null;
+            /** Min */
+            min?: string | null;
+            /** Unit */
+            unit?: string | null;
         };
         /**
          * SampleResult
@@ -3053,7 +3202,7 @@ export interface components {
          * @description Code's checks of a step, each a finding when it fails.
          * @enum {string}
          */
-        StepCheck: "sources_present" | "sources_read" | "drafts_complete";
+        StepCheck: "sources_present" | "sources_read" | "drafts_complete" | "criteria_measured" | "revision_checked";
         /** StepDecisionRequest */
         StepDecisionRequest: {
             /**
@@ -3072,6 +3221,16 @@ export interface components {
             result?: {
                 [key: string]: string;
             };
+        };
+        /**
+         * StepOutcome
+         * @description One outcome a person may choose for a physical step: the step it
+         *     takes and the words the record prints for it.
+         */
+        StepOutcome: {
+            action: components["schemas"]["ProductAction"];
+            /** Label */
+            label: string;
         };
         /** StepProposalView */
         StepProposalView: {
@@ -3430,6 +3589,36 @@ export interface components {
             schema_version: string;
             supplier_update: components["schemas"]["SupplierUpdateCadence"];
         };
+        /** SupplyChainSampleCriteria */
+        "SupplyChainSampleCriteria-Input": {
+            /** By Category */
+            by_category?: {
+                [key: string]: components["schemas"]["SampleCriterion-Input"][];
+            };
+            /** Default */
+            default: components["schemas"]["SampleCriterion-Input"][];
+            /** Policy Id */
+            policy_id: string;
+            /** Policy Version */
+            policy_version: string;
+            /** Schema Version */
+            schema_version: string;
+        };
+        /** SupplyChainSampleCriteria */
+        "SupplyChainSampleCriteria-Output": {
+            /** By Category */
+            by_category?: {
+                [key: string]: components["schemas"]["SampleCriterion-Output"][];
+            };
+            /** Default */
+            default: components["schemas"]["SampleCriterion-Output"][];
+            /** Policy Id */
+            policy_id: string;
+            /** Policy Version */
+            policy_version: string;
+            /** Schema Version */
+            schema_version: string;
+        };
         /** SupplyChainStepPreparation */
         SupplyChainStepPreparation: {
             /** Policy Id */
@@ -3499,6 +3688,11 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /**
+         * Verdict
+         * @enum {string}
+         */
+        Verdict: "pass" | "fail" | "unmeasured";
     };
     responses: never;
     parameters: never;
@@ -5410,6 +5604,75 @@ export interface operations {
             };
         };
     };
+    get_sample_checklist_api_v1_supply_chain_product_cases__case_id__sample_checklist_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SampleChecklistView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_sample_measurement_api_v1_supply_chain_product_cases__case_id__sample_measurements_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeasurementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SampleChecklistView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_step_proposal_api_v1_supply_chain_product_cases__case_id__step_proposal_get: {
         parameters: {
             query?: never;
@@ -5757,6 +6020,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProposalListDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sample_criteria_policy_api_v1_supply_chain_sample_criteria_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainSampleCriteria-Output"];
+                };
+            };
+        };
+    };
+    set_sample_criteria_policy_api_v1_supply_chain_sample_criteria_policy_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplyChainSampleCriteria-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainSampleCriteria-Output"];
                 };
             };
             /** @description Validation Error */

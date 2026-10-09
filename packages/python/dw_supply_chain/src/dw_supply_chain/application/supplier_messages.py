@@ -77,12 +77,15 @@ from dw_supply_chain.application.ports import (
     TenantPlanPort,
 )
 from dw_supply_chain.application.step_preparation import (
+    CaseDocumentListPort,
+    CaseDraftsPort,
     CaseListingPort,
     entered_current_state,
     resolve_step_preparation,
 )
-from dw_supply_chain.domain.case_document import CaseKind
+from dw_supply_chain.domain.case_document import CaseKind, DocumentType
 from dw_supply_chain.domain.commercial import SupplierContact
+from dw_supply_chain.domain.document_draft import DraftStatus, field_value
 from dw_supply_chain.domain.follow_up import FollowUpKind
 from dw_supply_chain.domain.grounded_writing import EvidenceItem, ground_sentences
 from dw_supply_chain.domain.po_case import POCase, POCaseId, reference_label
@@ -113,7 +116,7 @@ logger = logging.getLogger(__name__)
 MESSAGES_LANE = "supply_chain_supplier_messages"
 MESSAGES_WORKER_ID = "supply_chain.supplier_messages"
 MESSAGES_WORKER_VERSION = "1.0.0"
-MESSAGE_PROMPT = WritingPrompt("supply_chain.draft_supplier_message", "1.0.0")
+MESSAGE_PROMPT = WritingPrompt("supply_chain.draft_supplier_message", "1.1.0")
 MESSAGE_DRAFTED = "supply_chain.supplier_message.drafted"
 MESSAGE_SENT = "supply_chain.supplier_message.sent"
 _RESOURCE = "supplier_message"
@@ -123,6 +126,7 @@ PURPOSE_LABELS: Mapping[MessagePurpose, str] = {
     MessagePurpose.SAMPLE_REQUEST: "Đề nghị gửi mẫu",
     MessagePurpose.SUPPLIER_REMINDER: "Nhắc NCC cập nhật",
     MessagePurpose.SUPPLIER_CONFIRMATION: "Xác nhận sản phẩm với NCC",
+    MessagePurpose.SAMPLE_REVISION_REQUEST: "Gửi phiếu yêu cầu chỉnh sửa mẫu",
 }
 # The step a case enters that a message of this purpose goes with.
 _STEP_PURPOSES: Mapping[MessagePurpose, ProductDevState] = {
@@ -660,6 +664,10 @@ class DraftSupplierMessages:
     drafter: DraftSupplierMessage
     policy_override_repo: PolicyOverridePort
     platform_default_policy: SupplyChainStepPreparation
+    # Where an approved revision request is found (ticket ai-automation/09);
+    # a host without them drafts no message of that purpose.
+    documents: CaseDocumentListPort | None = None
+    drafts: CaseDraftsPort | None = None
     batch: int = _BATCH
 
     async def run(self) -> MessageLaneCount:
@@ -711,12 +719,67 @@ class DraftSupplierMessages:
         for purpose, state in _STEP_PURPOSES.items():
             if purpose in purposes:
                 requests.extend(await self._step_requests(context, purpose, state))
+        if MessagePurpose.SAMPLE_REVISION_REQUEST in purposes:
+            requests.extend(await self._revision_requests(context))
         return requests
 
-    async def _step_requests(
-        self, context: AccessContext, purpose: MessagePurpose, state: ProductDevState
-    ) -> list[MessageRequest]:
+    async def _revision_requests(self, context: AccessContext) -> list[MessageRequest]:
+        """One message per revision request document of a case waiting for its
+        revised sample: the document attached, its items (when AI prepared it
+        and a person approved it) as the evidence the message may cite."""
+        if self.documents is None or self.drafts is None:
+            return []
         found: list[MessageRequest] = []
+        for case in await self._cases_in(context, ProductDevState.REVISION_REQUESTED):
+            documents = [
+                d
+                for d in await self.documents.list_for_case(
+                    context, CaseKind.PRODUCT, case.id.value
+                )
+                if d.doc_type is DocumentType.SAMPLE_REVISION_REQUEST
+            ]
+            if not documents:
+                continue
+            paper = max(documents, key=lambda d: (d.version, d.uploaded_at))
+            confirmed = [
+                d
+                for d in await self.drafts.latest_for_case(context, CaseKind.PRODUCT, case.id.value)
+                if d.doc_type is DocumentType.SAMPLE_REVISION_REQUEST
+                and d.status is DraftStatus.CONFIRMED
+            ]
+            items = (
+                field_value(max(confirmed, key=lambda d: d.created_at).fields, "items")
+                if confirmed
+                else None
+            )
+            lines = [
+                f"{i.get('criterion')}: {i.get('finding')}; yêu cầu: {i.get('requirement') or ''}"
+                for i in (items if isinstance(items, list) else [])
+                if isinstance(i, Mapping)
+            ]
+            found.append(
+                MessageRequest(
+                    case_kind=CaseKind.PRODUCT,
+                    case_id=case.id.value,
+                    purpose=MessagePurpose.SAMPLE_REVISION_REQUEST,
+                    source_key=f"sample_revision_request:{paper.id}",
+                    evidence=(
+                        EvidenceItem(
+                            f"doc:{paper.id}",
+                            "Phiếu yêu cầu chỉnh sửa mẫu",
+                            f"Phiếu vòng {case.sample_round}: "
+                            + (" | ".join(lines) if lines else f"file {paper.filename}"),
+                        ),
+                    ),
+                    attachments=(paper.id.value,),
+                )
+            )
+        return found
+
+    async def _cases_in(
+        self, context: AccessContext, state: ProductDevState
+    ) -> list[ProductDevelopmentCase]:
+        found: list[ProductDevelopmentCase] = []
         case_filter = ProductCaseListFilter(state=state)
         cursor: str | None = None
         while True:
@@ -729,21 +792,28 @@ class DraftSupplierMessages:
                 ),
                 case_filter,
             )
-            for case in page.items:
-                entered = await entered_current_state(self.cases, context, case)
-                if entered is None or entered.id is None:
-                    continue
-                found.append(
-                    MessageRequest(
-                        case_kind=CaseKind.PRODUCT,
-                        case_id=case.id.value,
-                        purpose=purpose,
-                        source_key=f"{purpose.value}:{entered.id}",
-                    )
-                )
+            found.extend(page.items)
             if page.next_cursor is None:
                 return found
             cursor = page.next_cursor
+
+    async def _step_requests(
+        self, context: AccessContext, purpose: MessagePurpose, state: ProductDevState
+    ) -> list[MessageRequest]:
+        found: list[MessageRequest] = []
+        for case in await self._cases_in(context, state):
+            entered = await entered_current_state(self.cases, context, case)
+            if entered is None or entered.id is None:
+                continue
+            found.append(
+                MessageRequest(
+                    case_kind=CaseKind.PRODUCT,
+                    case_id=case.id.value,
+                    purpose=purpose,
+                    source_key=f"{purpose.value}:{entered.id}",
+                )
+            )
+        return found
 
 
 __all__ = [

@@ -36,7 +36,8 @@ vi.mock("../../../lib/session", () => ({
   }),
 }));
 
-import ProposalListPage, { NEEDS_VALUES } from "../proposal-lists/[id]/page";
+import ProposalListPage from "../proposal-lists/[id]/page";
+import { NEEDS_VALUES } from "../../../components/supply-chain/proposal-list-labels";
 
 function row(overrides: Partial<ProposalRow> = {}): ProposalRow {
   return {

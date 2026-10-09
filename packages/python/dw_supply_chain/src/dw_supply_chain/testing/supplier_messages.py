@@ -41,10 +41,16 @@ from dw_supply_chain.domain.product_development_case import (
 from dw_supply_chain.domain.supplier_message import MessagePurpose
 from dw_supply_chain.step_preparation_policy import SupplyChainStepPreparation
 from dw_supply_chain.supplier_message_policy import load_supply_chain_supplier_messages
-from dw_supply_chain.testing.step_preparation import NOW, REPO_ROOT, InMemoryStepCases
+from dw_supply_chain.testing.step_preparation import (
+    NOW,
+    REPO_ROOT,
+    InMemoryDocuments,
+    InMemoryDrafts,
+    InMemoryStepCases,
+)
 
 TEMPLATES = load_supply_chain_supplier_messages(
-    REPO_ROOT / "configs" / "policies" / "supply_chain_supplier_messages@1.0.0.yaml"
+    REPO_ROOT / "configs" / "policies" / "supply_chain_supplier_messages@1.1.0.yaml"
 )
 PLATFORM_POLICY = SupplyChainStepPreparation.model_validate(
     {
@@ -253,6 +259,8 @@ class MessageWorld:
     plans: StaticPlans = field(default_factory=StaticPlans)
     clock: FixedClock = field(default_factory=lambda: FixedClock(NOW))
     model_profile: str | None = None
+    documents: InMemoryDocuments = field(default_factory=InMemoryDocuments)
+    drafts: InMemoryDrafts = field(default_factory=InMemoryDrafts)
 
     def __post_init__(self) -> None:
         self.plans.plans[self.tenant_id] = "professional"
@@ -297,6 +305,8 @@ class MessageWorld:
             drafter=self.drafter(),
             policy_override_repo=self.overrides,
             platform_default_policy=PLATFORM_POLICY,
+            documents=self.documents,
+            drafts=self.drafts,
         )
 
     def enable(self, *purposes: MessagePurpose) -> None:

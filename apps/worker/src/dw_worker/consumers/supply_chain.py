@@ -108,6 +108,9 @@ from dw_supply_chain.adapters.persistence.proposal_list_repository import (
     SqlProposalLists,
     SqlTakenCodes,
 )
+from dw_supply_chain.adapters.persistence.sample_measurement_repository import (
+    SqlSampleMeasurements,
+)
 from dw_supply_chain.adapters.persistence.step_preparation_repository import (
     SqlPreparationRecords,
     SqlProposalOutcomes,
@@ -142,7 +145,12 @@ from dw_supply_chain.application.product_reviews import (
     ReconcileProductApprovals,
 )
 from dw_supply_chain.application.proposal_lists import ReadProposalLists, TenantCategories
-from dw_supply_chain.application.step_preparation import PrepareStep, PrepareSteps
+from dw_supply_chain.application.step_preparation import (
+    EvaluationWriter,
+    PrepareStep,
+    PrepareSteps,
+    SamplePreparation,
+)
 from dw_supply_chain.application.step_proposals import ApplyStepProposal, StepProposalSubject
 from dw_supply_chain.application.supplier_messages import (
     DraftSupplierMessage,
@@ -153,6 +161,7 @@ from dw_supply_chain.domain.step_proposal import STEP_PROPOSAL_PREFIX
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
 from dw_supply_chain.model_routes import (
     PROPOSAL_LIST_TASK,
+    SAMPLE_EVALUATION_TASK,
     SUPPLIER_MESSAGE_TASK,
     load_supply_chain_model_routes,
 )
@@ -163,6 +172,7 @@ from dw_supply_chain.policy_files import (
     PRODUCT_ACTION_DUTIES_POLICY_FILE,
     PRODUCT_APPROVALS_POLICY_FILE,
     PRODUCT_SIGNOFF_WORKER_FILE,
+    SAMPLE_CRITERIA_POLICY_FILE,
     SLA_POLICY_FILE,
     STEP_PREPARATION_POLICY_FILE,
     STEP_PREPARATION_WORKER_FILE,
@@ -172,6 +182,7 @@ from dw_supply_chain.presentation.zalo_case_query import ZaloCaseQueryCommand
 from dw_supply_chain.presentation.zalo_proposal import ZaloProposalCommand
 from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.product_approvals import load_supply_chain_product_approvals
+from dw_supply_chain.sample_criteria_policy import load_supply_chain_sample_criteria
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
 from dw_supply_chain.step_preparation_policy import load_supply_chain_step_preparation
 from dw_supply_chain.supplier_message_policy import load_supply_chain_supplier_messages
@@ -390,6 +401,8 @@ def build_supplier_messages(
         platform_default_policy=load_supply_chain_step_preparation(
             policies / STEP_PREPARATION_POLICY_FILE
         ),
+        documents=SqlCaseDocumentRepository(sessions),
+        drafts=SqlDocumentDraftRepository(sessions),
     )
 
 
@@ -438,16 +451,45 @@ def build_step_preparation_stack(
     configs_dir: Path,
     ids: IdGenerator,
     clock: UtcClock,
+    gateway: ModelGateway | None = None,
+    model_profile: str | None = None,
+    gates_dir: Path | None = None,
 ) -> StepPreparationStack:
     """The preparer and the applier over the same tables, templates and bucket
-    the API's are built on."""
+    the API's are built on; a sample round's criteria and measurements, and
+    (given `gateway`, the process's one-call gateway) the model that words its
+    record and request, on the route `supply_chain_model_routes` gives it."""
     product_cases = SqlProductCaseRepository(sessions)
     documents = SqlCaseDocumentRepository(sessions)
     drafts = SqlDocumentDraftRepository(sessions)
     registry = DocTemplateRegistry(inspector=DocxTemplateInspector())
     registry.load_directory(configs_dir / "doc_templates")
     templates = TenantDocTemplates(registry=registry, overrides=SqlDocTemplateOverrides(sessions))
-    subject = StepProposalSubject(cases=product_cases, drafts=drafts, documents=documents)
+    policies = configs_dir / "policies"
+    writer = None
+    if gateway is not None:
+        routes = load_supply_chain_model_routes(
+            policies / MODEL_ROUTES_POLICY_FILE, gates_dir or configs_dir.parent / "evals" / "gates"
+        )
+        writer = EvaluationWriter(
+            gateway=gateway,
+            plans=SqlTenantPlans(sessions),
+            ids=ids,
+            worker_id=step_preparation_graph.WORKER_ID,
+            worker_version=step_preparation_graph.WORKER_VERSION,
+            model_profile=routes.profile_for(SAMPLE_EVALUATION_TASK) or model_profile,
+        )
+    sample = SamplePreparation(
+        measurements=SqlSampleMeasurements(sessions),
+        policy_override_repo=SqlPolicyOverrideRepository(sessions),
+        platform_default_criteria=load_supply_chain_sample_criteria(
+            policies / SAMPLE_CRITERIA_POLICY_FILE
+        ),
+        writer=writer,
+    )
+    subject = StepProposalSubject(
+        cases=product_cases, drafts=drafts, documents=documents, sample=sample
+    )
     preparer = PrepareStep(
         cases=product_cases,
         documents=documents,
@@ -464,6 +506,7 @@ def build_step_preparation_stack(
         records=SqlPreparationRecords(sessions),
         ids=ids,
         clock=clock,
+        sample=sample,
     )
     applier = ApplyStepProposal(
         cases=product_cases,

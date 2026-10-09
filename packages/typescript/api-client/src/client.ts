@@ -34,6 +34,7 @@ import {
   supplierMessageSchema,
   proposalListSummarySchema,
   proposalListDetailSchema,
+  sampleChecklistSchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -111,6 +112,9 @@ import {
   type ProposalListSummary,
   type ProposalListDetail,
   type ProposalRow,
+  type SampleChecklist,
+  type SampleChecklistRow,
+  type SampleVerdict,
   type DraftField,
   type DraftStatus,
   type TemplateFieldKind,
@@ -474,6 +478,20 @@ const _proposalListsMirrorTheRoute: [
   SameType<keyof ProposalRow, keyof SupplyChainGenerated["ProposalRowView"]>,
 ] = [true, true, true];
 void _proposalListsMirrorTheRoute;
+
+// Ticket ai-automation/09: a sample round's checklist.
+const _sampleChecklistMirrorsTheRoute: [
+  SameType<
+    keyof SampleChecklist,
+    keyof SupplyChainGenerated["SampleChecklistView"]
+  >,
+  SameType<
+    keyof SampleChecklistRow,
+    keyof SupplyChainGenerated["ChecklistRowView"]
+  >,
+  SameType<SampleVerdict, SupplyChainGenerated["Verdict"]>,
+] = [true, true, true];
+void _sampleChecklistMirrorsTheRoute;
 
 /** `POST /proposal-lists/{id}/rows/{index}/proposal`'s body. */
 export type ProposeRowBody =
@@ -1727,6 +1745,29 @@ export class ApiClient {
     return schema.parse(json);
   }
 
+  /** A sample round's criteria, R&D's newest values and code's verdicts. */
+  getSampleChecklist(caseId: string): Promise<SampleChecklist> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/sample-checklist`,
+      sampleChecklistSchema,
+    );
+  }
+
+  /** R&D enters one value for one criterion of the round. */
+  recordSampleMeasurement(
+    caseId: string,
+    body: { criterion: string; value: string; note: string | null },
+    idempotencyKey: string,
+  ): Promise<SampleChecklist> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/sample-measurements`,
+      sampleChecklistSchema,
+      { body, idempotencyKey },
+    );
+  }
+
   /** Step 1 from a list: the file is stored; AI reads it in the background. */
   uploadProposalList(
     file: File,
@@ -2126,6 +2167,9 @@ export type {
   ProposalListSummary,
   ProposalListDetail,
   ProposalRow,
+  SampleChecklist,
+  SampleChecklistRow,
+  SampleVerdict,
   SupplierMessage,
   SupplierMessagePurpose,
   SupplierMessageStatus,

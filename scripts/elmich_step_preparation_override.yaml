@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_step_preparation
-policy_version: "1.1.0"
+policy_version: "1.2.0"
 
 # Override của TENANT ELMICH (không phải platform default): các bước AI chuẩn bị
 # (ADR 0025, ticket ai-automation/05). Ghi bằng
@@ -12,20 +12,31 @@ policy_version: "1.1.0"
 # Chỉ các bước đã có công thức ở lát AI-05; các bước khác thêm khi ticket của
 # chúng (AI-08 đến AI-18) mang bản nháp và phép kiểm riêng.
 steps:
-  # Bước 3-5, test mẫu (việc vật lý): AI dựng biên bản đánh giá mẫu từ dữ liệu
-  # hồ sơ và chứng từ đã đọc; ô kết luận và ngày đánh giá để trống, gợi ý của
-  # AI (từ báo cáo test tải lên, nếu có) đặt bên cạnh. R&D nhập rồi duyệt trên
-  # web; duyệt xong biên bản thành chứng từ và hồ sơ sang "Chờ BGĐ duyệt".
+  # Bước 3-5, test mẫu (việc vật lý; 1.2.0, ticket ai-automation/09): R&D nhập
+  # số đo theo tiêu chí của nhóm sản phẩm (policy supply_chain_sample_criteria);
+  # code so ngưỡng; AI soạn biên bản (bảng tiêu chí của code, ghi chú có dẫn
+  # chứng) và phiếu yêu cầu chỉnh sửa (mỗi tiêu chí trượt một mục, yêu cầu AI
+  # viết có dẫn chứng), kiểm từng mục phiếu vòng trước. Ô kết luận (Đạt / Cần
+  # chỉnh sửa / Hủy) và ngày đánh giá để trống, gợi ý bên cạnh; R&D chọn rồi duyệt
+  # trên web: Đạt sang "Chờ BGĐ duyệt" với biên bản, Cần chỉnh sửa gửi phiếu,
+  # Hủy đóng hồ sơ; lý do của hai bước sau là nhận xét của người duyệt.
   - case_kind: product
     state: sample_testing
     action: pass_sample
     sources: [sample_evaluation, supplier_quotation]
     drafts:
       - doc_type: sample_evaluation
-        recipe: case_facts
-    checks: [sources_read, drafts_complete]
+        recipe: sample_evaluation
+      - doc_type: sample_revision_request
+        recipe: revision_request
+    checks: [sources_read, criteria_measured, revision_checked, drafts_complete]
     physical: true
     result_fields: [evaluated_on, conclusion]
+    outcome_field: conclusion
+    outcomes:
+      pass: { action: pass_sample, label: "Đạt" }
+      revise: { action: request_revision, label: "Cần chỉnh sửa" }
+      reject: { action: reject_sample, label: "Hủy" }
   # Bước 8, chốt với NCC: AI đọc email xác nhận của NCC đã tải lên; TP Cung ứng
   # duyệt "sang bước mã hàng với email này" (web hoặc Zalo bằng mã của cổng).
   - case_kind: product
@@ -37,4 +48,11 @@ steps:
 # từ hộp thư của mình rồi bấm "Đã gửi". Xin mẫu khi hồ sơ vào bước 2, nhắc NCC
 # khi follow-up phía NCC mở (im lặng, quá hạn mẫu), xác nhận sản phẩm khi hồ sơ
 # vào bước 8. Không giá, không số tài khoản trong thư.
-supplier_messages: [sample_request, supplier_reminder, supplier_confirmation]
+# 1.2.0: phiếu yêu cầu chỉnh sửa đã duyệt cũng có thư gửi NCC (ai-automation/09).
+supplier_messages:
+  [
+    sample_request,
+    supplier_reminder,
+    supplier_confirmation,
+    sample_revision_request,
+  ]

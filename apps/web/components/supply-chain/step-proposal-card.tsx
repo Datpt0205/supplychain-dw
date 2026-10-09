@@ -10,6 +10,7 @@ import {
   Flex,
   Form,
   Input,
+  Select,
   Tooltip,
   Typography,
 } from "antd";
@@ -268,11 +269,24 @@ export function StepProposalCard({
                     },
                   ]}
                 >
-                  <Input
-                    type={f.kind === "date" ? "date" : "text"}
-                    aria-label={f.label}
-                    autoComplete="off"
-                  />
+                  {f.choices.length > 0 ? (
+                    // The outcome is chosen; AI's suggestion stays beside it,
+                    // never its value (no default).
+                    <Select
+                      aria-label={f.label}
+                      placeholder="Chọn kết luận"
+                      options={f.choices.map((c) => ({
+                        value: c.value,
+                        label: c.label,
+                      }))}
+                    />
+                  ) : (
+                    <Input
+                      type={f.kind === "date" ? "date" : "text"}
+                      aria-label={f.label}
+                      autoComplete="off"
+                    />
+                  )}
                 </Form.Item>
               ))}
             <Form.Item

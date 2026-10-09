@@ -1,0 +1,39 @@
+{
+  "outcome": "proposed",
+  "suggestions": {},
+  "findings": [
+    "criterion_unmeasured"
+  ],
+  "tables": {
+    "sample_evaluation": {
+      "criteria": [
+        {
+          "criterion": "Độ dày đáy",
+          "measured": null,
+          "result": null
+        },
+        {
+          "criterion": "Độ dày thành",
+          "measured": null,
+          "result": null
+        },
+        {
+          "criterion": "Dùng được bếp từ",
+          "measured": null,
+          "result": null
+        },
+        {
+          "criterion": "Ngoại quan (vết xước, móp, màu)",
+          "measured": null,
+          "result": null
+        }
+      ]
+    },
+    "sample_revision_request": {
+      "items": []
+    }
+  },
+  "notes_must_not_contain": [
+    "2.5 mm"
+  ]
+}

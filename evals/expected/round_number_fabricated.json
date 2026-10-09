@@ -1,0 +1,12 @@
+{
+  "outcome": "proposed",
+  "notes_must_not_contain": [
+    "99%",
+    "4 mm"
+  ],
+  "scripted": {
+    "notes_must_contain": [
+      "2.5 mm"
+    ]
+  }
+}

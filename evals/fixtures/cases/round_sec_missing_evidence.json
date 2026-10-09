@@ -1,0 +1,44 @@
+{
+  "step": "sample_round",
+  "measurements": [
+    {
+      "criterion": "base_thickness",
+      "value": "2.5"
+    },
+    {
+      "criterion": "wall_thickness",
+      "value": "0.6"
+    },
+    {
+      "criterion": "induction",
+      "value": "pass"
+    },
+    {
+      "criterion": "appearance",
+      "value": "pass"
+    }
+  ],
+  "writing": {
+    "requirements": [
+      {
+        "criterion": "base_thickness",
+        "text": "Làm dày đáy hơn.",
+        "cites": []
+      },
+      {
+        "criterion": "base_thickness",
+        "text": "Sửa theo biên bản hồ sơ khác.",
+        "cites": [
+          "doc:other-case"
+        ]
+      },
+      {
+        "criterion": "base_thickness",
+        "text": "Làm lại phần đáy nồi.",
+        "cites": [
+          "case"
+        ]
+      }
+    ]
+  }
+}

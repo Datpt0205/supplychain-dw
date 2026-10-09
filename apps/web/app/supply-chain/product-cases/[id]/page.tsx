@@ -60,6 +60,7 @@ import { Bm04ProfileCard } from "../../../../components/supply-chain/bm04-profil
 import { supplyChainCrumbs } from "../../../../components/supply-chain/crumbs";
 import { DraftsCard } from "../../../../components/supply-chain/drafts-card";
 import { SupplierMessagesCard } from "../../../../components/supply-chain/supplier-messages-card";
+import { SampleChecklistCard } from "../../../../components/supply-chain/sample-checklist-card";
 import { StepProposalCard } from "../../../../components/supply-chain/step-proposal-card";
 import {
   categoryLabel,
@@ -256,6 +257,9 @@ function CaseView({
           <ItemCodingCard detail={detail} onStep={onStep} />
         )}
 
+        {detail.state === "sample_testing" && (
+          <SampleChecklistCard caseId={detail.id} />
+        )}
         <StepProposalCard caseId={detail.id} onDecided={onStep} />
         <Bm04ProfileCard caseId={detail.id} />
         <DraftsCard caseKind="product" caseId={detail.id} />

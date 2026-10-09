@@ -660,3 +660,22 @@ proposal_list_decisions = sa.Table(
         "decided_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )
+
+# What R&D measured on a sample round, criterion by criterion (1021f7fe88f0,
+# ticket ai-automation/09), append-only; the newest value of a criterion counts.
+sample_measurements = sa.Table(
+    "sample_measurements",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("sample_round", sa.Integer, nullable=False),
+    sa.Column("criterion", sa.Text, nullable=False),
+    sa.Column("value", sa.Text, nullable=False),
+    sa.Column("note", sa.Text, nullable=True),
+    sa.Column("entered_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "entered_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)

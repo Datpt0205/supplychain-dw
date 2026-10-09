@@ -1492,6 +1492,99 @@
         "title": "CaseTransitionView",
         "type": "object"
       },
+      "ChecklistRowView": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CriterionKind"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "standard": {
+            "title": "Standard",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "kind",
+          "unit",
+          "min",
+          "max",
+          "standard",
+          "value",
+          "note",
+          "verdict"
+        ],
+        "title": "ChecklistRowView",
+        "type": "object"
+      },
       "CitationView": {
         "description": "The question's own words one field was grounded in — reported\nwhatever the outcome, so a refusal can show what WAS understood.",
         "properties": {
@@ -1677,6 +1770,14 @@
         ],
         "title": "CreateWorkspaceBody",
         "type": "object"
+      },
+      "CriterionKind": {
+        "enum": [
+          "number",
+          "check"
+        ],
+        "title": "CriterionKind",
+        "type": "string"
       },
       "DailyBriefSummaryView": {
         "properties": {
@@ -2050,8 +2151,19 @@
         "type": "object"
       },
       "DraftFieldSourceView": {
-        "description": "Where a value came from: a document and the quote read in it, or the\nperson who typed it. Null: computed by code from stored data.",
+        "description": "Where a value came from: a document and the quote read in it, the\nperson who typed it, or words a model wrote that checked out against the\nevidence they cite (`ai_written`, `cites`). Null: computed by code.",
         "properties": {
+          "ai_written": {
+            "title": "Ai Written",
+            "type": "boolean"
+          },
+          "cites": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cites",
+            "type": "array"
+          },
           "document_id": {
             "anyOf": [
               {
@@ -2091,7 +2203,9 @@
         "required": [
           "document_id",
           "quote",
-          "edited_by"
+          "edited_by",
+          "ai_written",
+          "cites"
         ],
         "title": "DraftFieldSourceView",
         "type": "object"
@@ -2207,7 +2321,9 @@
       "DraftRecipe": {
         "description": "How a draft's fields are filled. `case_facts`: the case's own fields\n(code, name, Category, supplier, round) and the cited readings of the\nstep's source documents whose field has the template field's name; a\nresult field a person types is never filled.",
         "enum": [
-          "case_facts"
+          "case_facts",
+          "sample_evaluation",
+          "revision_request"
         ],
         "title": "DraftRecipe",
         "type": "string"
@@ -3263,6 +3379,44 @@
         "title": "MeResponse",
         "type": "object"
       },
+      "MeasurementRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "criterion": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Criterion",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "pattern": "^[^\\x00]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "value": {
+            "maxLength": 40,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "criterion",
+          "value"
+        ],
+        "title": "MeasurementRequest",
+        "type": "object"
+      },
       "MemberMembershipsView": {
         "description": "A person's memberships in this tenant after a change; empty when none is left.",
         "properties": {
@@ -3530,7 +3684,8 @@
         "enum": [
           "sample_request",
           "supplier_reminder",
-          "supplier_confirmation"
+          "supplier_confirmation",
+          "sample_revision_request"
         ],
         "title": "MessagePurpose",
         "type": "string"
@@ -5199,6 +5354,25 @@
             "title": "Drafts",
             "type": "array"
           },
+          "outcome_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Field"
+          },
+          "outcomes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/StepOutcome"
+            },
+            "maxProperties": 5,
+            "title": "Outcomes",
+            "type": "object"
+          },
           "physical": {
             "default": false,
             "title": "Physical",
@@ -6779,8 +6953,33 @@
         "title": "RequestSupportGrantBody",
         "type": "object"
       },
+      "ResultChoiceView": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "ResultChoiceView",
+        "type": "object"
+      },
       "ResultFieldView": {
         "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/ResultChoiceView"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -6808,7 +7007,8 @@
           "name",
           "label",
           "kind",
-          "suggestion"
+          "suggestion",
+          "choices"
         ],
         "title": "ResultFieldView",
         "type": "object"
@@ -7136,6 +7336,168 @@
           "status"
         ],
         "title": "SLAMilestone",
+        "type": "object"
+      },
+      "SampleChecklistView": {
+        "properties": {
+          "can_record": {
+            "title": "Can Record",
+            "type": "boolean"
+          },
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistRowView"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "sample_round": {
+            "title": "Sample Round",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "case_id",
+          "sample_round",
+          "can_record",
+          "rows"
+        ],
+        "title": "SampleChecklistView",
+        "type": "object"
+      },
+      "SampleCriterion-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CriterionKind"
+          },
+          "label": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "kind"
+        ],
+        "title": "SampleCriterion",
+        "type": "object"
+      },
+      "SampleCriterion-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CriterionKind"
+          },
+          "label": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "kind"
+        ],
+        "title": "SampleCriterion",
         "type": "object"
       },
       "SampleResult": {
@@ -7663,7 +8025,9 @@
         "enum": [
           "sources_present",
           "sources_read",
-          "drafts_complete"
+          "drafts_complete",
+          "criteria_measured",
+          "revision_checked"
         ],
         "title": "StepCheck",
         "type": "string"
@@ -7700,6 +8064,27 @@
           "approve"
         ],
         "title": "StepDecisionRequest",
+        "type": "object"
+      },
+      "StepOutcome": {
+        "additionalProperties": false,
+        "description": "One outcome a person may choose for a physical step: the step it\ntakes and the words the record prints for it.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ProductAction"
+          },
+          "label": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "label"
+        ],
+        "title": "StepOutcome",
         "type": "object"
       },
       "StepProposalView": {
@@ -8775,6 +9160,96 @@
         "title": "SupplyChainSLAPolicy",
         "type": "object"
       },
+      "SupplyChainSampleCriteria-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "by_category": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SampleCriterion-Input"
+              },
+              "type": "array"
+            },
+            "title": "By Category",
+            "type": "object"
+          },
+          "default": {
+            "items": {
+              "$ref": "#/components/schemas/SampleCriterion-Input"
+            },
+            "maxItems": 50,
+            "title": "Default",
+            "type": "array"
+          },
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version",
+          "default"
+        ],
+        "title": "SupplyChainSampleCriteria",
+        "type": "object"
+      },
+      "SupplyChainSampleCriteria-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "by_category": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SampleCriterion-Output"
+              },
+              "type": "array"
+            },
+            "title": "By Category",
+            "type": "object"
+          },
+          "default": {
+            "items": {
+              "$ref": "#/components/schemas/SampleCriterion-Output"
+            },
+            "maxItems": 50,
+            "title": "Default",
+            "type": "array"
+          },
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version",
+          "default"
+        ],
+        "title": "SupplyChainSampleCriteria",
+        "type": "object"
+      },
       "SupplyChainStepPreparation": {
         "additionalProperties": false,
         "properties": {
@@ -9673,6 +10148,15 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "Verdict": {
+        "enum": [
+          "pass",
+          "fail",
+          "unmeasured"
+        ],
+        "title": "Verdict",
+        "type": "string"
       },
       "ViewRequest": {
         "additionalProperties": false,
@@ -15693,6 +16177,120 @@
         ]
       }
     },
+    "/api/v1/supply-chain/product-cases/{case_id}/sample-checklist": {
+      "get": {
+        "operationId": "get_sample_checklist_api_v1_supply_chain_product_cases__case_id__sample_checklist_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SampleChecklistView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Sample Checklist",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/product-cases/{case_id}/sample-measurements": {
+      "post": {
+        "operationId": "record_sample_measurement_api_v1_supply_chain_product_cases__case_id__sample_measurements_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeasurementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SampleChecklistView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Sample Measurement",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/product-cases/{case_id}/step-proposal": {
       "get": {
         "operationId": "get_step_proposal_api_v1_supply_chain_product_cases__case_id__step_proposal_get",
@@ -16315,6 +16913,86 @@
           }
         },
         "summary": "Propose From List",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/sample-criteria-policy": {
+      "get": {
+        "operationId": "get_sample_criteria_policy_api_v1_supply_chain_sample_criteria_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainSampleCriteria-Output"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Sample Criteria Policy",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "operationId": "set_sample_criteria_policy_api_v1_supply_chain_sample_criteria_policy_put",
+        "parameters": [
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainSampleCriteria-Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainSampleCriteria-Output"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Sample Criteria Policy",
         "tags": [
           "supply_chain"
         ]

@@ -450,11 +450,20 @@ def _audit(
 @dataclass(frozen=True, slots=True)
 class FieldInput:
     """A value for a draft field and where it came from: a document and the
-    quote read in it, or nothing (a value code computed from stored data)."""
+    quote read in it, words a model wrote that checked out against the
+    evidence they cite (`cites`), or nothing (a value code computed)."""
 
     value: Any
     document_id: uuid.UUID | None = None
     quote: str | None = None
+    cites: tuple[str, ...] = ()
+
+    def source(self) -> dict[str, Any] | None:
+        if self.document_id is not None:
+            return {"document_id": str(self.document_id), "quote": self.quote}
+        if self.cites:
+            return {"ai_written": True, "cites": list(self.cites)}
+        return None
 
 
 @dataclass(frozen=True)
@@ -486,13 +495,7 @@ class PrepareDocumentDraft:
         template = await self.templates.resolve(context, *ref)
         clean = check_values(template.spec, {n: v.value for n, v in values.items()})
         fields = {
-            name: {
-                "value": value,
-                "source": None
-                if values[name].document_id is None
-                else {"document_id": str(values[name].document_id), "quote": values[name].quote},
-            }
-            for name, value in clean.items()
+            name: {"value": value, "source": values[name].source()} for name, value in clean.items()
         }
         draft_id = self.ids.new_uuid()
         return await self.drafts.add(

@@ -20,7 +20,7 @@ from dw_supply_chain.supplier_message_policy import (
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-SHIPPED = REPO_ROOT / "configs" / "policies" / "supply_chain_supplier_messages@1.0.0.yaml"
+SHIPPED = REPO_ROOT / "configs" / "policies" / "supply_chain_supplier_messages@1.1.0.yaml"
 
 
 def _raw() -> dict[str, Any]:

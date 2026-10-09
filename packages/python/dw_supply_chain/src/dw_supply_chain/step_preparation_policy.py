@@ -25,11 +25,13 @@ tickets (AI-14 to AI-18); 1.0.0 refuses them rather than accept and ignore them.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from dw_kernel.errors import DomainError
 from dw_supply_chain.domain.case_document import CaseKind, DocumentType
 from dw_supply_chain.domain.document_draft import DRAFT_TEMPLATES
 from dw_supply_chain.domain.product_development_case import (
@@ -39,13 +41,19 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevState,
     forward_step,
 )
-from dw_supply_chain.domain.step_proposal import PREPARABLE_ACTIONS, DraftRecipe, StepCheck
+from dw_supply_chain.domain.step_proposal import (
+    OUTCOME_REASON_ACTIONS,
+    PREPARABLE_ACTIONS,
+    DraftRecipe,
+    StepCheck,
+)
 from dw_supply_chain.domain.supplier_message import MessagePurpose
 
 __all__ = [
     "STEP_PREPARATION_POLICY_ID",
     "PreparedDraft",
     "PreparedStep",
+    "StepOutcome",
     "SupplyChainStepPreparation",
     "load_supply_chain_step_preparation",
 ]
@@ -60,6 +68,16 @@ class PreparedDraft(BaseModel):
     recipe: DraftRecipe
 
 
+class StepOutcome(BaseModel):
+    """One outcome a person may choose for a physical step: the step it
+    takes and the words the record prints for it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    action: ProductAction
+    label: str = Field(min_length=1, max_length=60)
+
+
 class PreparedStep(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -71,6 +89,12 @@ class PreparedStep(BaseModel):
     checks: tuple[StepCheck, ...] = ()
     physical: bool = False
     result_fields: tuple[str, ...] = Field(default=(), max_length=10)
+    # A physical step with more than one outcome (ticket ai-automation/09):
+    # the result field the person chooses the outcome in, and each choice's
+    # step. `action` is the outcome the proposal is raised as; the one chosen
+    # is the one taken.
+    outcome_field: str | None = None
+    outcomes: dict[str, StepOutcome] = Field(default_factory=dict, max_length=5)
 
     @property
     def action_document(self) -> DocumentType | None:
@@ -79,6 +103,24 @@ class PreparedStep(BaseModel):
     @property
     def drafted_types(self) -> frozenset[DocumentType]:
         return frozenset(d.doc_type for d in self.drafts)
+
+    @property
+    def outcome_actions(self) -> frozenset[ProductAction]:
+        """Every step this proposal may take: its outcomes', or its own."""
+        return frozenset(o.action for o in self.outcomes.values()) or frozenset({self.action})
+
+    def outcome_for(self, typed: Mapping[str, str]) -> ProductAction:
+        """The step the typed result chooses; the step's own action when it
+        has no outcomes. A choice it does not offer is refused by name."""
+        if not self.outcomes or self.outcome_field is None:
+            return self.action
+        choice = typed.get(self.outcome_field)
+        if choice not in self.outcomes:
+            raise DomainError(
+                "kết luận phải là một trong các lựa chọn của bước",
+                details={"field": self.outcome_field, "choices": sorted(self.outcomes)},
+            )
+        return self.outcomes[choice].action
 
     @model_validator(mode="after")
     def _a_step_a_proposal_can_take(self) -> PreparedStep:
@@ -117,7 +159,32 @@ class PreparedStep(BaseModel):
             raise ValueError(f"{name}: only a physical step has result fields")
         if len(set(self.result_fields)) != len(self.result_fields):
             raise ValueError(f"{name}: a result field is named twice")
+        if self.outcomes or self.outcome_field is not None:
+            self._outcomes_a_proposal_can_take(name)
         return self
+
+    def _outcomes_a_proposal_can_take(self, name: str) -> None:
+        if not self.physical or self.outcome_field not in self.result_fields:
+            raise ValueError(f"{name}: outcomes are chosen in a result field of a physical step")
+        if not self.outcomes:
+            raise ValueError(f"{name}: an outcome field needs outcomes")
+        if self.action not in {o.action for o in self.outcomes.values()}:
+            raise ValueError(f"{name}: {self.action.value} is not one of its outcomes")
+        for choice, outcome in self.outcomes.items():
+            action = outcome.action
+            if action not in PREPARABLE_ACTIONS | OUTCOME_REASON_ACTIONS:
+                raise ValueError(f"{name}/{choice}: a proposal cannot take {action.value}")
+            step = forward_step(action)
+            if step is None or step[0] is not self.state:
+                raise ValueError(f"{name}/{choice}: {action.value} is not taken from here")
+            paper = ACTION_DOCUMENT_TYPE.get(action)
+            if (
+                action in DOCUMENT_REQUIRED_ACTIONS
+                and paper is not None
+                and paper not in self.drafted_types
+                and paper not in self.sources
+            ):
+                raise ValueError(f"{name}/{choice}: {action.value} needs a {paper.value}")
 
 
 class SupplyChainStepPreparation(BaseModel):

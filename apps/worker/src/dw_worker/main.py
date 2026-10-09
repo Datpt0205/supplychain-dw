@@ -520,6 +520,16 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                 configs_dir=REPO_ROOT / "configs",
                 ids=ids,
                 clock=clock,
+                # The model that words a sample round's record and request
+                # (ticket ai-automation/09), through the one-call gateway.
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                model_profile=settings.model_profile,
+                gates_dir=REPO_ROOT / "evals" / "gates",
             )
             if settings.s3_endpoint_url
             else None

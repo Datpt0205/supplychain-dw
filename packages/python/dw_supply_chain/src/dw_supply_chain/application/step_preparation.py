@@ -32,13 +32,15 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime, timedelta
 from typing import Any, Protocol
 
 from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.doc_templates import DocTemplateSpec, TemplateFieldKind
-from dw_kernel.errors import ConflictError, QuotaExceededError
+from dw_agent_runtime.model.budget import BudgetExceededError
+from dw_agent_runtime.ports import ModelGateway, ModelOutputInvalidError
+from dw_kernel.errors import ConflictError, InfrastructureError, QuotaExceededError
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.pagination import MAX_PAGE_SIZE, Page, PageQuery, PageRequest, page_request
 from dw_kernel.ports import IdGenerator, UtcClock
@@ -76,12 +78,34 @@ from dw_supply_chain.domain.document_draft import (
     DocumentDraft,
     DraftSource,
     DraftStatus,
+    field_value,
 )
 from dw_supply_chain.domain.extraction import EXTRACTION_SPECS, ExtractionStatus
+from dw_supply_chain.domain.grounded_writing import EvidenceItem
 from dw_supply_chain.domain.product_development_case import (
+    ACTION_DOCUMENT_TYPE,
     ProductCaseTransition,
     ProductDevelopmentCase,
     ProductDevelopmentCaseId,
+)
+from dw_supply_chain.domain.sample_criteria import Verdict
+from dw_supply_chain.domain.sample_evaluation import (
+    ITEM_WORDS,
+    CriterionResult,
+    EvaluationWriting,
+    GroundedEvaluation,
+    ItemStatus,
+    Measurement,
+    PreviousItem,
+    check_previous,
+    criteria_rows,
+    evidence,
+    ground_evaluation,
+    judge,
+    measurements_digest,
+    notes_text,
+    revision_rows,
+    suggested_outcome,
 )
 from dw_supply_chain.domain.step_proposal import (
     PREPARE_AGAIN_AFTER,
@@ -98,11 +122,16 @@ from dw_supply_chain.domain.step_proposal import (
     proposal_type,
 )
 from dw_supply_chain.product_action_duties import SupplyChainProductActionDuties
+from dw_supply_chain.sample_criteria_policy import (
+    SupplyChainSampleCriteria,
+    resolve_sample_criteria,
+)
 from dw_supply_chain.step_preparation_policy import (
     STEP_PREPARATION_POLICY_ID,
     PreparedStep,
     SupplyChainStepPreparation,
 )
+from dw_supply_chain.workflows.grounded_writing import WritingPrompt, write_with_evidence
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +238,104 @@ class CaseDraftsPort(Protocol):
     async def latest_for_case(
         self, context: AccessContext, case_kind: CaseKind, case_id: uuid.UUID
     ) -> list[DocumentDraft]: ...
+
+
+class MeasurementsPort(Protocol):
+    """What R&D measured on a case's round, under the caller's tenant and
+    workspace (RLS)."""
+
+    async def for_round(
+        self, context: AccessContext, case_id: uuid.UUID, sample_round: int
+    ) -> list[Measurement]: ...
+
+
+class EvaluationWriterPort(Protocol):
+    """The model's words for a sample round's record and request, or None
+    when there are none to be had (no plan, a spent day, a failed call)."""
+
+    async def write(
+        self, context: AccessContext, *, case_id: uuid.UUID, evidence: Sequence[EvidenceItem]
+    ) -> EvaluationWriting | None: ...
+
+
+EVALUATION_PROMPT = WritingPrompt("supply_chain.draft_sample_evaluation", "1.0.0")
+
+
+@dataclass(frozen=True)
+class EvaluationWriter:
+    """Implements `EvaluationWriterPort`: one structured call through the
+    process's one-call gateway, as the preparation lane itself. A refused or
+    failed call is no writing: the drafts carry code's rows and gaps."""
+
+    gateway: ModelGateway
+    plans: TenantPlanPort
+    ids: IdGenerator
+    worker_id: str
+    worker_version: str
+    model_profile: str | None = None
+
+    async def write(
+        self, context: AccessContext, *, case_id: uuid.UUID, evidence: Sequence[EvidenceItem]
+    ) -> EvaluationWriting | None:
+        plan = await self.plans.plan_of(context.tenant_id)
+        if plan is None:
+            return None
+        run_id = self.ids.new_uuid()
+        try:
+            return await write_with_evidence(
+                self.gateway,
+                RunContext(
+                    run_id=run_id,
+                    tenant_id=context.tenant_id,
+                    workspace_id=context.workspace_id,
+                    actor_id=context.principal_id,
+                    worker_id=self.worker_id,
+                    worker_version=self.worker_version,
+                    channel="worker",
+                    plan_id=plan,
+                    roles=frozenset(),
+                    scopes=frozenset(),
+                    trace_id=str(run_id),
+                    subject_ref=f"product_dev_case:{case_id}",
+                ),
+                EVALUATION_PROMPT,
+                EvaluationWriting,
+                task={"purpose": "sample_evaluation"},
+                evidence=evidence,
+                model_profile=self.model_profile,
+            )
+        except (
+            QuotaExceededError,
+            ModelOutputInvalidError,
+            InfrastructureError,
+            BudgetExceededError,
+        ) as exc:
+            logger.warning("sample evaluation: no model writing (%s)", type(exc).__name__)
+            return None
+
+
+@dataclass(frozen=True)
+class SamplePreparation:
+    """What a sample round's recipes and checks read: the tenant's criteria
+    for the case's Category, R&D's measurements of the round, and the model
+    that words the record and the request."""
+
+    measurements: MeasurementsPort
+    policy_override_repo: PolicyOverridePort
+    platform_default_criteria: SupplyChainSampleCriteria
+    writer: EvaluationWriterPort | None = None
+
+    async def results(
+        self, context: AccessContext, case: ProductDevelopmentCase
+    ) -> list[CriterionResult]:
+        criteria = await resolve_sample_criteria(
+            context, self.policy_override_repo, self.platform_default_criteria
+        )
+        return judge(
+            criteria.for_category(case.category),
+            await self.measurements.for_round(context, case.id.value, case.sample_round),
+            case.sample_round,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,15 +447,34 @@ def _case_facts(case: ProductDevelopmentCase) -> dict[str, str | None]:
     }
 
 
-def case_facts_recipe(
-    case: ProductDevelopmentCase,
-    spec: DocTemplateSpec,
-    readings: Sequence[SourceReading],
-    skip: frozenset[str],
-) -> dict[str, FieldInput]:
+@dataclass(frozen=True, slots=True)
+class SampleFacts:
+    """A sample round as the recipes and checks read it: code's results,
+    the last request's items checked, and the model's words that checked out
+    (None: no model writing was asked for, or none was had)."""
+
+    results: tuple[CriterionResult, ...]
+    previous: tuple[PreviousItem, ...]
+    previous_structured: bool
+    grounded: GroundedEvaluation | None
+    today: date
+
+
+@dataclass(frozen=True, slots=True)
+class RecipeInput:
+    case: ProductDevelopmentCase
+    spec: DocTemplateSpec
+    readings: Sequence[SourceReading]
+    # The result fields a person types: never filled.
+    skip: frozenset[str]
+    sample: SampleFacts | None = None
+
+
+def case_facts_recipe(given: RecipeInput) -> dict[str, FieldInput]:
     """The case's own fields, then the cited readings' fields of the same name
     (with their document and quote); never a field in `skip` (the result a
     person types), never a table (a model's rows come with a drafting prompt)."""
+    case, spec, readings, skip = given.case, given.spec, given.readings, given.skip
     facts = _case_facts(case)
     values: dict[str, FieldInput] = {}
     for f in spec.fields:
@@ -351,21 +497,87 @@ def case_facts_recipe(
     return values
 
 
-Recipe = Callable[
-    [ProductDevelopmentCase, DocTemplateSpec, Sequence[SourceReading], frozenset[str]],
-    dict[str, FieldInput],
-]
-DRAFT_RECIPES: Mapping[DraftRecipe, Recipe] = {DraftRecipe.CASE_FACTS: case_facts_recipe}
+def _sample(given: RecipeInput) -> SampleFacts:
+    if given.sample is None:
+        raise _NotPreparedError(NotPreparedReason.SAMPLE_FACTS_UNAVAILABLE)
+    return given.sample
+
+
+def sample_evaluation_recipe(given: RecipeInput) -> dict[str, FieldInput]:
+    """The record: the case's facts, the round's criteria table (code's rows
+    from R&D's measurements) and the notes the model wrote that checked out,
+    each with what it cites. The conclusion and the date stay a person's."""
+    sample = _sample(given)
+    values = case_facts_recipe(given)
+    values["criteria"] = FieldInput(value=criteria_rows(sample.results))
+    notes = () if sample.grounded is None else sample.grounded.notes
+    text = notes_text(notes)
+    if text is not None and "notes" not in given.skip:
+        values["notes"] = FieldInput(
+            value=text, cites=tuple(dict.fromkeys(c for n in notes for c in n.cites))
+        )
+    return values
+
+
+def revision_request_recipe(given: RecipeInput) -> dict[str, FieldInput]:
+    """The request: one item per failed criterion (code's finding), its
+    requirement only when the model wrote one that cites it and checks out."""
+    sample = _sample(given)
+    values = case_facts_recipe(given)
+    requirements = {} if sample.grounded is None else sample.grounded.requirements
+    values["items"] = FieldInput(
+        value=revision_rows(sample.results, requirements),
+        cites=tuple(dict.fromkeys(c for r in requirements.values() for c in r.cites)),
+    )
+    values["requested_on"] = FieldInput(value=sample.today.isoformat())
+    return values
+
+
+Recipe = Callable[[RecipeInput], dict[str, FieldInput]]
+DRAFT_RECIPES: Mapping[DraftRecipe, Recipe] = {
+    DraftRecipe.CASE_FACTS: case_facts_recipe,
+    DraftRecipe.SAMPLE_EVALUATION: sample_evaluation_recipe,
+    DraftRecipe.REVISION_REQUEST: revision_request_recipe,
+}
+# The recipes and checks that read a sample round (`SampleFacts`).
+SAMPLE_RECIPES = frozenset({DraftRecipe.SAMPLE_EVALUATION, DraftRecipe.REVISION_REQUEST})
+SAMPLE_CHECKS = frozenset({StepCheck.CRITERIA_MEASURED, StepCheck.REVISION_CHECKED})
+
+
+def reads_a_round(step: PreparedStep) -> bool:
+    return bool({d.recipe for d in step.drafts} & SAMPLE_RECIPES) or bool(
+        set(step.checks) & SAMPLE_CHECKS
+    )
+
+
 assert set(DRAFT_RECIPES) == set(DraftRecipe)  # every recipe a policy may name is implemented
 
 
 def suggestions_for(
-    result_fields: Sequence[str], readings: Sequence[SourceReading]
+    result_fields: Sequence[str],
+    readings: Sequence[SourceReading],
+    step: PreparedStep | None = None,
+    sample: SampleFacts | None = None,
 ) -> dict[str, dict[str, str]]:
     """AI's suggestion for each result field a reading says something about:
-    the value in words, the quote and the document. Shown beside the field."""
+    the value in words, the quote and the document. Shown beside the field.
+    For a step whose outcome is chosen, code's comparison of the round's
+    measurements suggests it first (a failed criterion: revise)."""
     out: dict[str, dict[str, str]] = {}
+    if step is not None and sample is not None and step.outcome_field is not None:
+        choice = suggested_outcome(sample.results)
+        if choice is not None and choice in step.outcomes:
+            failed = [r.criterion.label for r in sample.results if r.verdict is Verdict.FAIL]
+            out[step.outcome_field] = {
+                "value": step.outcomes[choice].label,
+                "quote": "Tiêu chí không đạt: " + ", ".join(failed)
+                if failed
+                else "Mọi tiêu chí đạt theo số đo của R&D",
+                "document_id": "",
+            }
     for name in result_fields:
+        if name in out:
+            continue
         for source in readings:
             for key in (name, *_SUGGESTION_ALIASES.get(name, ())):
                 entry = source.reading.fields.get(key)
@@ -392,6 +604,7 @@ class CheckInput:
     newest: Mapping[DocumentType, uuid.UUID]
     readings: Sequence[SourceReading]
     drafts: Sequence[DocumentDraft]
+    sample: SampleFacts | None = None
 
 
 def _sources_present(given: CheckInput) -> list[Finding]:
@@ -427,9 +640,19 @@ def _sources_read(given: CheckInput) -> list[Finding]:
 
 
 def _drafts_complete(given: CheckInput) -> list[Finding]:
+    """Gaps of the drafts the step's own action takes. The paper of another
+    outcome (the revision request of a round that may still pass) is shown,
+    not reported: it is needed only if a person chooses that outcome."""
     result = set(given.step.result_fields)
+    alternatives = {
+        ACTION_DOCUMENT_TYPE[a]
+        for a in given.step.outcome_actions
+        if a is not given.step.action and a in ACTION_DOCUMENT_TYPE
+    } - {given.step.action_document}
     found: list[Finding] = []
     for draft in given.drafts:
+        if draft.doc_type in alternatives:
+            continue
         gaps = [g for g in draft.gaps if g.split("[", 1)[0] not in result]
         if gaps:
             found.append(
@@ -440,10 +663,46 @@ def _drafts_complete(given: CheckInput) -> list[Finding]:
     return found
 
 
+def _criteria_measured(given: CheckInput) -> list[Finding]:
+    if given.sample is None:
+        return []
+    return [
+        Finding("criterion_unmeasured", r.criterion.key, f"Chưa nhập số đo: {r.criterion.label}")
+        for r in given.sample.results
+        if r.verdict is Verdict.UNMEASURED
+    ]
+
+
+def _revision_checked(given: CheckInput) -> list[Finding]:
+    if given.sample is None:
+        return []
+    found: list[Finding] = []
+    if not given.sample.previous_structured:
+        found.append(
+            Finding(
+                "previous_request_unstructured",
+                "sample_revision_request",
+                "Phiếu vòng trước là file tải lên; người kiểm cần đối chiếu từng mục",
+            )
+        )
+    for item in given.sample.previous:
+        if item.status is not ItemStatus.FIXED:
+            found.append(
+                Finding(
+                    f"revision_item_{item.status.value}",
+                    item.criterion,
+                    f"Mục vòng trước {ITEM_WORDS[item.status]}: {item.criterion}",
+                )
+            )
+    return found
+
+
 STEP_CHECKS: Mapping[StepCheck, Callable[[CheckInput], list[Finding]]] = {
     StepCheck.SOURCES_PRESENT: _sources_present,
     StepCheck.SOURCES_READ: _sources_read,
     StepCheck.DRAFTS_COMPLETE: _drafts_complete,
+    StepCheck.CRITERIA_MEASURED: _criteria_measured,
+    StepCheck.REVISION_CHECKED: _revision_checked,
 }
 assert set(STEP_CHECKS) == set(StepCheck)  # every check a policy may name is implemented
 
@@ -507,6 +766,9 @@ class PrepareStep:
     records: PreparationRecordsPort
     ids: IdGenerator
     clock: UtcClock
+    # A sample round's criteria, measurements and model (ticket
+    # ai-automation/09); a host that prepares no such step needs none.
+    sample: SamplePreparation | None = None
 
     async def prepare(self, context: AccessContext, request: PreparationRequest) -> Prepared:
         previous = await self.records.latest(context, request.transition_id, request.policy_version)
@@ -558,14 +820,19 @@ class PrepareStep:
             raise _NotPreparedError(NotPreparedReason.CASE_MOVED)
         documents = await self.documents.list_for_case(context, CaseKind.PRODUCT, case.id.value)
         by_id = {d.id.value: d for d in documents}
-        newest = newest_by_type((d.doc_type, d.id.value, d.version) for d in documents)
+        newest = step_documents(case, step, documents)
 
         paper_from_source = self._paper_from_source(case, step, newest, by_id)
         readings = await self._readings(context, step, newest, by_id)
-        drafts = await self._drafts(context, case, step, readings, previous)
-        suggestions = suggestions_for(step.result_fields, readings) if step.physical else {}
+        sample = await self._sample_facts(context, case, step) if reads_a_round(step) else None
+        drafts = await self._drafts(context, case, step, readings, previous, sample)
+        suggestions = (
+            suggestions_for(step.result_fields, readings, step, sample) if step.physical else {}
+        )
 
-        given = CheckInput(step=step, newest=newest, readings=readings, drafts=drafts)
+        given = CheckInput(
+            step=step, newest=newest, readings=readings, drafts=drafts, sample=sample
+        )
         findings = [finding for check in step.checks for finding in STEP_CHECKS[check](given)]
         sources = [SubjectSource(t, newest.get(t)) for t in step.sources]
         target = (case.state, step.action)
@@ -573,6 +840,7 @@ class PrepareStep:
             case.version,
             [SubjectDraft(d.id, d.content_sha256, open_latest=True) for d in drafts],
             sources,
+            "" if sample is None else measurements_digest(sample.results),
         )
         payload: dict[str, Any] = {
             PROPOSAL_CASE_KEY: str(case.id),
@@ -665,6 +933,68 @@ class PrepareStep:
             found.append(SourceReading(document.id.value, document.doc_type, reading))
         return found
 
+    async def _sample_facts(
+        self, context: AccessContext, case: ProductDevelopmentCase, step: PreparedStep
+    ) -> SampleFacts:
+        """The round's results by code, and the last request's items checked
+        against them. No model writing yet: that is asked for only when a
+        draft needs it."""
+        if self.sample is None:
+            raise _NotPreparedError(NotPreparedReason.SAMPLE_FACTS_UNAVAILABLE)
+        results = tuple(await self.sample.results(context, case))
+        last = await self._last_request(context, case)
+        previous = () if last is None else tuple(check_previous(last, results))
+        return SampleFacts(
+            results=results,
+            previous=previous,
+            previous_structured=case.sample_round <= 1 or last is not None,
+            grounded=None,
+            today=self.clock.now().date(),
+        )
+
+    async def _last_request(
+        self, context: AccessContext, case: ProductDevelopmentCase
+    ) -> list[Mapping[str, Any]] | None:
+        """The items of the newest revision request a person approved (an
+        AI-prepared one; an uploaded file has no items to check)."""
+        confirmed = [
+            d
+            for d in await self.drafts.latest_for_case(context, CaseKind.PRODUCT, case.id.value)
+            if d.doc_type is DocumentType.SAMPLE_REVISION_REQUEST
+            and d.status is DraftStatus.CONFIRMED
+        ]
+        if not confirmed:
+            return None
+        newest = max(confirmed, key=lambda d: d.created_at)
+        items = field_value(newest.fields, "items")
+        return [i for i in items if isinstance(i, Mapping)] if isinstance(items, list) else []
+
+    async def _written(
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        sample: SampleFacts,
+        readings: Sequence[SourceReading],
+    ) -> SampleFacts:
+        """The sample facts with the model's words that checked out, or with
+        none when no writer is wired or the model gave nothing."""
+        if self.sample is None or self.sample.writer is None:
+            return sample
+        items = evidence(
+            "; ".join(f"{k}: {v}" for k, v in _case_facts(case).items() if v),
+            sample.results,
+            sample.previous,
+            [
+                (r.document_id, r.reading.fields)
+                for r in readings
+                if r.doc_type is DocumentType.SAMPLE_EVALUATION
+            ],
+        )
+        writing = await self.sample.writer.write(context, case_id=case.id.value, evidence=items)
+        if writing is None:
+            return sample
+        return replace(sample, grounded=ground_evaluation(writing, items, sample.results))
+
     async def _drafts(
         self,
         context: AccessContext,
@@ -672,10 +1002,12 @@ class PrepareStep:
         step: PreparedStep,
         readings: Sequence[SourceReading],
         previous: PreparationRecord | None,
+        sample: SampleFacts | None = None,
     ) -> list[DocumentDraft]:
         """Each draft the step names: the open latest version of the lineage
         an earlier attempt of THIS step entry prepared (a person's edits are
-        kept), else a new one filled by its recipe."""
+        kept), else a new one filled by its recipe. The model is asked once,
+        and only when a new draft needs its words."""
         reusable: dict[DocumentType, DocumentDraft] = {}
         if previous is not None and previous.draft_lineages:
             lineages = set(previous.draft_lineages)
@@ -685,6 +1017,10 @@ class PrepareStep:
                 if draft.lineage_id in lineages and draft.status is DraftStatus.OPEN:
                     reusable[draft.doc_type] = draft
         result = frozenset(step.result_fields)
+        if sample is not None and any(
+            p.recipe in SAMPLE_RECIPES and p.doc_type not in reusable for p in step.drafts
+        ):
+            sample = await self._written(context, case, sample, readings)
         drafts: list[DocumentDraft] = []
         for planned in step.drafts:
             template = await self.templates.resolve(context, *DRAFT_TEMPLATES[planned.doc_type])
@@ -697,7 +1033,9 @@ class PrepareStep:
             if planned.doc_type in reusable:
                 drafts.append(reusable[planned.doc_type])
                 continue
-            values = DRAFT_RECIPES[planned.recipe](case, template.spec, readings, result)
+            values = DRAFT_RECIPES[planned.recipe](
+                RecipeInput(case, template.spec, readings, result, sample)
+            )
             drafts.append(
                 await self.prepare_draft.handle(
                     context,
@@ -706,6 +1044,11 @@ class PrepareStep:
                     doc_type=planned.doc_type,
                     values=values,
                     sources=[_draft_source(r) for r in readings],
+                    prompt=EVALUATION_PROMPT.ref
+                    if planned.recipe in SAMPLE_RECIPES
+                    and sample is not None
+                    and sample.grounded is not None
+                    else None,
                 )
             )
         return drafts
@@ -716,6 +1059,25 @@ def _draft_source(source: SourceReading) -> DraftSource:
         document_id=source.document_id,
         sha256=source.reading.sha256,
         extraction_id=source.reading.id,
+    )
+
+
+def step_documents(
+    case: ProductDevelopmentCase, step: PreparedStep, documents: Sequence[CaseDocument]
+) -> Mapping[DocumentType, uuid.UUID]:
+    """The newest document of each type, as a step reads its sources. A type
+    the step both reads and drafts (a sample round's record) counts only when
+    uploaded since the step's paper bound (the round opened): last round's
+    record, approved into a document, is not this round's lab report. The
+    preparation and the proposal's subject read sources through here, so the
+    two never disagree about which document a proposal was made from."""
+    option = next((o for o in case.action_options() if o.action is step.action), None)
+    since = None if option is None else option.documents_since
+    both = set(step.sources) & step.drafted_types
+    return newest_by_type(
+        (d.doc_type, d.id.value, d.version)
+        for d in documents
+        if d.doc_type not in both or (since is not None and d.uploaded_at >= since)
     )
 
 
@@ -913,6 +1275,20 @@ class PrepareSteps:
         duties = await resolve_product_action_duties(
             context, self.policy_override_repo, self.platform_default_duties
         )
+        scopes = {duty_scope(duties.duty_for(action)) for action in step.outcome_actions}
+        if len(scopes) != 1:
+            # One approval carries one stamped scope: outcomes of different
+            # duties are refused, never stamped with one of them.
+            return await self._not_started(
+                context,
+                case,
+                step,
+                transition_id,
+                policy,
+                previous,
+                NotPreparedReason.OUTCOME_DUTIES_DIFFER,
+                count,
+            )
         thread_id = preparation_thread_id(case.id.value, transition_id, policy.policy_version)
         run_id = self.ids.new_uuid()
         try:
@@ -937,7 +1313,7 @@ class PrepareSteps:
                     transition_id,
                     policy.policy_version,
                     step,
-                    duty_scope(duties.duty_for(step.action)),
+                    next(iter(scopes)),
                 ),
             )
         except ConflictError as exc:
@@ -1099,11 +1475,14 @@ def preparation_input(
 
 __all__ = [
     "DRAFT_RECIPES",
+    "EVALUATION_PROMPT",
     "PREPARATION_LANE",
     "STEP_CHECKS",
     "CaseDocumentListPort",
     "CaseDraftsPort",
+    "EvaluationWriter",
     "ExtractionReadingsPort",
+    "MeasurementsPort",
     "NewPreparationRecord",
     "PreparationRecord",
     "PreparationRecordsPort",
@@ -1111,14 +1490,19 @@ __all__ = [
     "PrepareStep",
     "PrepareSteps",
     "Prepared",
+    "RecipeInput",
+    "SampleFacts",
+    "SamplePreparation",
     "StoredReading",
     "case_facts_recipe",
     "entered_current_state",
     "lane_context",
     "preparation_input",
     "preparation_thread_id",
+    "reads_a_round",
     "record_audit",
     "record_once",
     "resolve_step_preparation",
+    "step_documents",
     "suggestions_for",
 ]

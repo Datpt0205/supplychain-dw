@@ -62,6 +62,12 @@ PREPARABLE_ACTIONS = frozenset(
     and action is not ProductAction.REQUEST_SAMPLE
 )
 
+# Steps a proposal may take as one OUTCOME of a physical step (ticket
+# ai-automation/09): the person deciding chooses the outcome as the step's
+# typed result, and the step's reason is their comment, which every decision
+# on a proposal already requires.
+OUTCOME_REASON_ACTIONS = frozenset({ProductAction.REQUEST_REVISION, ProductAction.REJECT_SAMPLE})
+
 
 def proposal_type(action: ProductAction) -> str:
     return f"{STEP_PROPOSAL_PREFIX}{action.value}"
@@ -74,6 +80,13 @@ class DraftRecipe(StrEnum):
     result field a person types is never filled."""
 
     CASE_FACTS = "case_facts"
+    # The sample evaluation record (ticket ai-automation/09): the case's
+    # facts, the round's criteria table from R&D's measurements (code's
+    # comparison), and notes the model wrote that check out.
+    SAMPLE_EVALUATION = "sample_evaluation"
+    # The revision request: one item per failed criterion (code's rows), the
+    # requirement a model wrote that checks out, an empty cell otherwise.
+    REVISION_REQUEST = "revision_request"
 
 
 class StepCheck(StrEnum):
@@ -85,6 +98,10 @@ class StepCheck(StrEnum):
     SOURCES_READ = "sources_read"
     # The drafts have no gap besides the result a person types.
     DRAFTS_COMPLETE = "drafts_complete"
+    # Every criterion of the case's Category was measured this round.
+    CRITERIA_MEASURED = "criteria_measured"
+    # Each item of the last revision request, checked against this round.
+    REVISION_CHECKED = "revision_checked"
 
 
 class PreparationOutcome(StrEnum):
@@ -110,6 +127,12 @@ class NotPreparedReason(StrEnum):
     ACTION_DOCUMENT_MISSING = "action_document_missing"
     SOURCE_NOT_READ_YET = "source_not_read_yet"
     RESULT_FIELD_UNKNOWN = "result_field_unknown"
+    # The step's outcomes belong to different duties: no single scope can be
+    # stamped on the one approval, so none is raised (fail closed).
+    OUTCOME_DUTIES_DIFFER = "outcome_duties_differ"
+    # A step that reads a sample round, on a host wired without its criteria
+    # and measurements.
+    SAMPLE_FACTS_UNAVAILABLE = "sample_facts_unavailable"
     RUN_REFUSED = "run_refused"
     RUN_FAILED = "run_failed"
 
@@ -147,14 +170,20 @@ class SubjectSource:
 
 
 def proposal_subject_version(
-    case_version: int, drafts: Iterable[SubjectDraft], sources: Iterable[SubjectSource]
+    case_version: int,
+    drafts: Iterable[SubjectDraft],
+    sources: Iterable[SubjectSource],
+    facts: str = "",
 ) -> str:
     """The version an approval binds to. The same case, drafts and sources hash
     the same however they are listed; a draft edited (a new version), decided,
-    or a source with a newer document hashes differently."""
+    or a source with a newer document hashes differently. `facts` is what else
+    the drafts were made from (a round's measurements): one changed after the
+    proposal moves the subject too."""
     canonical = json.dumps(
         {
             "case_version": case_version,
+            "facts": facts,
             "drafts": sorted(
                 [str(d.draft_id), d.content_sha256 if d.open_latest else "closed"] for d in drafts
             ),
@@ -181,6 +210,7 @@ def newest_by_type(
 
 
 __all__ = [
+    "OUTCOME_REASON_ACTIONS",
     "PREPARABLE_ACTIONS",
     "PREPARE_AGAIN_AFTER",
     "PROPOSAL_CASE_KEY",

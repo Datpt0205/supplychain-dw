@@ -66,6 +66,7 @@ function proposal(overrides: Partial<StepProposal> = {}): StepProposal {
           quote: "Kết quả: Đạt",
           document_id: DRAFT_ID,
         },
+        choices: [],
       },
     ],
     ...overrides,
@@ -152,6 +153,39 @@ describe("StepProposalCard", () => {
       comment: "Đã test",
       result: { conclusion: "Đạt yêu cầu" },
     });
+  });
+
+  it("offers the step's outcomes to choose from, none chosen, AI's suggestion beside", async () => {
+    getStepProposal.mockResolvedValue(
+      proposal({
+        result_fields: [
+          {
+            name: "conclusion",
+            label: "Kết luận",
+            kind: "text",
+            suggestion: {
+              value: "Cần chỉnh sửa",
+              quote: "Tiêu chí không đạt: Độ dày đáy",
+              document_id: null,
+            },
+            choices: [
+              { value: "pass", label: "Đạt" },
+              { value: "revise", label: "Cần chỉnh sửa" },
+              { value: "reject", label: "Hủy" },
+            ],
+          },
+        ],
+      }),
+    );
+    renderCard();
+    expect(await screen.findByText("Chọn kết luận")).toBeTruthy();
+    expect(screen.getByText("AI đọc được: “Cần chỉnh sửa”")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Nhận xét"), {
+      target: { value: "Theo số đo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Duyệt chuyển bước" }));
+    await screen.findByText("Nhập kết quả");
+    expect(decideStepProposal).not.toHaveBeenCalled();
   });
 
   it("locks the decision with the reason when the viewer lacks the duty", async () => {

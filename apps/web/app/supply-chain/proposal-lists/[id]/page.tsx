@@ -18,32 +18,21 @@ import {
 } from "antd";
 import type { TableColumnsType } from "antd";
 import { PageHeader, RegionState, StatusTag } from "@dw/ui";
-import type { ProposalListDetail, ProposalRow } from "@dw/api-client";
+import type { ProposalRow } from "@dw/api-client";
 import { LoadError } from "../../../../components/load-error";
 import { supplyChainCrumbs } from "../../../../components/supply-chain/crumbs";
 import { useProductCategories } from "../../../../components/supply-chain/product-categories";
+import {
+  NEEDS_VALUES,
+  OFFLINE,
+  PRIORITY_LABEL,
+  STATUS_TEXT,
+} from "../../../../components/supply-chain/proposal-list-labels";
 import { errorMessage } from "../../../../lib/error-message";
 import { useOnline } from "../../../../lib/hooks/use-online";
 import { useAttemptKey } from "../../../../lib/idempotency-key";
 import { apiClient } from "../../../../lib/session";
 import { useCachedResource } from "../../../../lib/use-cached-resource";
-
-export const OFFLINE = "Không có kết nối mạng. Kết nối lại rồi thử lại.";
-export const NEEDS_VALUES = "Cần mã đề xuất, tên sản phẩm và nhóm sản phẩm.";
-export const PRIORITY_LABEL: Record<string, string> = {
-  high: "Ưu tiên cao",
-  normal: "Bình thường",
-  low: "Ưu tiên thấp",
-};
-export const STATUS_TEXT: Record<
-  NonNullable<ProposalListDetail["status"]>,
-  string
-> = {
-  extracted: "AI đã đọc",
-  unreadable: "Máy không đọc được file này; hãy đề xuất tay.",
-  refused: "AI không đọc được danh sách theo mẫu; hãy đề xuất tay.",
-  failed: "Đọc file bị lỗi; hãy tải lại hoặc đề xuất tay.",
-};
 
 type Values = { proposal_code: string; product_name: string; category: string };
 

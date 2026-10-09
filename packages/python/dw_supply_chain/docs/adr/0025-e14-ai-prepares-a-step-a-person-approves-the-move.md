@@ -162,3 +162,33 @@ Profile `qwen` là chỗ giữ, chưa đo.
    liệu). Việc đề xuất rồi ghi quyết định của dòng là hai giao dịch: dòng đã có quyết định
    thì bị từ chối trước khi tạo hồ sơ; hai lần bấm cùng lúc với mã khác nhau vẫn có thể tạo
    hai hồ sơ (cửa sổ nhỏ, ghi lại; khóa idempotency của route chặn bấm đúp cùng giá trị).
+
+## Sửa đổi 2026-10-09 (tạm, lát AI-09; bước có số đo và nhiều kết quả)
+
+1. **Một bước vật lý có thể có nhiều kết quả.** `PreparedStep.outcomes` (lựa chọn → hành
+   động, nhãn) và `outcome_field` (ô kết quả chọn nó). Approval vẫn là một, kiểu theo
+   hành động chính (`pass_sample`); người duyệt chọn trong ô kết quả, và hành động được áp
+   là hành động của lựa chọn. Hành động cần lý do (`request_revision`, `reject_sample`,
+   `OUTCOME_REASON_ACTIONS`) lấy nhận xét bắt buộc của người duyệt làm lý do. Lựa chọn
+   ngoài danh sách bị 422 trước khi quyết. Policy kiểm khi nạp: ô chọn là ô kết quả của
+   bước vật lý, mọi hành động đi từ trạng thái đó, giấy của hành động nào cần giấy thì được
+   soạn hay là nguồn. Các hành động thuộc duty khác nhau thì lane không trình (một approval
+   chỉ đóng dấu một scope; `outcome_duties_differ`).
+2. **Giấy của kết quả không chọn bị đóng**, không xác nhận: khi Đạt, phiếu chỉnh sửa nháp
+   nhận quyết định `rejected` ("không dùng") trong cùng giao dịch; biên bản (giấy mang kết
+   quả) luôn được xác nhận.
+3. **Số đo của vòng là chủ thể.** `sample_measurements` (chỉ thêm, mới nhất của mỗi tiêu chí
+   tính); tiêu chí và ngưỡng ở policy `supply_chain_sample_criteria` (tenant ghi đè, nền
+   tảng chỉ có tiêu chí kiểm trung tính); phép so là của code (`SampleCriterion.verdict`),
+   một chỗ cho bảng biên bản, mục phiếu, gợi ý kết luận và trang nhập số đo. Phiên bản chủ
+   thể của đề xuất gồm số đo của vòng: nhập số sau khi trình thì đề xuất cũ và được chuẩn
+   bị lại.
+4. **Nguồn của vòng là của vòng.** Loại chứng từ bước vừa đọc vừa soạn (biên bản) chỉ tính
+   khi tải lên từ lúc vòng mở: biên bản vòng trước đã duyệt không phải báo cáo test vòng
+   này. Chuẩn bị và chủ thể đọc nguồn qua cùng một hàm (`step_documents`).
+5. **Mô hình viết, không kết luận.** Một lượt gọi (`draft_sample_evaluation@1.0.0`) viết ghi
+   chú cho biên bản và một yêu cầu cho mỗi tiêu chí trượt; code giữ ghi chú qua
+   `grounded_writing`, giữ yêu cầu chỉ dưới tiêu chí trượt mà nó dẫn. Không có lời của mô
+   hình (không plan, hết lượt, sai schema) thì bản nháp vẫn có bảng của code và các ô trống
+   có tên. Trường do mô hình viết mang nguồn `ai_written` với các khóa nó dẫn; trang hiện "AI
+   viết, đã kiểm dẫn chứng", không bao giờ như giá trị máy đọc hay người kiểm.

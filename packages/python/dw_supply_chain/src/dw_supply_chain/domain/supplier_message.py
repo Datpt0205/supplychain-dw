@@ -42,6 +42,9 @@ class MessagePurpose(StrEnum):
     SAMPLE_REQUEST = "sample_request"
     SUPPLIER_REMINDER = "supplier_reminder"
     SUPPLIER_CONFIRMATION = "supplier_confirmation"
+    # The approved revision request, sent to the supplier (ticket
+    # ai-automation/09).
+    SAMPLE_REVISION_REQUEST = "sample_revision_request"
 
 
 class MessageStatus(StrEnum):

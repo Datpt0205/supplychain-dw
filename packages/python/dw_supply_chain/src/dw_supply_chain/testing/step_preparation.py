@@ -34,11 +34,14 @@ from dw_supply_chain.application.document_drafts import (
     PrepareDocumentDraft,
 )
 from dw_supply_chain.application.ports import ProductCaseListFilter
+from dw_supply_chain.application.sample_checklist import NewMeasurement
 from dw_supply_chain.application.step_preparation import (
+    EvaluationWriter,
     NewPreparationRecord,
     PreparationRecord,
     PreparationRequest,
     PrepareStep,
+    SamplePreparation,
     StoredReading,
     lane_context,
 )
@@ -62,10 +65,22 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevelopmentCaseId,
     ProductDevState,
 )
-from dw_supply_chain.step_preparation_policy import PreparedStep
+from dw_supply_chain.domain.sample_evaluation import Measurement
+from dw_supply_chain.sample_criteria_policy import (
+    SupplyChainSampleCriteria,
+    load_supply_chain_sample_criteria,
+)
+from dw_supply_chain.step_preparation_policy import (
+    PreparedStep,
+    load_supply_chain_step_preparation,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 NOW = datetime(2026, 10, 9, 9, 0, tzinfo=UTC)
+# The criteria Elmich's R&D measures against (provisional thresholds).
+ELMICH_CRITERIA = load_supply_chain_sample_criteria(
+    REPO_ROOT / "scripts" / "elmich_sample_criteria_override.yaml"
+)
 
 
 def _sees(context: AccessContext, tenant: uuid.UUID, workspace: uuid.UUID) -> bool:
@@ -428,6 +443,58 @@ def _stored(context: AccessContext, prepared: AiPreparedDocument) -> CaseDocumen
 
 
 @dataclass
+class InMemoryMeasurements:
+    """`MeasurementStorePort`: a reader sees its own tenant AND workspace."""
+
+    rows: list[tuple[uuid.UUID, uuid.UUID, uuid.UUID, Measurement]] = field(default_factory=list)
+    leaky: bool = False
+
+    async def for_round(
+        self, context: AccessContext, case_id: uuid.UUID, sample_round: int
+    ) -> list[Measurement]:
+        return [
+            m
+            for tenant, workspace, case, m in self.rows
+            if case == case_id
+            and m.sample_round == sample_round
+            and (self.leaky or (tenant, workspace) == (context.tenant_id, context.workspace_id))
+        ]
+
+    async def add(
+        self, context: AccessContext, measurement: NewMeasurement, *, audit: AuditEvent
+    ) -> None:
+        self.rows.append(
+            (
+                context.tenant_id,
+                context.workspace_id,
+                measurement.case_id,
+                Measurement(
+                    id=measurement.id,
+                    sample_round=measurement.sample_round,
+                    criterion=measurement.criterion,
+                    value=measurement.value,
+                    note=measurement.note,
+                    entered_by=context.principal_id,
+                    entered_at=NOW + timedelta(seconds=len(self.rows)),
+                ),
+            )
+        )
+
+
+class _StaticPlans:
+    async def plan_of(self, tenant_id: uuid.UUID) -> str | None:
+        return "professional"
+
+
+class _NoOverrides:
+    async def get(self, context: AccessContext, policy_id: str) -> None:
+        return None
+
+    async def put(self, *args: Any, **kwargs: Any) -> None:
+        raise NotImplementedError("not exercised by step preparation")
+
+
+@dataclass
 class StepWorld:
     """The real preparer, applier and subject over in-memory stores."""
 
@@ -441,6 +508,12 @@ class StepWorld:
     storage: InMemoryStorage = field(default_factory=InMemoryStorage)
     templates: PlatformTemplates = field(default_factory=PlatformTemplates)
     clock: FixedClock = field(default_factory=lambda: FixedClock(NOW))
+    measurements: InMemoryMeasurements = field(default_factory=InMemoryMeasurements)
+    criteria: SupplyChainSampleCriteria = field(default_factory=lambda: ELMICH_CRITERIA)
+    # The model that words a round (ticket ai-automation/09): a gateway whose
+    # `generate_structured` answers; None wires no writer at all.
+    gateway: Any = None
+    model_profile: str | None = None
 
     def context(
         self,
@@ -464,8 +537,27 @@ class StepWorld:
     def __post_init__(self) -> None:
         self.outcomes = InMemoryOutcomes(self.cases, self.drafts, self.documents, self.records)
 
+    def sample(self) -> SamplePreparation:
+        return SamplePreparation(
+            measurements=self.measurements,
+            policy_override_repo=_NoOverrides(),
+            platform_default_criteria=self.criteria,
+            writer=None
+            if self.gateway is None
+            else EvaluationWriter(
+                gateway=self.gateway,
+                plans=_StaticPlans(),
+                ids=Uuid4Generator(),
+                worker_id="supply_chain_step_preparation",
+                worker_version="1.0.0",
+                model_profile=self.model_profile,
+            ),
+        )
+
     def subject(self) -> StepProposalSubject:
-        return StepProposalSubject(cases=self.cases, drafts=self.drafts, documents=self.documents)
+        return StepProposalSubject(
+            cases=self.cases, drafts=self.drafts, documents=self.documents, sample=self.sample()
+        )
 
     def preparer(self) -> PrepareStep:
         ids = Uuid4Generator()
@@ -485,6 +577,7 @@ class StepWorld:
             records=self.records,
             ids=ids,
             clock=self.clock,
+            sample=self.sample(),
         )
 
     def applier(self) -> ApplyStepProposal:
@@ -512,14 +605,16 @@ class StepWorld:
         supplier_name: str | None = "Công ty Gia dụng Minh Phát",
         tenant: uuid.UUID | None = None,
         workspace: uuid.UUID | None = None,
+        product_name: str = "Nồi inox 3 đáy 24cm",
+        category: str = "kitchen",
     ) -> tuple[ProductDevelopmentCase, ProductCaseTransition]:
         case = ProductDevelopmentCase(
             id=ProductDevelopmentCaseId(uuid.uuid4()),
             tenant_id=TenantId(tenant or self.tenant_id),
             workspace_id=WorkspaceId(workspace or self.workspace_id),
             proposal_code="DX-2026-041",
-            product_name="Nồi inox 3 đáy 24cm",
-            category="kitchen",
+            product_name=product_name,
+            category=category,
             pic_user_id=uuid.uuid4(),
             created_by=uuid.uuid4(),
             supplier_name=supplier_name,
@@ -608,8 +703,48 @@ class StepWorld:
     def lane_context(self, case: ProductDevelopmentCase) -> AccessContext:
         return lane_context(case.tenant_id.value, case.workspace_id.value)
 
+    def measure(
+        self, case: ProductDevelopmentCase, criterion: str, value: str, *, sample_round: int = 1
+    ) -> None:
+        self.measurements.rows.append(
+            (
+                case.tenant_id.value,
+                case.workspace_id.value,
+                case.id.value,
+                Measurement(
+                    id=uuid.uuid4(),
+                    sample_round=sample_round,
+                    criterion=criterion,
+                    value=value,
+                    note=None,
+                    entered_by=uuid.uuid4(),
+                    entered_at=NOW - timedelta(minutes=30 - len(self.measurements.rows)),
+                ),
+            )
+        )
 
-# The two steps Elmich's override prepares (scripts/elmich_step_preparation_override.yaml).
+
+# Elmich's override (scripts/elmich_step_preparation_override.yaml) and the
+# criteria it measures against (`ELMICH_CRITERIA`), read from the files
+# themselves: one owner.
+ELMICH_PREPARATION = load_supply_chain_step_preparation(
+    REPO_ROOT / "scripts" / "elmich_step_preparation_override.yaml"
+)
+
+
+# Steps 3-5 as Elmich prepares them (ticket ai-automation/09): measured,
+# worded by a model, three outcomes.
+def _elmich_step(state: ProductDevState) -> PreparedStep:
+    step = ELMICH_PREPARATION.step_for(CaseKind.PRODUCT, state)
+    if step is None:
+        raise LookupError(f"Elmich's override prepares no {state.value}")
+    return step
+
+
+SAMPLE_ROUND = _elmich_step(ProductDevState.SAMPLE_TESTING)
+
+# AI-05's first preparation of steps 3-5 (the case's facts and the readings,
+# one outcome), kept for the eval cases that grade what it guarantees.
 SAMPLE_TESTING = PreparedStep.model_validate(
     {
         "case_kind": "product",

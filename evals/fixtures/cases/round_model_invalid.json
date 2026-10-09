@@ -1,0 +1,22 @@
+{
+  "step": "sample_round",
+  "measurements": [
+    {
+      "criterion": "base_thickness",
+      "value": "2.5"
+    },
+    {
+      "criterion": "wall_thickness",
+      "value": "0.6"
+    },
+    {
+      "criterion": "induction",
+      "value": "pass"
+    },
+    {
+      "criterion": "appearance",
+      "value": "pass"
+    }
+  ],
+  "writing": "invalid"
+}

@@ -33,7 +33,7 @@ from dw_supply_chain.application.supplier_messages import (
     MessageRequest,
     follow_up_evidence,
 )
-from dw_supply_chain.domain.case_document import CaseKind
+from dw_supply_chain.domain.case_document import CaseKind, DocumentType
 from dw_supply_chain.domain.follow_up import FollowUpKind
 from dw_supply_chain.domain.grounded_writing import CitedSentence, EvidenceItem
 from dw_supply_chain.domain.product_development_case import ProductDevState
@@ -348,3 +348,68 @@ def test_listing_needs_read_and_the_case_in_the_caller_s_workspace() -> None:
                 world.context(scopes=READ, workspace=uuid.uuid4()), CaseKind.PRODUCT, case_id
             )
         )
+
+
+def test_an_approved_revision_request_gets_its_message_with_the_document_attached() -> None:
+    """Ticket ai-automation/09: the request a person approved is attached,
+    its items are what the message may cite, and it is drafted once."""
+    from dw_supply_chain.application.document_drafts import NewDocumentDraft, NewDraftDecision
+    from dw_supply_chain.domain.document_draft import DraftDecision
+    from dw_supply_chain.testing.step_preparation import StepWorld
+
+    world = _world(_writing(("Vui lòng chỉnh độ dày đáy theo phiếu đính kèm.", ["doc"])))
+    case = world.add_case(ProductDevState.REVISION_REQUESTED)
+    steps = StepWorld(
+        tenant_id=world.tenant_id,
+        workspace_id=world.workspace_id,
+        documents=world.documents,
+        drafts=world.drafts,
+    )
+    paper = steps.add_document(case, DocumentType.SAMPLE_REVISION_REQUEST)
+    owner = world.context()
+    draft_id = uuid.uuid4()
+    world.drafts.insert(
+        owner,
+        NewDocumentDraft(
+            id=draft_id,
+            lineage_id=draft_id,
+            version=1,
+            case_kind=CaseKind.PRODUCT,
+            case_id=case.id.value,
+            doc_type=DocumentType.SAMPLE_REVISION_REQUEST,
+            template_id="supply_chain.sample_revision_request",
+            template_version="1.0.0",
+            prompt_id=None,
+            prompt_version=None,
+            fields={
+                "items": {
+                    "value": [
+                        {
+                            "criterion": "Độ dày đáy",
+                            "finding": "Đo được 2.5 mm, chuẩn ≥ 3 mm",
+                            "requirement": "Tăng độ dày đáy lên ít nhất 3 mm.",
+                        }
+                    ],
+                    "source": None,
+                }
+            },
+            gaps=[],
+            sources=[],
+            content_sha256="a" * 64,
+        ),
+    )
+    world.drafts.record_decision(
+        owner,
+        NewDraftDecision(
+            id=uuid.uuid4(), draft_id=draft_id, decision=DraftDecision.CONFIRMED, reason=None
+        ),
+    )
+    world.enable(MessagePurpose.SAMPLE_REVISION_REQUEST)
+    _lane(world)
+    _lane(world)
+    [message] = world.messages.rows
+    assert message.purpose is MessagePurpose.SAMPLE_REVISION_REQUEST
+    assert message.attachments == (paper.id.value,)
+    assert message.subject.startswith("[DX-2026-041] Yêu cầu chỉnh sửa mẫu")
+    [sent] = world.gateway.sent
+    assert "Tăng độ dày đáy lên ít nhất 3 mm." in sent.user

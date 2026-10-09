@@ -68,9 +68,12 @@ from dw_supply_chain.application.step_preparation import (
     NewPreparationRecord,
     PreparationRecord,
     PreparationRecordsPort,
+    SamplePreparation,
     entered_current_state,
+    reads_a_round,
     record_audit,
     resolve_step_preparation,
+    step_documents,
 )
 from dw_supply_chain.domain.case_document import (
     CaseDocument,
@@ -87,12 +90,15 @@ from dw_supply_chain.domain.document_draft import (
     content_sha256,
 )
 from dw_supply_chain.domain.product_development_case import (
+    ACTION_DOCUMENT_TYPE,
     ProductActionInput,
     ProductDevelopmentCase,
     ProductDevelopmentCaseId,
     apply_product_action,
 )
+from dw_supply_chain.domain.sample_evaluation import measurements_digest
 from dw_supply_chain.domain.step_proposal import (
+    OUTCOME_REASON_ACTIONS,
     PROPOSAL_CASE_KEY,
     PreparationOutcome,
     SubjectDraft,
@@ -131,6 +137,8 @@ class StepProposalSubject:
     cases: CaseHistoryPort
     drafts: CaseDraftsPort
     documents: CaseDocumentListPort
+    # A step that reads a sample round binds its measurements too.
+    sample: SamplePreparation | None = None
 
     async def version_of(self, context: AccessContext, request: ApprovalRequest) -> str | None:
         return await self.current(context, request.payload)
@@ -143,6 +151,7 @@ class StepProposalSubject:
                 for d in payload.get("drafts") or []
             ]
             types = [DocumentType(str(s["doc_type"])) for s in payload.get("sources") or []]
+            step = PreparedStep.model_validate(payload["step"]) if "step" in payload else None
         except (KeyError, TypeError, ValueError):
             return None
         case = await self.cases.get(context, ProductDevelopmentCaseId(case_id))
@@ -158,9 +167,18 @@ class StepProposalSubject:
             )
             drafts.append(SubjectDraft(draft_id, sha, open_latest=still))
         documents = await self.documents.list_for_case(context, CaseKind.PRODUCT, case_id)
-        newest = newest_by_type((d.doc_type, d.id.value, d.version) for d in documents)
+        newest = (
+            newest_by_type((d.doc_type, d.id.value, d.version) for d in documents)
+            if step is None
+            else step_documents(case, step, documents)
+        )
+        facts = ""
+        if step is not None and reads_a_round(step):
+            if self.sample is None:
+                return None
+            facts = measurements_digest(await self.sample.results(context, case))
         return proposal_subject_version(
-            case.version, drafts, [SubjectSource(t, newest.get(t)) for t in types]
+            case.version, drafts, [SubjectSource(t, newest.get(t)) for t in types], facts
         )
 
 
@@ -316,7 +334,7 @@ class ApplyStepProposal:
                 audits=[record_audit(context, self.ids, self.clock, record)],
             )
             return PreparationOutcome.SUPERSEDED.value
-        return await self._approve(context, payload, step, case, typed_input, run_id)
+        return await self._approve(context, payload, step, case, typed_input, comment, run_id)
 
     async def _reject(
         self,
@@ -362,8 +380,20 @@ class ApplyStepProposal:
         step: PreparedStep,
         case: ProductDevelopmentCase,
         typed_input: Mapping[str, str],
+        comment: str,
         run_id: uuid.UUID | None,
     ) -> str:
+        # The step the person chose (one of a physical step's outcomes), or
+        # the step's own; a choice it does not offer is refused here too.
+        action = step.outcome_for(typed_input)
+        chosen_paper = ACTION_DOCUMENT_TYPE.get(action)
+        # Papers of the outcomes NOT chosen are closed, not confirmed; the
+        # record that carries the result is confirmed whatever was chosen.
+        unchosen = {
+            ACTION_DOCUMENT_TYPE[other]
+            for other in step.outcome_actions
+            if other is not action and other in ACTION_DOCUMENT_TYPE
+        } - {chosen_paper, step.action_document}
         new_drafts: list[NewDocumentDraft] = []
         confirmations: list[NewDraftDecision] = []
         documents: list[AiPreparedDocument] = []
@@ -373,6 +403,16 @@ class ApplyStepProposal:
             draft = await self.drafts.get(context, uuid.UUID(str(named["draft_id"])))
             if draft is None:
                 raise NotFoundError("draft not found", details={"draft_id": named["draft_id"]})
+            if draft.doc_type in unchosen:
+                confirmations.append(
+                    NewDraftDecision(
+                        id=self.ids.new_uuid(),
+                        draft_id=draft.id,
+                        decision=DraftDecision.REJECTED,
+                        reason="Không dùng: người duyệt chọn kết luận khác",
+                    )
+                )
+                continue
             template = await self.templates.resolve(
                 context, draft.template_id, draft.template_version
             )
@@ -444,7 +484,7 @@ class ApplyStepProposal:
                     },
                 )
             )
-            if draft.doc_type == step.action_document:
+            if draft.doc_type == chosen_paper:
                 paper = CaseDocument(
                     id=new_document.id,
                     tenant_id=context.tenant_id,
@@ -462,13 +502,18 @@ class ApplyStepProposal:
                     uploaded_at=self.clock.now(),
                 )
         source_paper = payload.get("action_document_id")
-        if paper is None and source_paper:
+        if paper is None and source_paper and action is step.action:
             paper = await self.documents.get(context, CaseDocumentId(uuid.UUID(str(source_paper))))
         before = case.state
         apply_product_action(
             case,
-            action=step.action,
-            given=ProductActionInput(actor_id=context.principal_id, document=paper),
+            action=action,
+            given=ProductActionInput(
+                actor_id=context.principal_id,
+                document=paper,
+                # An outcome that needs a reason takes the decider's comment.
+                reason=comment.strip() or None if action in OUTCOME_REASON_ACTIONS else None,
+            ),
         )
         audits.insert(
             0,
@@ -477,7 +522,7 @@ class ApplyStepProposal:
                 self.ids,
                 self.clock,
                 case,
-                step.action.value,
+                action.value,
                 {
                     "from_state": before.value,
                     "to_state": case.state.value,
@@ -490,6 +535,8 @@ class ApplyStepProposal:
         )
         record = self._record(payload, PreparationOutcome.APPLIED, None, run_id)
         audits.append(record_audit(context, self.ids, self.clock, record))
+        # `confirmations` carries the papers of outcomes not chosen too, each
+        # a REJECTED decision: every draft the proposal named is closed.
         await self.outcomes.apply_approved(
             context,
             case=case,
@@ -499,7 +546,7 @@ class ApplyStepProposal:
             record=record,
             audits=audits,
         )
-        return step.action.value
+        return action.value
 
     def _confirmed_version(
         self,
@@ -518,6 +565,9 @@ class ApplyStepProposal:
         typed_by = {"edited_by": str(context.principal_id)}
         fields = dict(draft.fields)
         for name, value in result.items():
+            # The chosen outcome prints in words, as the record reads it.
+            if name == step.outcome_field and value in step.outcomes:
+                value = step.outcomes[value].label
             fields[name] = {"value": value, "source": typed_by}
         new_id = self.ids.new_uuid()
         return (new_id, fields), NewDocumentDraft(
@@ -557,6 +607,9 @@ class ResultField:
     kind: str
     # AI's reading, shown beside the empty field; never its value.
     suggestion: Mapping[str, str] | None
+    # The outcomes a person chooses from, `(choice, words)`; empty for a
+    # field typed freely.
+    choices: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -669,6 +722,9 @@ class GetStepProposal:
                     label=name if spec_field is None else spec_field.label,
                     kind="text" if spec_field is None else spec_field.kind.value,
                     suggestion=suggestion if isinstance(suggestion, Mapping) else None,
+                    choices=tuple((k, o.label) for k, o in step.outcomes.items())
+                    if name == step.outcome_field
+                    else (),
                 )
             )
         return tuple(out)
@@ -736,6 +792,8 @@ class DecideStepProposal:
                 context, *DRAFT_TEMPLATES[stamped.action_document]
             )
             typed = check_result(template.spec, stamped.result_fields, result)
+            # A choice the step does not offer is refused before deciding.
+            stamped.outcome_for(typed)
         elif result:
             raise DomainError("bước này không nhận kết quả nhập tay", details={})
         await self.decisions.decide(

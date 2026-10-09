@@ -67,12 +67,12 @@
       "version": "1.9.0"
     },
     {
-      "checksum": "fd19d3aab18f6c02fa3469c3210746441e3f03ddcd139d878e6d2962537389ac",
+      "checksum": "99ec2665ddb380bf771e8c9576d737838aa2b22eb039d3f066c210de1e794bb0",
       "dataset_id": "supply_chain_preparation",
-      "version": "1.2.0"
+      "version": "1.3.0"
     }
   ],
-  "git_sha": "0124e59f0b0c0af9a974c8c25350903f3078ef7f",
+  "git_sha": "e5cf8fc2e7033716bebbea11f1b2c38571d6b164",
   "knowledge_index_version": "2026-07-25.structure-1",
   "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
@@ -113,9 +113,9 @@
       "version": "1.2.0"
     },
     {
-      "checksum": "d0bf6be73b66e841a15cf42ccb9f02c2131fc9f1158999b069d95468f6ae6139",
+      "checksum": "a6ffcbc7989b2c5d8dad5050fd310107e88fff1369bf28243d416cbfddc6a8f2",
       "policy_id": "supply_chain_model_routes",
-      "version": "1.2.0"
+      "version": "1.3.0"
     },
     {
       "checksum": "78b88c0ac6d0a061aee75a4f762746c84ae8dba05565b9e5c1e593ad7b1ba5e0",
@@ -133,6 +133,11 @@
       "version": "1.1.0"
     },
     {
+      "checksum": "df64543fbda0709c1635daea05a18acd1548a11dac9c287904f53b47c6cb51c2",
+      "policy_id": "supply_chain_sample_criteria",
+      "version": "1.0.0"
+    },
+    {
       "checksum": "8915ffde7fce0313d8655cb16ac7e2f7cb2010519f9d3d7358bb6dae24e936bf",
       "policy_id": "supply_chain_sla",
       "version": "2.0.0"
@@ -143,9 +148,9 @@
       "version": "1.0.0"
     },
     {
-      "checksum": "5932adf909fd0481d2ab60aa1f99b9105bf09a1d5f5d2cc4ee29fc7faa4d2a29",
+      "checksum": "c025da44a16c294f09a12aa9c4fe477b92538a38bd84b0d8e39c4dababb116da",
       "policy_id": "supply_chain_supplier_messages",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "checksum": "6cd61b8265d8ce82fdd5047dbec29a09cf5ce6b705226bb97fc24b7e19bf3be5",
@@ -179,12 +184,28 @@
       "version": "1.1.0"
     },
     {
+      "checksum": "e8735d96798409db90df1b9a8a7a3f2e03e322977ce334f403cd464cfaf54f59",
+      "prompt_id": "supply_chain.draft_sample_evaluation",
+      "skills": [
+        "supply_chain.sample_evaluation@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
       "checksum": "47fd8d44daf3db03598d891b547cb159a8e70c4f2ea4a678b06faf1fdcb435d4",
       "prompt_id": "supply_chain.draft_supplier_message",
       "skills": [
         "supply_chain.supplier_email_style@^1.1.0"
       ],
       "version": "1.0.0"
+    },
+    {
+      "checksum": "364df529cdc7cddb8b2910a600478552a240e8ea8cae3f4a3b548507ad4456e5",
+      "prompt_id": "supply_chain.draft_supplier_message",
+      "skills": [
+        "supply_chain.supplier_email_style@^1.1.0"
+      ],
+      "version": "1.1.0"
     },
     {
       "checksum": "8257241e226ba44472e76249ce536591822bec26eed2bfbc354b241ff96c26e2",
@@ -320,6 +341,15 @@
       "checksum": "d1fdb3cbfe3de665c06f45cdbd0aab1b8877a1fbf3532a4d3ce37d47dec61398",
       "skill_id": "supply_chain.sample_evaluation",
       "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_sample_evaluation",
+        "supply_chain.draft_sample_evaluation"
+      ],
+      "checksum": "b83b9b412f8e00e099f57e5341078dcd9c6ecac6c2713da5481c0a191040a0d1",
+      "skill_id": "supply_chain.sample_evaluation",
+      "version": "1.1.0"
     },
     {
       "applies_to": [

@@ -60,6 +60,7 @@ from dw_api.bootstrap.paths import (
     SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES,
     SUPPLY_CHAIN_PRODUCT_APPROVALS,
     SUPPLY_CHAIN_PRODUCT_SIGNOFF_WORKER,
+    SUPPLY_CHAIN_SAMPLE_CRITERIA,
     SUPPLY_CHAIN_SLA_POLICY,
     SUPPLY_CHAIN_STEP_PREPARATION_POLICY,
     SUPPLY_CHAIN_STEP_PREPARATION_WORKER,
@@ -1066,8 +1067,25 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         SUPPLY_CHAIN_STEP_PREPARATION_POLICY
     )
     preparation_records = SqlPreparationRecords(wiring.seam.session_factory)
+    # A sample round (ticket ai-automation/09): its criteria and R&D's
+    # measurements, which a proposal's subject binds too. No model here: the
+    # worker's lane prepares; this process only resumes a decided run.
+    from dw_supply_chain.adapters.persistence.sample_measurement_repository import (
+        SqlSampleMeasurements,
+    )
+    from dw_supply_chain.sample_criteria_policy import load_supply_chain_sample_criteria
+
+    measurements = SqlSampleMeasurements(wiring.seam.session_factory)
+    sample_preparation = sc_preparation.SamplePreparation(
+        measurements=measurements,
+        policy_override_repo=policy_override_repo,
+        platform_default_criteria=load_supply_chain_sample_criteria(SUPPLY_CHAIN_SAMPLE_CRITERIA),
+    )
     proposal_subject = sc_proposals.StepProposalSubject(
-        cases=product_case_repo, drafts=draft_repo, documents=document_repo
+        cases=product_case_repo,
+        drafts=draft_repo,
+        documents=document_repo,
+        sample=sample_preparation,
     )
     preparer = sc_preparation.PrepareStep(
         cases=product_case_repo,
@@ -1085,6 +1103,7 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         records=preparation_records,
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
+        sample=sample_preparation,
     )
     applier = sc_proposals.ApplyStepProposal(
         cases=product_case_repo,
@@ -1191,6 +1210,40 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         drop=sc_lists.DropFromList(
             lists=list_repo,
             propose=propose_handler,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+    )
+
+    # A sample round's checklist (ticket ai-automation/09): R&D enters what it
+    # measured; the comparison is the one the preparation reads.
+    from dw_supply_chain.application import sample_checklist as sc_checklist
+    from dw_supply_chain.presentation.sample_checklist_routes import SampleChecklistHandlers
+
+    record_measurement = sc_checklist.RecordMeasurement(
+        cases=product_case_repo,
+        store=measurements,
+        sample=sample_preparation,
+        authz=authorization,
+        platform_default_duties=load_supply_chain_product_action_duties(
+            SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES
+        ),
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_sample_checklist = SampleChecklistHandlers(
+        get_checklist=sc_checklist.GetSampleChecklist(
+            cases=product_case_repo, record=record_measurement, authz=authorization
+        ),
+        record=record_measurement,
+        get_policy=sc_checklist.GetSampleCriteriaPolicy(
+            policy_override_repo=policy_override_repo,
+            platform_default_criteria=sample_preparation.platform_default_criteria,
+            authz=authorization,
+        ),
+        set_policy=sc_checklist.SetSampleCriteriaPolicyOverride(
+            policy_override_repo=policy_override_repo,
             authz=authorization,
             ids=wiring.seam.ids,
             clock=wiring.seam.clock,

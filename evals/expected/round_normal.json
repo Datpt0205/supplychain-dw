@@ -1,0 +1,54 @@
+{
+  "outcome": "proposed",
+  "model_calls": 1,
+  "drafts": 2,
+  "draft_fields": {
+    "conclusion": null,
+    "evaluated_on": null
+  },
+  "suggestions": {
+    "conclusion": "Cần chỉnh sửa"
+  },
+  "required_input": [
+    "evaluated_on",
+    "conclusion"
+  ],
+  "tables": {
+    "sample_evaluation": {
+      "criteria": [
+        {
+          "criterion": "Độ dày đáy",
+          "measured": "2.5 mm",
+          "result": "Không đạt"
+        },
+        {
+          "criterion": "Độ dày thành",
+          "measured": "0.6 mm",
+          "result": "Đạt"
+        },
+        {
+          "criterion": "Dùng được bếp từ",
+          "result": "Đạt"
+        },
+        {
+          "criterion": "Ngoại quan (vết xước, móp, màu)",
+          "result": "Đạt"
+        }
+      ]
+    },
+    "sample_revision_request": {
+      "items": [
+        {
+          "criterion": "Độ dày đáy",
+          "finding": "Đo được 2.5 mm, chuẩn ≥ 3 mm"
+        }
+      ]
+    }
+  },
+  "scripted": {
+    "notes_must_contain": [
+      "Tăng độ dày đáy lên ít nhất 3 mm.",
+      "2.5 mm"
+    ]
+  }
+}

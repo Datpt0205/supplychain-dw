@@ -45,8 +45,8 @@ from dw_supply_chain.testing.extraction import (
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-SHIPPED = REPO_ROOT / "configs" / "policies" / "supply_chain_model_routes@1.2.0.yaml"
-DATASET = "supply_chain_preparation@1.2.0"
+SHIPPED = REPO_ROOT / "configs" / "policies" / "supply_chain_model_routes@1.3.0.yaml"
+DATASET = "supply_chain_preparation@1.3.0"
 TASK = "extract.sample_evaluation"
 NOW = datetime(2026, 10, 9, tzinfo=UTC)
 
@@ -90,7 +90,7 @@ def test_every_extractor_and_every_drafter_is_a_model_task() -> None:
         "extract.supplier_quotation",
         "extract.proposal_list",
     } | DRAFTING_TASKS == MODEL_TASKS
-    assert "draft.supplier_message" in DRAFTING_TASKS
+    assert {"draft.supplier_message", "draft.sample_evaluation"} <= DRAFTING_TASKS
 
 
 def test_a_drafting_task_runs_where_its_route_says_or_on_the_process_s_profile() -> None:

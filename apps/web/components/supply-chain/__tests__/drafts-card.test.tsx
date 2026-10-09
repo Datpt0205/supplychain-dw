@@ -80,6 +80,8 @@ function draft(overrides: Partial<DocumentDraft> = {}): DocumentDraft {
           document_id: DOC_ID,
           quote: "Tên sản phẩm: Nồi inox 24cm",
           edited_by: null,
+          ai_written: false,
+          cites: [],
         },
       }),
       field({
@@ -155,6 +157,30 @@ describe("DraftsCard", () => {
       screen.getByText("Máy đọc: “Tên sản phẩm: Nồi inox 24cm”"),
     ).toBeTruthy();
     expect(listCaseDrafts).toHaveBeenCalledWith("product", CASE_ID);
+  });
+
+  it("marks words a model wrote as AI-written, never as read or checked", async () => {
+    listCaseDrafts.mockResolvedValue([
+      draft({
+        fields: [
+          field({
+            name: "recommendation",
+            label: "Đề xuất",
+            value: "Đề nghị duyệt sản phẩm.",
+            source: {
+              document_id: null,
+              quote: null,
+              edited_by: null,
+              ai_written: true,
+              cites: ["history:1"],
+            },
+          }),
+        ],
+      }),
+    ]);
+    renderCard();
+    expect(await screen.findByText("AI viết, đã kiểm dẫn chứng")).toBeTruthy();
+    expect(screen.queryByText(/Máy đọc/)).toBeNull();
   });
 
   it("locks editing with the reason when the caller may not write or the version is closed", async () => {

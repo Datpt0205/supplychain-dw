@@ -35,6 +35,7 @@ __all__ = [
     "MODEL_ROUTES_POLICY_ID",
     "MODEL_TASKS",
     "PROPOSAL_LIST_TASK",
+    "SAMPLE_EVALUATION_TASK",
     "SUPPLIER_MESSAGE_TASK",
     "SupplyChainModelRoutes",
     "extraction_task",
@@ -52,7 +53,8 @@ def extraction_task(doc_type: DocumentType) -> str:
 PROPOSAL_LIST_TASK = extraction_task(DocumentType.PROPOSAL_LIST)
 # The drafts a model writes, each graded by its own gate cases.
 SUPPLIER_MESSAGE_TASK = "draft.supplier_message"
-DRAFTING_TASKS = frozenset({SUPPLIER_MESSAGE_TASK})
+SAMPLE_EVALUATION_TASK = "draft.sample_evaluation"
+DRAFTING_TASKS = frozenset({SUPPLIER_MESSAGE_TASK, SAMPLE_EVALUATION_TASK})
 
 # Every model task of this context, by name: what a route and a gate case name.
 MODEL_TASKS = (

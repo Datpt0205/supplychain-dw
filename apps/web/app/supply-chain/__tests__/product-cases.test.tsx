@@ -93,6 +93,7 @@ vi.mock("../../../lib/session", () => ({
     getProductProfile: () => new Promise(() => {}),
     listCaseDrafts: () => new Promise(() => {}),
     listSupplierMessages: () => new Promise(() => {}),
+    getSampleChecklist: () => new Promise(() => {}),
     getStepProposal: () => new Promise(() => {}),
   }),
 }));

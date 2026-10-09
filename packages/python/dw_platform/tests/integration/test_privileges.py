@@ -783,10 +783,11 @@ async def test_step_preparations_are_append_only(db_urls: DatabaseUrls) -> None:
 
 
 async def test_ai_drafting_tables_are_append_only(db_urls: DatabaseUrls) -> None:
-    """Migrations 1dc679326cb5 and 381374b3cb35 (tickets ai-automation/07, 08):
-    `dw_app` reads and inserts messages to a supplier, their "Đã gửi" rows,
-    proposal lists, their readings and row decisions, and never edits or
-    deletes one (they leave with their case or workspace by cascade)."""
+    """Migrations 1dc679326cb5, 381374b3cb35 and 1021f7fe88f0 (tickets
+    ai-automation/07-09): `dw_app` reads and inserts messages to a supplier,
+    their "Đã gửi" rows, proposal lists, their readings and row decisions, and
+    sample measurements, and never edits or deletes one (they leave with their
+    case or workspace by cascade)."""
     migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
     try:
         async with migrator.connect() as conn:
@@ -797,6 +798,8 @@ async def test_ai_drafting_tables_are_append_only(db_urls: DatabaseUrls) -> None
                 "supply_chain.proposal_lists",
                 "supply_chain.proposal_list_readings",
                 "supply_chain.proposal_list_decisions",
+                # Migration 1021f7fe88f0 (ticket ai-automation/09).
+                "supply_chain.sample_measurements",
             ):
                 for verb, held in (
                     ("SELECT", True),

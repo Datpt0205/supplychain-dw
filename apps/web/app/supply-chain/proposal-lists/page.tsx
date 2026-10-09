@@ -20,6 +20,7 @@ import { PageHeader, RegionState } from "@dw/ui";
 import type { ProposalListSummary } from "@dw/api-client";
 import { LoadError } from "../../../components/load-error";
 import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
+import { OFFLINE } from "../../../components/supply-chain/proposal-list-labels";
 import { formatDateTimeFull, VN_TIME } from "../../../lib/dates";
 import { errorMessage } from "../../../lib/error-message";
 import { useOnline } from "../../../lib/hooks/use-online";
@@ -27,7 +28,6 @@ import { newIdempotencyKey } from "../../../lib/idempotency-key";
 import { apiClient } from "../../../lib/session";
 import { useCachedResource } from "../../../lib/use-cached-resource";
 
-export const OFFLINE = "Không có kết nối mạng. Kết nối lại rồi thử lại.";
 const ACCEPT = ".pdf,.docx,.xlsx,.eml,.png,.jpg,.jpeg";
 
 /**

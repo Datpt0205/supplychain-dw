@@ -359,6 +359,22 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # A sample round's checklist (ticket ai-automation/09): own router.
+    if container.supply_chain_sample_checklist is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.sample_checklist_routes import (
+            build_sample_checklist_router,
+        )
+
+        app.include_router(
+            build_sample_checklist_router(
+                container.supply_chain_sample_checklist,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
     # Proposal lists (ticket ai-automation/08): own router.
     if container.supply_chain_proposal_lists is not None:
         from dw_api.dependencies.auth import get_access_context

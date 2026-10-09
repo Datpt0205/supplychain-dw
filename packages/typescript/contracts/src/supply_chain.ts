@@ -1046,6 +1046,9 @@ export const draftFieldSourceSchema = z.object({
   document_id: z.string().uuid().nullable(),
   quote: z.string().nullable(),
   edited_by: z.string().uuid().nullable(),
+  // Words a model wrote that checked out against the evidence it cites.
+  ai_written: z.boolean(),
+  cites: z.array(z.string()),
 });
 export type DraftFieldSource = z.infer<typeof draftFieldSourceSchema>;
 
@@ -1114,6 +1117,8 @@ export const proposalResultFieldSchema = z.object({
   label: z.string(),
   kind: z.string(),
   suggestion: proposalSuggestionSchema.nullable(),
+  // The outcomes to choose from (ticket ai-automation/09); empty: typed freely.
+  choices: z.array(z.object({ value: z.string(), label: z.string() })),
 });
 export type ProposalResultField = z.infer<typeof proposalResultFieldSchema>;
 
@@ -1172,6 +1177,7 @@ export const supplierMessagePurposeSchema = z.enum([
   "sample_request",
   "supplier_reminder",
   "supplier_confirmation",
+  "sample_revision_request",
 ]);
 export type SupplierMessagePurpose = z.infer<
   typeof supplierMessagePurposeSchema
@@ -1276,3 +1282,32 @@ export const proposalListDetailSchema = proposalListSummarySchema.extend({
   rows: z.array(proposalRowSchema),
 });
 export type ProposalListDetail = z.infer<typeof proposalListDetailSchema>;
+
+// Ticket ai-automation/09: a sample round's checklist.
+
+export const sampleVerdictSchema = z.enum(["pass", "fail", "unmeasured"]);
+export type SampleVerdict = z.infer<typeof sampleVerdictSchema>;
+
+/** Mirrors `ChecklistRowView`: a criterion, its newest value this round and
+ * code's verdict. */
+export const sampleChecklistRowSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  kind: z.enum(["number", "check"]),
+  unit: z.string().nullable(),
+  min: z.string().nullable(),
+  max: z.string().nullable(),
+  standard: z.string(),
+  value: z.string().nullable(),
+  note: z.string().nullable(),
+  verdict: sampleVerdictSchema,
+});
+export type SampleChecklistRow = z.infer<typeof sampleChecklistRowSchema>;
+
+export const sampleChecklistSchema = z.object({
+  case_id: z.string().uuid(),
+  sample_round: z.number().int(),
+  can_record: z.boolean(),
+  rows: z.array(sampleChecklistRowSchema),
+});
+export type SampleChecklist = z.infer<typeof sampleChecklistSchema>;

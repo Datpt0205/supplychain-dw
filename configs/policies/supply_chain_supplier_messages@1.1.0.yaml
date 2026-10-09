@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_supplier_messages
-policy_version: "1.0.0"
+policy_version: "1.1.0"
 # The templates of a message to a supplier (ADR 0029, E18; ticket
 # ai-automation/07). Code writes the subject, the greeting, the reply-by line
 # and the closing from these; the model writes only the body paragraphs, each
@@ -24,3 +24,7 @@ templates:
   supplier_confirmation:
     subject: "[{reference}] Xác nhận sản phẩm: {product}"
     reply_within_days: 3
+  # 1.1.0 (ticket ai-automation/09): the approved revision request, attached.
+  sample_revision_request:
+    subject: "[{reference}] Yêu cầu chỉnh sửa mẫu: {product}"
+    reply_within_days: 5
