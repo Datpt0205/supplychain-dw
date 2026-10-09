@@ -71,3 +71,8 @@ lượng; (5) ghi mã, SKU, trình ký qua đúng dispatch, một giao dịch, a
 (`SqlCodeRegistry` theo RLS và trừ mã của chính hồ sơ; lưu nhiều bước một lần qua kiểm phiên bản;
 mã workspace khác giữ bị UNIQUE từ chối nêu mã), một vòng thật qua runner Postgres (hồ sơ vào bước
 9 → đề xuất → duyệt web/Zalo → lane đối soát trình ký).
+
+**Commit.** AI-13 is `9b58efb`, whose subject reads "docs(plan): AI-13 commit in the slice log" by
+mistake: the gate blocked the feature commit (its message file was written in the same blocked
+command), and the follow-up docs commit then ran on the whole staged tree. It was already pushed, so
+it was not rewritten; the slice log names it.
