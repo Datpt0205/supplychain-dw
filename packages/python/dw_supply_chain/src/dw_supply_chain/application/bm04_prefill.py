@@ -237,6 +237,9 @@ class Bm04Preparation:
 
     schemas: Bm04SchemaPort
     writer: Bm04WriterPort | None = None
+    # The case's BM04 versions (`product_profiles`): what step 8 compares
+    # the supplier's reply with (ticket ai-automation/12).
+    profiles: Bm04ProfileReadPort | None = None
 
     async def facts(
         self,

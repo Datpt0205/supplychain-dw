@@ -63,6 +63,7 @@ from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import AuthorizationPort, PolicyOverridePort
 from dw_platform.domain.audit import AuditEvent, lane_audit_event, system_actor
+from dw_supply_chain.application.bm04_prefill import Bm04ProfileReadPort
 from dw_supply_chain.application.case_documents import CaseLookups
 from dw_supply_chain.application.handlers import (
     DOCUMENT_READ,
@@ -84,7 +85,7 @@ from dw_supply_chain.application.step_preparation import (
     resolve_step_preparation,
 )
 from dw_supply_chain.domain.case_document import CaseKind, DocumentType
-from dw_supply_chain.domain.commercial import SupplierContact
+from dw_supply_chain.domain.commercial import PRICE_FIELDS, ProductProfile, SupplierContact
 from dw_supply_chain.domain.document_draft import DraftStatus, field_value
 from dw_supply_chain.domain.follow_up import FollowUpKind
 from dw_supply_chain.domain.grounded_writing import EvidenceItem, ground_sentences
@@ -620,6 +621,24 @@ class MarkSupplierMessageSent:
 # ------------------------------------------------------------------- lane --
 
 
+def bm04_message_text(profile: ProductProfile) -> str:
+    """A BM04 version's terms as a message may cite them: its attributes and
+    planning terms, never a price or a currency (E15: no price in a letter)."""
+    parts = [
+        f"{key}: {value}"
+        for key, value in sorted(profile.attributes.items())
+        if key not in PRICE_FIELDS and value not in (None, "")
+    ]
+    c = profile.commercial
+    if c.moq is not None:
+        parts.append(f"MOQ: {c.moq}")
+    if c.lead_time_days is not None:
+        parts.append(f"Thời gian sản xuất (ngày): {c.lead_time_days}")
+    if c.incoterm is not None:
+        parts.append(f"Incoterm: {c.incoterm.value}")
+    return "; ".join(parts)
+
+
 def follow_up_evidence(record: FollowUpRecord) -> EvidenceItem:
     """What a supplier-side follow-up says, as evidence a reminder may cite."""
     if record.kind is FollowUpKind.SLA_BREACH:
@@ -668,6 +687,9 @@ class DraftSupplierMessages:
     # a host without them drafts no message of that purpose.
     documents: CaseDocumentListPort | None = None
     drafts: CaseDraftsPort | None = None
+    # The case's BM04 versions (ticket ai-automation/12): the confirmation at
+    # step 8 is drafted from the latest one, never with its price.
+    profiles: Bm04ProfileReadPort | None = None
     batch: int = _BATCH
 
     async def run(self) -> MessageLaneCount:
@@ -805,15 +827,50 @@ class DraftSupplierMessages:
             entered = await entered_current_state(self.cases, context, case)
             if entered is None or entered.id is None:
                 continue
+            evidence, attachments = (
+                await self._bm04(context, case)
+                if purpose is MessagePurpose.SUPPLIER_CONFIRMATION
+                else ((), ())
+            )
             found.append(
                 MessageRequest(
                     case_kind=CaseKind.PRODUCT,
                     case_id=case.id.value,
                     purpose=purpose,
                     source_key=f"{purpose.value}:{entered.id}",
+                    evidence=evidence,
+                    attachments=attachments,
                 )
             )
         return found
+
+    async def _bm04(
+        self, context: AccessContext, case: ProductDevelopmentCase
+    ) -> tuple[tuple[EvidenceItem, ...], tuple[uuid.UUID, ...]]:
+        """The confirmed BM04 a step-8 confirmation is drafted from: its
+        latest version's terms without a price, and its document attached."""
+        profile = (
+            None if self.profiles is None else await self.profiles.latest(context, case.id.value)
+        )
+        documents = (
+            []
+            if self.documents is None
+            else [
+                d
+                for d in await self.documents.list_for_case(
+                    context, CaseKind.PRODUCT, case.id.value
+                )
+                if d.doc_type is DocumentType.PRODUCT_PROFILE_BM04
+            ]
+        )
+        paper = max(documents, key=lambda d: (d.version, d.uploaded_at)) if documents else None
+        attachments = () if paper is None else (paper.id.value,)
+        if profile is None:
+            return (), attachments
+        key = f"doc:{paper.id}" if paper is not None else f"bm04:{profile.id}"
+        return (EvidenceItem(key, "BM04 đã duyệt (không giá)", bm04_message_text(profile)),), (
+            attachments
+        )
 
 
 __all__ = [

@@ -129,6 +129,14 @@ from dw_supply_chain.domain.step_proposal import (
     proposal_subject_version,
     proposal_type,
 )
+from dw_supply_chain.domain.supplier_terms import (
+    TermRow,
+    TermStatus,
+    bm04_terms,
+    compare_terms,
+    prices_of,
+    term_message,
+)
 from dw_supply_chain.product_action_duties import SupplyChainProductActionDuties
 from dw_supply_chain.sample_criteria_policy import (
     SupplyChainSampleCriteria,
@@ -579,6 +587,27 @@ def fills_a_bm04(step: PreparedStep) -> bool:
     )
 
 
+def compares_terms(step: PreparedStep) -> bool:
+    return StepCheck.TERMS_MATCH_BM04 in step.checks
+
+
+@dataclass(frozen=True, slots=True)
+class TermsFacts:
+    """The supplier's reply against the BM04 (ticket ai-automation/12): the
+    BM04 version compared (None: the case has none) and each term's row."""
+
+    profile_id: str | None
+    rows: tuple[TermRow, ...]
+
+
+def bound_facts(sample_digest: str, terms: TermsFacts | None) -> str:
+    """What else a proposal's drafts and findings were made from, bound into
+    its subject: a round's measurements, the BM04 version compared."""
+    if terms is None:
+        return sample_digest
+    return f"{sample_digest}|bm04:{terms.profile_id or ''}"
+
+
 def reads_a_round(step: PreparedStep) -> bool:
     return bool({d.recipe for d in step.drafts} & SAMPLE_RECIPES) or bool(
         set(step.checks) & SAMPLE_CHECKS
@@ -641,6 +670,7 @@ class CheckInput:
     drafts: Sequence[DocumentDraft]
     sample: SampleFacts | None = None
     bm04: Bm04Facts | None = None
+    terms: TermsFacts | None = None
 
 
 def _sources_present(given: CheckInput) -> list[Finding]:
@@ -770,6 +800,35 @@ def _bm04_sources(given: CheckInput) -> list[Finding]:
     return found
 
 
+_TERM_CODES = {
+    TermStatus.DIFFER: "terms_differ",
+    TermStatus.NOT_STATED: "term_not_stated",
+    TermStatus.NOT_IN_BM04: "term_not_in_bm04",
+}
+
+
+def _terms_match_bm04(given: CheckInput) -> list[Finding]:
+    """Each term of the reply that is not the BM04's, in words that carry no
+    price; no BM04 in the application is a finding of its own."""
+    terms = given.terms
+    if terms is None:
+        return []
+    if terms.profile_id is None:
+        return [
+            Finding(
+                "bm04_missing",
+                DocumentType.PRODUCT_PROFILE_BM04.value,
+                "Hồ sơ chưa có BM04 trong ứng dụng để so; người kiểm đối chiếu thư với file BM04",
+            )
+        ]
+    prices = prices_of(terms.rows)
+    return [
+        Finding(_TERM_CODES[row.status], row.field, term_message(row, prices))
+        for row in terms.rows
+        if row.status is not TermStatus.MATCH
+    ]
+
+
 STEP_CHECKS: Mapping[StepCheck, Callable[[CheckInput], list[Finding]]] = {
     StepCheck.SOURCES_PRESENT: _sources_present,
     StepCheck.SOURCES_READ: _sources_read,
@@ -777,6 +836,7 @@ STEP_CHECKS: Mapping[StepCheck, Callable[[CheckInput], list[Finding]]] = {
     StepCheck.CRITERIA_MEASURED: _criteria_measured,
     StepCheck.REVISION_CHECKED: _revision_checked,
     StepCheck.BM04_SOURCES: _bm04_sources,
+    StepCheck.TERMS_MATCH_BM04: _terms_match_bm04,
 }
 assert set(STEP_CHECKS) == set(StepCheck)  # every check a policy may name is implemented
 
@@ -902,13 +962,20 @@ class PrepareStep:
         readings = await self._readings(context, step, newest, by_id)
         sample = await self._sample_facts(context, case, step) if reads_a_round(step) else None
         bm04 = await self._bm04_facts(context, case, readings) if fills_a_bm04(step) else None
+        terms = await self._terms(context, case, readings) if compares_terms(step) else None
         drafts = await self._drafts(context, case, step, readings, previous, sample, bm04)
         suggestions = (
             suggestions_for(step.result_fields, readings, step, sample) if step.physical else {}
         )
 
         given = CheckInput(
-            step=step, newest=newest, readings=readings, drafts=drafts, sample=sample, bm04=bm04
+            step=step,
+            newest=newest,
+            readings=readings,
+            drafts=drafts,
+            sample=sample,
+            bm04=bm04,
+            terms=terms,
         )
         findings = [finding for check in step.checks for finding in STEP_CHECKS[check](given)]
         sources = [SubjectSource(t, newest.get(t)) for t in step.sources]
@@ -917,7 +984,7 @@ class PrepareStep:
             case.version,
             [SubjectDraft(d.id, d.content_sha256, open_latest=True) for d in drafts],
             sources,
-            "" if sample is None else measurements_digest(sample.results),
+            bound_facts("" if sample is None else measurements_digest(sample.results), terms),
         )
         payload: dict[str, Any] = {
             PROPOSAL_CASE_KEY: str(case.id),
@@ -954,6 +1021,13 @@ class PrepareStep:
             "suggestions": suggestions,
             SUBJECT_VERSION_KEY: subject_version,
         }
+        if terms is not None:
+            # No price value in a row: the payload is read without the
+            # commercial scope (`TermRow.as_json`).
+            payload["comparison"] = {
+                "profile_id": terms.profile_id,
+                "rows": [row.as_json(prices_of(terms.rows)) for row in terms.rows],
+            }
         if step.physical:
             payload[REQUIRED_INPUT_KEY] = list(step.result_fields)
         return payload, tuple(d.lineage_id for d in drafts)
@@ -1024,6 +1098,18 @@ class PrepareStep:
             context, *DRAFT_TEMPLATES[DocumentType.PRODUCT_PROFILE_BM04]
         )
         return await self.bm04.facts(context, case, template.spec, _bm04_readings(readings))
+
+    async def _terms(
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        readings: Sequence[SourceReading],
+    ) -> TermsFacts:
+        """The newest read confirmation against the case's latest BM04
+        version, both under the lane's tenant and workspace."""
+        if self.bm04 is None or self.bm04.profiles is None:
+            raise _NotPreparedError(NotPreparedReason.BM04_FACTS_UNAVAILABLE)
+        return await terms_facts(self.bm04, context, case, readings)
 
     async def _sample_facts(
         self, context: AccessContext, case: ProductDevelopmentCase, step: PreparedStep
@@ -1152,6 +1238,28 @@ class PrepareStep:
                 )
             )
         return drafts
+
+
+async def terms_facts(
+    bm04: Bm04Preparation,
+    context: AccessContext,
+    case: ProductDevelopmentCase,
+    readings: Sequence[SourceReading],
+) -> TermsFacts:
+    """The comparison a proposal and its subject both read."""
+    profile = None if bm04.profiles is None else await bm04.profiles.latest(context, case.id.value)
+    if profile is None:
+        return TermsFacts(profile_id=None, rows=())
+    reply = next(
+        (
+            r.reading.fields
+            for r in readings
+            if r.doc_type is DocumentType.SUPPLIER_CONFIRMATION_EMAIL
+            and r.reading.status is ExtractionStatus.EXTRACTED
+        ),
+        {},
+    )
+    return TermsFacts(str(profile.id), tuple(compare_terms(reply, bm04_terms(profile))))
 
 
 def _prompt_of(

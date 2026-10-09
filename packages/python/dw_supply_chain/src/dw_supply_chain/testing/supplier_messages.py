@@ -46,6 +46,7 @@ from dw_supply_chain.testing.step_preparation import (
     REPO_ROOT,
     InMemoryDocuments,
     InMemoryDrafts,
+    InMemoryProfiles,
     InMemoryStepCases,
 )
 
@@ -261,6 +262,7 @@ class MessageWorld:
     model_profile: str | None = None
     documents: InMemoryDocuments = field(default_factory=InMemoryDocuments)
     drafts: InMemoryDrafts = field(default_factory=InMemoryDrafts)
+    profiles: InMemoryProfiles = field(default_factory=InMemoryProfiles)
 
     def __post_init__(self) -> None:
         self.plans.plans[self.tenant_id] = "professional"
@@ -307,6 +309,7 @@ class MessageWorld:
             platform_default_policy=PLATFORM_POLICY,
             documents=self.documents,
             drafts=self.drafts,
+            profiles=self.profiles,
         )
 
     def enable(self, *purposes: MessagePurpose) -> None:

@@ -1082,11 +1082,13 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         policy_override_repo=policy_override_repo,
         platform_default_criteria=load_supply_chain_sample_criteria(SUPPLY_CHAIN_SAMPLE_CRITERIA),
     )
+    bm04_preparation = Bm04Preparation(schemas=bm04_schemas, profiles=profiles)
     proposal_subject = sc_proposals.StepProposalSubject(
         cases=product_case_repo,
         drafts=draft_repo,
         documents=document_repo,
         sample=sample_preparation,
+        bm04=bm04_preparation,
     )
     preparer = sc_preparation.PrepareStep(
         cases=product_case_repo,
@@ -1105,7 +1107,7 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
         sample=sample_preparation,
-        bm04=Bm04Preparation(schemas=bm04_schemas),
+        bm04=bm04_preparation,
     )
     applier = sc_proposals.ApplyStepProposal(
         cases=product_case_repo,

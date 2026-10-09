@@ -104,6 +104,11 @@ class SupplierConfirmationReading(BaseModel):
     currency: Cited = Cited()
     delivery_date: Cited = Cited()
     conditions: Cited = Cited()
+    # The terms code compares with the BM04 (ticket ai-automation/12).
+    moq: Cited = Cited()
+    lead_time_days: Cited = Cited()
+    specification: Cited = Cited()
+    packaging: Cited = Cited()
 
 
 class ProfileBm04Reading(BaseModel):
@@ -187,13 +192,15 @@ EXTRACTION_SPECS: Mapping[DocumentType, ExtractionSpec] = {
         ExtractionSpec(
             doc_type=DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
             prompt_id="supply_chain.extract_supplier_confirmation_email",
-            prompt_version="1.2.0",
+            prompt_version="1.3.0",
             reading=SupplierConfirmationReading,
             kinds={
                 "confirmed": FieldKind.CHOICE,
                 "quantity": FieldKind.NUMBER,
                 "unit_price": FieldKind.NUMBER,
                 "delivery_date": FieldKind.DATE,
+                "moq": FieldKind.NUMBER,
+                "lead_time_days": FieldKind.NUMBER,
             },
             options={"confirmed": frozenset({"yes", "no", "partly"})},
         ),

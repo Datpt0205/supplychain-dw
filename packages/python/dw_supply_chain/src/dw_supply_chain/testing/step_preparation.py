@@ -603,6 +603,7 @@ class StepWorld:
     def bm04(self) -> Bm04Preparation:
         return Bm04Preparation(
             schemas=StaticBm04Schema(self.bm04_schema),
+            profiles=self.profiles,
             writer=None
             if self.gateway is None
             else Bm04Writer(
@@ -617,7 +618,11 @@ class StepWorld:
 
     def subject(self) -> StepProposalSubject:
         return StepProposalSubject(
-            cases=self.cases, drafts=self.drafts, documents=self.documents, sample=self.sample()
+            cases=self.cases,
+            drafts=self.drafts,
+            documents=self.documents,
+            sample=self.sample(),
+            bm04=self.bm04(),
         )
 
     def preparer(self) -> PrepareStep:
@@ -867,6 +872,8 @@ SAMPLE_TESTING = PreparedStep.model_validate(
 )
 # Step 7 as Elmich prepares it (ticket ai-automation/11).
 BM04_STEP = _elmich_step(ProductDevState.PROFILE_IN_PROGRESS)
+# Step 8 as Elmich prepares it (ticket ai-automation/12): the reply against the BM04.
+TERMS_STEP = _elmich_step(ProductDevState.SUPPLIER_CONFIRMATION)
 
 SUPPLIER_CONFIRMATION = PreparedStep.model_validate(
     {

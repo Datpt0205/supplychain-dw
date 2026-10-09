@@ -1,0 +1,27 @@
+{
+  "step": "supplier_terms",
+  "profile": {
+    "unit_price": "2.50",
+    "currency": "USD",
+    "moq": 500,
+    "lead_time_days": 45,
+    "attributes": {
+      "product_name": "Nồi inox 3 đáy 24cm",
+      "material": "Inox 304",
+      "dimensions": "24 x 12 cm",
+      "packaging": "Hộp màu"
+    }
+  },
+  "documents": [
+    {
+      "doc_type": "supplier_confirmation_email",
+      "text": "thư NCC",
+      "reading": {
+        "confirmed": {
+          "value": "yes",
+          "quote": "Chúng tôi xác nhận chốt sản phẩm."
+        }
+      }
+    }
+  ]
+}

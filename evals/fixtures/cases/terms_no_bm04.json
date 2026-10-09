@@ -1,0 +1,39 @@
+{
+  "step": "supplier_terms",
+  "documents": [
+    {
+      "doc_type": "supplier_confirmation_email",
+      "text": "thư NCC",
+      "reading": {
+        "confirmed": {
+          "value": "yes",
+          "quote": "Chúng tôi xác nhận chốt sản phẩm."
+        },
+        "unit_price": {
+          "value": "2.50",
+          "quote": "Đơn giá: 2,50 USD"
+        },
+        "currency": {
+          "value": "USD",
+          "quote": "Đơn giá: 2,50 USD"
+        },
+        "moq": {
+          "value": "500",
+          "quote": "MOQ: 500"
+        },
+        "lead_time_days": {
+          "value": "45",
+          "quote": "Thời gian sản xuất (ngày): 45"
+        },
+        "specification": {
+          "value": "Inox 304, 24 x 12 cm",
+          "quote": "Quy cách: Inox 304, 24 x 12 cm"
+        },
+        "packaging": {
+          "value": "Hộp màu",
+          "quote": "Bao bì: Hộp màu"
+        }
+      }
+    }
+  ]
+}

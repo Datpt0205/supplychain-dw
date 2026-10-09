@@ -86,3 +86,13 @@ giao; đặt cọc và thanh toán không có số tiền. Không có gì có c�
    người duyệt có `supply_chain.commercial.write` (không thì giữ giá phiên bản trước, như thẻ
    BM04); ô bắt buộc của schema tenant còn thiếu thì không ghi phiên bản (audit
    `product_profile.not_saved`), người điền thẻ BM04.
+
+## Sửa đổi 2026-10-09 (tạm, lát AI-12; chốt với NCC so với BM04)
+
+1. Bước 8 so thư NCC với phiên bản `product_profiles` mới nhất, chủ duy nhất của sản phẩm đã
+   chốt (không phải bản nháp BM04): ai sửa thẻ BM04 sau khi duyệt thì lần so dùng bản sửa, và
+   đề xuất đã trình bị `superseded`.
+2. So là so ô đã đọc, có trích dẫn: lời chung ("đồng ý mọi điều khoản") không là giá trị của ô
+   nào, nên không bao giờ làm một điều khoản thành khớp.
+3. Payload của đề xuất có bảng so; dòng giá không có giá trị, số giá bị che trong mọi dòng khác
+   (một tiền tệ trích từ dòng giá mang theo giá). Thư chốt gửi NCC không có giá; BM04 đính kèm.

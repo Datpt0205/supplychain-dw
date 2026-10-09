@@ -415,6 +415,7 @@ def build_supplier_messages(
         ),
         documents=SqlCaseDocumentRepository(sessions),
         drafts=SqlDocumentDraftRepository(sessions),
+        profiles=SqlProductProfileRepository(sessions),
     )
 
 
@@ -512,8 +513,11 @@ def build_step_preparation_stack(
         ),
         writer=writer,
     )
+    bm04 = Bm04Preparation(
+        schemas=bm04_schemas, writer=bm04_writer, profiles=SqlProductProfileRepository(sessions)
+    )
     subject = StepProposalSubject(
-        cases=product_cases, drafts=drafts, documents=documents, sample=sample
+        cases=product_cases, drafts=drafts, documents=documents, sample=sample, bm04=bm04
     )
     preparer = PrepareStep(
         cases=product_cases,
@@ -532,7 +536,7 @@ def build_step_preparation_stack(
         ids=ids,
         clock=clock,
         sample=sample,
-        bm04=Bm04Preparation(schemas=bm04_schemas, writer=bm04_writer),
+        bm04=bm04,
     )
     applier = ApplyStepProposal(
         cases=product_cases,

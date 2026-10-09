@@ -3202,7 +3202,7 @@ export interface components {
          * @description Code's checks of a step, each a finding when it fails.
          * @enum {string}
          */
-        StepCheck: "sources_present" | "sources_read" | "drafts_complete" | "criteria_measured" | "revision_checked" | "bm04_sources";
+        StepCheck: "sources_present" | "sources_read" | "drafts_complete" | "criteria_measured" | "revision_checked" | "bm04_sources" | "terms_match_bm04";
         /** StepDecisionRequest */
         StepDecisionRequest: {
             /**

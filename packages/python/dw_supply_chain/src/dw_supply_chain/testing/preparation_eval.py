@@ -37,6 +37,11 @@ and after a decision (`decide.scopes`, the decider's), `profile` (the product
 profile version written, null: none). Whatever the model wrote, every field it
 kept quotes the evidence it was shown.
 
+Elmich's step 8 (`supplier_terms`, ticket ai-automation/12) adds the case's
+BM04 version (`profile`, possibly saved in another workspace: `profile_in`).
+Its expectations: `comparison` (each term's status by field) and
+`payload_must_not_contain` (no price anywhere in what the approval carries).
+
 Otherwise no model call: the model's work there is the extraction lane's
 reading, given by the case. What this grades is what code guarantees whatever
 a reading or a model says.
@@ -45,6 +50,7 @@ a reading or a model says.
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from datetime import timedelta
 from typing import Any
@@ -54,6 +60,7 @@ from dw_evals.graders import GraderContext, GradeResult
 from dw_kernel.errors import DomainError
 from dw_supply_chain.domain.bm04_prefill import Bm04Writing
 from dw_supply_chain.domain.case_document import DocumentType
+from dw_supply_chain.domain.commercial import ProductProfile, ProfileCommercial
 from dw_supply_chain.domain.extraction import ExtractionStatus, normalize, numbers_in
 from dw_supply_chain.domain.product_development_case import ProductDevState
 from dw_supply_chain.domain.sample_evaluation import EvaluationWriting
@@ -64,6 +71,7 @@ from dw_supply_chain.testing.step_preparation import (
     SAMPLE_ROUND,
     SAMPLE_TESTING,
     SUPPLIER_CONFIRMATION,
+    TERMS_STEP,
     StepWorld,
 )
 
@@ -72,6 +80,7 @@ _STEPS = {
     "supplier_confirmation": SUPPLIER_CONFIRMATION,
     "sample_round": SAMPLE_ROUND,
     "bm04": BM04_STEP,
+    "supplier_terms": TERMS_STEP,
 }
 _WRITES = {"sample_round", "bm04"}
 
@@ -142,6 +151,8 @@ async def _run(ctx: GraderContext, input_data: dict[str, Any]) -> dict[str, Any]
         )
         if spec.get("reading_in") == "other_workspace":
             world.readings.rows[-1] = (document.tenant_id, uuid.uuid4(), reading)
+    if input_data.get("profile") is not None:
+        _seed_profile(world, case, input_data)
     if input_data.get("approved_record"):
         world.approve_record(case, input_data["approved_record"])
     if input_data["step"] == "bm04" and ctx.model is None:
@@ -180,6 +191,33 @@ async def _run(ctx: GraderContext, input_data: dict[str, Any]) -> dict[str, Any]
     out["case_state"] = None if stored is None else stored.state.value
     out["profiles"] = [p for _, p in world.outcomes.profiles]
     return out
+
+
+def _seed_profile(world: StepWorld, case: Any, input_data: dict[str, Any]) -> None:
+    spec = input_data["profile"]
+    profile = ProductProfile(
+        id=uuid.uuid4(),
+        product_dev_case_id=case.id.value,
+        version=1,
+        commercial=ProfileCommercial.of(
+            unit_price=spec.get("unit_price"),
+            currency=spec.get("currency"),
+            moq=spec.get("moq"),
+            lead_time_days=spec.get("lead_time_days"),
+            incoterm=None,
+        ),
+        attributes=dict(spec.get("attributes", {})),
+        schema_version="1.0.0",
+        created_by=uuid.uuid4(),
+        created_at=NOW - timedelta(days=1),
+    )
+    world.profiles.rows.append(profile)
+    workspace = (
+        uuid.uuid4()
+        if input_data.get("profile_in") == "other_workspace"
+        else case.workspace_id.value
+    )
+    world.profiles.scopes[profile.id] = (case.tenant_id.value, workspace)
 
 
 def _drafted(world: StepWorld, step: Any) -> dict[str, Any]:
@@ -327,6 +365,17 @@ def grade_step_preparation(
         if actual != value:
             return GradeResult.fail(f"draft field {name}", expected=value, actual=actual)
     payload = out["payload"]
+    if "comparison" in expected:
+        rows = (payload.get("comparison") or {}).get("rows", [])
+        actual_rows = {r["field"]: r["status"] for r in rows}
+        if actual_rows != expected["comparison"]:
+            return GradeResult.fail(
+                "comparison", expected=expected["comparison"], actual=actual_rows
+            )
+    carried = json.dumps(payload, ensure_ascii=False)
+    for text in expected.get("payload_must_not_contain", []):
+        if text in carried:
+            return GradeResult.fail("the approval carries", text=text)
     if "suggestions" in expected:
         actual = {k: v.get("value") for k, v in payload.get("suggestions", {}).items()}
         if actual != expected["suggestions"]:

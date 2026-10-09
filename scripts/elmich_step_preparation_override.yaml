@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_step_preparation
-policy_version: "1.4.0"
+policy_version: "1.5.0"
 
 # Override của TENANT ELMICH (không phải platform default): các bước AI chuẩn bị
 # (ADR 0025, ticket ai-automation/05). Ghi bằng
@@ -54,11 +54,15 @@ steps:
     checks: [sources_read, bm04_sources, drafts_complete]
   # Bước 8, chốt với NCC: AI đọc email xác nhận của NCC đã tải lên; TP Cung ứng
   # duyệt "sang bước mã hàng với email này" (web hoặc Zalo bằng mã của cổng).
+  # 1.5.0 (ticket ai-automation/12): code so từng điều khoản của thư (giá, tiền
+  # tệ, MOQ, thời gian, quy cách, bao bì) với phiên bản BM04 mới nhất: khớp,
+  # khác, thư chưa nêu, BM04 chưa có; khác biệt nêu trong đề xuất, giá không
+  # bao giờ in số (trang duyệt và Zalo đọc đề xuất không cần quyền giá).
   - case_kind: product
     state: supplier_confirmation
     action: confirm_with_supplier
     sources: [supplier_confirmation_email]
-    checks: [sources_present, sources_read]
+    checks: [sources_present, sources_read, terms_match_bm04]
 # Thư gửi NCC (ADR 0029, ticket ai-automation/07): AI soạn, người sao chép, gửi
 # từ hộp thư của mình rồi bấm "Đã gửi". Xin mẫu khi hồ sơ vào bước 2, nhắc NCC
 # khi follow-up phía NCC mở (im lặng, quá hạn mẫu), xác nhận sản phẩm khi hồ sơ

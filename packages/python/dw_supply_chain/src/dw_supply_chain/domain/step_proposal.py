@@ -110,6 +110,10 @@ class StepCheck(StrEnum):
     # The BM04's sources agree, its price line is clear, and every field the
     # tenant's BM04 schema requires has a value (ticket ai-automation/11).
     BM04_SOURCES = "bm04_sources"
+    # The supplier's confirmation, term by term against the case's latest
+    # BM04 version (ticket ai-automation/12): each term that differs, that the
+    # reply leaves unstated, or that the BM04 lacks.
+    TERMS_MATCH_BM04 = "terms_match_bm04"
 
 
 class PreparationOutcome(StrEnum):

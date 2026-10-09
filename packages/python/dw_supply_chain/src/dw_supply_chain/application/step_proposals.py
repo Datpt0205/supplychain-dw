@@ -40,7 +40,7 @@ from dw_platform.application.authorization import holds_stamped_scope
 from dw_platform.application.ports import AuthorizationPort, PolicyOverridePort
 from dw_platform.domain.approval import APPROVALS_DECIDE, SUBJECT_VERSION_KEY, ApprovalRequest
 from dw_platform.domain.audit import AuditEvent
-from dw_supply_chain.application.bm04_prefill import Bm04ProfileWriter
+from dw_supply_chain.application.bm04_prefill import Bm04Preparation, Bm04ProfileWriter
 from dw_supply_chain.application.commercial import PROFILE_SAVED, allows
 from dw_supply_chain.application.document_drafts import (
     DraftTemplatesPort,
@@ -70,6 +70,9 @@ from dw_supply_chain.application.step_preparation import (
     PreparationRecord,
     PreparationRecordsPort,
     SamplePreparation,
+    TermsFacts,
+    bound_facts,
+    compares_terms,
     entered_current_state,
     reads_a_round,
     record_audit,
@@ -143,6 +146,9 @@ class StepProposalSubject:
     documents: CaseDocumentListPort
     # A step that reads a sample round binds its measurements too.
     sample: SamplePreparation | None = None
+    # A step that compares a reply with the BM04 binds the BM04 version
+    # (ticket ai-automation/12).
+    bm04: Bm04Preparation | None = None
 
     async def version_of(self, context: AccessContext, request: ApprovalRequest) -> str | None:
         return await self.current(context, request.payload)
@@ -181,6 +187,11 @@ class StepProposalSubject:
             if self.sample is None:
                 return None
             facts = measurements_digest(await self.sample.results(context, case))
+        if step is not None and compares_terms(step):
+            if self.bm04 is None or self.bm04.profiles is None:
+                return None
+            profile = await self.bm04.profiles.latest(context, case.id.value)
+            facts = bound_facts(facts, TermsFacts(None if profile is None else str(profile.id), ()))
         return proposal_subject_version(
             case.version, drafts, [SubjectSource(t, newest.get(t)) for t in types], facts
         )

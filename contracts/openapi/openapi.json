@@ -8029,7 +8029,8 @@
           "drafts_complete",
           "criteria_measured",
           "revision_checked",
-          "bm04_sources"
+          "bm04_sources",
+          "terms_match_bm04"
         ],
         "title": "StepCheck",
         "type": "string"
