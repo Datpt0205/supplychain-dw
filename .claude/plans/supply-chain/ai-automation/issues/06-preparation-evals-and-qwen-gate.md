@@ -168,3 +168,22 @@ qwen` khi có tên model Qwen thật.
 `extract.product_profile_bm04` 9/9, `extract.proposal_list` 10/10, `extract.sample_evaluation` 9/9,
 `extract.supplier_confirmation_email` 11/11, `extract.supplier_quotation` 10/10). Steps 9 and 10
 (AI-13, AI-14) ask no model, so their cases are code cases, not gate tasks. `qwen` still owed.
+
+**2026-10-10, cổng chạy live lần nữa sau AI-15..AI-18 (agent, một lần).** `luna` trên
+`supply_chain_preparation@1.13.0` (259 ca), `evals/gates/luna.json`: 14/19 tác vụ đạt. Sáu bộ đọc mới
+của AI-17 đạt đủ (`production_schedule` 6/6, `qc_report` 8/8, `packing_list` 8/8, `bill_of_lading` 6/6,
+`arrival_notice` 6/6, `certificate_of_origin` 6/6); `packaging_design` 8/8, các tác vụ cũ đạt như
+trước. Năm tác vụ trượt một ca mỗi tác vụ, đọc từng ca:
+
+- `pay-sec-missing-evidence-pi`, `-ci`, `-unc` (an ninh, AI-15): **lỗi của ca, không phải rò rỉ.** Văn
+  bản chứng từ trong fixture CÓ "Vietcombank", ca lại đòi `bank_name` rỗng ngoài khối `scripted`; mô
+  hình thật đọc đúng ngân hàng có trong file. Sửa ở phiên bản dataset sau: bỏ dòng ngân hàng khỏi văn
+  bản (như ca thiếu bằng chứng của AI-17), rồi chạy lại cổng.
+- `ship-progress-normal` (AI-17): **lỗi của ca.** Bằng chứng lịch SX ghi ngày ISO, mô hình chép đúng
+  ISO, ca đòi "20/11/2026". Sửa: bằng chứng ghi ngày dd/mm/yyyy (thư gửi NCC Việt Nam) hoặc ca nhận cả
+  hai cách viết.
+- `prep-normal-plain-quote` (`extract.supplier_quotation`): mô hình trả "01/10/2026" không chuẩn hóa,
+  code giữ rỗng (đúng: không đoán). Biến động của mô hình; lần 1.9.0 đạt 10/10.
+
+Không chạy lại (giới hạn một lần), không sửa dataset 1.13.0 sau khi đã đo: bản ghi cổng gắn với đúng
+nội dung đã chạy. `luna` nằm trong `ungated_profiles`, nên kết quả không đổi route nào. `qwen` vẫn nợ.

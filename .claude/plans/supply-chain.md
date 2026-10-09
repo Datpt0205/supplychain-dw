@@ -118,9 +118,10 @@ resolved 2026-10-09/10 with their integration tests owed (written, not run: no D
 machine; run them first with `make infra-up && make test-integration`), and the
 live model gate: `luna` read case by case 2026-10-09 (three live runs; 8/8 tasks
 pass on dataset 1.5.0, before/after in AI-06's Comments), then once more live
-2026-10-10 on dataset 1.9.0: 9/9 tasks pass (`evals/gates/luna.json`; steps 9 and
-10 ask no model, so their cases are not gate tasks), `qwen` owed; the per-step
-tickets (AI-15 onward) are unblocked. H2 (the domain the webhook needs; runbook `docs/deploy/host.md`); Z4p
+2026-10-10 on dataset 1.9.0: 9/9 tasks pass, and after AI-15..AI-18 on dataset
+1.13.0: 14/19 tasks (every AI-17 reader passes; the five misses are one case each,
+four of them case defects owed to dataset 1.14.0, AI-06's Comments;
+`evals/gates/luna.json`; steps 9, 10 and 17 ask no model), `qwen` owed; next AI-19. H2 (the domain the webhook needs; runbook `docs/deploy/host.md`); Z4p
 when a real photo update exists; ZL measures the webhook header (Z3).
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).

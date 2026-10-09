@@ -37,7 +37,8 @@ the reference after each `git merge platform/main`.
   (ADR 0025–0029, E14–E18). Tickets AI-01–AI-20, ON-01–02, UAT-1–2 in
   `supply-chain/ai-automation/`, `onboarding/`, `uat/`. AI-01–AI-18, ON-01 resolved
   2026-10-09/10 (integration owed: run `make test-integration` first; `luna` gate
-  live 2026-10-10: 9/9 tasks pass on dataset 1.9.0; `qwen` owed). Next: AI-19 onward.
+  live 2026-10-10 on dataset 1.13.0: 14/19 tasks, the five misses one case each, four
+  of them case defects to fix in 1.14.0, AI-06 Comments; `qwen` owed). Next: AI-19 onward.
 - **Run locally:** `make infra-up`, `make db-migrate`, seed
   (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
   then `scripts/keycloak_dev_users.py`), `make dev`, open http://localhost:3200.
