@@ -10,9 +10,13 @@ This repo is the Elmich product: bounded context
   steps) transcribed on 2026-10-05, with the step-to-code map and open points.
   Part B (Product MKT content) is out of scope (Đạt, 2026-10-05).
 - **Glossary:** `packages/python/dw_supply_chain/CONTEXT.md`.
-- **Decisions:** E1–E13, Accepted with dated amendments (QO-2). The generic ones in
-  `docs/adr/` (0011–0015, 0020, 0022, 0023); the context-only ones (E6–E9, E11:
-  0016–0019, 0021) in `packages/python/dw_supply_chain/docs/adr/` since HR6.
+- **Decisions:** E1–E18, Accepted with dated amendments (QO-2). The generic ones in
+  `docs/adr/` (0011–0015, 0020, 0022, 0023); the context-only ones (E6–E9, E11,
+  E14–E18: 0016–0019, 0021, 0025–0029) in `packages/python/dw_supply_chain/docs/adr/`
+  since HR6. E14–E18 (2026-10-09): AI prepares a step and a person approves the move,
+  ADR 0021 amended so file content reaches the model as untrusted data, BM04 and
+  commercial data as fields, one-time import, MKT a minimal user, supplier messages
+  drafted by AI and sent by a person.
 - **History:** the context was built on the platform repo's `supply-chain`
   branch until 2026-09-28 and is kept at branch `archive-supply-chain` / tag
   `archive/supply-chain-2026-09-28` (`5d24c25`). Its slice log (slices 0–20)
@@ -83,9 +87,36 @@ means platform code, an upstream candidate (ADR 0011).
 | HR4   | `hardening/issues/04-supplier-master-record.md`                           | no      | resolved        | —                                   |
 | HR5   | `hardening/issues/05-ops-and-settings-screen.md`                          | partly  | resolved        | H                                   |
 | HR6   | `hardening/issues/06-cleanup.md`                                          | partly  | resolved        | —                                   |
+| AI-01 | `ai-automation/issues/01-commercial-data-and-bm04-fields.md` (L)          | no      | ready-for-agent | —                                   |
+| AI-02 | `ai-automation/issues/02-document-extraction-lane.md` (L)                 | partly  | ready-for-agent | —                                   |
+| AI-03 | `ai-automation/issues/03-drafts-and-templates.md` (L)                     | partly  | ready-for-agent | —                                   |
+| AI-04 | `ai-automation/issues/04-skills-registry.md` (M)                          | yes     | ready-for-agent | —                                   |
+| AI-05 | `ai-automation/issues/05-step-proposals.md` (L)                           | no      | ready-for-agent | AI-02, AI-03                        |
+| AI-06 | `ai-automation/issues/06-preparation-evals-and-qwen-gate.md` (M)          | partly  | ready-for-agent | AI-02, AI-03                        |
+| AI-07 | `ai-automation/issues/07-supplier-messages.md` (M)                        | no      | ready-for-agent | AI-03, AI-05                        |
+| AI-08 | `ai-automation/issues/08-step-1-proposal-list.md` (M)                     | no      | ready-for-agent | AI-02, AI-05                        |
+| AI-09 | `ai-automation/issues/09-steps-3-5-evaluation-and-revision.md` (L)        | no      | ready-for-agent | AI-04, AI-05                        |
+| AI-10 | `ai-automation/issues/10-step-6-bod-submission.md` (M)                    | no      | ready-for-agent | AI-03, AI-05                        |
+| AI-11 | `ai-automation/issues/11-step-7-bm04-prefill.md` (L)                      | no      | ready-for-agent | AI-01, AI-02, AI-05                 |
+| AI-12 | `ai-automation/issues/12-step-8-supplier-confirmation.md` (M)             | no      | ready-for-agent | AI-07, AI-11                        |
+| ON-01 | `onboarding/issues/01-import-suppliers-catalogue-users.md` (M)            | no      | ready-for-agent | AI-01                               |
+| AI-13 | `ai-automation/issues/13-step-9-item-code-proposal.md` (M)                | no      | ready-for-agent | AI-11, ON-01                        |
+| AI-14 | `ai-automation/issues/14-step-10-purchase-order.md` (M)                   | no      | ready-for-agent | AI-01, AI-12                        |
+| AI-15 | `ai-automation/issues/15-steps-11-16-deposit-payment.md` (L)              | no      | ready-for-agent | AI-14                               |
+| AI-16 | `ai-automation/issues/16-step-12-mkt-and-proof-check.md` (L)              | no      | ready-for-agent | AI-04, AI-11                        |
+| AI-17 | `ai-automation/issues/17-steps-13-15-supplier-files.md` (L)               | no      | ready-for-agent | AI-05, AI-14                        |
+| AI-18 | `ai-automation/issues/18-step-17-warehouse.md` (M)                        | no      | ready-for-agent | AI-17                               |
+| ON-02 | `onboarding/issues/02-import-open-cases.md` (M)                           | no      | ready-for-agent | ON-01                               |
+| AI-19 | `ai-automation/issues/19-case-assistant.md` (L)                           | partly  | ready-for-agent | AI-02, AI-04                        |
+| AI-20 | `ai-automation/issues/20-reports-and-acceptance.md` (M)                   | no      | ready-for-agent | AI-05                               |
+| UAT-1 | `uat/issues/01-uat-plan-and-training.md` (M)                              | no      | ready-for-agent | AI-05                               |
+| UAT-2 | `uat/issues/02-uat-with-elmich.md` (S)                                    | —       | ready-for-human | UAT-1, ON-02, H2, ZL                |
 
-**Next:** H2 (the domain the webhook needs; runbook `docs/deploy/host.md`);
-Z4p when a real photo update exists; ZL measures the webhook header (Z3).
+**Next:** the AI layer (Đạt, 2026-10-09: "AI does the work, people only
+approve"; spec `supply-chain/ai-automation/spec.md`): AI-01–AI-04 have no blocker
+and can run in parallel, then AI-05 (step proposals) unblocks the per-step
+tickets. H2 (the domain the webhook needs; runbook `docs/deploy/host.md`); Z4p
+when a real photo update exists; ZL measures the webhook header (Z3).
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
 
@@ -94,9 +125,10 @@ Live runs that need a person, a phone or a domain are their own
 live-run ticket was renamed from Z4 (`04-live-run.md`) to ZL (`07-live-run.md`)
 on 2026-10-05 when Z4–Z6 were added.
 
-**Not ticketed yet:** the MKT half of step 12's sub-flow (waits for Part B);
-container loading as its own step (step 14), deferred until QE-15 (QO-6);
-email as a second channel.
+**Not ticketed yet:** container loading as its own state (step 14), deferred
+until QE-15 (QO-6; AI-17 records container number and photos on `pass_qc` until
+then). The MKT half of step 12 is AI-16 (E17); email as a channel was decided
+against (E18: AI drafts, a person sends).
 
 **Surveys** behind the tickets' "Nguồn" sections: `docs/products/elmich/surveys/`
 (2026-10-05), named by content.
@@ -264,8 +296,49 @@ QE-16 separates the two people. Elmich confirms the catalogue (QE-16).
   Zalo. Dữ liệu nào được đi qua (mã, tên SP, trạng thái, tên NCC, giá, chứng từ)? Có quy
   định nội bộ nào cấm không?
 
+- **QE-21** Mẫu thật và 2–3 bản đã điền của: BM04, biên bản đánh giá mẫu, phiếu yêu cầu
+  chỉnh sửa, tờ trình BGĐ, PO, đề nghị đặt cọc/thanh toán, phiếu nhập kho (hôm nay dùng
+  mẫu trung tính; mẫu Elmich là override của tenant).
+- **QE-22** Tiêu chí test mẫu theo Category (chỉ tiêu, ngưỡng) mà R&D đang dùng.
+- **QE-23** Điều khoản thanh toán chuẩn với NCC (% cọc, hạn thanh toán, Incoterm, tiền tệ).
+- **QE-24** File xuất (Excel) của NCC, danh mục mã hàng/SKU và PO đang chạy cho lần nạp
+  đầu; ai xuất.
+
 **Đạt:** none open. QO-1 to QO-8 were decided on 2026-10-06 (Đạt delegated
 them: "tự quyết định cho hướng tốt nhất"); see "Decided on 2026-10-06" below.
+QA-1 to QA-12 (the AI layer) were decided on 2026-10-09; see below.
+
+### Decided on 2026-10-09 (Đạt: "AI does the work, people only approve")
+
+Asked in the automation audit of 2026-10-09; QA-7 to QA-12 are the lead's
+defaults, accepted with the rest.
+
+- **QA-6 What may happen without a person:** AI prepares (drafts, reads supplier
+  files, runs checks) and raises an approval "move to step X with documents Y"; the
+  step changes only when a person with the action's duty approves (web, or Zalo with
+  the portal code). Physical work (testing, paying, counting) stays human: AI
+  pre-fills the record with a suggestion beside an empty result field; the person
+  enters the result and approves (ADR 0025, E14).
+- **QA-2/3 Suppliers:** AI drafts every supplier message; a person copies and sends
+  it; replies are dragged into the case and AI reads them. No mailbox, no outbound
+  email (E18).
+- **QA-4/5 Model:** hosted `luna` profile for drafting and reading files; document
+  contents may go to the provider; bank account numbers are compared by code and
+  never sent to a model (ADR 0021 amended 2026-10-09). Qwen only for a task that
+  passes its eval gate (AI-06).
+- **QA-1 Templates:** neutral templates first; Elmich's real ones later as a tenant
+  override (QE-21).
+- **QA-7 Onboarding:** one-time Excel import of suppliers, catalogue, users and open
+  cases at their current state with one `import` history row (E16).
+- **QA-8 MKT:** a minimal user at step 12: receives the pack, uploads content,
+  confirms (E17).
+- **QA-9 BM04:** a form in the app rendered to a template; upload kept as fallback
+  (E15).
+- **QA-10 Commercial data:** prices, amounts and terms stored behind
+  `supply_chain.commercial.read|write`, never in Zalo (E15).
+- **QA-11 Results:** AI suggests beside an empty result field; the person chooses
+  and approves.
+- **QA-12 Scope:** the whole of steps 1–17, not a PoC subset.
 
 ### Decided on 2026-10-06 (Đạt delegated QO-1 to QO-8)
 

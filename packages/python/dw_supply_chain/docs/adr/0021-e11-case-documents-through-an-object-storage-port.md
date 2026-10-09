@@ -156,3 +156,27 @@ bằng nhau; enum zod của web so `SameType` với kiểu sinh từ OpenAPI nê
 biên dịch. Bước test trước SX lấy biên bản của chính Hồ sơ PO, tải lên từ khi nhận mẫu
 trước SX, ghi trên dòng lịch sử với FK `ON DELETE NO ACTION` như bước 7–8. Chi tiết ở
 Comments của `.claude/plans/supply-chain/packaging-design/issues/01-colour-packaging-and-pre-production.md`.
+
+## Sửa đổi 2026-10-09 (Đạt; E14): nội dung file đến mô hình như dữ liệu không tin cậy
+
+Câu "Nội dung file không đưa vào mô hình trong các lát này" được thay bằng các điều kiện
+dưới đây; ngoài chúng, nội dung file vẫn không đến mô hình.
+[ADR 0025](0025-e14-ai-prepares-a-step-a-person-approves-the-move.md) nói vì sao.
+
+1. **Chỉ ở lane trích xuất của worker** (`supply_chain_document_extraction`), không bao giờ
+   trong request API. Tenant và workspace lấy từ dòng chứng từ đọc dưới RLS, không từ
+   request; chứng từ của hồ sơ khác hoặc workspace khác bị từ chối trước mọi lượt gọi.
+2. **Như dữ liệu:** văn bản trích là một biến `<input>` của prompt (ADR 0010), không bao
+   giờ là chỉ dẫn. File thành văn bản qua cùng đường của `dw_knowledge` (PDF, DOCX, XLSX
+   nhờ mô hình "chép nguyên văn", ảnh qua `input_image`, EML/MSG đọc thân và tệp đính kèm
+   bằng code); dấu `[không đọc được nội dung]` làm lượt trích thất bại có tên.
+3. **Kết quả kiểm:** schema theo `doc_type`; mỗi trường mang trích dẫn nguyên văn mà code
+   tìm thấy trong văn bản (luật của cập nhật NCC). Trường không có trích dẫn tìm thấy là
+   khoảng trống, không phải giá trị.
+4. **Không quyết:** một trích xuất chỉ điền bản nháp hoặc một phát hiện mà người duyệt.
+5. **Số tài khoản ngân hàng** và mã định danh tương tự bị che trước khi gọi; code so chúng
+   với danh mục NCC. Nội dung khác được gửi tới nhà cung cấp mô hình (Đạt, 9/10/2026).
+6. **Tính lượt:** mọi lượt gọi qua `DailyAllowance` và sổ chi tiêu; hết lượt thì không
+   trích, chứng từ vẫn lưu.
+7. **Lưu:** `document_extractions` theo (id chứng từ, sha256), cùng workspace RLS, chỉ thêm;
+   đổi phiên bản prompt thì trích lại thành dòng mới.

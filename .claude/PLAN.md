@@ -9,7 +9,7 @@ a feature is checked. Detail lives in the area file; history lives in git.
 
 | Area                                       | File                                | State                     |
 | ------------------------------------------ | ----------------------------------- | ------------------------- |
-| Supply chain (Elmich), this product        | `.claude/plans/supply-chain.md`     | Port running; 26 tickets  |
+| Supply chain (Elmich), this product        | `.claude/plans/supply-chain.md`     | 1–17 run; AI layer next   |
 | Ops hardening (inherited from `codebase`)  | `.claude/plans/ops-hardening.md`    | Done; numbers owed        |
 | Agent runtime, memory (inherited)          | `.claude/plans/platform-runtime.md` | Done but for named gaps   |
 | Web UI shell, Ant Design v6 (inherited)    | `.claude/plans/web-ui.md`           | antd everywhere, CSP done |
@@ -19,7 +19,7 @@ Inherited areas came with the platform seed (`codebase` `main`, `bf553f4`) and
 change here only when work in this repo touches them; their upstream copy is
 the reference after each `git merge platform/main`.
 
-## Now (2026-10-06)
+## Now (2026-10-09)
 
 - **This is the Elmich product repo** (`supplychain-dw`), built on the
   platform seed. Everything is built here; generic pieces stay in platform
@@ -30,14 +30,12 @@ the reference after each `git merge platform/main`.
 - **Zalo is two-way** (Đạt, 2026-10-05): chat proposal at step 1 (Z4),
   approvals at steps 6 and 9 by a one-time code seen on the portal (Z5, ADR
   0014 revised), read-only questions (Z6).
-- **Done 2026-10-05:** port P, ENV, login and `/settings` (U), Zalo link (Z1).
-  On branch `feat/elmich-a-d-s1` (2026-10-06): A (`dabf5c4`), D (`51e3400`),
-  S1. Steps 1–5 run end to end in the app.
-- **2026-10-06:** platform-runtime 02 (`7b411df`), S2 and W done; platform
-  hardening and the FCI rerank merged from `platform/main` (`c16857c`). Next:
-  Z4 (Z4a, Z4b; photos split to 04b, waiting for a real photo update),
-  S3 → S7, Z5, Z6.
-- **2026-10-07/08:** Z4a–Z4b, S3–S8, Z2, Z5, Z6, P4, W, M3 done. Next: P2, P3, PK.
+- **Done 2026-10-05/08** on `feat/elmich-a-d-s1`: P, ENV, U, Z1–Z6, A, D, S1–S8,
+  W, P2–P4, PK, H, HR1–HR6; steps 1–17 run end to end (slice log in the area file).
+- **AI layer (Đạt, 2026-10-09):** AI prepares each step (drafts, reads supplier
+  files, checks) and raises "move to step X with documents Y"; a person approves
+  (ADR 0025–0029, E14–E18). Tickets AI-01–AI-20, ON-01–02, UAT-1–2 in
+  `supply-chain/ai-automation/`, `onboarding/`, `uat/`. Next: AI-01–AI-04.
 - **Run locally:** `make infra-up`, `make db-migrate`, seed
   (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
   then `scripts/keycloak_dev_users.py`), `make dev`, open http://localhost:3200.
@@ -50,9 +48,9 @@ the reference after each `git merge platform/main`.
 - **Elmich:** QE-01–QE-20 in `supply-chain.md` (SLA numbers and clocks,
   documents per step, revision loop, sign-off order, item code and SKU format,
   categories, PIC reassignment, Zalo events, what case data may pass through
-  Zalo).
-- **Đạt, product:** none open; QO-1–QO-8 decided 2026-10-06 (delegated), see
-  `supply-chain.md` "Decided on 2026-10-06".
+  Zalo); QE-21–QE-24 (real templates, sample criteria, payment terms, import files).
+- **Đạt, product:** none open; QO-1–QO-8 (2026-10-06) and QA-1–QA-12
+  (2026-10-09, AI layer) decided, see `supply-chain.md`.
 - **Đạt, inherited from the platform:**
     - a plan quota on direct model calls; the model profile, model key and
       rerank key for uat/production; whether CI runs the web vitest and
