@@ -81,6 +81,7 @@ from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementSe
 from dw_supply_chain.adapters.persistence.case_document_repository import (
     SqlCaseDocumentRepository,
 )
+from dw_supply_chain.adapters.persistence.commercial_repository import SqlProductProfileRepository
 from dw_supply_chain.adapters.persistence.document_draft_repository import (
     SqlDocTemplateOverrides,
     SqlDocumentDraftRepository,
@@ -124,8 +125,14 @@ from dw_supply_chain.adapters.persistence.supplier_update_repository import (
 )
 from dw_supply_chain.adapters.storage.minio_case_documents import MinioCaseDocumentStorage
 from dw_supply_chain.application.approval_subject import ProductCaseApprovalSubject
+from dw_supply_chain.application.bm04_prefill import (
+    Bm04Preparation,
+    Bm04ProfileWriter,
+    Bm04Writer,
+)
 from dw_supply_chain.application.bod_submissions import PrepareBodSubmission
 from dw_supply_chain.application.case_query import AnswerCaseQuery
+from dw_supply_chain.application.commercial import Bm04SchemaSource
 from dw_supply_chain.application.daily_report import SendStageOneReport
 from dw_supply_chain.application.document_drafts import (
     PrepareDocumentDraft,
@@ -157,10 +164,12 @@ from dw_supply_chain.application.supplier_messages import (
     DraftSupplierMessage,
     DraftSupplierMessages,
 )
+from dw_supply_chain.bm04_schema import load_supply_chain_bm04_schema
 from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.step_proposal import STEP_PROPOSAL_PREFIX
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
 from dw_supply_chain.model_routes import (
+    BM04_TASK,
     BOD_SUBMISSION_TASK,
     PROPOSAL_LIST_TASK,
     SAMPLE_EVALUATION_TASK,
@@ -169,6 +178,7 @@ from dw_supply_chain.model_routes import (
 )
 from dw_supply_chain.policy_files import (
     ADVANCE_PRODUCT_CASE_WORKER_FILE,
+    BM04_SCHEMA_POLICY_FILE,
     FOLLOW_UP_POLICY_FILE,
     MODEL_ROUTES_POLICY_FILE,
     PRODUCT_ACTION_DUTIES_POLICY_FILE,
@@ -469,6 +479,7 @@ def build_step_preparation_stack(
     templates = TenantDocTemplates(registry=registry, overrides=SqlDocTemplateOverrides(sessions))
     policies = configs_dir / "policies"
     writer = None
+    bm04_writer = None
     if gateway is not None:
         routes = load_supply_chain_model_routes(
             policies / MODEL_ROUTES_POLICY_FILE, gates_dir or configs_dir.parent / "evals" / "gates"
@@ -481,6 +492,18 @@ def build_step_preparation_stack(
             worker_version=step_preparation_graph.WORKER_VERSION,
             model_profile=routes.profile_for(SAMPLE_EVALUATION_TASK) or model_profile,
         )
+        bm04_writer = Bm04Writer(
+            gateway=gateway,
+            plans=SqlTenantPlans(sessions),
+            ids=ids,
+            worker_id=step_preparation_graph.WORKER_ID,
+            worker_version=step_preparation_graph.WORKER_VERSION,
+            model_profile=routes.profile_for(BM04_TASK) or model_profile,
+        )
+    bm04_schemas = Bm04SchemaSource(
+        policy_override_repo=SqlPolicyOverrideRepository(sessions),
+        platform_default=load_supply_chain_bm04_schema(policies / BM04_SCHEMA_POLICY_FILE),
+    )
     sample = SamplePreparation(
         measurements=SqlSampleMeasurements(sessions),
         policy_override_repo=SqlPolicyOverrideRepository(sessions),
@@ -509,6 +532,7 @@ def build_step_preparation_stack(
         ids=ids,
         clock=clock,
         sample=sample,
+        bm04=Bm04Preparation(schemas=bm04_schemas, writer=bm04_writer),
     )
     applier = ApplyStepProposal(
         cases=product_cases,
@@ -521,6 +545,12 @@ def build_step_preparation_stack(
         outcomes=SqlProposalOutcomes(sessions),
         ids=ids,
         clock=clock,
+        profiles=Bm04ProfileWriter(
+            schemas=bm04_schemas,
+            profiles=SqlProductProfileRepository(sessions),
+            authz=ScopeAuthorizationService(),
+            ids=ids,
+        ),
     )
     return StepPreparationStack(preparer=preparer, applier=applier, subject=subject)
 

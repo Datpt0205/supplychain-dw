@@ -72,3 +72,17 @@ giao; đặt cọc và thanh toán không có số tiền. Không có gì có c�
    nạp, AI-07 dùng người liên hệ).
 6. **Zalo:** câu trả lời dựng từ `presentation/zalo_views` (một chủ của danh sách trường
    được phép); test giữ danh sách đó rời với `PRICE_FIELDS`.
+
+## Sửa đổi 2026-10-09 (tạm, lát AI-11; BM04 điền sẵn)
+
+1. BM04 của bước 7 là bản nháp: mỗi ô một nguồn (hồ sơ, chứng từ và trích dẫn, hoặc mô hình
+   đọc từ mục bằng chứng có trích dẫn). Hai nguồn khác giá trị là mâu thuẫn và ô trống; code
+   không chọn bên nào.
+2. Giá, tiền tệ, MOQ, thời gian sản xuất, Incoterm chỉ do code chép từ chứng từ; mô hình không
+   được hỏi, không thấy giá, và ô thương mại nó trả về bị loại ở cả hai lớp.
+3. Payload của approval không lọc theo scope, nên mâu thuẫn về giá chỉ nêu tên hai chứng từ;
+   số giá code biết bị che trong mọi trích dẫn khác.
+4. Duyệt bước 7 ghi một phiên bản `product_profiles` trong cùng giao dịch với bước: giá chỉ khi
+   người duyệt có `supply_chain.commercial.write` (không thì giữ giá phiên bản trước, như thẻ
+   BM04); ô bắt buộc của schema tenant còn thiếu thì không ghi phiên bản (audit
+   `product_profile.not_saved`), người điền thẻ BM04.

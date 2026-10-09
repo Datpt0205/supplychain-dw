@@ -153,7 +153,8 @@ def test_the_shipped_prompts_and_skills_load_together() -> None:
     rendered = registry.render(
         "supply_chain.extract_product_profile_bm04", "1.1.0", {"document_text": "x"}
     )
-    assert rendered.skills == ("supply_chain.bm04_guide@1.0.0",)
+    # 1.1.0 only widens `applies_to` (draft_bm04, ticket ai-automation/11).
+    assert rendered.skills == ("supply_chain.bm04_guide@1.1.0",)
     assert {s.artifact.skill_id for s in registry.skills.platform_skills()} == {
         "supply_chain.process_part_a",
         "supply_chain.step_documents",

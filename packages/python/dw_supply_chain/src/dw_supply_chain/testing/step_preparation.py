@@ -27,7 +27,13 @@ from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.pagination import CursorPosition, Page, PageRequest, build_page
 from dw_kernel.ports import FixedClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.domain.audit import AuditEvent
+from dw_supply_chain.application.bm04_prefill import (
+    Bm04Preparation,
+    Bm04ProfileWriter,
+    Bm04Writer,
+)
 from dw_supply_chain.application.document_drafts import (
     NewDocumentDraft,
     NewDraftDecision,
@@ -50,12 +56,14 @@ from dw_supply_chain.application.step_proposals import (
     ApplyStepProposal,
     StepProposalSubject,
 )
+from dw_supply_chain.bm04_schema import SupplyChainBm04Schema, load_supply_chain_bm04_schema
 from dw_supply_chain.domain.case_document import (
     CaseDocument,
     CaseDocumentId,
     CaseKind,
     DocumentType,
 )
+from dw_supply_chain.domain.commercial import NewProductProfile, ProductProfile
 from dw_supply_chain.domain.document_draft import DocumentDraft, DraftDecision, DraftSource
 from dw_supply_chain.domain.extraction import EXTRACTION_SPECS, ExtractionStatus
 from dw_supply_chain.domain.product_development_case import (
@@ -371,6 +379,7 @@ class InMemoryOutcomes:
     records: InMemoryRecords
     audits: list[AuditEvent] = field(default_factory=list)
     applied: int = 0
+    profiles: list[tuple[AccessContext, NewProductProfile]] = field(default_factory=list)
 
     async def apply_approved(
         self,
@@ -382,6 +391,7 @@ class InMemoryOutcomes:
         documents: Sequence[AiPreparedDocument],
         record: NewPreparationRecord,
         audits: Sequence[AuditEvent],
+        profile: NewProductProfile | None = None,
     ) -> None:
         stored = self.cases.cases[case.id.value]
         if stored.version != case.version - 1:
@@ -398,6 +408,8 @@ class InMemoryOutcomes:
         case.pop_pending_steps()
         self.cases.cases[case.id.value] = replace(case, _pending_steps=[])
         self.records.insert(context, record)
+        if profile is not None:
+            self.profiles.append((context, profile))
         self.audits.extend(audits)
         self.applied += 1
 
@@ -481,6 +493,34 @@ class InMemoryMeasurements:
         )
 
 
+@dataclass
+class StaticBm04Schema:
+    """The tenant's BM04 schema: the platform's unless a test sets one."""
+
+    schema: SupplyChainBm04Schema
+
+    async def resolve(self, context: AccessContext) -> SupplyChainBm04Schema:
+        return self.schema
+
+
+@dataclass
+class InMemoryProfiles:
+    """`Bm04ProfileReadPort`: the latest version under the reader's tenant AND
+    workspace, as RLS answers."""
+
+    rows: list[ProductProfile] = field(default_factory=list)
+    scopes: dict[uuid.UUID, tuple[uuid.UUID, uuid.UUID]] = field(default_factory=dict)
+
+    async def latest(self, context: AccessContext, case_id: uuid.UUID) -> ProductProfile | None:
+        mine = [
+            p
+            for p in self.rows
+            if p.product_dev_case_id == case_id
+            and self.scopes.get(p.id) == (context.tenant_id, context.workspace_id)
+        ]
+        return max(mine, key=lambda p: p.version) if mine else None
+
+
 class _StaticPlans:
     async def plan_of(self, tenant_id: uuid.UUID) -> str | None:
         return "professional"
@@ -514,6 +554,12 @@ class StepWorld:
     # `generate_structured` answers; None wires no writer at all.
     gateway: Any = None
     model_profile: str | None = None
+    bm04_schema: SupplyChainBm04Schema = field(
+        default_factory=lambda: load_supply_chain_bm04_schema(
+            REPO_ROOT / "configs" / "policies" / "supply_chain_bm04_schema@1.0.0.yaml"
+        )
+    )
+    profiles: InMemoryProfiles = field(default_factory=InMemoryProfiles)
 
     def context(
         self,
@@ -554,6 +600,21 @@ class StepWorld:
             ),
         )
 
+    def bm04(self) -> Bm04Preparation:
+        return Bm04Preparation(
+            schemas=StaticBm04Schema(self.bm04_schema),
+            writer=None
+            if self.gateway is None
+            else Bm04Writer(
+                gateway=self.gateway,
+                plans=_StaticPlans(),
+                ids=Uuid4Generator(),
+                worker_id="supply_chain_step_preparation",
+                worker_version="1.0.0",
+                model_profile=self.model_profile,
+            ),
+        )
+
     def subject(self) -> StepProposalSubject:
         return StepProposalSubject(
             cases=self.cases, drafts=self.drafts, documents=self.documents, sample=self.sample()
@@ -578,6 +639,7 @@ class StepWorld:
             ids=ids,
             clock=self.clock,
             sample=self.sample(),
+            bm04=self.bm04(),
         )
 
     def applier(self) -> ApplyStepProposal:
@@ -592,6 +654,12 @@ class StepWorld:
             outcomes=self.outcomes,
             ids=Uuid4Generator(),
             clock=self.clock,
+            profiles=Bm04ProfileWriter(
+                schemas=StaticBm04Schema(self.bm04_schema),
+                profiles=self.profiles,
+                authz=ScopeAuthorizationService(),
+                ids=Uuid4Generator(),
+            ),
         )
 
     # -- seeding -----------------------------------------------------------
@@ -700,6 +768,46 @@ class StepWorld:
             run_id=uuid.uuid4(),
         )
 
+    def approve_record(
+        self,
+        case: ProductDevelopmentCase,
+        rows: Sequence[Mapping[str, str | None]],
+        *,
+        conclusion: str = "Đạt",
+    ) -> uuid.UUID:
+        """A sample evaluation record R&D approved (a confirmed draft)."""
+        context = self.context(tenant=case.tenant_id.value, workspace=case.workspace_id.value)
+        draft_id = uuid.uuid4()
+        self.drafts.insert(
+            context,
+            NewDocumentDraft(
+                id=draft_id,
+                lineage_id=draft_id,
+                version=1,
+                case_kind=CaseKind.PRODUCT,
+                case_id=case.id.value,
+                doc_type=DocumentType.SAMPLE_EVALUATION,
+                template_id="supply_chain.sample_evaluation",
+                template_version="1.0.0",
+                prompt_id=None,
+                prompt_version=None,
+                fields={
+                    "criteria": {"value": [dict(r) for r in rows], "source": None},
+                    "conclusion": {"value": conclusion, "source": None},
+                },
+                gaps=[],
+                sources=[],
+                content_sha256="e" * 64,
+            ),
+        )
+        self.drafts.record_decision(
+            context,
+            NewDraftDecision(
+                id=uuid.uuid4(), draft_id=draft_id, decision=DraftDecision.CONFIRMED, reason=None
+            ),
+        )
+        return draft_id
+
     def lane_context(self, case: ProductDevelopmentCase) -> AccessContext:
         return lane_context(case.tenant_id.value, case.workspace_id.value)
 
@@ -757,6 +865,9 @@ SAMPLE_TESTING = PreparedStep.model_validate(
         "result_fields": ["evaluated_on", "conclusion"],
     }
 )
+# Step 7 as Elmich prepares it (ticket ai-automation/11).
+BM04_STEP = _elmich_step(ProductDevState.PROFILE_IN_PROGRESS)
+
 SUPPLIER_CONFIRMATION = PreparedStep.model_validate(
     {
         "case_kind": "product",

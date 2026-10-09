@@ -459,11 +459,16 @@ class FieldInput:
     cites: tuple[str, ...] = ()
 
     def source(self) -> dict[str, Any] | None:
+        """A document and its quote; words a model wrote (or read) that checked
+        out, with what they cite; both when a model read a document's quote."""
+        out: dict[str, Any] = {}
         if self.document_id is not None:
-            return {"document_id": str(self.document_id), "quote": self.quote}
+            out = {"document_id": str(self.document_id), "quote": self.quote}
         if self.cites:
-            return {"ai_written": True, "cites": list(self.cites)}
-        return None
+            out |= {"ai_written": True, "cites": list(self.cites)}
+            if self.quote is not None:
+                out["quote"] = self.quote
+        return out or None
 
 
 @dataclass(frozen=True)

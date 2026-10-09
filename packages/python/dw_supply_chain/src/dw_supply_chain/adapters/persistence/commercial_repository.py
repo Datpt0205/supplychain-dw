@@ -98,6 +98,44 @@ def _profile(row: Row[Any]) -> ProductProfile:
     )
 
 
+async def insert_product_profile(
+    session: AsyncSession, context: AccessContext, profile: NewProductProfile
+) -> ProductProfile:
+    """One BM04 version, in the caller's transaction: the profile card's save
+    and a step 7 proposal's approval (ticket ai-automation/11) write it alike."""
+    commercial = profile.commercial
+    row = (
+        await session.execute(
+            sa.insert(_pp)
+            .values(
+                id=profile.id,
+                tenant_id=context.tenant_id,
+                workspace_id=context.workspace_id,
+                product_dev_case_id=profile.product_dev_case_id,
+                version=_next_version(
+                    _pp,
+                    _pp.c.tenant_id == context.tenant_id,
+                    _pp.c.product_dev_case_id == profile.product_dev_case_id,
+                ),
+                unit_price=commercial.unit_price,
+                currency=commercial.currency,
+                moq=commercial.moq,
+                lead_time_days=commercial.lead_time_days,
+                incoterm=None if commercial.incoterm is None else commercial.incoterm.value,
+                attributes=profile.attributes,
+                schema_version=profile.schema_version,
+                created_by=context.principal_id,
+            )
+            .returning(_pp)
+        )
+    ).one()
+    return _profile(row)
+
+
+def profile_conflict(exc: IntegrityError) -> ConflictError | None:
+    return _version_conflict(exc, "BM04")
+
+
 def _payment(row: Row[Any]) -> POPayment:
     m = row._mapping
     return POPayment(
@@ -150,43 +188,16 @@ class SqlProductProfileRepository:
     async def add(
         self, context: AccessContext, profile: NewProductProfile, *, audit: AuditEvent
     ) -> ProductProfile:
-        commercial = profile.commercial
         try:
             async with tenant_session(self.session_factory, _scope(context)) as session:
-                row = (
-                    await session.execute(
-                        sa.insert(_pp)
-                        .values(
-                            id=profile.id,
-                            tenant_id=context.tenant_id,
-                            workspace_id=context.workspace_id,
-                            product_dev_case_id=profile.product_dev_case_id,
-                            version=_next_version(
-                                _pp,
-                                _pp.c.tenant_id == context.tenant_id,
-                                _pp.c.product_dev_case_id == profile.product_dev_case_id,
-                            ),
-                            unit_price=commercial.unit_price,
-                            currency=commercial.currency,
-                            moq=commercial.moq,
-                            lead_time_days=commercial.lead_time_days,
-                            incoterm=None
-                            if commercial.incoterm is None
-                            else commercial.incoterm.value,
-                            attributes=profile.attributes,
-                            schema_version=profile.schema_version,
-                            created_by=context.principal_id,
-                        )
-                        .returning(_pp)
-                    )
-                ).one()
+                created = await insert_product_profile(session, context, profile)
                 await SqlAuditRepository(session).append(audit)
         except IntegrityError as exc:
-            conflict = _version_conflict(exc, "BM04")
+            conflict = profile_conflict(exc)
             if conflict is not None:
                 raise conflict from exc
             raise
-        return _profile(row)
+        return created
 
 
 async def _read_commercial(

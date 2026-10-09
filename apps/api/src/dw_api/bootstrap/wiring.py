@@ -1058,6 +1058,7 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
     )
     from dw_supply_chain.application import step_preparation as sc_preparation
     from dw_supply_chain.application import step_proposals as sc_proposals
+    from dw_supply_chain.application.bm04_prefill import Bm04Preparation, Bm04ProfileWriter
     from dw_supply_chain.domain.step_proposal import STEP_PROPOSAL_PREFIX
     from dw_supply_chain.presentation.step_proposal_routes import StepProposalHandlers
     from dw_supply_chain.step_preparation_policy import load_supply_chain_step_preparation
@@ -1104,6 +1105,7 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
         sample=sample_preparation,
+        bm04=Bm04Preparation(schemas=bm04_schemas),
     )
     applier = sc_proposals.ApplyStepProposal(
         cases=product_case_repo,
@@ -1116,6 +1118,11 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         outcomes=SqlProposalOutcomes(wiring.seam.session_factory),
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
+        # A confirmed BM04 (step 7, ticket ai-automation/11) becomes a profile
+        # version with the step, priced only for a decider who may set prices.
+        profiles=Bm04ProfileWriter(
+            schemas=bm04_schemas, profiles=profiles, authz=authorization, ids=wiring.seam.ids
+        ),
     )
     wiring.seam.graphs.register(
         step_preparation_graph.WORKER_ID,

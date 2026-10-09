@@ -1765,7 +1765,7 @@ export interface components {
          *     result field a person types is never filled.
          * @enum {string}
          */
-        DraftRecipe: "case_facts" | "sample_evaluation" | "revision_request";
+        DraftRecipe: "case_facts" | "sample_evaluation" | "revision_request" | "bm04";
         /** DraftSourceView */
         DraftSourceView: {
             /**
@@ -3202,7 +3202,7 @@ export interface components {
          * @description Code's checks of a step, each a finding when it fails.
          * @enum {string}
          */
-        StepCheck: "sources_present" | "sources_read" | "drafts_complete" | "criteria_measured" | "revision_checked";
+        StepCheck: "sources_present" | "sources_read" | "drafts_complete" | "criteria_measured" | "revision_checked" | "bm04_sources";
         /** StepDecisionRequest */
         StepDecisionRequest: {
             /**

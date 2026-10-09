@@ -49,12 +49,13 @@ def test_the_platform_prepares_nothing() -> None:
     assert policy.steps == ()
 
 
-def test_elmichs_override_loads_and_prepares_two_steps() -> None:
+def test_elmichs_override_loads_and_prepares_its_steps() -> None:
     policy = load_supply_chain_step_preparation(
         REPO_ROOT / "scripts" / "elmich_step_preparation_override.yaml"
     )
     assert [s.action for s in policy.steps] == [
         ProductAction.PASS_SAMPLE,
+        ProductAction.COMPLETE_PROFILE,
         ProductAction.CONFIRM_WITH_SUPPLIER,
     ]
     assert policy.steps[0].physical and policy.steps[0].result_fields

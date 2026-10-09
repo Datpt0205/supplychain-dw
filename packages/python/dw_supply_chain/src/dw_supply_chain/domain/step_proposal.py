@@ -87,6 +87,11 @@ class DraftRecipe(StrEnum):
     # The revision request: one item per failed criterion (code's rows), the
     # requirement a model wrote that checks out, an empty cell otherwise.
     REVISION_REQUEST = "revision_request"
+    # The BM04 of step 7 (ticket ai-automation/11): the case's facts and the
+    # sources' cited fields reconciled by code (two values disagreeing are a
+    # conflict and an empty field), then what a model read from the evidence
+    # for the fields still empty, never a commercial one.
+    BM04 = "bm04"
 
 
 class StepCheck(StrEnum):
@@ -102,6 +107,9 @@ class StepCheck(StrEnum):
     CRITERIA_MEASURED = "criteria_measured"
     # Each item of the last revision request, checked against this round.
     REVISION_CHECKED = "revision_checked"
+    # The BM04's sources agree, its price line is clear, and every field the
+    # tenant's BM04 schema requires has a value (ticket ai-automation/11).
+    BM04_SOURCES = "bm04_sources"
 
 
 class PreparationOutcome(StrEnum):
@@ -133,6 +141,8 @@ class NotPreparedReason(StrEnum):
     # A step that reads a sample round, on a host wired without its criteria
     # and measurements.
     SAMPLE_FACTS_UNAVAILABLE = "sample_facts_unavailable"
+    # A BM04 step, on a host wired without the tenant's BM04 schema.
+    BM04_FACTS_UNAVAILABLE = "bm04_facts_unavailable"
     RUN_REFUSED = "run_refused"
     RUN_FAILED = "run_failed"
 

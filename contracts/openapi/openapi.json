@@ -2323,7 +2323,8 @@
         "enum": [
           "case_facts",
           "sample_evaluation",
-          "revision_request"
+          "revision_request",
+          "bm04"
         ],
         "title": "DraftRecipe",
         "type": "string"
@@ -8027,7 +8028,8 @@
           "sources_read",
           "drafts_complete",
           "criteria_measured",
-          "revision_checked"
+          "revision_checked",
+          "bm04_sources"
         ],
         "title": "StepCheck",
         "type": "string"

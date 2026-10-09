@@ -36,6 +36,10 @@ from dw_supply_chain.adapters.persistence.case_document_repository import (
     insert_case_document,
     version_refusal,
 )
+from dw_supply_chain.adapters.persistence.commercial_repository import (
+    insert_product_profile,
+    profile_conflict,
+)
 from dw_supply_chain.adapters.persistence.document_draft_repository import (
     ALREADY_DECIDED,
     insert_decision,
@@ -45,6 +49,7 @@ from dw_supply_chain.adapters.persistence.product_case_repository import SqlProd
 from dw_supply_chain.application.document_drafts import NewDocumentDraft, NewDraftDecision
 from dw_supply_chain.application.step_preparation import NewPreparationRecord, PreparationRecord
 from dw_supply_chain.application.step_proposals import AiPreparedDocument
+from dw_supply_chain.domain.commercial import NewProductProfile
 from dw_supply_chain.domain.product_development_case import ProductDevelopmentCase
 from dw_supply_chain.domain.step_proposal import PreparationOutcome
 
@@ -141,6 +146,7 @@ class SqlProposalOutcomes:
         documents: Sequence[AiPreparedDocument],
         record: NewPreparationRecord,
         audits: Sequence[AuditEvent],
+        profile: NewProductProfile | None = None,
     ) -> None:
         cases = SqlProductCaseRepository(self.session_factory)
         steps = case.pop_pending_steps()
@@ -155,6 +161,8 @@ class SqlProposalOutcomes:
                         session, context, prepared.document, draft_id=prepared.draft_id
                     )
                 await cases.save_in(session, context, case, steps)
+                if profile is not None:
+                    await insert_product_profile(session, context, profile)
                 await _insert_record(session, context, record)
                 audit_log = SqlAuditRepository(session)
                 for event in audits:
@@ -168,6 +176,8 @@ class SqlProposalOutcomes:
                 refusal = version_refusal(exc, prepared.document)
                 if refusal is not None:
                     raise refusal from exc
+            if profile is not None and (conflict := profile_conflict(exc)) is not None:
+                raise conflict from exc
             case_refusal = cases.refusal(exc, case, steps)
             if case_refusal is None:
                 raise

@@ -1,0 +1,14 @@
+schema_version: '1.0'
+skill_id: supply_chain.bm04_guide
+version: 1.1.0
+title: Hướng dẫn hồ sơ sản phẩm BM04
+applies_to:
+- supply_chain.extract_product_profile_bm04
+- supply_chain.draft_bm04
+body: "BM04 là hồ sơ kỹ thuật của sản phẩm đã chốt. Các mục thường gặp:\n- Tên sản phẩm, mã model của\
+  \ NCC.\n- Chất liệu (ví dụ inox 304, nhôm anod, gang), kích thước (dài x rộng x cao, đường\n  kính),\
+  \ trọng lượng tịnh (gam), dung tích (ml) nếu là dụng cụ chứa.\n- Màu sắc, biến thể (mỗi biến thể một\
+  \ dòng), quy cách đóng gói, số sản phẩm mỗi thùng.\n- Xuất xứ, chứng nhận và tiêu chuẩn (ví dụ tiếp\
+  \ xúc thực phẩm).\n- Đơn giá và tiền tệ, MOQ (số lượng đặt tối thiểu), thời gian sản xuất (ngày),\n\
+  \  Incoterm (EXW, FOB, CIF...).\n\nThời gian sản xuất chỉ chép khi hồ sơ ghi bằng ngày; \"4 tuần\" không\
+  \ phải \"28 ngày\" để\nchép. Một mục hồ sơ để trống là ô trống, không suy ra từ mục khác.\n"

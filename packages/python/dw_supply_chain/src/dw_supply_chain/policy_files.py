@@ -32,7 +32,8 @@ STEP_PREPARATION_WORKER_FILE = "supply_chain_step_preparation.yaml"
 # Which profile each model task runs on (ticket ai-automation/06): read by
 # the worker's extraction lane, and by scripts/model_gate.py for the gate's
 # dataset and threshold.
-MODEL_ROUTES_POLICY_FILE = "supply_chain_model_routes@1.5.0.yaml"
+MODEL_ROUTES_POLICY_FILE = "supply_chain_model_routes@1.6.0.yaml"
+BM04_SCHEMA_POLICY_FILE = "supply_chain_bm04_schema@1.0.0.yaml"
 # The wording of a message to a supplier (ticket ai-automation/07): read by the
 # worker's message lane.
 SUPPLIER_MESSAGES_POLICY_FILE = "supply_chain_supplier_messages@1.1.0.yaml"

@@ -40,7 +40,8 @@ from dw_platform.application.authorization import holds_stamped_scope
 from dw_platform.application.ports import AuthorizationPort, PolicyOverridePort
 from dw_platform.domain.approval import APPROVALS_DECIDE, SUBJECT_VERSION_KEY, ApprovalRequest
 from dw_platform.domain.audit import AuditEvent
-from dw_supply_chain.application.commercial import allows
+from dw_supply_chain.application.bm04_prefill import Bm04ProfileWriter
+from dw_supply_chain.application.commercial import PROFILE_SAVED, allows
 from dw_supply_chain.application.document_drafts import (
     DraftTemplatesPort,
     NewDocumentDraft,
@@ -82,6 +83,7 @@ from dw_supply_chain.domain.case_document import (
     DocumentType,
     ObjectKey,
 )
+from dw_supply_chain.domain.commercial import NewProductProfile
 from dw_supply_chain.domain.document_draft import (
     DRAFT_TEMPLATES,
     DocumentDraft,
@@ -117,6 +119,8 @@ PROPOSAL_APPLIED = "step_proposal_applied"
 DRAFT_CONFIRMED = "supply_chain.document_draft.confirmed"
 DRAFT_REJECTED = "supply_chain.document_draft.rejected"
 AI_DOCUMENT_ADDED = "supply_chain.case_document.ai_prepared"
+# A confirmed BM04 whose required fields the tenant's schema still lacks.
+PROFILE_NOT_SAVED = "supply_chain.product_profile.not_saved"
 _POLICY_RESOURCE = "step_preparation_policy"
 _REJECTION_REASON_MAX = 1000
 
@@ -225,10 +229,12 @@ class ProposalOutcomesPort(Protocol):
         documents: Sequence[AiPreparedDocument],
         record: NewPreparationRecord,
         audits: Sequence[AuditEvent],
+        profile: NewProductProfile | None = None,
     ) -> None:
         """New draft versions, their confirmations, the documents, the case's
-        step (optimistic on its version) and the record: all or nothing. A
-        confirmation of an already-decided version is a `ConflictError`."""
+        step (optimistic on its version), the record and, for a BM04, the
+        product profile version it makes: all or nothing. A confirmation of
+        an already-decided version is a `ConflictError`."""
         ...
 
     async def reject(
@@ -283,6 +289,10 @@ class ApplyStepProposal:
     outcomes: ProposalOutcomesPort
     ids: IdGenerator
     clock: UtcClock
+    # Step 7 (ticket ai-automation/11): a confirmed BM04 becomes a
+    # `product_profiles` version with the step. None: no BM04 step is applied
+    # by this host (the BM04 still becomes a document).
+    profiles: Bm04ProfileWriter | None = None
 
     def _record(
         self,
@@ -399,6 +409,7 @@ class ApplyStepProposal:
         documents: list[AiPreparedDocument] = []
         audits: list[AuditEvent] = []
         paper: CaseDocument | None = None
+        bm04_fields: Mapping[str, Any] | None = None
         for named in payload.get("drafts") or []:
             draft = await self.drafts.get(context, uuid.UUID(str(named["draft_id"])))
             if draft is None:
@@ -484,6 +495,8 @@ class ApplyStepProposal:
                     },
                 )
             )
+            if draft.doc_type is DocumentType.PRODUCT_PROFILE_BM04:
+                bm04_fields = confirmed[1]
             if draft.doc_type == chosen_paper:
                 paper = CaseDocument(
                     id=new_document.id,
@@ -535,6 +548,7 @@ class ApplyStepProposal:
         )
         record = self._record(payload, PreparationOutcome.APPLIED, None, run_id)
         audits.append(record_audit(context, self.ids, self.clock, record))
+        profile = await self._profile(context, case, bm04_fields, audits)
         # `confirmations` carries the papers of outcomes not chosen too, each
         # a REJECTED decision: every draft the proposal named is closed.
         await self.outcomes.apply_approved(
@@ -545,8 +559,53 @@ class ApplyStepProposal:
             documents=documents,
             record=record,
             audits=audits,
+            profile=profile,
         )
         return action.value
+
+    async def _profile(
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        fields: Mapping[str, Any] | None,
+        audits: list[AuditEvent],
+    ) -> NewProductProfile | None:
+        """The profile version a confirmed BM04 makes, with its audit; what
+        the tenant's schema refused is named there, never guessed."""
+        if fields is None or self.profiles is None:
+            return None
+        made = await self.profiles.profile_for(context, case.id.value, fields)
+        if made.profile is None:
+            audits.append(
+                _audit(
+                    context,
+                    self.ids,
+                    self.clock,
+                    PROFILE_NOT_SAVED,
+                    "product_profile",
+                    case.id.value,
+                    {"product_dev_case_id": str(case.id), "missing": list(made.skipped)},
+                )
+            )
+            return None
+        audits.append(
+            _audit(
+                context,
+                self.ids,
+                self.clock,
+                PROFILE_SAVED,
+                "product_profile",
+                made.profile.id,
+                {
+                    "product_dev_case_id": str(case.id),
+                    "schema_version": made.profile.schema_version,
+                    "prices_set": made.prices_set,
+                    "via": PROPOSAL_APPLIED,
+                    "skipped": list(made.skipped),
+                },
+            )
+        )
+        return made.profile
 
     def _confirmed_version(
         self,

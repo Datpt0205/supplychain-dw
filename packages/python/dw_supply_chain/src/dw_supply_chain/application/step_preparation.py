@@ -53,6 +53,13 @@ from dw_platform.domain.approval import (
     approval_link,
 )
 from dw_platform.domain.audit import AuditEvent, lane_audit_event, system_actor
+from dw_supply_chain.application.bm04_prefill import (
+    BM04_PROMPT,
+    Bm04Facts,
+    Bm04Preparation,
+    Bm04Reading,
+    approved_evaluation,
+)
 from dw_supply_chain.application.document_drafts import (
     DraftTemplatesPort,
     FieldInput,
@@ -72,6 +79,7 @@ from dw_supply_chain.application.ports import (
     ScopeHoldersPort,
     TenantPlanPort,
 )
+from dw_supply_chain.domain.bm04_prefill import conflict_message
 from dw_supply_chain.domain.case_document import CaseDocument, CaseKind, DocumentType
 from dw_supply_chain.domain.document_draft import (
     DRAFT_TEMPLATES,
@@ -468,6 +476,7 @@ class RecipeInput:
     # The result fields a person types: never filled.
     skip: frozenset[str]
     sample: SampleFacts | None = None
+    bm04: Bm04Facts | None = None
 
 
 def case_facts_recipe(given: RecipeInput) -> dict[str, FieldInput]:
@@ -533,15 +542,41 @@ def revision_request_recipe(given: RecipeInput) -> dict[str, FieldInput]:
     return values
 
 
+def bm04_recipe(given: RecipeInput) -> dict[str, FieldInput]:
+    """The BM04: each value code kept or a model read and code checked, with
+    its source; a conflicting field and a field nobody proves stay empty."""
+    if given.bm04 is None:
+        raise _NotPreparedError(NotPreparedReason.BM04_FACTS_UNAVAILABLE)
+    names = {f.name for f in given.spec.fields if f.kind is not TemplateFieldKind.TABLE}
+    values: dict[str, FieldInput] = {}
+    for name, kept in given.bm04.reconciled.kept.items():
+        if name not in names or name in given.skip:
+            continue
+        values[name] = FieldInput(
+            value=kept.value,
+            document_id=kept.source.document_id,
+            quote=kept.quote,
+            cites=(kept.source.key,) if kept.ai_written else (),
+        )
+    return values
+
+
 Recipe = Callable[[RecipeInput], dict[str, FieldInput]]
 DRAFT_RECIPES: Mapping[DraftRecipe, Recipe] = {
     DraftRecipe.CASE_FACTS: case_facts_recipe,
     DraftRecipe.SAMPLE_EVALUATION: sample_evaluation_recipe,
     DraftRecipe.REVISION_REQUEST: revision_request_recipe,
+    DraftRecipe.BM04: bm04_recipe,
 }
 # The recipes and checks that read a sample round (`SampleFacts`).
 SAMPLE_RECIPES = frozenset({DraftRecipe.SAMPLE_EVALUATION, DraftRecipe.REVISION_REQUEST})
 SAMPLE_CHECKS = frozenset({StepCheck.CRITERIA_MEASURED, StepCheck.REVISION_CHECKED})
+
+
+def fills_a_bm04(step: PreparedStep) -> bool:
+    return any(d.recipe is DraftRecipe.BM04 for d in step.drafts) or (
+        StepCheck.BM04_SOURCES in step.checks
+    )
 
 
 def reads_a_round(step: PreparedStep) -> bool:
@@ -605,6 +640,7 @@ class CheckInput:
     readings: Sequence[SourceReading]
     drafts: Sequence[DocumentDraft]
     sample: SampleFacts | None = None
+    bm04: Bm04Facts | None = None
 
 
 def _sources_present(given: CheckInput) -> list[Finding]:
@@ -697,12 +733,50 @@ def _revision_checked(given: CheckInput) -> list[Finding]:
     return found
 
 
+def _bm04_sources(given: CheckInput) -> list[Finding]:
+    """Each conflict with both its sources; a price line code could not
+    choose; each field the tenant's BM04 schema requires that the BM04 draft
+    leaves empty (a source said nothing, or two disagreed)."""
+    facts = given.bm04
+    if facts is None:
+        return []
+    found = [
+        Finding(
+            "bm04_conflict",
+            c.field,
+            conflict_message(c, facts.labels.get(c.field, c.field), facts.prices),
+        )
+        for c in facts.reconciled.conflicts
+    ]
+    if facts.lines_ambiguous:
+        found.append(
+            Finding(
+                "quotation_lines_ambiguous",
+                "unit_price",
+                "Báo giá có nhiều dòng giá, không dòng nào ghi đúng tên sản phẩm; máy không chọn",
+            )
+        )
+    bm04 = next((d for d in given.drafts if d.doc_type is DocumentType.PRODUCT_PROFILE_BM04), None)
+    filled = {} if bm04 is None else bm04.fields
+    for spec in facts.schema.fields:
+        if spec.required and not field_value(filled, spec.key):
+            found.append(
+                Finding(
+                    "bm04_required_missing",
+                    spec.key,
+                    f"Biểu mẫu BM04 của công ty bắt buộc ô này, chưa có nguồn: {spec.label}",
+                )
+            )
+    return found
+
+
 STEP_CHECKS: Mapping[StepCheck, Callable[[CheckInput], list[Finding]]] = {
     StepCheck.SOURCES_PRESENT: _sources_present,
     StepCheck.SOURCES_READ: _sources_read,
     StepCheck.DRAFTS_COMPLETE: _drafts_complete,
     StepCheck.CRITERIA_MEASURED: _criteria_measured,
     StepCheck.REVISION_CHECKED: _revision_checked,
+    StepCheck.BM04_SOURCES: _bm04_sources,
 }
 assert set(STEP_CHECKS) == set(StepCheck)  # every check a policy may name is implemented
 
@@ -769,6 +843,8 @@ class PrepareStep:
     # A sample round's criteria, measurements and model (ticket
     # ai-automation/09); a host that prepares no such step needs none.
     sample: SamplePreparation | None = None
+    # The BM04's schema and model (ticket ai-automation/11), likewise.
+    bm04: Bm04Preparation | None = None
 
     async def prepare(self, context: AccessContext, request: PreparationRequest) -> Prepared:
         previous = await self.records.latest(context, request.transition_id, request.policy_version)
@@ -825,13 +901,14 @@ class PrepareStep:
         paper_from_source = self._paper_from_source(case, step, newest, by_id)
         readings = await self._readings(context, step, newest, by_id)
         sample = await self._sample_facts(context, case, step) if reads_a_round(step) else None
-        drafts = await self._drafts(context, case, step, readings, previous, sample)
+        bm04 = await self._bm04_facts(context, case, readings) if fills_a_bm04(step) else None
+        drafts = await self._drafts(context, case, step, readings, previous, sample, bm04)
         suggestions = (
             suggestions_for(step.result_fields, readings, step, sample) if step.physical else {}
         )
 
         given = CheckInput(
-            step=step, newest=newest, readings=readings, drafts=drafts, sample=sample
+            step=step, newest=newest, readings=readings, drafts=drafts, sample=sample, bm04=bm04
         )
         findings = [finding for check in step.checks for finding in STEP_CHECKS[check](given)]
         sources = [SubjectSource(t, newest.get(t)) for t in step.sources]
@@ -933,6 +1010,21 @@ class PrepareStep:
             found.append(SourceReading(document.id.value, document.doc_type, reading))
         return found
 
+    async def _bm04_facts(
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        readings: Sequence[SourceReading],
+    ) -> Bm04Facts:
+        """Code's BM04 candidates reconciled; the model is asked only when a
+        new draft needs its words (`_drafts`)."""
+        if self.bm04 is None:
+            raise _NotPreparedError(NotPreparedReason.BM04_FACTS_UNAVAILABLE)
+        template = await self.templates.resolve(
+            context, *DRAFT_TEMPLATES[DocumentType.PRODUCT_PROFILE_BM04]
+        )
+        return await self.bm04.facts(context, case, template.spec, _bm04_readings(readings))
+
     async def _sample_facts(
         self, context: AccessContext, case: ProductDevelopmentCase, step: PreparedStep
     ) -> SampleFacts:
@@ -1003,6 +1095,7 @@ class PrepareStep:
         readings: Sequence[SourceReading],
         previous: PreparationRecord | None,
         sample: SampleFacts | None = None,
+        bm04: Bm04Facts | None = None,
     ) -> list[DocumentDraft]:
         """Each draft the step names: the open latest version of the lineage
         an earlier attempt of THIS step entry prepared (a person's edits are
@@ -1033,8 +1126,19 @@ class PrepareStep:
             if planned.doc_type in reusable:
                 drafts.append(reusable[planned.doc_type])
                 continue
+            if planned.recipe is DraftRecipe.BM04 and bm04 is not None and self.bm04 is not None:
+                bm04 = await self.bm04.written(
+                    context,
+                    case,
+                    template.spec,
+                    _bm04_readings(readings),
+                    approved_evaluation(
+                        await self.drafts.latest_for_case(context, CaseKind.PRODUCT, case.id.value)
+                    ),
+                    bm04,
+                )
             values = DRAFT_RECIPES[planned.recipe](
-                RecipeInput(case, template.spec, readings, result, sample)
+                RecipeInput(case, template.spec, readings, result, sample, bm04)
             )
             drafts.append(
                 await self.prepare_draft.handle(
@@ -1044,14 +1148,29 @@ class PrepareStep:
                     doc_type=planned.doc_type,
                     values=values,
                     sources=[_draft_source(r) for r in readings],
-                    prompt=EVALUATION_PROMPT.ref
-                    if planned.recipe in SAMPLE_RECIPES
-                    and sample is not None
-                    and sample.grounded is not None
-                    else None,
+                    prompt=_prompt_of(planned.recipe, sample, bm04),
                 )
             )
         return drafts
+
+
+def _prompt_of(
+    recipe: DraftRecipe, sample: SampleFacts | None, bm04: Bm04Facts | None
+) -> tuple[str, str] | None:
+    """The prompt whose words a new draft holds, if any did."""
+    if recipe in SAMPLE_RECIPES and sample is not None and sample.grounded is not None:
+        return EVALUATION_PROMPT.ref
+    if recipe is DraftRecipe.BM04 and bm04 is not None and bm04.written:
+        return BM04_PROMPT.ref
+    return None
+
+
+def _bm04_readings(readings: Sequence[SourceReading]) -> list[Bm04Reading]:
+    return [
+        Bm04Reading(r.document_id, r.doc_type, r.reading.fields)
+        for r in readings
+        if r.reading.status is ExtractionStatus.EXTRACTED
+    ]
 
 
 def _draft_source(source: SourceReading) -> DraftSource:
