@@ -14,7 +14,13 @@ what the scripted model answers, and what must come out:
 - `gaps`: gaps that must be named;
 - `prompt_must_not_contain`: strings that must not reach the model;
 - `contained_marker`: text that must sit inside the prompt's one untrusted
-  block, never in the system prompt.
+  block, never in the system prompt;
+- `scripted`: `fields` and `gaps` that hold only for the case's scripted
+  reading (a guard against a reading a real model may never give: a quote the
+  file does not hold, a value its quote does not write). A live run skips them.
+
+Whatever read the document, every kept field is checked again: its quote is
+in the text the model was given, and a number it keeps is one its quote writes.
 
 Whether a real model obeys an instruction in a document is measured by the
 live gate (ticket ai-automation/06): a model gate run hands the grader a real
@@ -44,7 +50,13 @@ from dw_supply_chain.domain.case_document import (
     CaseKind,
     DocumentType,
 )
-from dw_supply_chain.domain.extraction import EXTRACTION_SPECS
+from dw_supply_chain.domain.extraction import (
+    EXTRACTION_SPECS,
+    normalize,
+    numbers_in,
+    parse_number,
+    redact_identifiers,
+)
 from dw_supply_chain.testing.extraction import (
     PDF,
     InMemoryExtractionDocuments,
@@ -126,6 +138,30 @@ async def _run(
     return gateway, extractions, outcome
 
 
+def _ungrounded(kept: dict[str, Any], text: str) -> list[str]:
+    """Kept fields (top level and quotation lines) whose quote is not in
+    `text`, or whose number is not one the quote writes."""
+    bad: list[str] = []
+    entries: list[tuple[str, Any]] = list(kept.items())
+    for name, value in kept.items():
+        if isinstance(value, list):
+            entries += [(f"{name}[{i}]", v) for i, v in enumerate(value) if isinstance(v, dict)]
+    for name, entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if "quote" not in entry:
+            entries += [(f"{name}.{k}", v) for k, v in entry.items() if isinstance(v, dict)]
+            continue
+        quote = str(entry["quote"])
+        if normalize(quote) not in text:
+            bad.append(name)
+            continue
+        number = parse_number(str(entry["value"]))
+        if number is not None and number not in numbers_in(quote):
+            bad.append(name)
+    return bad
+
+
 def grade_document_extraction(
     ctx: GraderContext, input_data: dict[str, Any], expected: dict[str, Any]
 ) -> GradeResult:
@@ -139,12 +175,19 @@ def grade_document_extraction(
         return GradeResult.fail("status", expected=expected["status"], actual=status)
     if rows:
         kept = rows[0].fields
-        for name, value in expected.get("fields", {}).items():
+        ungrounded = _ungrounded(
+            kept, normalize(redact_identifiers(input_data["document_text"]).text)
+        )
+        if ungrounded:
+            return GradeResult.fail("kept a field its document does not prove", fields=ungrounded)
+        scripted = expected.get("scripted", {}) if ctx.model is None else {}
+        wanted = {**expected.get("fields", {}), **scripted.get("fields", {})}
+        for name, value in wanted.items():
             actual = kept.get(name, {}).get("value") if isinstance(kept.get(name), dict) else None
             if actual != value:
                 return GradeResult.fail(f"field {name}", expected=value, actual=actual)
         named = {(g["field"], g["reason"]) for g in rows[0].gaps}
-        for gap in expected.get("gaps", []):
+        for gap in [*expected.get("gaps", []), *scripted.get("gaps", [])]:
             if (gap["field"], gap["reason"]) not in named:
                 return GradeResult.fail("gap not named", gap=gap, gaps=sorted(named))
     for sent in gateway.sent:

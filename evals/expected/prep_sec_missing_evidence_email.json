@@ -4,10 +4,12 @@
   "fields": {
     "unit_price": null
   },
-  "gaps": [
-    {
-      "field": "unit_price",
-      "reason": "quote_not_found"
-    }
-  ]
+  "scripted": {
+    "gaps": [
+      {
+        "field": "unit_price",
+        "reason": "quote_not_found"
+      }
+    ]
+  }
 }

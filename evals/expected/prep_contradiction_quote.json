@@ -1,13 +1,15 @@
 {
   "model_calls": 1,
   "status": "extracted",
-  "fields": {
-    "valid_until": null
-  },
-  "gaps": [
-    {
-      "field": "valid_until",
-      "reason": "value_not_in_quote"
-    }
-  ]
+  "scripted": {
+    "fields": {
+      "valid_until": null
+    },
+    "gaps": [
+      {
+        "field": "valid_until",
+        "reason": "value_not_in_quote"
+      }
+    ]
+  }
 }

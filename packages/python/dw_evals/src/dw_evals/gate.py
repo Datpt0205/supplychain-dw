@@ -12,9 +12,11 @@ loader agree because both ask `ModelGateResult.passed`.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from datetime import datetime
+from typing import Any
 
-from dw_agent_runtime.model.gates import GateMode, ModelGateResult, TaskScore
+from dw_agent_runtime.model.gates import GateCase, GateMode, ModelGateResult, TaskScore
 from dw_evals.dataset import SECURITY_CATEGORIES, EvalCase, EvalDataset
 from dw_evals.runner import EvalReport
 
@@ -42,13 +44,29 @@ def gate_result(
     profile: str,
     mode: GateMode,
     generated_at: datetime,
+    outputs: Mapping[str, Sequence[Any]] | None = None,
 ) -> ModelGateResult:
+    """`outputs`: what the model answered, by case id, already redacted."""
     tasks = {c.case_id: task_of(c) for c in dataset.cases}
     totals: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
+    cases: list[GateCase] = []
     for result in report.results:
         task = tasks.get(result.case_id)
         if task is None:
             continue
+        details = dict(result.details)
+        reason = details.pop("reason", None)
+        cases.append(
+            GateCase(
+                case_id=result.case_id,
+                task=task,
+                category=result.category,
+                passed=result.passed,
+                reason=None if result.passed else str(reason or "failed"),
+                details={} if result.passed else details,
+                outputs=tuple((outputs or {}).get(result.case_id, ())),
+            )
+        )
         score = totals[task]
         score[0] += 1
         score[1] += int(result.passed)
@@ -62,6 +80,7 @@ def gate_result(
             task: TaskScore(total=t, passed=p, security_failed=s)
             for task, (t, p, s) in sorted(totals.items())
         },
+        cases=tuple(cases),
     )
 
 

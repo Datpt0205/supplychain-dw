@@ -187,7 +187,7 @@ EXTRACTION_SPECS: Mapping[DocumentType, ExtractionSpec] = {
         ExtractionSpec(
             doc_type=DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
             prompt_id="supply_chain.extract_supplier_confirmation_email",
-            prompt_version="1.1.0",
+            prompt_version="1.2.0",
             reading=SupplierConfirmationReading,
             kinds={
                 "confirmed": FieldKind.CHOICE,
@@ -294,6 +294,39 @@ def numbers_in(text: str) -> list[Decimal]:
 
 
 _DATE_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DATE_DAY_FIRST = re.compile(r"^(\d{1,2})([/.-])(\d{1,2})\2(\d{4})$")
+# One number and words around it, as a document writes a quantity ("1200 cái").
+_NUMBER_WITH_WORDS = re.compile(r"^[^\d-]*(-?\d[\d.,\s]*\d|-?\d)[^\d]*$")
+
+
+def parse_date(raw: str) -> date | None:
+    """A date the model wrote: ISO, or the document's own day-first spelling
+    (`20/11/2026`, `20-11-2026`, `20.11.2026`) when it cannot be read the other
+    way round. `05/12/2026` could be either convention and is refused, not
+    guessed, as `parse_number` refuses `1.234`."""
+    text = raw.strip()
+    try:
+        if _DATE_ISO.fullmatch(text):
+            return date.fromisoformat(text)
+        match = _DATE_DAY_FIRST.fullmatch(text)
+        if match is None:
+            return None
+        day, month, year = int(match.group(1)), int(match.group(3)), int(match.group(4))
+        if day <= 12 and day != month:
+            return None
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def parse_quantity(raw: str) -> Decimal | None:
+    """`parse_number`, or the one number of a value that adds only words to it
+    (a unit, a currency): `1200 cái` is 1200; two numbers are not one."""
+    number = parse_number(raw)
+    if number is not None:
+        return number
+    match = _NUMBER_WITH_WORDS.fullmatch(raw.strip().replace(chr(0xA0), " "))
+    return None if match is None else parse_number(match.group(1).strip())
 
 
 def _date_spellings(day: date) -> list[str]:
@@ -352,19 +385,15 @@ def _ground_one(
     value: Any
     match kind:
         case FieldKind.NUMBER:
-            number = parse_number(cited.value)
+            number = parse_quantity(html.unescape(cited.value))
             if number is None:
                 return None, Gap(path, GapReason.NOT_A_NUMBER)
             if number not in numbers_in(html.unescape(cited.quote)):
                 return None, Gap(path, GapReason.VALUE_NOT_IN_QUOTE)
             value = str(number)
         case FieldKind.DATE:
-            raw = cited.value.strip()
-            if not _DATE_ISO.fullmatch(raw):
-                return None, Gap(path, GapReason.NOT_A_DATE)
-            try:
-                day = date.fromisoformat(raw)
-            except ValueError:
+            day = parse_date(cited.value)
+            if day is None:
                 return None, Gap(path, GapReason.NOT_A_DATE)
             if not any(normalize(s) in quote for s in _date_spellings(day)):
                 return None, Gap(path, GapReason.VALUE_NOT_IN_QUOTE)
@@ -377,8 +406,9 @@ def _ground_one(
         case FieldKind.TEXT:
             if normalize(cited.value) not in quote:
                 return None, Gap(path, GapReason.VALUE_NOT_IN_QUOTE)
-            value = cited.value.strip()
-    return {"value": value, "quote": cited.quote.strip()}, None
+            # The prompt shows `&` as `&amp;`; what is kept is what the file says.
+            value = html.unescape(cited.value.strip())
+    return {"value": value, "quote": html.unescape(cited.quote.strip())}, None
 
 
 def _ground_model(

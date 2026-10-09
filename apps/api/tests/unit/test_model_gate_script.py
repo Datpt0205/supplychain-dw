@@ -69,3 +69,41 @@ def test_the_placeholder_qwen_profile_loads_and_no_host_defaults_to_it() -> None
     assert profiles.resolve("qwen").profile_id == "qwen"
     env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
     assert "MODEL_PROFILE=qwen" not in env_example
+
+
+class _LeakyModel:
+    """A live model whose every call fails with a message holding the
+    provider key and an account number: what the gate file must not keep."""
+
+    async def generate_structured(self, request: Any, output_type: Any, *, run_context: Any) -> Any:
+        raise RuntimeError("rejected sk-live-SECRET-0001 for stk 0123456789012")
+
+
+def test_a_live_run_records_each_case_its_reason_and_the_redacted_model_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = _script()
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://model.invalid")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-live-SECRET-0001")
+    monkeypatch.setattr(script, "live_gateway", lambda profile: _LeakyModel())
+    assert script.main(["--profile", "qwen", "--out", str(tmp_path)]) == 0
+    text = (tmp_path / "qwen.json").read_text(encoding="utf-8")
+    assert "sk-live-SECRET-0001" not in text and "0123456789012" not in text
+    result = json.loads(text)
+    cases = result["cases"]
+    assert {c["task"] for c in cases} == set(result["tasks"])
+    assert sum(c["passed"] for c in cases) == sum(t["passed"] for t in result["tasks"].values())
+    failed = [c for c in cases if not c["passed"]]
+    assert failed and all(c["reason"] and c["category"] for c in failed)
+    called = [c for c in cases if c["outputs"]]
+    assert called and all("RuntimeError" in str(c["outputs"][0]) for c in called)
+    assert "[REDACTED]" in text
+
+
+def test_redaction_masks_identifiers_and_secrets_at_any_depth() -> None:
+    redact = _script().redact
+    out = redact(
+        {"a": ["STK: 0123 4567 8901", {"k": "Bearer abcdefghijk"}], "n": 3}, secrets=("xyz",)
+    )
+    assert "0123 4567 8901" not in str(out) and "abcdefghijk" not in str(out)
+    assert redact("key xyz", secrets=("xyz",)) == "key [REDACTED]" and out["n"] == 3

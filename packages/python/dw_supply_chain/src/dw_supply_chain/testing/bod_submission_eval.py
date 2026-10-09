@@ -14,10 +14,12 @@ must come out:
 - `fields`: values code must have filled (null: must be empty);
 - `ai_must_not_contain`: text no kept sentence may hold;
 - `prompt_must_not_contain`, `contained_marker`;
-- `scripted`: `ai_must_contain`, only for the scripted words.
+- `scripted`: `ai_must_contain` and `fields`, only for the scripted words (a
+  real model may write a valid sentence where the script wrote a bad one).
 
 Whatever the model wrote, every number of a kept sentence is checked again
-against the evidence it was shown.
+against the evidence it was shown, and every key a kept sentence cites is one
+the model was shown.
 """
 
 from __future__ import annotations
@@ -86,7 +88,8 @@ def grade_bod_submission(
     if "drafted" in expected and bool(drafts) != expected["drafted"]:
         return GradeResult.fail("drafted", expected=expected["drafted"], actual=bool(drafts))
     fields = drafts[0].fields if drafts else {}
-    for name, value in expected.get("fields", {}).items():
+    scripted = expected.get("scripted", {}) if ctx.model is None else {}
+    for name, value in {**expected.get("fields", {}), **scripted.get("fields", {})}.items():
         entry = fields.get(name)
         actual = entry.get("value") if isinstance(entry, dict) else None
         if actual != value:
@@ -96,6 +99,15 @@ def grade_bod_submission(
         for name in ("summary", "recommendation")
         if isinstance(fields.get(name), dict) and fields[name].get("value")
     ]
+    shown_to_model = gateway.sent[-1].user if gateway.sent else ""
+    for name, entry in fields.items():
+        source = entry.get("source") if isinstance(entry, dict) else None
+        cites = source.get("cites", []) if isinstance(source, dict) else []
+        foreign = [c for c in cites if c != "case" and c.split(":", 1)[-1] not in shown_to_model]
+        if foreign:
+            return GradeResult.fail(
+                "kept a sentence citing what it was not shown", field=name, cites=foreign
+            )
     for text in expected.get("ai_must_not_contain", []):
         if any(text in w for w in words):
             return GradeResult.fail("kept", text=text)

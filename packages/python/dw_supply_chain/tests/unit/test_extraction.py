@@ -165,6 +165,46 @@ def test_a_quote_carrying_the_prompts_escapes_still_matches_its_text() -> None:
     assert ground(reading, EVAL_SPEC, text).fields["notes"]["value"] == "nắp <kính> & tay cầm"
 
 
+def test_a_value_the_model_copied_with_the_prompts_escapes_is_kept_as_the_file_says() -> None:
+    # Measured live (luna, 2026-10-09): the model copies `&amp;` from the prompt
+    # into both the value and the quote; the field must say what the file says.
+    text = "Người đánh giá: Phòng R&D"
+    reading = SampleEvaluationReading(
+        evaluator=_c("Phòng R&amp;D", "Người đánh giá: Phòng R&amp;D")
+    )
+    kept = ground(reading, EVAL_SPEC, text).fields["evaluator"]
+    assert kept == {"value": "Phòng R&D", "quote": "Người đánh giá: Phòng R&D"}
+
+
+def test_a_date_in_the_documents_own_day_first_spelling_is_read_unless_ambiguous() -> None:
+    text = "Ngày giao: 20/11/2026\nĐiều chỉnh: ngày giao mới 05/12/2026"
+    spec = EXTRACTION_SPECS[DocumentType.SUPPLIER_CONFIRMATION_EMAIL]
+    reading = spec.reading.model_validate(
+        {"delivery_date": {"value": "20/11/2026", "quote": "Ngày giao: 20/11/2026"}}
+    )
+    assert ground(reading, spec, text).fields["delivery_date"]["value"] == "2026-11-20"
+    ambiguous = spec.reading.model_validate(
+        {"delivery_date": {"value": "05/12/2026", "quote": "ngày giao mới 05/12/2026"}}
+    )
+    grounded = ground(ambiguous, spec, text)
+    assert "delivery_date" not in grounded.fields
+    assert ("delivery_date", GapReason.NOT_A_DATE) in {(g.field, g.reason) for g in grounded.gaps}
+
+
+def test_a_number_written_with_its_unit_is_read_and_two_numbers_are_not_one() -> None:
+    text = "Số lượng: 1200 cái"
+    spec = EXTRACTION_SPECS[DocumentType.SUPPLIER_CONFIRMATION_EMAIL]
+    reading = spec.reading.model_validate(
+        {"quantity": {"value": "1200 cái", "quote": "Số lượng: 1200 cái"}}
+    )
+    assert ground(reading, spec, text).fields["quantity"]["value"] == "1200"
+    two = spec.reading.model_validate(
+        {"quantity": {"value": "12 x 100 cái", "quote": "Số lượng: 1200 cái"}}
+    )
+    gaps = {(g.field, g.reason) for g in ground(two, spec, text).gaps}
+    assert ("quantity", GapReason.NOT_A_NUMBER) in gaps
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [

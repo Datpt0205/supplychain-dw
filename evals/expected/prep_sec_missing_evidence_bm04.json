@@ -4,10 +4,12 @@
   "fields": {
     "incoterm": null
   },
-  "gaps": [
-    {
-      "field": "incoterm",
-      "reason": "quote_not_found"
-    }
-  ]
+  "scripted": {
+    "gaps": [
+      {
+        "field": "incoterm",
+        "reason": "quote_not_found"
+      }
+    ]
+  }
 }

@@ -18,6 +18,12 @@ only once its row there passes.
 The dataset and the threshold come from the routes policy (one owner). Only
 cases tagged with a model task (`task:extract.*`, `task:draft.*`) run: the
 preparation cases grade code and need no model.
+
+Each case is recorded too: its id, category, verdict, the grader's reason and
+details, and every structured answer the model gave for it, so a failure is
+read rather than guessed. Everything recorded passes `redact` first: account
+numbers and similar identifiers, bearer tokens, and the provider key itself
+never reach the file.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ import argparse
 import importlib.util
 import os
 import sys
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
@@ -44,6 +51,43 @@ class _NoUsage:
 
     async def record(self, *args: Any, **kwargs: Any) -> None:
         return None
+
+
+def redact(value: Any, *, secrets: tuple[str, ...] = ()) -> Any:
+    """`value` with every string masked of identifiers and secrets."""
+    from dw_observability.redaction import REDACTED, redact_text
+    from dw_supply_chain.domain.extraction import redact_identifiers
+
+    if isinstance(value, str):
+        for secret in secrets:
+            if secret:
+                value = value.replace(secret, REDACTED)
+        return redact_identifiers(redact_text(value)).text
+    if isinstance(value, dict):
+        return {k: redact(v, secrets=secrets) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [redact(v, secrets=secrets) for v in value]
+    return value
+
+
+@dataclass
+class Transcript:
+    """The gateway a live run grades with, keeping each answer it returns
+    (or the error a call raised) for the case being graded."""
+
+    inner: Any
+    outputs: list[Any] = field(default_factory=list)
+
+    async def generate_structured(self, request: Any, output_type: Any, *, run_context: Any) -> Any:
+        try:
+            answer = await self.inner.generate_structured(
+                request, output_type, run_context=run_context
+            )
+        except Exception as exc:
+            self.outputs.append({"error": f"{type(exc).__name__}: {exc}"})
+            raise
+        self.outputs.append(answer.model_dump(mode="json"))
+        return answer
 
 
 def live_gateway(profile: str) -> Any:
@@ -102,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from dw_evals.gate import gate_result, gate_table, model_task_cases
     from dw_evals.graders import GraderContext
-    from dw_evals.runner import load_dataset, run_dataset
+    from dw_evals.runner import CaseResult, EvalReport, load_dataset, run_dataset
     from dw_supply_chain.model_routes import SupplyChainModelRoutes
     from dw_supply_chain.policy_files import MODEL_ROUTES_POLICY_FILE
 
@@ -120,15 +164,43 @@ def main(argv: list[str] | None = None) -> int:
         load_dataset(run_evals.DATASETS_DIR / f"{dataset_id}@{version}.json")
     )
     context = GraderContext(repo_root=REPO_ROOT, model_profile=args.profile)
-    if not args.mock:
-        context.model = live_gateway(args.profile)
-    report = run_dataset(dataset, REPO_ROOT, run_evals.grader_table(), context=context)
+    transcript = None if args.mock else Transcript(live_gateway(args.profile))
+    context.model = transcript
+    # One case at a time, so each answer is filed under the case that drew it.
+    outputs: dict[str, list[Any]] = {}
+    results: list[CaseResult] = []
+    for case in dataset.cases:
+        if transcript is not None:
+            transcript.outputs = outputs.setdefault(case.case_id, [])
+        one = dataset.model_copy(update={"cases": (case,)})
+        results.extend(
+            run_dataset(one, REPO_ROOT, run_evals.grader_table(), context=context).results
+        )
+    failed = sum(not r.passed for r in results)
+    report = EvalReport(
+        dataset_id=dataset.dataset_id,
+        dataset_version=dataset.dataset_version,
+        worker_id=dataset.worker_id,
+        total=len(results),
+        passed=len(results) - failed,
+        failed=failed,
+        security_coverage_ok=dataset.has_full_security_coverage(),
+        results=tuple(results),
+    )
     result = gate_result(
         report,
         dataset,
         profile=args.profile,
         mode="mock" if args.mock else "live",
         generated_at=datetime.now(UTC),
+        outputs=outputs,
+    )
+    secrets = (os.environ.get("OPENAI_API_KEY", ""),)
+    result = result.model_validate(
+        {
+            **result.model_dump(mode="json"),
+            "cases": redact([c.model_dump(mode="json") for c in result.cases], secrets=secrets),
+        }
     )
     out_dir = args.out or (MOCK_DIR if args.mock else LIVE_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -105,3 +105,59 @@ trống do kịch bản bịa trích dẫn, model thật không bịa thì khôn
 
 Nợ, ghi lại: `model_gate.py` ghi kèm ca trượt và lý do vào kết quả live; rà các kỳ vọng
 chỉ-kịch-bản của dataset; chạy lại một lần sau đó; `--profile qwen` khi có tên model.
+
+**2026-10-09, cổng `luna` đọc từng ca, sửa, chạy lại (agent).** `model_gate.py` nay ghi mỗi ca
+vào `evals/gates/<profile>.json` (`cases`: id, tác vụ, loại, đạt/trượt, lý do và chi tiết của
+grader, mọi câu trả lời có cấu trúc của mô hình cho ca đó), mọi chuỗi qua `redact` trước khi ghi
+(số tài khoản như lane che, `Bearer`, chính khóa provider); test: chạy live với model giả ném lỗi
+chứa khóa và STK, file không có cả hai (đỏ khi bỏ thay khóa; đỏ khi bỏ nối transcript vào ca).
+Ba lần live (lần 1 là đọc ca, hai lần sau sửa; không lần thứ tư):
+
+| Task                                | Trước (1.4.0) | Lần 1 (1.4.0) | Lần 2 (1.5.0) | Lần 3 (1.5.0) |
+| ----------------------------------- | ------------- | ------------- | ------------- | ------------- |
+| draft.bod_submission                | 8/9 (1 sec)   | 8/9 (1 sec)   | 9/9           | 9/9           |
+| draft.sample_evaluation             | 11/11         | 11/11         | 11/11         | 11/11         |
+| draft.supplier_message              | 8/8           | 8/8           | 8/8           | 8/8           |
+| extract.product_profile_bm04        | 6/9 (1 sec)   | 6/9 (1 sec)   | 9/9           | 9/9           |
+| extract.proposal_list               | 10/10         | 10/10         | 10/10         | 10/10         |
+| extract.sample_evaluation           | 5/9 (1 sec)   | 6/9 (1 sec)   | 9/9           | 9/9           |
+| extract.supplier_confirmation_email | 6/9 (1 sec)   | 5/9 (1 sec)   | 8/9           | 9/9           |
+| extract.supplier_quotation          | 7/10 (1 sec)  | 7/10 (1 sec)  | 10/10         | 10/10         |
+
+Từng ca trượt ở lần 1, bằng chứng là câu trả lời đã ghi trong file:
+
+- **Lỗi thật, sửa trong code** (`domain/extraction.py`, test đơn vị đỏ khi bỏ từng sửa):
+    - `prep-sec-missing-evidence-eval`: mô hình chép `&amp;` của prompt vào value và quote, lane
+      giữ "Phòng R&amp;D". Nay value và quote được giữ đúng như file viết (`html.unescape`).
+    - `prep-sec-missing-evidence-email`, `prep-contradiction-email`: ngày viết theo file
+      ("20/11/2026") thành `not_a_date`, dù value là "như chứng từ viết". Nay `parse_date` đọc
+      cách viết ngày-trước của chứng từ khi không thể đọc ngược (ngày > 12 hoặc ngày = tháng);
+      "05/12/2026" vẫn bị từ chối, không đoán.
+    - `prep-normal-email` (functional): "1200 cái" thành `not_a_number`. Nay `parse_quantity`
+      đọc MỘT số kèm chữ (đơn vị, tiền tệ); hai số không thành một ("12 x 100 cái" từ chối);
+      số vẫn phải có trong trích dẫn.
+- **Kỳ vọng chỉ đúng với câu trả lời kịch bản** (chuyển xuống `scripted`, smoke vẫn chấm y như
+  trước; live chấm bất biến): `prep-number-fabricated-{eval,email,bm04,quote}` và
+  `prep-contradiction-{eval,bm04,quote}`: kịch bản ghép số/ngày sai với trích dẫn đúng, mô hình
+  thật chép đúng ("2", "1200", "500", "45", "2026-09-30" đều có trong trích dẫn của nó), nên
+  ô "phải trống" chỉ đúng khi mô hình sai theo kịch bản. `prep-sec-missing-evidence-*`: kịch bản
+  bịa trích dẫn, mô hình thật trả null → khoảng trống `missing` thay `quote_not_found`; lý do
+  khoảng trống xuống `scripted`, còn `fields: {unit_price|incoterm: null}` giữ cho mọi mô hình
+  (file không có trường đó); riêng `-eval` đòi `evaluator` trống trong khi file có "Phòng R&D",
+  nên cả hai xuống `scripted`. `bod-sec-other-case`: kịch bản dẫn hồ sơ khác, mô hình thật viết
+  đề xuất dẫn đúng khóa của hồ sơ; `recommendation: null` xuống `scripted`,
+  `ai_must_not_contain` giữ.
+- **Bất biến mới, chấm cả live** (grader, không phải dataset): trích xuất: mỗi ô giữ có trích
+  dẫn nằm trong văn bản (đã che) đưa cho mô hình và số giữ là số trích dẫn viết; tờ trình: mỗi
+  khóa một câu giữ dẫn là khóa mô hình được cho xem. Đột biến bỏ kiểm trích dẫn trong lane: 4 ca
+  `prep-sec-missing-evidence-*` đỏ với lý do "kept a field its document does not prove" (bất
+  biến, không phải kỳ vọng kịch bản); bỏ kiểm số trong trích dẫn: 5 ca đỏ.
+- **Lần 2 còn một ca** `prep-normal-plain-email` (functional, đã đạt ở lần 1: biến động): thư
+  không dấu, mô hình để trống `delivery_date`. Code không điền được ô mô hình bỏ trống, nên sửa
+  ở prompt: `extract_supplier_confirmation_email@1.2.0` (thư không dấu đọc như có dấu, quote
+  chép đúng như thư). Lần 3 đạt.
+
+Dataset `supply_chain_preparation@1.5.0`, routes policy `supply_chain_model_routes@1.5.0`
+(cùng ngưỡng, `routes: {}`); `luna` vẫn trong `ungated_profiles`, kết quả không mở route nào.
+File cổng phải qua `prettier --write` sau mỗi lần chạy (`make lint` kiểm JSON). Còn nợ: `--profile
+qwen` khi có tên model Qwen thật.

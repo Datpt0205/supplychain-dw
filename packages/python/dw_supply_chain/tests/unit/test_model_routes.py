@@ -45,8 +45,8 @@ from dw_supply_chain.testing.extraction import (
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-SHIPPED = REPO_ROOT / "configs" / "policies" / "supply_chain_model_routes@1.4.0.yaml"
-DATASET = "supply_chain_preparation@1.4.0"
+SHIPPED = REPO_ROOT / "configs" / "policies" / "supply_chain_model_routes@1.5.0.yaml"
+DATASET = "supply_chain_preparation@1.5.0"
 TASK = "extract.sample_evaluation"
 NOW = datetime(2026, 10, 9, tzinfo=UTC)
 
