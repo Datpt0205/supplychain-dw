@@ -161,3 +161,10 @@ Dataset `supply_chain_preparation@1.5.0`, routes policy `supply_chain_model_rout
 (cùng ngưỡng, `routes: {}`); `luna` vẫn trong `ungated_profiles`, kết quả không mở route nào.
 File cổng phải qua `prettier --write` sau mỗi lần chạy (`make lint` kiểm JSON). Còn nợ: `--profile
 qwen` khi có tên model Qwen thật.
+
+**2026-10-10, live gate after AI-12..14 (agent).** `luna` on `supply_chain_preparation@1.9.0` (routes
+1.9.0), one live run: 9/9 tasks pass, no security case failed (`draft.bm04` 11/11,
+`draft.bod_submission` 9/9, `draft.sample_evaluation` 11/11, `draft.supplier_message` 8/8,
+`extract.product_profile_bm04` 9/9, `extract.proposal_list` 10/10, `extract.sample_evaluation` 9/9,
+`extract.supplier_confirmation_email` 11/11, `extract.supplier_quotation` 10/10). Steps 9 and 10
+(AI-13, AI-14) ask no model, so their cases are code cases, not gate tasks. `qwen` still owed.
