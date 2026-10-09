@@ -175,7 +175,7 @@ EXTRACTION_SPECS: Mapping[DocumentType, ExtractionSpec] = {
         ExtractionSpec(
             doc_type=DocumentType.SAMPLE_EVALUATION,
             prompt_id="supply_chain.extract_sample_evaluation",
-            prompt_version="1.0.0",
+            prompt_version="1.1.0",
             reading=SampleEvaluationReading,
             kinds={
                 "result": FieldKind.CHOICE,
@@ -187,7 +187,7 @@ EXTRACTION_SPECS: Mapping[DocumentType, ExtractionSpec] = {
         ExtractionSpec(
             doc_type=DocumentType.SUPPLIER_CONFIRMATION_EMAIL,
             prompt_id="supply_chain.extract_supplier_confirmation_email",
-            prompt_version="1.0.0",
+            prompt_version="1.1.0",
             reading=SupplierConfirmationReading,
             kinds={
                 "confirmed": FieldKind.CHOICE,
@@ -200,7 +200,7 @@ EXTRACTION_SPECS: Mapping[DocumentType, ExtractionSpec] = {
         ExtractionSpec(
             doc_type=DocumentType.PRODUCT_PROFILE_BM04,
             prompt_id="supply_chain.extract_product_profile_bm04",
-            prompt_version="1.0.0",
+            prompt_version="1.1.0",
             reading=ProfileBm04Reading,
             kinds={
                 "net_weight_g": FieldKind.NUMBER,
@@ -214,7 +214,7 @@ EXTRACTION_SPECS: Mapping[DocumentType, ExtractionSpec] = {
         ExtractionSpec(
             doc_type=DocumentType.SUPPLIER_QUOTATION,
             prompt_id="supply_chain.extract_supplier_quotation",
-            prompt_version="1.0.0",
+            prompt_version="1.1.0",
             reading=SupplierQuotationReading,
             kinds={
                 "quotation_date": FieldKind.DATE,

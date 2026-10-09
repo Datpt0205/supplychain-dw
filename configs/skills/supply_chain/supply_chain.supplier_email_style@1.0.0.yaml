@@ -1,0 +1,11 @@
+schema_version: '1.0'
+skill_id: supply_chain.supplier_email_style
+version: 1.0.0
+title: Giọng văn thư gửi nhà cung cấp
+applies_to: []
+body: "Thư gửi NCC do AI soạn, người gửi (E18):\n- Ngắn, lịch sự, đi thẳng vào việc: một thư một việc\
+  \ (xin mẫu, gửi phiếu chỉnh sửa,\n  chốt sản phẩm, nhắc tiến độ).\n- Gọi đúng tên người liên hệ và tên\
+  \ công ty NCC; nêu mã sản phẩm hoặc số PO ngay đầu thư.\n- Liệt kê điều cần NCC làm và hạn trả lời bằng\
+  \ ngày cụ thể.\n- Tiếng Việt với NCC trong nước; tiếng Anh với NCC nước ngoài trừ khi đã trao đổi bằng\n\
+  \  ngôn ngữ khác.\n- Không hứa thay người duyệt; không nêu giá nội bộ, giá của NCC khác, hay số tài\
+  \ khoản.\n- Đính kèm chỉ những chứng từ đã được duyệt.\n"

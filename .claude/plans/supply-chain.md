@@ -90,7 +90,7 @@ means platform code, an upstream candidate (ADR 0011).
 | AI-01 | `ai-automation/issues/01-commercial-data-and-bm04-fields.md` (L)          | no      | resolved        | —                                   |
 | AI-02 | `ai-automation/issues/02-document-extraction-lane.md` (L)                 | partly  | resolved        | —                                   |
 | AI-03 | `ai-automation/issues/03-drafts-and-templates.md` (L)                     | partly  | resolved        | —                                   |
-| AI-04 | `ai-automation/issues/04-skills-registry.md` (M)                          | yes     | ready-for-agent | —                                   |
+| AI-04 | `ai-automation/issues/04-skills-registry.md` (M)                          | yes     | resolved        | —                                   |
 | AI-05 | `ai-automation/issues/05-step-proposals.md` (L)                           | no      | ready-for-agent | AI-02, AI-03                        |
 | AI-06 | `ai-automation/issues/06-preparation-evals-and-qwen-gate.md` (M)          | partly  | ready-for-agent | AI-02, AI-03                        |
 | AI-07 | `ai-automation/issues/07-supplier-messages.md` (M)                        | no      | ready-for-agent | AI-03, AI-05                        |
@@ -113,8 +113,10 @@ means platform code, an upstream candidate (ADR 0011).
 | UAT-2 | `uat/issues/02-uat-with-elmich.md` (S)                                    | —       | ready-for-human | UAT-1, ON-02, H2, ZL                |
 
 **Next:** the AI layer (Đạt, 2026-10-09: "AI does the work, people only
-approve"; spec `supply-chain/ai-automation/spec.md`): AI-01–AI-04 have no blocker
-and can run in parallel, then AI-05 (step proposals) unblocks the per-step
+approve"; spec `supply-chain/ai-automation/spec.md`): AI-01–AI-04 resolved
+2026-10-09 with their integration tests owed (written, not run: no Docker on that
+machine; run them first with `make infra-up && make test-integration`), then AI-05
+(step proposals) and AI-06 (preparation evals, Qwen gate) unblock the per-step
 tickets. H2 (the domain the webhook needs; runbook `docs/deploy/host.md`); Z4p
 when a real photo update exists; ZL measures the webhook header (Z3).
 Platform hardening and the FCI rerank land from `platform/main` once the
@@ -177,7 +179,8 @@ against (E18: AI drafts, a person sends).
 | M3     | `4890979` | Platform `ab33703` merged: prompts through the containing registry (5 new versions, delay analysis raw only for days and milestones, hostile-value tests; `supply_chain@1.8.0`); decision audit with channel decisions; SoD second person and role recheck (two Open items closed); `sc_*` role labels; one `@dw/ui` PageHeader/RegionState in this theme; merge head `cee9cf387387`.                                                                                                                                                               |
 | AI-01  | `4c71f77` | BM04 and commercial data as fields (`82221a867e62`, not run): `product_profiles`, `po_payments`, supplier contacts and bank accounts (workspace RLS, append-only), PO terms and line prices, `commercial.read                                                                                                                                                                                                                                                                                                                                       | write`(redacted in the handler,`{value: null, redacted: true}`), BM04 schema policy 1.0.0 with tenant override, Zalo views disjoint from `PRICE_FIELDS`, `Bm04ProfileCard`/`POCommercialCard`, `MaskedValue`; ADR 0026 amended; integration owed (no Docker). |
 | AI-02  | `06fe7bc` | Document extraction lane (`e21dc10d13b5`, not run): `document_extractions` (workspace RLS, FK with type + hash), ids-only definer queue, lane reads under the row's own scope and re-checks it, in-process PDF/DOCX/XLSX/EML text (`dw_knowledge.office_parsers`, + `pypdf`), account numbers masked before the one-call gateway, fields kept only when quote and value are in the text, quotation arithmetic by code; 4 prompts; `supplier_quotation`; eval `supply_chain@1.9.0` (82); ADR 0021 amended (images/MSG unreadable); integration owed. |
-| AI-03  | this      | Drafts and templates (`cbebad572558`, not run): `document_drafts` (versions per lineage, `content_sha256`) + decisions (workspace RLS), `case_documents.origin`/`draft_id`, tenant template overrides in PostgreSQL; `dw_agent_runtime.doc_templates` (registry, `TenantOverlay`, checked at load) + python-docx renderer behind `DocumentRendererPort` (one pass, no field codes, macros refused); 5 neutral templates pinned in the manifest; `bod_submission`; `DraftsCard`; a draft never satisfies a step; ADR 0025 amended; integration owed. |
+| AI-03  | `1e6521f` | Drafts and templates (`cbebad572558`, not run): `document_drafts` (versions per lineage, `content_sha256`) + decisions (workspace RLS), `case_documents.origin`/`draft_id`, tenant template overrides in PostgreSQL; `dw_agent_runtime.doc_templates` (registry, `TenantOverlay`, checked at load) + python-docx renderer behind `DocumentRendererPort` (one pass, no field codes, macros refused); 5 neutral templates pinned in the manifest; `bod_submission`; `DraftsCard`; a draft never satisfies a step; ADR 0025 amended; integration owed. |
+| AI-04  | this      | Skill registry (platform, upstream candidate; ADR 0030): `model.skills` (`TenantOverlay`, `id@^x.y.z`), prompts declare skills and the registry appends them to the system part, `load_shipped_prompts` checks both ways at start (API, worker, evals), skills pinned in the release manifest; 8 supply-chain skills, extraction prompts 1.1.0 declare 4; no Docker-owed test.                                                                                                                                                                      |
 
 ## Open — named, not fixed, still true after the port
 

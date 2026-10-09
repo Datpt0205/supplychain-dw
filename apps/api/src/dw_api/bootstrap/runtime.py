@@ -23,7 +23,7 @@ from dw_agent_runtime.autonomy import AutonomyApprovalPolicy
 from dw_agent_runtime.executor import ToolExecutor
 from dw_agent_runtime.model.copy import load_runtime_copy
 from dw_agent_runtime.model.profiles import ModelProfileRegistry
-from dw_agent_runtime.model.prompts import PromptRegistry
+from dw_agent_runtime.model.prompts import load_shipped_prompts
 from dw_agent_runtime.ports import RunAllowancePort
 from dw_agent_runtime.registry import GraphRegistry, WorkerRegistry
 from dw_agent_runtime.tool_specs import ToolSpecRegistry
@@ -115,8 +115,8 @@ def build_runtime(
     # ---- versioned artifact registries -----------------------------------
     profiles = ModelProfileRegistry()
     profiles.load_directory(MODEL_PROFILES_DIR)
-    prompts = PromptRegistry()
-    prompts.load_directory(PROMPTS_DIR)
+    # Prompts and the skills they declare, checked against each other.
+    prompts = load_shipped_prompts(PROMPTS_DIR.parent)
     copy = load_runtime_copy(RUNTIME_COPY_CONFIG)
 
     # ---- model gateway ---------------------------------------------------

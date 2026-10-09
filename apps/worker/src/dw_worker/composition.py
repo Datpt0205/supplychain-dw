@@ -25,7 +25,7 @@ from dw_agent_runtime.adapters.model_stack import (
     build_model_stack,
 )
 from dw_agent_runtime.model.profiles import ModelProfileRegistry
-from dw_agent_runtime.model.prompts import PromptRegistry
+from dw_agent_runtime.model.prompts import load_shipped_prompts
 from dw_kernel.ports import SystemClock, UtcClock, Uuid7Generator
 from dw_knowledge.adapters.api_parsers import (
     DeepgramTranscriptParser,
@@ -254,8 +254,8 @@ def build_model_stack_for(
     guard as a request's (ticket 04, decision A6)."""
     profiles = ModelProfileRegistry()
     profiles.load_directory(REPO_ROOT / "configs" / "models")
-    prompts = PromptRegistry()
-    prompts.load_directory(REPO_ROOT / "configs" / "prompts")
+    # Prompts and the skills they declare, checked against each other.
+    prompts = load_shipped_prompts(REPO_ROOT / "configs")
     return build_model_stack(
         model_provider_config(settings),
         profiles=profiles,

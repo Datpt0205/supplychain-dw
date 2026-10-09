@@ -113,6 +113,8 @@ def test_the_platform_ships_prompts() -> None:
 @pytest.mark.parametrize("path", _shipped(), ids=lambda p: p.stem)
 def test_every_shipped_prompt_contains_hostile_values(path: Path) -> None:
     registry = PromptRegistry()
+    # The skills a shipped prompt declares (ADR 0030) render into its system part.
+    registry.skills.load_directory(PROMPTS_DIR.parent / "skills")
     artifact = registry.load_file(path)
 
     variables = {

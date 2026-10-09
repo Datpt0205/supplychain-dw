@@ -1,0 +1,12 @@
+schema_version: '1.0'
+skill_id: supply_chain.qc_aql
+version: 1.0.0
+title: Kiểm hàng theo AQL
+applies_to: []
+body: "Kiểm hàng trước khi đóng cont (bước 14) theo lấy mẫu chấp nhận (AQL, ISO 2859-1 /\nANSI Z1.4):\n\
+  - Cỡ lô (số sản phẩm của lô) và mức kiểm tra (thường là mức chung II) cho ra mã chữ và\n  cỡ mẫu cần\
+  \ kiểm.\n- Mỗi loại lỗi có mức AQL riêng; mức thường dùng là lỗi nghiêm trọng 0, lỗi nặng 2,5,\n  lỗi\
+  \ nhẹ 4,0. Mức thật do công ty quy định theo nhóm sản phẩm.\n- Với cỡ mẫu và mức AQL, bảng cho số chấp\
+  \ nhận (Ac) và số loại (Re): số lỗi tìm thấy\n  không quá Ac thì lô đạt, từ Re trở lên thì lô không\
+  \ đạt.\n\nBáo cáo QC thường ghi: lô, cỡ lô, cỡ mẫu, mức AQL, số lỗi theo loại, kết luận và ảnh\nlỗi.\
+  \ Kết luận đạt hay không đạt là của QC; số lỗi so với Ac, Re là phép so của hệ thống.\n"

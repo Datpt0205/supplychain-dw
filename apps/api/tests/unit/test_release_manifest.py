@@ -33,6 +33,10 @@ def test_manifest_contains_every_required_section() -> None:
         "api_version",
         "workers",
         "prompt_bundles",
+        # Process knowledge prompts declare (ticket ai-automation/04) and the
+        # document templates drafts render with (ai-automation/03).
+        "skills",
+        "doc_templates",
         "tool_specs",
         "toolsets",
         "policies",
@@ -85,3 +89,18 @@ def test_manifest_ref_is_stable_and_ignores_git_sha() -> None:
     assert ref == script.manifest_ref({**manifest, "git_sha": "different"})
     changed = {**manifest, "knowledge_index_version": "changed"}
     assert ref != script.manifest_ref(changed)
+
+
+def test_the_manifest_names_every_skill_a_shipped_prompt_declares() -> None:
+    """A run's release says which skill versions its prompts read: every
+    range a shipped prompt declares is satisfied by a skill the manifest
+    lists, and each listed skill carries its checksum."""
+    from dw_agent_runtime.model.skills import SkillRef
+
+    manifest = _load_script().build_manifest()
+    listed = {(s["skill_id"], s["version"]) for s in manifest["skills"]}
+    assert all(len(s["checksum"]) == 64 for s in manifest["skills"])
+    for bundle in manifest["prompt_bundles"]:
+        for raw in bundle["skills"]:
+            ref = SkillRef.parse(raw)
+            assert any(sid == ref.skill_id and ref.admits(v) for sid, v in listed), raw

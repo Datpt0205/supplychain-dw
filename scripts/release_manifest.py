@@ -1,7 +1,7 @@
 """Generate the immutable release manifest.
 
 Collects every versioned artifact — platform, API, workers, graphs, prompt
-bundles, toolsets, policies, document templates, knowledge index, eval datasets —
+bundles, skills, toolsets, policies, document templates, knowledge index, eval datasets —
 plus the git SHA,
 canonicalizes to JSON and derives a content-addressed reference:
 
@@ -81,6 +81,9 @@ def _prompt_bundles() -> list[dict[str, str]]:
             {
                 "prompt_id": raw["prompt_id"],
                 "version": raw["version"],
+                # The skill ranges it declares; the `skills` section says
+                # which versions this release holds.
+                "skills": list(raw.get("skills") or []),
                 "checksum": _checksum(path),
             }
         )
@@ -189,6 +192,25 @@ def _rubrics() -> list[dict[str, str]]:
     return rubrics
 
 
+def _skills() -> list[dict[str, Any]]:
+    """Process knowledge a prompt declares (`configs/skills`), pinned by
+    content: a skill's words reach a model through the system prompt, so a
+    changed skill moves the ref like a changed prompt does. A run's release
+    names the skill versions its prompts resolved on the platform layer."""
+    skills = []
+    for path in sorted((REPO_ROOT / "configs" / "skills").rglob("*.yaml")):
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        skills.append(
+            {
+                "skill_id": raw["skill_id"],
+                "version": raw["version"],
+                "applies_to": list(raw.get("applies_to") or []),
+                "checksum": _checksum(path),
+            }
+        )
+    return skills
+
+
 def _doc_templates() -> list[dict[str, str]]:
     """Document templates (declaration + DOCX), pinned by content.
 
@@ -241,6 +263,7 @@ def build_manifest() -> dict[str, Any]:
         "api_version": _project_version(REPO_ROOT / "apps" / "api" / "pyproject.toml"),
         "workers": _workers(),
         "prompt_bundles": _prompt_bundles(),
+        "skills": _skills(),
         "copy_bundles": _copy_bundles(),
         "tool_specs": _tool_specs(),
         "toolsets": _toolsets(),

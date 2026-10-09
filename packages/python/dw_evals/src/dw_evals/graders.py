@@ -47,11 +47,10 @@ class GraderContext:
     @property
     def prompt_registry(self) -> Any:
         if self._prompt_registry is None:
-            from dw_agent_runtime.model.prompts import PromptRegistry
+            from dw_agent_runtime.model.prompts import load_shipped_prompts
 
-            registry = PromptRegistry()
-            registry.load_directory(self.repo_root / "configs" / "prompts")
-            self._prompt_registry = registry
+            # The prompts and the skills they declare, as a host loads them.
+            self._prompt_registry = load_shipped_prompts(self.repo_root / "configs")
         return self._prompt_registry
 
 

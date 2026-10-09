@@ -10,6 +10,12 @@ own words. Containment used to be each template's job: a template that forgot
 the block, or a document carrying ``</input>``, was enough. A template opts a
 variable out, by name and with the reason, only for a value code builds (a
 date, an identifier); ``raw_variables`` is that list.
+
+**Skills are trusted text, placed in the system part.** A prompt that declares
+``skills: [id@range]`` gets each resolved skill (`model.skills`) appended to its
+system prompt under a fixed heading: reviewed process knowledge, never a
+variable. What was appended is on the rendering (``RenderedPrompt.skills``) and
+in its checksum, so a run can name the skill versions it used.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ from uuid import UUID
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from dw_agent_runtime.model.skills import SkillRef, SkillRegistry
 from dw_agent_runtime.registry import ConfigError
 from dw_kernel.errors import DomainError, NotFoundError
 from dw_kernel.overlay import TenantOverlay
@@ -56,9 +63,14 @@ class PromptArtifact(BaseModel):
     # Variables interpolated as written, each with the reason it is safe to:
     # a value code builds, never one a request, a document or a model wrote.
     raw_variables: dict[str, str] = Field(default_factory=dict)
+    # Process knowledge this prompt reads, as `skill_id@version` or
+    # `skill_id@^version`; appended to the system part when rendered.
+    skills: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _raw_is_declared_and_justified(self) -> PromptArtifact:
+        for ref in self.skills:
+            SkillRef.parse(ref)
         unknown = set(self.raw_variables) - set(self.variables)
         if unknown:
             raise ValueError(f"raw_variables not among variables: {sorted(unknown)}")
@@ -82,6 +94,12 @@ class RenderedPrompt:
     system: str
     user: str
     checksum: str
+    # The skill versions appended to `system` (`skill_id@version`).
+    skills: tuple[str, ...] = ()
+
+
+# The heading the skills sit under in a system prompt.
+SKILLS_HEADING = "# Kiến thức quy trình (tham khảo, đã được duyệt)"
 
 
 @dataclass
@@ -91,6 +109,7 @@ class PromptRegistry:
     _prompts: TenantOverlay[tuple[str, str], tuple[PromptArtifact, str]] = field(
         default_factory=TenantOverlay
     )
+    skills: SkillRegistry = field(default_factory=SkillRegistry)
 
     def load_directory(self, directory: Path, *, tenant_id: UUID | None = None) -> None:
         for path in sorted(directory.rglob("*.yaml")):
@@ -151,6 +170,7 @@ class PromptRegistry:
                 details={"prompt_id": prompt_id, "version": version},
             )
         artifact, checksum = entry
+        system, skill_refs, checksum = self._with_skills(artifact, checksum, tenant_id)
         provided = frozenset(variables)
         if provided != artifact.variables:
             raise DomainError(
@@ -164,7 +184,7 @@ class PromptRegistry:
         return RenderedPrompt(
             prompt_id=prompt_id,
             version=version,
-            system=artifact.system,
+            system=system,
             user=artifact.template.format(
                 **{
                     name: value
@@ -174,4 +194,59 @@ class PromptRegistry:
                 }
             ),
             checksum=checksum,
+            skills=skill_refs,
         )
+
+    def _with_skills(
+        self, artifact: PromptArtifact, checksum: str, tenant_id: UUID | None
+    ) -> tuple[str, tuple[str, ...], str]:
+        if not artifact.skills:
+            return artifact.system, (), checksum
+        loaded = [
+            self.skills.resolve(SkillRef.parse(ref), tenant_id=tenant_id) for ref in artifact.skills
+        ]
+        newline = "\n"
+        sections = [
+            f"## {s.artifact.title} ({s.artifact.ref}){newline}{s.artifact.body.strip()}"
+            for s in loaded
+        ]
+        system = newline.join(
+            [artifact.system.rstrip(), "", SKILLS_HEADING, "", (newline * 2).join(sections)]
+        )
+        digest = hashlib.sha256(checksum.encode())
+        for s in loaded:
+            digest.update(s.checksum.encode())
+        return system, tuple(s.artifact.ref for s in loaded), digest.hexdigest()
+
+    def check_skills(self) -> None:
+        """Refuses, by name, a platform prompt declaring a skill that does not
+        resolve or does not name it, and a skill naming a prompt that does not
+        exist. Called once both directories are loaded."""
+        prompt_ids = frozenset(a.prompt_id for a, _ in self._prompts.platform_values())
+        self.skills.check_applies_to(prompt_ids)
+        for artifact, _ in self._prompts.platform_values():
+            for raw in artifact.skills:
+                try:
+                    loaded = self.skills.resolve(SkillRef.parse(raw))
+                except NotFoundError as exc:
+                    raise ConfigError(
+                        f"prompt {artifact.prompt_id}@{artifact.version} declares skill {raw},"
+                        " which is not registered"
+                    ) from exc
+                if artifact.prompt_id not in loaded.artifact.applies_to:
+                    raise ConfigError(
+                        f"prompt {artifact.prompt_id}@{artifact.version} declares skill"
+                        f" {loaded.artifact.ref}, whose applies_to does not name it"
+                    )
+
+
+def load_shipped_prompts(configs_dir: Path) -> PromptRegistry:
+    """The platform's prompts and skills from a checkout's `configs/`, checked
+    against each other: the one way a host builds its prompt registry."""
+    registry = PromptRegistry()
+    registry.load_directory(configs_dir / "prompts")
+    skills_dir = configs_dir / "skills"
+    if skills_dir.is_dir():
+        registry.skills.load_directory(skills_dir)
+    registry.check_skills()
+    return registry

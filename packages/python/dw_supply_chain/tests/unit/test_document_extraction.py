@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from dw_agent_runtime.model.prompts import PromptRegistry
+from dw_agent_runtime.model.prompts import load_shipped_prompts
 from dw_agent_runtime.ports import ModelOutputInvalidError
 from dw_kernel.errors import InfrastructureError, QuotaExceededError
 from dw_kernel.ports import FixedClock, Uuid4Generator
@@ -66,13 +66,8 @@ EVALUATION = (
 )
 
 
-def _registry() -> PromptRegistry:
-    registry = PromptRegistry()
-    registry.load_directory(REPO_ROOT / "configs" / "prompts")
-    return registry
-
-
-REGISTRY = _registry()
+# The prompts and skills a host loads (`load_shipped_prompts`).
+REGISTRY = load_shipped_prompts(REPO_ROOT / "configs")
 
 
 @dataclass
@@ -176,7 +171,7 @@ async def test_a_reading_keeps_what_its_quotes_prove_and_audits_as_the_lane() ->
     assert {"field": "evaluator", "reason": "quote_not_found"} in row.gaps
     assert (row.prompt_id, row.prompt_version) == (
         "supply_chain.extract_sample_evaluation",
-        "1.0.0",
+        "1.1.0",
     )
     assert row.sha256 == document.sha256
     assert (context.tenant_id, context.workspace_id) == (TENANT, WORKSPACE)
