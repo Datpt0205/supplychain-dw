@@ -21,6 +21,9 @@ dependencies = [
     # Case documents' bucket adapter (adapters/storage). Pinned to match
     # dw_knowledge and the apps, which already own the S3 client.
     "minio>=7.2,<8",
+    # The one-time import's workbook (adapters/import_workbook, ADR 0027).
+    # Pinned to match dw_knowledge, which already owns the XLSX reader.
+    "openpyxl>=3.1,<4",
 ]
 
 [build-system]

@@ -4,6 +4,7 @@ import {
   OrderedListOutlined,
   SettingOutlined,
   FileSearchOutlined,
+  ImportOutlined,
   ReadOutlined,
   ScheduleOutlined,
   WarningOutlined,
@@ -89,6 +90,14 @@ export const supplyChainNav: NavItem[] = [
       "supply_chain.sla_policy.read",
       "supply_chain.action_duties.read",
     ],
+    context: SUPPLY_CHAIN,
+  },
+  {
+    href: "/supply-chain/import",
+    label: "Nạp dữ liệu",
+    hint: "Nạp một lần NCC, danh mục mã hàng và SKU, người dùng từ mẫu Excel",
+    icon: ImportOutlined,
+    scope: "supply_chain.import",
     context: SUPPLY_CHAIN,
   },
 ];

@@ -683,6 +683,34 @@
         "title": "Bm04FieldKind",
         "type": "string"
       },
+      "Body_apply_import_api_v1_supply_chain_imports_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_apply_import_api_v1_supply_chain_imports_post",
+        "type": "object"
+      },
+      "Body_dry_run_import_api_v1_supply_chain_imports_dry_run_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_dry_run_import_api_v1_supply_chain_imports_dry_run_post",
+        "type": "object"
+      },
       "Body_set_doc_template_api_v1_supply_chain_doc_templates_put": {
         "properties": {
           "document": {
@@ -2966,6 +2994,140 @@
           "estimated_delay_days"
         ],
         "title": "ImpactedMilestoneView",
+        "type": "object"
+      },
+      "ImportProblemView": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "sheet": {
+            "$ref": "#/components/schemas/ImportSheet"
+          }
+        },
+        "required": [
+          "sheet",
+          "message"
+        ],
+        "title": "ImportProblemView",
+        "type": "object"
+      },
+      "ImportReportView": {
+        "properties": {
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/ImportProblemView"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ImportRowView"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "sheets": {
+            "items": {
+              "$ref": "#/components/schemas/ImportSheetCountView"
+            },
+            "title": "Sheets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "dry_run",
+          "sheets",
+          "problems",
+          "rows"
+        ],
+        "title": "ImportReportView",
+        "type": "object"
+      },
+      "ImportRowView": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "sheet": {
+            "$ref": "#/components/schemas/ImportSheet"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RowStatus"
+          }
+        },
+        "required": [
+          "sheet",
+          "row",
+          "key",
+          "status",
+          "messages"
+        ],
+        "title": "ImportRowView",
+        "type": "object"
+      },
+      "ImportSheet": {
+        "enum": [
+          "suppliers",
+          "catalogue",
+          "users"
+        ],
+        "title": "ImportSheet",
+        "type": "string"
+      },
+      "ImportSheetCountView": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "integer"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "sheet": {
+            "$ref": "#/components/schemas/ImportSheet"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sheet",
+          "title",
+          "created",
+          "exists",
+          "partial",
+          "rejected"
+        ],
+        "title": "ImportSheetCountView",
         "type": "object"
       },
       "InboxView": {
@@ -7163,6 +7325,17 @@
         ],
         "title": "RowFindingView",
         "type": "object"
+      },
+      "RowStatus": {
+        "description": "What happened to a row, or would in a dry run.",
+        "enum": [
+          "created",
+          "exists",
+          "partial",
+          "rejected"
+        ],
+        "title": "RowStatus",
+        "type": "string"
       },
       "RunView": {
         "properties": {
@@ -14006,6 +14179,125 @@
           }
         },
         "summary": "Close Follow Up Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/imports": {
+      "post": {
+        "operationId": "apply_import_api_v1_supply_chain_imports_post",
+        "parameters": [
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_apply_import_api_v1_supply_chain_imports_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportReportView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Import",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/imports/dry-run": {
+      "post": {
+        "operationId": "dry_run_import_api_v1_supply_chain_imports_dry_run_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_dry_run_import_api_v1_supply_chain_imports_dry_run_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportReportView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dry Run Import",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/imports/template": {
+      "get": {
+        "operationId": "get_import_template_api_v1_supply_chain_imports_template_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Import Template",
         "tags": [
           "supply_chain"
         ]

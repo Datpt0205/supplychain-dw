@@ -815,3 +815,46 @@ async def test_ai_drafting_tables_are_append_only(db_urls: DatabaseUrls) -> None
                     assert bool(granted) is held, (table, verb)
     finally:
         await migrator.dispose()
+
+
+async def test_the_catalogue_is_insert_only_and_a_supplier_code_the_one_supplier_update(
+    db_urls: DatabaseUrls,
+) -> None:
+    """Migration 0f231b1bf02d (ADR 0027, ticket onboarding/01): `dw_app` reads
+    and inserts catalogue rows and may DELETE them only for the offboarding
+    purge (no code path deletes one); it never edits one. On `suppliers` it
+    may UPDATE `code` (an import gives a supplier made from a case its code)
+    and nothing else of a supplier. `org_admin` holds `supply_chain.import`.
+    Asked of the catalog, so a later blanket GRANT goes red."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+            for verb, held in (
+                ("SELECT", True),
+                ("INSERT", True),
+                ("DELETE", True),
+                ("UPDATE", False),
+                ("TRUNCATE", False),
+            ):
+                granted = await conn.scalar(
+                    sa.text(
+                        "SELECT has_table_privilege('dw_app', 'supply_chain.catalogue_items', :v)"
+                    ),
+                    {"v": verb},
+                )
+                assert bool(granted) is held, verb
+            for column, held in (("code", True), ("name", False), ("workspace_id", False)):
+                granted = await conn.scalar(
+                    sa.text(
+                        "SELECT has_column_privilege('dw_app', 'supply_chain.suppliers',"
+                        " :c, 'UPDATE')"
+                    ),
+                    {"c": column},
+                )
+                assert bool(granted) is held, column
+            scopes = await conn.scalar(
+                sa.text("SELECT scopes FROM platform.roles WHERE key = 'org_admin'")
+            )
+            assert "supply_chain.import" in scopes
+    finally:
+        await migrator.dispose()

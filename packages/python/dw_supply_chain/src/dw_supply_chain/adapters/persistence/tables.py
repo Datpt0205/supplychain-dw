@@ -679,3 +679,22 @@ sample_measurements = sa.Table(
         "entered_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )
+
+# The tenant's item and SKU catalogue as imported (ADR 0027, ticket
+# onboarding/01): one row per SKU, or per item code without one. Step 9's
+# duplicate check reads it beside `item_codes` and `skus`.
+catalogue_items = sa.Table(
+    "catalogue_items",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("item_code", sa.Text, nullable=False),
+    sa.Column("sku_code", sa.Text, nullable=True),
+    sa.Column("name", sa.Text, nullable=False),
+    sa.Column("category", sa.Text, nullable=True),
+    sa.Column("imported_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "imported_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)

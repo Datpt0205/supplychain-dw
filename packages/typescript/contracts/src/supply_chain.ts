@@ -1311,3 +1311,47 @@ export const sampleChecklistSchema = z.object({
   rows: z.array(sampleChecklistRowSchema),
 });
 export type SampleChecklist = z.infer<typeof sampleChecklistSchema>;
+
+// Ticket onboarding/01: the one-time import of a tenant's existing data.
+
+export const importSheetSchema = z.enum(["suppliers", "catalogue", "users"]);
+export type ImportSheet = z.infer<typeof importSheetSchema>;
+
+export const importRowStatusSchema = z.enum([
+  "created",
+  "exists",
+  "partial",
+  "rejected",
+]);
+export type ImportRowStatus = z.infer<typeof importRowStatusSchema>;
+
+/** Mirrors `ImportRowView`: one row of the workbook, by its Excel number. */
+export const importRowSchema = z.object({
+  sheet: importSheetSchema,
+  row: z.number().int(),
+  key: z.string(),
+  status: importRowStatusSchema,
+  messages: z.array(z.string()),
+});
+export type ImportRow = z.infer<typeof importRowSchema>;
+
+/** Mirrors `ImportReportView`. `dry_run`: nothing was written, "created"
+ * reads "would be created". */
+export const importReportSchema = z.object({
+  dry_run: z.boolean(),
+  sheets: z.array(
+    z.object({
+      sheet: importSheetSchema,
+      title: z.string(),
+      created: z.number().int(),
+      exists: z.number().int(),
+      partial: z.number().int(),
+      rejected: z.number().int(),
+    }),
+  ),
+  problems: z.array(
+    z.object({ sheet: importSheetSchema, message: z.string() }),
+  ),
+  rows: z.array(importRowSchema),
+});
+export type ImportReport = z.infer<typeof importReportSchema>;

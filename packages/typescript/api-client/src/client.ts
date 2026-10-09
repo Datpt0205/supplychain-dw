@@ -35,6 +35,7 @@ import {
   proposalListSummarySchema,
   proposalListDetailSchema,
   sampleChecklistSchema,
+  importReportSchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -115,6 +116,10 @@ import {
   type SampleChecklist,
   type SampleChecklistRow,
   type SampleVerdict,
+  type ImportReport,
+  type ImportRow,
+  type ImportRowStatus,
+  type ImportSheet,
   type DraftField,
   type DraftStatus,
   type TemplateFieldKind,
@@ -492,6 +497,15 @@ const _sampleChecklistMirrorsTheRoute: [
   SameType<SampleVerdict, SupplyChainGenerated["Verdict"]>,
 ] = [true, true, true];
 void _sampleChecklistMirrorsTheRoute;
+
+// Ticket onboarding/01: the one-time import.
+const _importMirrorsTheRoute: [
+  SameType<keyof ImportReport, keyof SupplyChainGenerated["ImportReportView"]>,
+  SameType<keyof ImportRow, keyof SupplyChainGenerated["ImportRowView"]>,
+  SameType<ImportSheet, SupplyChainGenerated["ImportSheet"]>,
+  SameType<ImportRowStatus, SupplyChainGenerated["RowStatus"]>,
+] = [true, true, true, true];
+void _importMirrorsTheRoute;
 
 /** `POST /proposal-lists/{id}/rows/{index}/proposal`'s body. */
 export type ProposeRowBody =
@@ -1783,6 +1797,34 @@ export class ApiClient {
     );
   }
 
+  /** The import template (Excel), for whoever may run the import. */
+  async downloadImportTemplate(): Promise<Blob> {
+    const response = await this.rawRequest(
+      "GET",
+      "/api/v1/supply-chain/imports/template",
+    );
+    return response.blob();
+  }
+
+  /** The one-time import, settled row by row: a dry run writes nothing;
+   * applying writes each row through its own handler. */
+  runImport(
+    file: File,
+    mode: "dry-run" | "apply",
+    idempotencyKey: string,
+  ): Promise<ImportReport> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return this.postForm(
+      mode === "apply"
+        ? "/api/v1/supply-chain/imports"
+        : "/api/v1/supply-chain/imports/dry-run",
+      form,
+      idempotencyKey,
+      importReportSchema,
+    );
+  }
+
   /** The workspace's recent proposal lists, newest first. */
   listProposalLists(): Promise<ProposalListSummary[]> {
     return this.request(
@@ -2171,6 +2213,10 @@ export class ApiClient {
 }
 
 export type {
+  ImportReport,
+  ImportRow,
+  ImportRowStatus,
+  ImportSheet,
   DocumentDraft,
   StepProposal,
   ProposalListSummary,

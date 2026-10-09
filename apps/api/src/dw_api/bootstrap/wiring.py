@@ -1259,6 +1259,48 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         ),
     )
 
+    # The one-time import (ADR 0027, ticket onboarding/01): suppliers with
+    # their contact and bank account through the commercial handlers, the
+    # catalogue, and users through the platform's own member services.
+    from dw_supply_chain.adapters.import_workbook import XlsxWorkbookReader, build_template
+    from dw_supply_chain.adapters.persistence.data_import_repository import (
+        SqlCatalogue,
+        SqlSupplierImport,
+    )
+    from dw_supply_chain.adapters.platform_members import PlatformMemberDirectory
+    from dw_supply_chain.application import data_import as sc_import
+    from dw_supply_chain.presentation.import_routes import ImportHandlers
+
+    assert container.admin_console is not None and container.tenant_members is not None
+    container.supply_chain_import = ImportHandlers(
+        run=sc_import.ImportSupplyChainData(
+            reader=XlsxWorkbookReader(),
+            suppliers=SqlSupplierImport(wiring.seam.session_factory),
+            contacts=supplier_records,
+            accounts=supplier_records,
+            save_contact=sc_commercial.SaveSupplierContact(
+                contacts=supplier_records,
+                authz=authorization,
+                ids=wiring.seam.ids,
+                clock=wiring.seam.clock,
+            ),
+            save_account=sc_commercial.SaveSupplierBankAccount(
+                accounts=supplier_records,
+                authz=authorization,
+                ids=wiring.seam.ids,
+                clock=wiring.seam.clock,
+            ),
+            catalogue=SqlCatalogue(wiring.seam.session_factory),
+            members=PlatformMemberDirectory(
+                console=container.admin_console, members=container.tenant_members
+            ),
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        template=sc_import.GetImportTemplate(authz=authorization, build=build_template),
+    )
+
     # Build your context from `container.runtime` (the RuntimeSeam) and attach
     # its handlers, then mount its router in `main.create_app`. Nothing above
     # this line may import a business package. A context offering support

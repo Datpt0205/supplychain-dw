@@ -395,6 +395,20 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # The one-time import (ticket onboarding/01): own router.
+    if container.supply_chain_import is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_form_idempotent_operation
+        from dw_supply_chain.presentation.import_routes import build_import_router
+
+        app.include_router(
+            build_import_router(
+                container.supply_chain_import,
+                resolve_access_context=get_access_context,
+                resolve_form_idempotency=get_form_idempotent_operation,
+            )
+        )
+
     # Product-development cases (stage 1): their own router on their own guard,
     # as the documents router is.
     if (

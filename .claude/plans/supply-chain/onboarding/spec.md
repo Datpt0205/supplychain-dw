@@ -24,5 +24,5 @@ Tích hợp ERP; đồng bộ định kỳ.
 
 | #     | Ticket                                                                         | Size | Status          | Blocked by       |
 | ----- | ------------------------------------------------------------------------------ | ---- | --------------- | ---------------- |
-| ON-01 | [Nạp NCC, danh mục, người dùng](issues/01-import-suppliers-catalogue-users.md) | M    | ready-for-agent | ai-automation 01 |
+| ON-01 | [Nạp NCC, danh mục, người dùng](issues/01-import-suppliers-catalogue-users.md) | M    | resolved        | ai-automation 01 |
 | ON-02 | [Nạp hồ sơ đang chạy ở trạng thái hiện tại](issues/02-import-open-cases.md)    | M    | ready-for-agent | ON-01            |

@@ -378,6 +378,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Import */
+        post: operations["apply_import_api_v1_supply_chain_imports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/imports/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dry Run Import */
+        post: operations["dry_run_import_api_v1_supply_chain_imports_dry_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/imports/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Import Template */
+        get: operations["get_import_template_api_v1_supply_chain_imports_template_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/packaging-policy": {
         parameters: {
             query?: never;
@@ -1312,6 +1363,16 @@ export interface components {
          * @enum {string}
          */
         Bm04FieldKind: "text" | "number" | "integer" | "boolean" | "choice";
+        /** Body_apply_import_api_v1_supply_chain_imports_post */
+        Body_apply_import_api_v1_supply_chain_imports_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_dry_run_import_api_v1_supply_chain_imports_dry_run_post */
+        Body_dry_run_import_api_v1_supply_chain_imports_dry_run_post: {
+            /** File */
+            file: string;
+        };
         /** Body_set_doc_template_api_v1_supply_chain_doc_templates_put */
         Body_set_doc_template_api_v1_supply_chain_doc_templates_put: {
             /** Document */
@@ -1925,6 +1986,53 @@ export interface components {
             /** Estimated Delay Days */
             estimated_delay_days: number;
             milestone: components["schemas"]["CaseState"];
+        };
+        /** ImportProblemView */
+        ImportProblemView: {
+            /** Message */
+            message: string;
+            sheet: components["schemas"]["ImportSheet"];
+        };
+        /** ImportReportView */
+        ImportReportView: {
+            /** Dry Run */
+            dry_run: boolean;
+            /** Problems */
+            problems: components["schemas"]["ImportProblemView"][];
+            /** Rows */
+            rows: components["schemas"]["ImportRowView"][];
+            /** Sheets */
+            sheets: components["schemas"]["ImportSheetCountView"][];
+        };
+        /** ImportRowView */
+        ImportRowView: {
+            /** Key */
+            key: string;
+            /** Messages */
+            messages: string[];
+            /** Row */
+            row: number;
+            sheet: components["schemas"]["ImportSheet"];
+            status: components["schemas"]["RowStatus"];
+        };
+        /**
+         * ImportSheet
+         * @enum {string}
+         */
+        ImportSheet: "suppliers" | "catalogue" | "users";
+        /** ImportSheetCountView */
+        ImportSheetCountView: {
+            /** Created */
+            created: number;
+            /** Exists */
+            exists: number;
+            /** Partial */
+            partial: number;
+            /** Rejected */
+            rejected: number;
+            sheet: components["schemas"]["ImportSheet"];
+            /** Title */
+            title: string;
         };
         /**
          * Incoterm
@@ -3003,6 +3111,12 @@ export interface components {
             /** Message */
             message: string;
         };
+        /**
+         * RowStatus
+         * @description What happened to a row, or would in a dry run.
+         * @enum {string}
+         */
+        RowStatus: "created" | "exists" | "partial" | "rejected";
         /**
          * SLAConfirmationStatus
          * @description Whether a milestone's duration is real policy yet.
@@ -4352,6 +4466,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_import_api_v1_supply_chain_imports_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_apply_import_api_v1_supply_chain_imports_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dry_run_import_api_v1_supply_chain_imports_dry_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_dry_run_import_api_v1_supply_chain_imports_dry_run_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_import_template_api_v1_supply_chain_imports_template_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": unknown;
                 };
             };
         };
