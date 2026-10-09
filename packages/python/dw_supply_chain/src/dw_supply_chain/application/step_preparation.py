@@ -70,6 +70,12 @@ from dw_supply_chain.application.handlers import (
     product_case_link,
     resolve_product_action_duties,
 )
+from dw_supply_chain.application.item_coding import (
+    ItemCodingFacts,
+    ItemCodingPreparation,
+    coding_digest,
+    paper_codes,
+)
 from dw_supply_chain.application.ports import (
     PendingApprovalRecord,
     ProductCaseListFilter,
@@ -90,6 +96,7 @@ from dw_supply_chain.domain.document_draft import (
 )
 from dw_supply_chain.domain.extraction import EXTRACTION_SPECS, ExtractionStatus
 from dw_supply_chain.domain.grounded_writing import EvidenceItem
+from dw_supply_chain.domain.item_coding import TakenCodes, taken_message
 from dw_supply_chain.domain.product_development_case import (
     ACTION_DOCUMENT_TYPE,
     ProductCaseTransition,
@@ -485,6 +492,8 @@ class RecipeInput:
     skip: frozenset[str]
     sample: SampleFacts | None = None
     bm04: Bm04Facts | None = None
+    coding: ItemCodingFacts | None = None
+    today: date | None = None
 
 
 def case_facts_recipe(given: RecipeInput) -> dict[str, FieldInput]:
@@ -569,12 +578,43 @@ def bm04_recipe(given: RecipeInput) -> dict[str, FieldInput]:
     return values
 
 
+def item_coding_recipe(given: RecipeInput) -> dict[str, FieldInput]:
+    """Step 9's paper (ticket ai-automation/13): the case's facts, the item
+    code (the case's own, or the rule's next; none without a rule) and one
+    row per SKU, every code from the rule, every planned quantity from the
+    BM04's line or empty. All code's; no model is asked."""
+    coding = given.coding
+    if coding is None:
+        raise _NotPreparedError(NotPreparedReason.CODING_FACTS_UNAVAILABLE)
+    values = case_facts_recipe(given)
+    if coding.item_code is not None:
+        values["item_code"] = FieldInput(value=coding.item_code)
+    values["skus"] = FieldInput(
+        value=[
+            {
+                "sku_code": s.sku_code,
+                "variant_label": s.variant_label,
+                "planned_quantity": None if s.planned_quantity is None else str(s.planned_quantity),
+            }
+            for s in coding.skus
+        ]
+    )
+    for name in ("material", "dimensions"):
+        value = getattr(coding, name)
+        if value is not None and given.spec.field(name) is not None:
+            values[name] = FieldInput(value=value)
+    if given.today is not None and given.spec.field("submitted_on") is not None:
+        values["submitted_on"] = FieldInput(value=given.today.isoformat())
+    return values
+
+
 Recipe = Callable[[RecipeInput], dict[str, FieldInput]]
 DRAFT_RECIPES: Mapping[DraftRecipe, Recipe] = {
     DraftRecipe.CASE_FACTS: case_facts_recipe,
     DraftRecipe.SAMPLE_EVALUATION: sample_evaluation_recipe,
     DraftRecipe.REVISION_REQUEST: revision_request_recipe,
     DraftRecipe.BM04: bm04_recipe,
+    DraftRecipe.ITEM_CODING: item_coding_recipe,
 }
 # The recipes and checks that read a sample round (`SampleFacts`).
 SAMPLE_RECIPES = frozenset({DraftRecipe.SAMPLE_EVALUATION, DraftRecipe.REVISION_REQUEST})
@@ -591,6 +631,12 @@ def compares_terms(step: PreparedStep) -> bool:
     return StepCheck.TERMS_MATCH_BM04 in step.checks
 
 
+def codes_a_product(step: PreparedStep) -> bool:
+    return any(d.recipe is DraftRecipe.ITEM_CODING for d in step.drafts) or (
+        StepCheck.CODES_FREE in step.checks
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class TermsFacts:
     """The supplier's reply against the BM04 (ticket ai-automation/12): the
@@ -600,12 +646,17 @@ class TermsFacts:
     rows: tuple[TermRow, ...]
 
 
-def bound_facts(sample_digest: str, terms: TermsFacts | None) -> str:
+def bound_facts(sample_digest: str, terms: TermsFacts | None, coding: str | None = None) -> str:
     """What else a proposal's drafts and findings were made from, bound into
-    its subject: a round's measurements, the BM04 version compared."""
-    if terms is None:
-        return sample_digest
-    return f"{sample_digest}|bm04:{terms.profile_id or ''}"
+    its subject: a round's measurements, the BM04 version compared, the BM04
+    version a step-9 paper's SKUs came from and which of its codes are taken
+    (`coding_digest`)."""
+    bound = sample_digest
+    if terms is not None:
+        bound = f"{bound}|bm04:{terms.profile_id or ''}"
+    if coding is not None:
+        bound = f"{bound}|{coding}"
+    return bound
 
 
 def reads_a_round(step: PreparedStep) -> bool:
@@ -671,6 +722,8 @@ class CheckInput:
     sample: SampleFacts | None = None
     bm04: Bm04Facts | None = None
     terms: TermsFacts | None = None
+    coding: ItemCodingFacts | None = None
+    taken: TakenCodes | None = None
 
 
 def _sources_present(given: CheckInput) -> list[Finding]:
@@ -829,6 +882,44 @@ def _terms_match_bm04(given: CheckInput) -> list[Finding]:
     ]
 
 
+def _codes_free(given: CheckInput) -> list[Finding]:
+    """Step 9: each code of the paper another case or the catalogue holds;
+    no rule to propose an item code; no BM04 variant to make a SKU from."""
+    coding, taken = given.coding, given.taken
+    if coding is None:
+        return []
+    item, skus = paper_codes(_paper_fields(given.drafts))
+    found: list[Finding] = []
+    if item is None and coding.rule is None:
+        found.append(
+            Finding(
+                "item_code_rule_missing",
+                "item_code",
+                "Công ty chưa có quy tắc mã hàng; máy không đề xuất mã, người nhập mã",
+            )
+        )
+    if not coding.skus and not skus:
+        found.append(
+            Finding(
+                "bm04_variants_missing",
+                "skus",
+                "BM04 chưa ghi biến thể nào; người thêm SKU"
+                if coding.profile_id is not None
+                else "Hồ sơ chưa có BM04 trong ứng dụng; người thêm SKU",
+            )
+        )
+    if taken is not None:
+        found += [
+            Finding("item_code_taken", code, taken_message("Mã hàng", code, holders))
+            for code, holders in sorted(taken.item_codes.items())
+        ]
+        found += [
+            Finding("sku_code_taken", code, taken_message("Mã SKU", code, holders))
+            for code, holders in sorted(taken.sku_codes.items())
+        ]
+    return found
+
+
 STEP_CHECKS: Mapping[StepCheck, Callable[[CheckInput], list[Finding]]] = {
     StepCheck.SOURCES_PRESENT: _sources_present,
     StepCheck.SOURCES_READ: _sources_read,
@@ -837,6 +928,7 @@ STEP_CHECKS: Mapping[StepCheck, Callable[[CheckInput], list[Finding]]] = {
     StepCheck.REVISION_CHECKED: _revision_checked,
     StepCheck.BM04_SOURCES: _bm04_sources,
     StepCheck.TERMS_MATCH_BM04: _terms_match_bm04,
+    StepCheck.CODES_FREE: _codes_free,
 }
 assert set(STEP_CHECKS) == set(StepCheck)  # every check a policy may name is implemented
 
@@ -905,6 +997,8 @@ class PrepareStep:
     sample: SamplePreparation | None = None
     # The BM04's schema and model (ticket ai-automation/11), likewise.
     bm04: Bm04Preparation | None = None
+    # Step 9's code rule, registry and BM04 (ticket ai-automation/13).
+    coding: ItemCodingPreparation | None = None
 
     async def prepare(self, context: AccessContext, request: PreparationRequest) -> Prepared:
         previous = await self.records.latest(context, request.transition_id, request.policy_version)
@@ -963,7 +1057,9 @@ class PrepareStep:
         sample = await self._sample_facts(context, case, step) if reads_a_round(step) else None
         bm04 = await self._bm04_facts(context, case, readings) if fills_a_bm04(step) else None
         terms = await self._terms(context, case, readings) if compares_terms(step) else None
-        drafts = await self._drafts(context, case, step, readings, previous, sample, bm04)
+        coding = await self._coding(context, case) if codes_a_product(step) else None
+        drafts = await self._drafts(context, case, step, readings, previous, sample, bm04, coding)
+        taken = await self._taken(context, case, drafts) if coding is not None else None
         suggestions = (
             suggestions_for(step.result_fields, readings, step, sample) if step.physical else {}
         )
@@ -976,6 +1072,8 @@ class PrepareStep:
             sample=sample,
             bm04=bm04,
             terms=terms,
+            coding=coding,
+            taken=taken,
         )
         findings = [finding for check in step.checks for finding in STEP_CHECKS[check](given)]
         sources = [SubjectSource(t, newest.get(t)) for t in step.sources]
@@ -984,7 +1082,13 @@ class PrepareStep:
             case.version,
             [SubjectDraft(d.id, d.content_sha256, open_latest=True) for d in drafts],
             sources,
-            bound_facts("" if sample is None else measurements_digest(sample.results), terms),
+            bound_facts(
+                "" if sample is None else measurements_digest(sample.results),
+                terms,
+                None
+                if coding is None or taken is None
+                else coding_digest(coding.profile_id, taken),
+            ),
         )
         payload: dict[str, Any] = {
             PROPOSAL_CASE_KEY: str(case.id),
@@ -1028,6 +1132,10 @@ class PrepareStep:
                 "profile_id": terms.profile_id,
                 "rows": [row.as_json(prices_of(terms.rows)) for row in terms.rows],
             }
+        if coding is not None:
+            # The codes the subject asks about again (codes only, no price).
+            item, skus = paper_codes(_paper_fields(drafts))
+            payload["coding"] = {"item_code": item, "sku_codes": skus}
         if step.physical:
             payload[REQUIRED_INPUT_KEY] = list(step.result_fields)
         return payload, tuple(d.lineage_id for d in drafts)
@@ -1111,6 +1219,22 @@ class PrepareStep:
             raise _NotPreparedError(NotPreparedReason.BM04_FACTS_UNAVAILABLE)
         return await terms_facts(self.bm04, context, case, readings)
 
+    async def _coding(
+        self, context: AccessContext, case: ProductDevelopmentCase
+    ) -> ItemCodingFacts:
+        if self.coding is None:
+            raise _NotPreparedError(NotPreparedReason.CODING_FACTS_UNAVAILABLE)
+        return await self.coding.facts(context, case)
+
+    async def _taken(
+        self,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        drafts: Sequence[DocumentDraft],
+    ) -> TakenCodes:
+        assert self.coding is not None  # `_coding` refused a host without it
+        return await self.coding.taken(context, case, _paper_fields(drafts))
+
     async def _sample_facts(
         self, context: AccessContext, case: ProductDevelopmentCase, step: PreparedStep
     ) -> SampleFacts:
@@ -1182,6 +1306,7 @@ class PrepareStep:
         previous: PreparationRecord | None,
         sample: SampleFacts | None = None,
         bm04: Bm04Facts | None = None,
+        coding: ItemCodingFacts | None = None,
     ) -> list[DocumentDraft]:
         """Each draft the step names: the open latest version of the lineage
         an earlier attempt of THIS step entry prepared (a person's edits are
@@ -1224,7 +1349,16 @@ class PrepareStep:
                     bm04,
                 )
             values = DRAFT_RECIPES[planned.recipe](
-                RecipeInput(case, template.spec, readings, result, sample, bm04)
+                RecipeInput(
+                    case,
+                    template.spec,
+                    readings,
+                    result,
+                    sample,
+                    bm04,
+                    coding,
+                    today=self.clock.now().date(),
+                )
             )
             drafts.append(
                 await self.prepare_draft.handle(
@@ -1238,6 +1372,12 @@ class PrepareStep:
                 )
             )
         return drafts
+
+
+def _paper_fields(drafts: Sequence[DocumentDraft]) -> Mapping[str, Any]:
+    """The step-9 paper's fields as drafted (or as a person edited them)."""
+    paper = next((d for d in drafts if d.doc_type is DocumentType.OFFICIAL_ITEM_CODE), None)
+    return {} if paper is None else paper.fields
 
 
 async def terms_facts(
@@ -1722,6 +1862,7 @@ __all__ = [
     "SamplePreparation",
     "StoredReading",
     "case_facts_recipe",
+    "codes_a_product",
     "entered_current_state",
     "lane_context",
     "preparation_input",

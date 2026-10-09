@@ -42,6 +42,14 @@ BM04 version (`profile`, possibly saved in another workspace: `profile_in`).
 Its expectations: `comparison` (each term's status by field) and
 `payload_must_not_contain` (no price anywhere in what the approval carries).
 
+Elmich's step 9 (`item_coding`, ticket ai-automation/13) adds the tenant's
+code rule (`rule`: "elmich", Elmich's provisional one, or null: none), the
+imported catalogue (`catalogue`, `[item, sku]` pairs, possibly imported in
+another workspace: `catalogue_in`), codes other cases hold (`app_codes`), and
+codes the catalogue gains after the proposal (`after_proposal`). No model is
+called there at all (`model_calls` 0); a refusal at the approval is
+`decision: refused`.
+
 Otherwise no model call: the model's work there is the extraction lane's
 reading, given by the case. What this grades is what code guarantees whatever
 a reading or a model says.
@@ -57,16 +65,18 @@ from typing import Any
 
 from dw_agent_runtime.ports import ModelOutputInvalidError
 from dw_evals.graders import GraderContext, GradeResult
-from dw_kernel.errors import DomainError
+from dw_kernel.errors import ConflictError, DomainError
 from dw_supply_chain.domain.bm04_prefill import Bm04Writing
 from dw_supply_chain.domain.case_document import DocumentType
 from dw_supply_chain.domain.commercial import ProductProfile, ProfileCommercial
 from dw_supply_chain.domain.extraction import ExtractionStatus, normalize, numbers_in
 from dw_supply_chain.domain.product_development_case import ProductDevState
 from dw_supply_chain.domain.sample_evaluation import EvaluationWriting
+from dw_supply_chain.item_code_rule_policy import SupplyChainItemCodeRule
 from dw_supply_chain.testing.extraction import RecordingGateway, ScriptedGateway
 from dw_supply_chain.testing.step_preparation import (
     BM04_STEP,
+    ITEM_CODING_STEP,
     NOW,
     SAMPLE_ROUND,
     SAMPLE_TESTING,
@@ -81,11 +91,18 @@ _STEPS = {
     "sample_round": SAMPLE_ROUND,
     "bm04": BM04_STEP,
     "supplier_terms": TERMS_STEP,
+    "item_coding": ITEM_CODING_STEP,
 }
 _WRITES = {"sample_round", "bm04"}
 
 
 def _gateway(ctx: GraderContext, input_data: dict[str, Any]) -> Any:
+    if input_data["step"] == "item_coding":
+        # A gateway that would answer nothing useful, there to count: step 9
+        # asks no model (`model_calls` 0).
+        return ScriptedGateway(
+            ctx.prompt_registry, answer=ModelOutputInvalidError("step 9 asks no model")
+        )
     if input_data["step"] not in _WRITES:
         return None
     if ctx.model is not None:
@@ -121,6 +138,10 @@ def _bm04_script(
 async def _run(ctx: GraderContext, input_data: dict[str, Any]) -> dict[str, Any]:
     step = _STEPS[input_data["step"]]
     world = StepWorld(gateway=_gateway(ctx, input_data), model_profile=ctx.model_profile)
+    if input_data["step"] == "item_coding" and input_data.get("rule", "elmich") is None:
+        world.item_code_rule = SupplyChainItemCodeRule(
+            schema_version="1.0", policy_id="supply_chain_item_code_rule", policy_version="1.0.0"
+        )
     elsewhere = uuid.uuid4()
     case_tenant = elsewhere if input_data.get("case_in") == "other_tenant" else None
     case_workspace = uuid.uuid4() if input_data.get("case_in") == "other_workspace" else None
@@ -153,6 +174,7 @@ async def _run(ctx: GraderContext, input_data: dict[str, Any]) -> dict[str, Any]
             world.readings.rows[-1] = (document.tenant_id, uuid.uuid4(), reading)
     if input_data.get("profile") is not None:
         _seed_profile(world, case, input_data)
+    _seed_codes(world, case, input_data)
     if input_data.get("approved_record"):
         world.approve_record(case, input_data["approved_record"])
     if input_data["step"] == "bm04" and ctx.model is None:
@@ -174,6 +196,8 @@ async def _run(ctx: GraderContext, input_data: dict[str, Any]) -> dict[str, Any]
         else world.gateway.sent[-1].user,
         "sent": [] if world.gateway is None else list(world.gateway.sent),
     }
+    for item, sku in input_data.get("after_proposal", {}).get("catalogue", []):
+        world.codes.catalogue.append((world.tenant_id, world.workspace_id, item, sku))
     decide = input_data.get("decide")
     if decide is not None and prepared.payload:
         try:
@@ -185,12 +209,32 @@ async def _run(ctx: GraderContext, input_data: dict[str, Any]) -> dict[str, Any]
                 typed_input=decide.get("typed_input", {}),
                 run_id=None,
             )
-        except DomainError:
+        except (DomainError, ConflictError):
             out["decision"] = "refused"
     stored = world.cases.cases.get(case.id.value)
     out["case_state"] = None if stored is None else stored.state.value
     out["profiles"] = [p for _, p in world.outcomes.profiles]
     return out
+
+
+def _seed_codes(world: StepWorld, case: Any, input_data: dict[str, Any]) -> None:
+    """Step 9's world: the imported catalogue and the codes other cases hold."""
+    workspace = (
+        uuid.uuid4()
+        if input_data.get("catalogue_in") == "other_workspace"
+        else case.workspace_id.value
+    )
+    for item, sku in input_data.get("catalogue", []):
+        world.codes.catalogue.append((case.tenant_id.value, workspace, item, sku))
+    for held in input_data.get("app_codes", []):
+        other, _ = world.add_case(
+            ProductDevState.READY_TO_ORDER,
+            tenant=case.tenant_id.value,
+            workspace=case.workspace_id.value,
+        )
+        world.code_case(
+            other, held["item_code"], [(sku, "biến thể") for sku in held.get("skus", [])]
+        )
 
 
 def _seed_profile(world: StepWorld, case: Any, input_data: dict[str, Any]) -> None:
@@ -356,6 +400,10 @@ def grade_step_preparation(
         failed = _grade_bm04(ctx, out, expected)
         if failed is not None:
             return failed
+    if "model_calls" in expected and out["model_calls"] != expected["model_calls"]:
+        return GradeResult.fail(
+            "model calls", expected=expected["model_calls"], actual=out["model_calls"]
+        )
     for key in ("outcome", "reason", "drafts", "decision", "case_state"):
         if key in expected and out.get(key) != expected[key]:
             return GradeResult.fail(key, expected=expected[key], actual=out.get(key))

@@ -1,0 +1,18 @@
+schema_version: "1.0"
+policy_id: supply_chain_item_code_rule
+policy_version: "1.0.0"
+
+# Override của TENANT ELMICH (không phải platform default), TẠM và thoáng cho tới
+# khi Elmich trả lời QE-11 (định dạng mã hàng, SKU): mã hàng EL-00001, EL-00002...
+# (số tiếp theo sau số lớn nhất đã dùng trong ứng dụng và danh mục đã nạp), SKU
+# EL-00001-01, -02... theo thứ tự biến thể của BM04. Ghi bằng
+#   uv run python scripts/seed_supply_chain_demo.py elmich-item-code-rule
+# (local) hoặc PUT /api/v1/supply-chain/item-code-rule (máy chủ, docs/deploy/
+# host.md mục 7), qua handler kiểm schema, quyền supply_chain.action_duties.write
+# và audit. Người duyệt bước 9 vẫn sửa được mã trong bản nháp trước khi duyệt.
+rule:
+  prefix: "EL"
+  separator: "-"
+  digits: 5
+  sku_separator: "-"
+  sku_digits: 2

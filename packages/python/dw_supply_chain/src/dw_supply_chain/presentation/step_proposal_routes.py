@@ -10,6 +10,8 @@ its result fields, each EMPTY with AI's suggestion beside it.
 typed result a physical step needs; the platform decides (scope, comment,
 subject still current) and the run resumes.
 `GET|PUT /step-preparation-policy` — the tenant's policy.
+`GET|PUT /item-code-rule` — how the tenant's item and SKU codes are made, which
+step 9's preparation proposes from (ticket ai-automation/13).
 
 No `from __future__ import annotations`, for the reason `routes.py` gives.
 """
@@ -24,6 +26,10 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
 from dw_platform.application.access_context import AccessContext
+from dw_supply_chain.application.item_coding import (
+    GetItemCodeRulePolicy,
+    SetItemCodeRulePolicyOverride,
+)
 from dw_supply_chain.application.step_proposals import (
     DecideStepProposal,
     GetStepPreparationPolicy,
@@ -32,6 +38,7 @@ from dw_supply_chain.application.step_proposals import (
     StepProposalReading,
 )
 from dw_supply_chain.domain.product_development_case import ProductDevelopmentCaseId
+from dw_supply_chain.item_code_rule_policy import SupplyChainItemCodeRule
 from dw_supply_chain.presentation.routes import SupportsIdempotentRecord
 from dw_supply_chain.step_preparation_policy import SupplyChainStepPreparation
 
@@ -191,6 +198,8 @@ class StepProposalHandlers:
     decide: DecideStepProposal
     get_policy: GetStepPreparationPolicy
     set_policy: SetStepPreparationPolicyOverride
+    get_item_code_rule: GetItemCodeRulePolicy
+    set_item_code_rule: SetItemCodeRulePolicyOverride
 
 
 def build_step_proposal_router(
@@ -242,6 +251,18 @@ def build_step_proposal_router(
     ) -> SupplyChainStepPreparation:
         """Replaces the tenant's own policy, whole."""
         await h.set_policy.handle(context, body)
+        return body
+
+    @router.get("/item-code-rule", response_model=SupplyChainItemCodeRule)
+    async def get_item_code_rule(context: require_access_context) -> SupplyChainItemCodeRule:
+        return await h.get_item_code_rule.handle(context)
+
+    @router.put("/item-code-rule", response_model=SupplyChainItemCodeRule)
+    async def set_item_code_rule(
+        body: SupplyChainItemCodeRule, context: require_access_context
+    ) -> SupplyChainItemCodeRule:
+        """Replaces the tenant's own rule, whole (`rule: null`: none)."""
+        await h.set_item_code_rule.handle(context, body)
         return body
 
     return router

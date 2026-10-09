@@ -40,6 +40,7 @@ const NOT_PREPARED_LABEL: Record<string, string> = {
   source_not_read_yet: "máy đang đọc chứng từ nguồn",
   result_field_unknown: "mẫu chứng từ không có ô kết quả cần nhập",
   bm04_facts_unavailable: "máy chưa được cấu hình biểu mẫu BM04",
+  coding_facts_unavailable: "máy chưa được cấu hình quy tắc mã hàng",
   run_refused: "hết lượt chạy AI của gói",
   run_failed: "lỗi khi chuẩn bị; hệ thống sẽ thử lại",
 };

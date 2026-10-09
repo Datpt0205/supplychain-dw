@@ -39,6 +39,7 @@ from dw_supply_chain.application.document_drafts import (
     NewDraftDecision,
     PrepareDocumentDraft,
 )
+from dw_supply_chain.application.item_coding import ItemCodingPreparation
 from dw_supply_chain.application.ports import ProductCaseListFilter
 from dw_supply_chain.application.sample_checklist import NewMeasurement
 from dw_supply_chain.application.step_preparation import (
@@ -66,14 +67,22 @@ from dw_supply_chain.domain.case_document import (
 from dw_supply_chain.domain.commercial import NewProductProfile, ProductProfile
 from dw_supply_chain.domain.document_draft import DocumentDraft, DraftDecision, DraftSource
 from dw_supply_chain.domain.extraction import EXTRACTION_SPECS, ExtractionStatus
+from dw_supply_chain.domain.item_coding import Holder, TakenCodes
 from dw_supply_chain.domain.product_development_case import (
+    ItemCode,
     ProductAction,
+    ProductCaseStep,
     ProductCaseTransition,
     ProductDevelopmentCase,
     ProductDevelopmentCaseId,
     ProductDevState,
+    Sku,
 )
 from dw_supply_chain.domain.sample_evaluation import Measurement
+from dw_supply_chain.item_code_rule_policy import (
+    SupplyChainItemCodeRule,
+    load_supply_chain_item_code_rule,
+)
 from dw_supply_chain.sample_criteria_policy import (
     SupplyChainSampleCriteria,
     load_supply_chain_sample_criteria,
@@ -380,6 +389,8 @@ class InMemoryOutcomes:
     audits: list[AuditEvent] = field(default_factory=list)
     applied: int = 0
     profiles: list[tuple[AccessContext, NewProductProfile]] = field(default_factory=list)
+    # Every step an approval took, in order (a step-9 approval takes several).
+    steps: list[ProductCaseStep] = field(default_factory=list)
 
     async def apply_approved(
         self,
@@ -394,7 +405,10 @@ class InMemoryOutcomes:
         profile: NewProductProfile | None = None,
     ) -> None:
         stored = self.cases.cases[case.id.value]
-        if stored.version != case.version - 1:
+        steps = case.pop_pending_steps()
+        # Each step bumps the version once (an approved step-9 proposal takes
+        # several), as the repository's optimistic UPDATE counts them.
+        if stored.version != case.version - max(1, len(steps)):
             raise ConflictError("product case was modified concurrently")
         decided = set(self.drafts.decisions)
         if any(c.draft_id in decided for c in confirmations):
@@ -405,7 +419,7 @@ class InMemoryOutcomes:
             self.drafts.record_decision(context, decision)
         for prepared in documents:
             self.documents.rows.append(_stored(context, prepared))
-        case.pop_pending_steps()
+        self.steps.extend(steps)
         self.cases.cases[case.id.value] = replace(case, _pending_steps=[])
         self.records.insert(context, record)
         if profile is not None:
@@ -521,6 +535,65 @@ class InMemoryProfiles:
         return max(mine, key=lambda p: p.version) if mine else None
 
 
+@dataclass
+class InMemoryCodes:
+    """`CodeRegistryPort`: the world's cases' item codes and SKUs and an
+    imported catalogue, each seen only under its own tenant AND workspace."""
+
+    cases: InMemoryStepCases
+    catalogue: list[tuple[uuid.UUID, uuid.UUID, str, str | None]] = field(default_factory=list)
+
+    def _app(self, context: AccessContext) -> list[ProductDevelopmentCase]:
+        return [
+            c
+            for c in self.cases.cases.values()
+            if _sees(context, c.tenant_id.value, c.workspace_id.value)
+        ]
+
+    def _catalogue(self, context: AccessContext) -> list[tuple[str, str | None]]:
+        return [
+            (item, sku)
+            for tenant, workspace, item, sku in self.catalogue
+            if (tenant, workspace) == (context.tenant_id, context.workspace_id)
+        ]
+
+    async def item_codes_with_prefix(self, context: AccessContext, prefix: str) -> list[str]:
+        app = [c.item_code.code for c in self._app(context) if c.item_code is not None]
+        return [
+            code
+            for code in [*app, *(i for i, _ in self._catalogue(context))]
+            if code.startswith(prefix)
+        ]
+
+    async def taken(
+        self,
+        context: AccessContext,
+        item_codes: Sequence[str],
+        sku_codes: Sequence[str],
+        *,
+        except_case: uuid.UUID,
+    ) -> TakenCodes:
+        items: dict[str, set[str]] = {}
+        skus: dict[str, set[str]] = {}
+        for case in self._app(context):
+            if case.id.value == except_case:
+                continue
+            if case.item_code is not None and case.item_code.code in item_codes:
+                items.setdefault(case.item_code.code, set()).add(Holder.APP)
+            for sku in case.skus:
+                if sku.sku_code in sku_codes:
+                    skus.setdefault(sku.sku_code, set()).add(Holder.APP)
+        for listed_item, listed_sku in self._catalogue(context):
+            if listed_item in item_codes:
+                items.setdefault(listed_item, set()).add(Holder.CATALOGUE)
+            if listed_sku is not None and listed_sku in sku_codes:
+                skus.setdefault(listed_sku, set()).add(Holder.CATALOGUE)
+        return TakenCodes(
+            item_codes={c: tuple(sorted(h)) for c, h in items.items()},
+            sku_codes={c: tuple(sorted(h)) for c, h in skus.items()},
+        )
+
+
 class _StaticPlans:
     async def plan_of(self, tenant_id: uuid.UUID) -> str | None:
         return "professional"
@@ -560,6 +633,14 @@ class StepWorld:
         )
     )
     profiles: InMemoryProfiles = field(default_factory=InMemoryProfiles)
+    # Step 9 (ticket ai-automation/13): the tenant's code rule (Elmich's
+    # provisional one unless a test sets another) and the imported catalogue.
+    item_code_rule: SupplyChainItemCodeRule = field(
+        default_factory=lambda: load_supply_chain_item_code_rule(
+            REPO_ROOT / "scripts" / "elmich_item_code_rule_override.yaml"
+        )
+    )
+    codes: InMemoryCodes = field(init=False)
 
     def context(
         self,
@@ -582,6 +663,15 @@ class StepWorld:
 
     def __post_init__(self) -> None:
         self.outcomes = InMemoryOutcomes(self.cases, self.drafts, self.documents, self.records)
+        self.codes = InMemoryCodes(self.cases)
+
+    def coding(self) -> ItemCodingPreparation:
+        return ItemCodingPreparation(
+            codes=self.codes,
+            profiles=self.profiles,
+            policy_override_repo=_NoOverrides(),
+            platform_default_rule=self.item_code_rule,
+        )
 
     def sample(self) -> SamplePreparation:
         return SamplePreparation(
@@ -623,6 +713,7 @@ class StepWorld:
             documents=self.documents,
             sample=self.sample(),
             bm04=self.bm04(),
+            coding=self.coding(),
         )
 
     def preparer(self) -> PrepareStep:
@@ -645,6 +736,7 @@ class StepWorld:
             clock=self.clock,
             sample=self.sample(),
             bm04=self.bm04(),
+            coding=self.coding(),
         )
 
     def applier(self) -> ApplyStepProposal:
@@ -665,6 +757,7 @@ class StepWorld:
                 authz=ScopeAuthorizationService(),
                 ids=Uuid4Generator(),
             ),
+            coding=self.coding(),
         )
 
     # -- seeding -----------------------------------------------------------
@@ -813,6 +906,21 @@ class StepWorld:
         )
         return draft_id
 
+    def code_case(
+        self,
+        case: ProductDevelopmentCase,
+        item_code: str,
+        skus: Sequence[tuple[str, str]] = (),
+    ) -> None:
+        """Give a case its item code and SKUs, as step 9 would have."""
+        stored = self.cases.cases[case.id.value]
+        self.cases.cases[case.id.value] = replace(
+            stored,
+            item_code=ItemCode(id=uuid.uuid4(), code=item_code),
+            skus=tuple(Sku(id=uuid.uuid4(), sku_code=c, variant_label=v) for c, v in skus),
+            _pending_steps=[],
+        )
+
     def lane_context(self, case: ProductDevelopmentCase) -> AccessContext:
         return lane_context(case.tenant_id.value, case.workspace_id.value)
 
@@ -874,6 +982,8 @@ SAMPLE_TESTING = PreparedStep.model_validate(
 BM04_STEP = _elmich_step(ProductDevState.PROFILE_IN_PROGRESS)
 # Step 8 as Elmich prepares it (ticket ai-automation/12): the reply against the BM04.
 TERMS_STEP = _elmich_step(ProductDevState.SUPPLIER_CONFIRMATION)
+# Step 9 as Elmich prepares it (ticket ai-automation/13): code and SKUs by code.
+ITEM_CODING_STEP = _elmich_step(ProductDevState.ITEM_CODING)
 
 SUPPLIER_CONFIRMATION = PreparedStep.model_validate(
     {

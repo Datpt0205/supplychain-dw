@@ -7,7 +7,8 @@ from the declarations below (ticket ai-automation/03). The templates are
 neutral on purpose: what any company's form carries. A customer's own form
 (Elmich's, QE-21) is a tenant override uploaded at run time, never a change
 here. A released version is never rewritten: change a template by adding a
-version, so a draft pinned to the old one still renders as it did.
+version (an entry with its own `version`), so a draft pinned to the old one
+still renders as it did.
 
 The .docx is written so each placeholder sits in one run (the loader refuses a
 split one), and the script refuses to overwrite a file that already exists.
@@ -156,6 +157,39 @@ TEMPLATES: list[dict[str, Any]] = [
         ],
     },
     {
+        # Step 9 (ticket ai-automation/13): the item code and SKUs proposed by
+        # code from the tenant's rule and the BM04's variants, submitted for
+        # sign-off (tờ trình ký mã hàng).
+        "template_id": "supply_chain.official_item_code",
+        "title": "PHIẾU MÃ HÀNG CHÍNH THỨC (TRÌNH KÝ)",
+        "doc_type": "official_item_code",
+        "description": (
+            "Bước 9: mã hàng và SKU trình ký; mã do hệ thống đề xuất theo quy tắc mã của công ty."
+        ),
+        "fields": [
+            _f("proposal_code", "Mã đề xuất", required=True),
+            _f("product_name", "Tên sản phẩm", required=True),
+            _f("category", "Nhóm sản phẩm (Category)"),
+            _f("supplier_name", "Nhà cung cấp", required=True),
+            _f("item_code", "Mã hàng chính thức", required=True),
+            _table(
+                "skus",
+                "SKU",
+                [
+                    ("sku_code", "Mã SKU", "text"),
+                    ("variant_label", "Biến thể", "text"),
+                    ("planned_quantity", "Số lượng dự kiến", "number"),
+                ],
+                required=True,
+            ),
+            _f("material", "Chất liệu"),
+            _f("dimensions", "Kích thước"),
+            _f("submitted_by", "Người trình"),
+            _f("submitted_on", "Ngày trình", "date"),
+            _f("notes", "Ghi chú"),
+        ],
+    },
+    {
         "template_id": "supply_chain.purchase_order",
         "title": "ĐƠN ĐẶT HÀNG",
         "doc_type": "purchase_order",
@@ -233,7 +267,8 @@ def _docx(spec: dict[str, Any]) -> DocxDocument:
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     for spec in TEMPLATES:
-        ref = f"{spec['template_id']}@{VERSION}"
+        version = spec.get("version", VERSION)
+        ref = f"{spec['template_id']}@{version}"
         yaml_path, docx_path = OUT / f"{ref}.yaml", OUT / f"{ref}.docx"
         if yaml_path.exists() or docx_path.exists():
             print(f"exists, left as released: {ref}")
@@ -241,7 +276,7 @@ def main() -> int:
         declaration = {
             "schema_version": "1.0",
             "template_id": spec["template_id"],
-            "version": VERSION,
+            "version": version,
             "title": spec["title"],
             "doc_type": spec["doc_type"],
             "description": spec["description"],

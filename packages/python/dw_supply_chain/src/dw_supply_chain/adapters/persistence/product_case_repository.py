@@ -408,16 +408,23 @@ class SqlProductCaseRepository:
                 "mã đề xuất này đã có trong tenant",
                 details={"constraint": name, "proposal_code": case.proposal_code},
             )
-        coding = steps[-1].coding if steps else None
-        if name == ITEM_CODE_CONSTRAINT and isinstance(coding, ItemCodeIssued):
+        # A click takes one coding step; an approved step-9 proposal takes
+        # several before its submission (ticket ai-automation/13), so the code
+        # refused is looked for among every step saved together.
+        issued = [s.coding for s in steps if isinstance(s.coding, ItemCodeIssued)]
+        added = [s.coding.sku.sku_code for s in steps if isinstance(s.coding, SkuAdded)]
+        if name == ITEM_CODE_CONSTRAINT and issued:
+            code = issued[-1].item_code.code
             return ConflictError(
-                f"mã hàng {coding.item_code.code} đã có trong công ty",
-                details={"constraint": name, "item_code": coding.item_code.code},
+                f"mã hàng {code} đã có trong công ty",
+                details={"constraint": name, "item_code": code},
             )
-        if name == SKU_CODE_CONSTRAINT and isinstance(coding, SkuAdded):
+        if name == SKU_CODE_CONSTRAINT and added:
             return ConflictError(
-                f"mã SKU {coding.sku.sku_code} đã có trong công ty",
-                details={"constraint": name, "sku_code": coding.sku.sku_code},
+                f"mã SKU {', '.join(added)} đã có trong công ty"
+                if len(added) == 1
+                else f"một trong các mã SKU {', '.join(added)} đã có trong công ty",
+                details={"constraint": name, "sku_code": ",".join(added)},
             )
         if name == _ONE_ITEM_CODE_CONSTRAINT:
             return ConflictError(
@@ -506,9 +513,12 @@ class SqlProductCaseRepository:
     async def save(
         self, context: AccessContext, case: ProductDevelopmentCase, *, audit: AuditEvent
     ) -> None:
-        """`WHERE version = case.version - 1`: the steps a command takes bump
-        `version` once each and a command takes one, so the row written is the
-        one read. Another writer in between is a refusal, not a merge."""
+        """`WHERE version = case.version - max(1, len(steps))`: each step bumps
+        `version` once, and the one change that is not a step (the PIC
+        reassigned) bumps it once too, so the row written is the one read. A
+        command takes one step; an approved step-9 proposal takes several (its
+        code, its SKUs, the submission; ticket ai-automation/13). Another
+        writer in between is a refusal, not a merge."""
         steps = case.pop_pending_steps()
         try:
             async with tenant_session(
@@ -538,7 +548,7 @@ class SqlProductCaseRepository:
             .where(
                 *_in_scope(_c, context),
                 _c.c.id == case.id.value,
-                _c.c.version == case.version - 1,
+                _c.c.version == case.version - max(1, len(steps)),
             )
             .values(
                 supplier_id=supplier.id if supplier else None,

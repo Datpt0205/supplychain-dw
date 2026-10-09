@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_step_preparation
-policy_version: "1.5.0"
+policy_version: "1.6.0"
 
 # Override của TENANT ELMICH (không phải platform default): các bước AI chuẩn bị
 # (ADR 0025, ticket ai-automation/05). Ghi bằng
@@ -63,6 +63,19 @@ steps:
     action: confirm_with_supplier
     sources: [supplier_confirmation_email]
     checks: [sources_present, sources_read, terms_match_bm04]
+  # Bước 9, mã hàng và SKU (1.6.0, ticket ai-automation/13): code đề xuất mã
+  # hàng theo quy tắc mã của công ty (supply_chain_item_code_rule; Elmich tạm
+  # EL-00001 tới khi trả lời QE-11) và một SKU mỗi biến thể của BM04 (số lượng
+  # dự kiến chỉ khi dòng BM04 ghi), kiểm trùng với mã trong ứng dụng và danh
+  # mục đã nạp (ON-01), soạn phiếu mã hàng trình ký. Không mô hình nào được hỏi.
+  # Duyệt: mã hàng, SKU và trình ký trong một giao dịch; mã trùng bị từ chối.
+  - case_kind: product
+    state: item_coding
+    action: submit_for_signoff
+    drafts:
+      - doc_type: official_item_code
+        recipe: item_coding
+    checks: [codes_free, drafts_complete]
 # Thư gửi NCC (ADR 0029, ticket ai-automation/07): AI soạn, người sao chép, gửi
 # từ hộp thư của mình rồi bấm "Đã gửi". Xin mẫu khi hồ sơ vào bước 2, nhắc NCC
 # khi follow-up phía NCC mở (im lặng, quá hạn mẫu), xác nhận sản phẩm khi hồ sơ

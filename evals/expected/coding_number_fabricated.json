@@ -1,0 +1,23 @@
+{
+  "outcome": "proposed",
+  "model_calls": 0,
+  "draft_fields": {
+    "skus": [
+      {
+        "sku_code": "EL-00001-01",
+        "variant_label": "Đỏ 24cm",
+        "planned_quantity": null
+      },
+      {
+        "sku_code": "EL-00001-02",
+        "variant_label": "Size: 24cm",
+        "planned_quantity": null
+      },
+      {
+        "sku_code": "EL-00001-03",
+        "variant_label": "Xanh",
+        "planned_quantity": "1200"
+      }
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "outcome": "proposed",
+  "model_calls": 0,
+  "draft_fields": {
+    "item_code": "EL-00004",
+    "skus": [
+      {
+        "sku_code": "EL-00004-01",
+        "variant_label": "Đỏ 24cm",
+        "planned_quantity": "500"
+      },
+      {
+        "sku_code": "EL-00004-02",
+        "variant_label": "Xanh 24cm",
+        "planned_quantity": "1200"
+      },
+      {
+        "sku_code": "EL-00004-03",
+        "variant_label": "Kem 24cm",
+        "planned_quantity": null
+      }
+    ]
+  },
+  "decision": "submit_for_signoff",
+  "case_state": "pending_signoff"
+}

@@ -56,6 +56,7 @@ from dw_api.bootstrap.paths import (
     SUPPLY_CHAIN_BM04_SCHEMA,
     SUPPLY_CHAIN_BRIEF_POLICY,
     SUPPLY_CHAIN_FOLLOW_UP_POLICY,
+    SUPPLY_CHAIN_ITEM_CODE_RULE,
     SUPPLY_CHAIN_PACKAGING_POLICY,
     SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES,
     SUPPLY_CHAIN_PRODUCT_APPROVALS,
@@ -1083,12 +1084,25 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         platform_default_criteria=load_supply_chain_sample_criteria(SUPPLY_CHAIN_SAMPLE_CRITERIA),
     )
     bm04_preparation = Bm04Preparation(schemas=bm04_schemas, profiles=profiles)
+    # Step 9 (ticket ai-automation/13): the tenant's code rule, the codes the
+    # application and the imported catalogue hold, and the BM04's variants.
+    from dw_supply_chain.adapters.persistence.code_registry import SqlCodeRegistry
+    from dw_supply_chain.application import item_coding as sc_coding
+    from dw_supply_chain.item_code_rule_policy import load_supply_chain_item_code_rule
+
+    coding_preparation = sc_coding.ItemCodingPreparation(
+        codes=SqlCodeRegistry(wiring.seam.session_factory),
+        profiles=profiles,
+        policy_override_repo=policy_override_repo,
+        platform_default_rule=load_supply_chain_item_code_rule(SUPPLY_CHAIN_ITEM_CODE_RULE),
+    )
     proposal_subject = sc_proposals.StepProposalSubject(
         cases=product_case_repo,
         drafts=draft_repo,
         documents=document_repo,
         sample=sample_preparation,
         bm04=bm04_preparation,
+        coding=coding_preparation,
     )
     preparer = sc_preparation.PrepareStep(
         cases=product_case_repo,
@@ -1108,6 +1122,7 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         clock=wiring.seam.clock,
         sample=sample_preparation,
         bm04=bm04_preparation,
+        coding=coding_preparation,
     )
     applier = sc_proposals.ApplyStepProposal(
         cases=product_case_repo,
@@ -1125,6 +1140,7 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         profiles=Bm04ProfileWriter(
             schemas=bm04_schemas, profiles=profiles, authz=authorization, ids=wiring.seam.ids
         ),
+        coding=coding_preparation,
     )
     wiring.seam.graphs.register(
         step_preparation_graph.WORKER_ID,
@@ -1161,6 +1177,17 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
             authz=authorization,
         ),
         set_policy=sc_proposals.SetStepPreparationPolicyOverride(
+            policy_override_repo=policy_override_repo,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        get_item_code_rule=sc_coding.GetItemCodeRulePolicy(
+            policy_override_repo=policy_override_repo,
+            platform_default_rule=coding_preparation.platform_default_rule,
+            authz=authorization,
+        ),
+        set_item_code_rule=sc_coding.SetItemCodeRulePolicyOverride(
             policy_override_repo=policy_override_repo,
             authz=authorization,
             ids=wiring.seam.ids,

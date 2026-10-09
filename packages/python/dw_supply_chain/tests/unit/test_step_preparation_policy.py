@@ -57,6 +57,7 @@ def test_elmichs_override_loads_and_prepares_its_steps() -> None:
         ProductAction.PASS_SAMPLE,
         ProductAction.COMPLETE_PROFILE,
         ProductAction.CONFIRM_WITH_SUPPLIER,
+        ProductAction.SUBMIT_FOR_SIGNOFF,
     ]
     assert policy.steps[0].physical and policy.steps[0].result_fields
     assert set(policy.supplier_messages) == set(MessagePurpose)

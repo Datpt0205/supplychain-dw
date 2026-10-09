@@ -92,6 +92,10 @@ class DraftRecipe(StrEnum):
     # conflict and an empty field), then what a model read from the evidence
     # for the fields still empty, never a commercial one.
     BM04 = "bm04"
+    # Step 9's paper (ticket ai-automation/13): the item code the tenant's
+    # rule gives next and one SKU per variant of the BM04, all by code (no
+    # model); the case's own code and SKUs when it already has them.
+    ITEM_CODING = "item_coding"
 
 
 class StepCheck(StrEnum):
@@ -114,6 +118,10 @@ class StepCheck(StrEnum):
     # BM04 version (ticket ai-automation/12): each term that differs, that the
     # reply leaves unstated, or that the BM04 lacks.
     TERMS_MATCH_BM04 = "terms_match_bm04"
+    # Step 9 (ticket ai-automation/13): the item code and each SKU code of the
+    # paper, against the application's codes and the imported catalogue; no
+    # rule to propose a code, no variant to make a SKU from.
+    CODES_FREE = "codes_free"
 
 
 class PreparationOutcome(StrEnum):
@@ -147,6 +155,8 @@ class NotPreparedReason(StrEnum):
     SAMPLE_FACTS_UNAVAILABLE = "sample_facts_unavailable"
     # A BM04 step, on a host wired without the tenant's BM04 schema.
     BM04_FACTS_UNAVAILABLE = "bm04_facts_unavailable"
+    # A step-9 paper, on a host wired without the code rule and registry.
+    CODING_FACTS_UNAVAILABLE = "coding_facts_unavailable"
     RUN_REFUSED = "run_refused"
     RUN_FAILED = "run_failed"
 

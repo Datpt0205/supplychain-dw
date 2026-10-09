@@ -175,10 +175,11 @@ curl -fsS -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application
   --data @/tmp/sla.json https://$A/api/v1/supply-chain/sla-policy
 # tương tự elmich_packaging_override.yaml -> PUT /api/v1/supply-chain/packaging-policy
 # tương tự elmich_step_preparation_override.yaml -> PUT /api/v1/supply-chain/step-preparation-policy
+# tương tự elmich_item_code_rule_override.yaml -> PUT /api/v1/supply-chain/item-code-rule
 ```
 
 `$TOKEN` là access token của một người trong tenant Elmich có
-`supply_chain.sla_policy.write` (SLA) và `supply_chain.action_duties.write` (đóng gói, các bước AI chuẩn bị).
+`supply_chain.sla_policy.write` (SLA) và `supply_chain.action_duties.write` (đóng gói, các bước AI chuẩn bị, quy tắc mã hàng).
 Chưa có màn hình nào cho việc này; lấy token từ header `Authorization` trong tab Network
 của trình duyệt sau khi đăng nhập, và xóa `/tmp/*.json` sau đó. Số SLA còn chờ Elmich
 xác nhận (ghi trong file).

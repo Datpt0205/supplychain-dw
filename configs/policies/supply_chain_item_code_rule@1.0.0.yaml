@@ -1,0 +1,11 @@
+schema_version: "1.0"
+policy_id: supply_chain_item_code_rule
+policy_version: "1.0.0"
+
+# How a tenant's item codes and SKU codes are made (ticket ai-automation/13;
+# ADR 0018 amendment 2). PLATFORM DEFAULT: no rule. With no rule, step 9's
+# preparation proposes no item code (code never guesses one, and no model is
+# asked); it proposes SKUs from the BM04's variants under the code a person
+# types. A tenant replaces this whole through
+# PUT /api/v1/supply-chain/item-code-rule (platform.policy_overrides).
+rule: null

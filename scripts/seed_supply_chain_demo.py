@@ -7,6 +7,7 @@ Usage (reads `.env`; `make` exports it, a plain shell needs `set -a; source .env
     uv run python scripts/seed_supply_chain_demo.py elmich-packaging
     uv run python scripts/seed_supply_chain_demo.py elmich-step-preparation
     uv run python scripts/seed_supply_chain_demo.py elmich-sample-criteria
+    uv run python scripts/seed_supply_chain_demo.py elmich-item-code-rule
     uv run python scripts/seed_supply_chain_demo.py e2e-fixtures
     uv run python scripts/seed_supply_chain_demo.py e2e-cleanup [E2E-<code>]
 
@@ -66,6 +67,11 @@ ai-automation/09; every threshold pending Elmich's R&D), as Bình, through
 `SetSampleCriteriaPolicyOverride`, the handler behind
 `PUT /sample-criteria-policy`.
 
+`elmich-item-code-rule` writes how tenant Alpha's item and SKU codes are made
+(`scripts/elmich_item_code_rule_override.yaml`; ticket ai-automation/13;
+provisional until QE-11), as Bình, through `SetItemCodeRulePolicyOverride`,
+the handler behind `PUT /item-code-rule`.
+
 `e2e-fixtures` is what the browser suite (`apps/web/e2e/supply-chain.spec.ts`)
 needs beyond `seed`: Khánh linked to a Zalo chat that does not exist
 (`e2e-chat-khanh`), so /approvals/<id> offers a code once a comment is
@@ -117,6 +123,7 @@ from dw_supply_chain.application.handlers import (
     SLA_POLICY_WRITE,
     SetSLAPolicyOverride,
 )
+from dw_supply_chain.application.item_coding import SetItemCodeRulePolicyOverride
 from dw_supply_chain.application.packaging_designs import SetPackagingPolicyOverride
 from dw_supply_chain.application.sample_checklist import SetSampleCriteriaPolicyOverride
 from dw_supply_chain.application.step_proposals import SetStepPreparationPolicyOverride
@@ -127,6 +134,7 @@ from dw_supply_chain.domain.supplier_update import (
     SupplierUpdateExtraction,
     SupplierUpdateId,
 )
+from dw_supply_chain.item_code_rule_policy import load_supply_chain_item_code_rule
 from dw_supply_chain.packaging_policy import load_supply_chain_packaging_policy
 from dw_supply_chain.sample_criteria_policy import load_supply_chain_sample_criteria
 from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
@@ -136,6 +144,7 @@ ELMICH_SLA = Path(__file__).resolve().parent / "elmich_sla_override.yaml"
 ELMICH_PACKAGING = Path(__file__).resolve().parent / "elmich_packaging_override.yaml"
 ELMICH_STEP_PREPARATION = Path(__file__).resolve().parent / "elmich_step_preparation_override.yaml"
 ELMICH_SAMPLE_CRITERIA = Path(__file__).resolve().parent / "elmich_sample_criteria_override.yaml"
+ELMICH_ITEM_CODE_RULE = Path(__file__).resolve().parent / "elmich_item_code_rule_override.yaml"
 # Bình, `sc_process_admin`: the persona who sets the SLA.
 PROCESS_OWNER = "dev|binh.tran"
 
@@ -411,6 +420,28 @@ async def elmich_sample_criteria(migrator: AsyncEngine, app: AsyncEngine) -> Non
     )
 
 
+async def elmich_item_code_rule(migrator: AsyncEngine, app: AsyncEngine) -> None:
+    policy = load_supply_chain_item_code_rule(ELMICH_ITEM_CODE_RULE)
+    owner = _context(await _user_id(migrator, PROCESS_OWNER)).model_copy(
+        update={
+            "roles": frozenset({"sc_process_admin"}),
+            "scopes": frozenset({ACTION_DUTIES_WRITE}),
+        }
+    )
+    await SetItemCodeRulePolicyOverride(
+        policy_override_repo=SqlPolicyOverrideRepository(async_sessionmaker(app)),
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=SystemClock(),
+    ).handle(owner, policy)
+    rule = policy.rule
+    print(
+        "elmich item code rule written for tenant Alpha: "
+        + ("none" if rule is None else f"{rule.prefix}{rule.separator}{'0' * rule.digits}")
+        + "; provisional until QE-11"
+    )
+
+
 # A second Alpha workspace, only for the browser suite (`e2e-fixtures`).
 E2E_WS = uuid.uuid5(ALPHA, "e2e-second-workspace")
 E2E_BOD = "dev|khanh.ngo"
@@ -527,6 +558,8 @@ async def main(argv: list[str]) -> None:
             await elmich_step_preparation(migrator, app)
         elif argv == ["elmich-sample-criteria"]:
             await elmich_sample_criteria(migrator, app)
+        elif argv == ["elmich-item-code-rule"]:
+            await elmich_item_code_rule(migrator, app)
         elif argv == ["e2e-fixtures"]:
             await e2e_fixtures(migrator)
         elif argv[:1] == ["e2e-cleanup"] and len(argv) <= 2:

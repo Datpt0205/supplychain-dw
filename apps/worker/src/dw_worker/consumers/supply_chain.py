@@ -81,6 +81,7 @@ from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementSe
 from dw_supply_chain.adapters.persistence.case_document_repository import (
     SqlCaseDocumentRepository,
 )
+from dw_supply_chain.adapters.persistence.code_registry import SqlCodeRegistry
 from dw_supply_chain.adapters.persistence.commercial_repository import SqlProductProfileRepository
 from dw_supply_chain.adapters.persistence.document_draft_repository import (
     SqlDocTemplateOverrides,
@@ -146,6 +147,7 @@ from dw_supply_chain.application.document_orphan_sweep import SweepOrphanDocumen
 from dw_supply_chain.application.follow_up_retention import PruneClosedFollowUps
 from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
 from dw_supply_chain.application.handlers import ListPOCases, ListProductCategories
+from dw_supply_chain.application.item_coding import ItemCodingPreparation
 from dw_supply_chain.application.ports import CaseDocumentObjectListingPort
 from dw_supply_chain.application.product_cases import ListProductCases, ProposeProductCase
 from dw_supply_chain.application.product_reviews import (
@@ -168,6 +170,7 @@ from dw_supply_chain.bm04_schema import load_supply_chain_bm04_schema
 from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.step_proposal import STEP_PROPOSAL_PREFIX
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
+from dw_supply_chain.item_code_rule_policy import load_supply_chain_item_code_rule
 from dw_supply_chain.model_routes import (
     BM04_TASK,
     BOD_SUBMISSION_TASK,
@@ -180,6 +183,7 @@ from dw_supply_chain.policy_files import (
     ADVANCE_PRODUCT_CASE_WORKER_FILE,
     BM04_SCHEMA_POLICY_FILE,
     FOLLOW_UP_POLICY_FILE,
+    ITEM_CODE_RULE_POLICY_FILE,
     MODEL_ROUTES_POLICY_FILE,
     PRODUCT_ACTION_DUTIES_POLICY_FILE,
     PRODUCT_APPROVALS_POLICY_FILE,
@@ -516,8 +520,22 @@ def build_step_preparation_stack(
     bm04 = Bm04Preparation(
         schemas=bm04_schemas, writer=bm04_writer, profiles=SqlProductProfileRepository(sessions)
     )
+    # Step 9 (ticket ai-automation/13): no model, only code and the tenant's rule.
+    coding = ItemCodingPreparation(
+        codes=SqlCodeRegistry(sessions),
+        profiles=SqlProductProfileRepository(sessions),
+        policy_override_repo=SqlPolicyOverrideRepository(sessions),
+        platform_default_rule=load_supply_chain_item_code_rule(
+            policies / ITEM_CODE_RULE_POLICY_FILE
+        ),
+    )
     subject = StepProposalSubject(
-        cases=product_cases, drafts=drafts, documents=documents, sample=sample, bm04=bm04
+        cases=product_cases,
+        drafts=drafts,
+        documents=documents,
+        sample=sample,
+        bm04=bm04,
+        coding=coding,
     )
     preparer = PrepareStep(
         cases=product_cases,
@@ -537,6 +555,7 @@ def build_step_preparation_stack(
         clock=clock,
         sample=sample,
         bm04=bm04,
+        coding=coding,
     )
     applier = ApplyStepProposal(
         cases=product_cases,
@@ -555,6 +574,7 @@ def build_step_preparation_stack(
             authz=ScopeAuthorizationService(),
             ids=ids,
         ),
+        coding=coding,
     )
     return StepPreparationStack(preparer=preparer, applier=applier, subject=subject)
 

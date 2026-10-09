@@ -56,6 +56,11 @@ from dw_supply_chain.application.handlers import (
     PRODUCT_CASE_READ,
     _put_policy_override,
 )
+from dw_supply_chain.application.item_coding import (
+    ItemCodingPreparation,
+    coding_digest,
+    coding_rows,
+)
 from dw_supply_chain.application.ports import (
     CaseDocumentStoragePort,
     NewCaseDocument,
@@ -72,6 +77,7 @@ from dw_supply_chain.application.step_preparation import (
     SamplePreparation,
     TermsFacts,
     bound_facts,
+    codes_a_product,
     compares_terms,
     entered_current_state,
     reads_a_round,
@@ -96,9 +102,11 @@ from dw_supply_chain.domain.document_draft import (
 )
 from dw_supply_chain.domain.product_development_case import (
     ACTION_DOCUMENT_TYPE,
+    ProductAction,
     ProductActionInput,
     ProductDevelopmentCase,
     ProductDevelopmentCaseId,
+    SkuDraft,
     apply_product_action,
 )
 from dw_supply_chain.domain.sample_evaluation import measurements_digest
@@ -149,6 +157,9 @@ class StepProposalSubject:
     # A step that compares a reply with the BM04 binds the BM04 version
     # (ticket ai-automation/12).
     bm04: Bm04Preparation | None = None
+    # Step 9 binds the BM04 version its SKUs came from and which of its codes
+    # are taken (ticket ai-automation/13).
+    coding: ItemCodingPreparation | None = None
 
     async def version_of(self, context: AccessContext, request: ApprovalRequest) -> str | None:
         return await self.current(context, request.payload)
@@ -192,6 +203,22 @@ class StepProposalSubject:
                 return None
             profile = await self.bm04.profiles.latest(context, case.id.value)
             facts = bound_facts(facts, TermsFacts(None if profile is None else str(profile.id), ()))
+        if step is not None and codes_a_product(step):
+            if self.coding is None:
+                return None
+            codes = payload.get("coding") or {}
+            item = codes.get("item_code") if isinstance(codes, Mapping) else None
+            skus = codes.get("sku_codes") if isinstance(codes, Mapping) else None
+            taken = await self.coding.codes.taken(
+                context,
+                [str(item)] if item else [],
+                [str(s) for s in skus] if isinstance(skus, list) else [],
+                except_case=case.id.value,
+            )
+            latest = await self.coding.profiles.latest(context, case.id.value)
+            facts = bound_facts(
+                facts, None, coding_digest(None if latest is None else str(latest.id), taken)
+            )
         return proposal_subject_version(
             case.version, drafts, [SubjectSource(t, newest.get(t)) for t in types], facts
         )
@@ -304,6 +331,9 @@ class ApplyStepProposal:
     # `product_profiles` version with the step. None: no BM04 step is applied
     # by this host (the BM04 still becomes a document).
     profiles: Bm04ProfileWriter | None = None
+    # Step 9 (ticket ai-automation/13): a confirmed item code paper issues its
+    # code and adds its SKUs before the submission, in the same transaction.
+    coding: ItemCodingPreparation | None = None
 
     def _record(
         self,
@@ -421,6 +451,7 @@ class ApplyStepProposal:
         audits: list[AuditEvent] = []
         paper: CaseDocument | None = None
         bm04_fields: Mapping[str, Any] | None = None
+        coding: tuple[str, list[Any]] | None = None
         for named in payload.get("drafts") or []:
             draft = await self.drafts.get(context, uuid.UUID(str(named["draft_id"])))
             if draft is None:
@@ -441,6 +472,11 @@ class ApplyStepProposal:
             confirmed, new_version = self._confirmed_version(
                 context, step, draft, template.spec, typed_input
             )
+            if draft.doc_type is DocumentType.OFFICIAL_ITEM_CODE:
+                # Checked before anything is rendered or stored: a paper
+                # without a code, or with a code another case or the
+                # catalogue holds, is refused here.
+                coding = await self._checked_coding(context, case, confirmed[1])
             if new_version is not None:
                 new_drafts.append(new_version)
             confirmations.append(
@@ -525,6 +561,8 @@ class ApplyStepProposal:
                     uploaded_by=context.principal_id,
                     uploaded_at=self.clock.now(),
                 )
+        if coding is not None:
+            audits.extend(self._code_the_case(context, case, *coding))
         source_paper = payload.get("action_document_id")
         if paper is None and source_paper and action is step.action:
             paper = await self.documents.get(context, CaseDocumentId(uuid.UUID(str(source_paper))))
@@ -573,6 +611,66 @@ class ApplyStepProposal:
             profile=profile,
         )
         return action.value
+
+    async def _checked_coding(
+        self, context: AccessContext, case: ProductDevelopmentCase, fields: Mapping[str, Any]
+    ) -> tuple[str, list[Any]]:
+        if self.coding is None:
+            raise DomainError("máy chủ này không áp được phiếu mã hàng", details={})
+        item, skus = coding_rows(fields)
+        await self.coding.refuse_taken(context, case, fields)
+        return item, skus
+
+    def _code_the_case(
+        self, context: AccessContext, case: ProductDevelopmentCase, item: str, skus: list[Any]
+    ) -> list[AuditEvent]:
+        """The paper's code issued (unless the case has it already) and each
+        SKU the case lacks added, through the dispatch a click uses; each step
+        audited as the decider. Saved with the submission, all or nothing."""
+        audits: list[AuditEvent] = []
+        steps: list[tuple[ProductAction, ProductActionInput, dict[str, object]]] = []
+        if case.item_code is None or case.item_code.code != item:
+            steps.append(
+                (
+                    ProductAction.ISSUE_ITEM_CODE,
+                    ProductActionInput(
+                        actor_id=context.principal_id, item_code=item, new_id=self.ids.new_uuid()
+                    ),
+                    {"item_code": item},
+                )
+            )
+        held = {s.sku_code for s in case.skus}
+        for sku in skus:
+            if sku.sku_code in held:
+                continue
+            steps.append(
+                (
+                    ProductAction.ADD_SKU,
+                    ProductActionInput(
+                        actor_id=context.principal_id,
+                        sku=SkuDraft(
+                            sku_code=sku.sku_code,
+                            variant_label=sku.variant_label,
+                            planned_quantity=sku.planned_quantity,
+                        ),
+                        new_id=self.ids.new_uuid(),
+                    ),
+                    {"sku_code": sku.sku_code},
+                )
+            )
+        for action, given, details in steps:
+            apply_product_action(case, action=action, given=given)
+            audits.append(
+                product_case_audit(
+                    context,
+                    self.ids,
+                    self.clock,
+                    case,
+                    action.value,
+                    {**details, "via": PROPOSAL_APPLIED},
+                )
+            )
+        return audits
 
     async def _profile(
         self,

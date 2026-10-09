@@ -1,0 +1,16 @@
+{
+  "step": "item_coding",
+  "case_in": "other_tenant",
+  "profile": {
+    "unit_price": "2.50",
+    "currency": "USD",
+    "moq": 500,
+    "lead_time_days": 45,
+    "attributes": {
+      "product_name": "Nồi inox 3 đáy 24cm",
+      "material": "Inox 304",
+      "dimensions": "24 x 12 cm",
+      "variants": "- Đỏ 24cm: 500 cái\n- Xanh 24cm = 1.200\n- Kem 24cm"
+    }
+  }
+}

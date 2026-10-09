@@ -1,0 +1,29 @@
+{
+  "outcome": "proposed",
+  "model_calls": 0,
+  "draft_fields": {
+    "item_code": null,
+    "skus": [
+      {
+        "sku_code": null,
+        "variant_label": "Đỏ 24cm",
+        "planned_quantity": "500"
+      },
+      {
+        "sku_code": null,
+        "variant_label": "Xanh 24cm",
+        "planned_quantity": "1200"
+      },
+      {
+        "sku_code": null,
+        "variant_label": "Kem 24cm",
+        "planned_quantity": null
+      }
+    ]
+  },
+  "findings": [
+    "item_code_rule_missing"
+  ],
+  "decision": "refused",
+  "case_state": "item_coding"
+}

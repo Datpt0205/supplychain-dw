@@ -210,3 +210,17 @@ Profile `qwen` là chỗ giữ, chưa đo.
 4. **Bật theo tenant** (`bod_submission` của policy chuẩn bị bước; nền tảng: tắt). Chỉ host
    có gateway (worker) soạn; API trình duyệt khi người bấm bước bằng tay thì không có tờ
    trình. Mô hình hỏng, hết lượt, sai schema: không tờ trình, duyệt vẫn trình.
+
+## Sửa đổi 2026-10-09 (tạm, lát AI-13; bước 9 do code chuẩn bị)
+
+1. **Không mô hình ở bước 9.** `DraftRecipe.ITEM_CODING` điền phiếu mã hàng (`official_item_code`,
+   loại chứng từ đã có, "Mã hàng chính thức" của `process.md`; ticket ghi loại mới, không cần:
+   một sự việc, một loại) từ hồ sơ, quy tắc mã của tenant và biến thể của phiên bản BM04 mới
+   nhất; mẫu `supply_chain.official_item_code@1.0.0`. Eval của bước khẳng định 0 lượt gọi.
+2. **Đề xuất bước 9 mang nhiều bước.** Hành động đích vẫn là một (`submit_for_signoff`, duty
+   `ordering`); duyệt thì phiếu đã xác nhận cấp mã (nếu hồ sơ chưa có hay khác), thêm SKU còn
+   thiếu, rồi trình ký, mỗi bước qua đúng bảng dispatch một cú bấm dùng, audit như người quyết,
+   cùng giao dịch với chứng từ. Phiếu không có mã hàng hay không có SKU nào bị từ chối trước khi
+   dựng hay lưu gì. Lane đối soát vẫn trình phần ký như trước.
+3. **Chủ thể** của đề xuất bước 9 thêm phiên bản BM04 mà SKU lấy từ đó và câu trả lời "mã nào
+   đã bị chiếm" cho các mã trong payload (`coding`: chỉ mã, không giá).

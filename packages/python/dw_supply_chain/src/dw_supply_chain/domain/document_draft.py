@@ -59,6 +59,7 @@ DRAFT_TEMPLATES: Mapping[DocumentType, tuple[str, str]] = {
     DocumentType.BOD_SUBMISSION: ("supply_chain.bod_submission", "1.0.0"),
     DocumentType.PRODUCT_PROFILE_BM04: ("supply_chain.product_profile_bm04", "1.0.0"),
     DocumentType.PURCHASE_ORDER: ("supply_chain.purchase_order", "1.0.0"),
+    DocumentType.OFFICIAL_ITEM_CODE: ("supply_chain.official_item_code", "1.0.0"),
 }
 
 _MAX_REASON = 1000

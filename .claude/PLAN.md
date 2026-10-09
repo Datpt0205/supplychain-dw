@@ -35,9 +35,9 @@ the reference after each `git merge platform/main`.
 - **AI layer (Đạt, 2026-10-09):** AI prepares each step (drafts, reads supplier
   files, checks) and raises "move to step X with documents Y"; a person approves
   (ADR 0025–0029, E14–E18). Tickets AI-01–AI-20, ON-01–02, UAT-1–2 in
-  `supply-chain/ai-automation/`, `onboarding/`, `uat/`. AI-01–AI-12, ON-01 resolved
+  `supply-chain/ai-automation/`, `onboarding/`, `uat/`. AI-01–AI-13, ON-01 resolved
   2026-10-09 (integration owed: run `make test-integration` first; `luna` gate ran
-  three times, 8/8 tasks pass on 1.5.0, per case in AI-06; `qwen` owed). Next: AI-13 onward.
+  three times, 8/8 tasks pass on 1.5.0, per case in AI-06; `qwen` owed). Next: AI-14 onward.
 - **Run locally:** `make infra-up`, `make db-migrate`, seed
   (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
   then `scripts/keycloak_dev_users.py`), `make dev`, open http://localhost:3200.

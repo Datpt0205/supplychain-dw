@@ -1,0 +1,12 @@
+{
+  "outcome": "proposed",
+  "model_calls": 0,
+  "draft_fields": {
+    "item_code": "EL-00001"
+  },
+  "findings": [
+    "sku_code_taken"
+  ],
+  "decision": "refused",
+  "case_state": "item_coding"
+}

@@ -61,3 +61,25 @@ Làm theo quyết định ở trên, với ba điểm thu hẹp. Chi tiết và 
 3. Lỗi trùng là 409 nêu mã (`details.item_code` hoặc `details.sku_code`) và tên ràng buộc;
    trang hiện câu đó tại trường. Hồ sơ bị hủy giữ mã hàng và SKU: mã đã cấp không tái dùng
    trong tenant.
+
+## Sửa đổi 2026-10-09 (tạm, lát AI-13; Đạt: quy tắc tạm, thoáng tới QE-11)
+
+1. **Quy tắc mã là policy của tenant, để đề xuất, không để kiểm.** `supply_chain_item_code_rule@1.0.0`
+   (nền tảng: `rule: null`) là một mẫu (tiền tố, dấu nối, số chữ số; dấu nối và số chữ số của
+   SKU), không phải regex do tenant gõ, nên không có ReDoS. Người đọc nó là bước chuẩn bị bước 9
+   (`application/item_coding.py`): mã tiếp theo là số lớn nhất đã dùng với tiền tố đó, trong
+   ứng dụng và trong danh mục đã nạp (ADR 0027), cộng một; SKU là mã hàng + số thứ tự biến thể
+   BM04. Không quy tắc thì không đề xuất mã (không đoán, không hỏi mô hình). `issue_item_code`
+   vẫn không kiểm định dạng: mã người sửa trong bản nháp hay gõ tay vẫn được, cơ sở dữ liệu vẫn
+   là người trả lời "đã có chưa". Elmich ghi đè tạm `EL-00001` / `EL-00001-01`
+   (`scripts/elmich_item_code_rule_override.yaml`) tới khi trả lời QE-11. Đọc và thay qua
+   `GET|PUT /item-code-rule` (`action_duties.read|write`).
+2. **Trùng với danh mục đã nạp là trùng.** Phép kiểm `codes_free` nêu từng mã hàng, mã SKU mà
+   hồ sơ khác (trong ứng dụng) hay danh mục đã nạp giữ; chủ thể của đề xuất buộc câu trả lời đó,
+   nên mã bị chiếm sau khi trình làm quyết định hết hiệu lực; khi duyệt, code hỏi lại và từ chối
+   (409 nêu mã) trước khi ghi gì. Mã của chính hồ sơ không tính là trùng. Mã do workspace khác
+   của tenant giữ không thấy được ở đây (RLS); UNIQUE theo tenant vẫn từ chối khi ghi.
+3. **Nhiều bước một lần ghi.** Duyệt đề xuất bước 9 cấp mã, thêm từng SKU còn thiếu rồi trình ký
+   trong một giao dịch; câu UPDATE có điều kiện so `version - max(1, số bước)` (mỗi bước tăng
+   phiên bản một lần; đổi PIC không là bước nhưng cũng tăng một). Ràng buộc trùng được nêu theo
+   mã của bước tương ứng trong cả nhóm bước, không chỉ bước cuối.

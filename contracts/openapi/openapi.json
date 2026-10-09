@@ -2352,7 +2352,8 @@
           "case_facts",
           "sample_evaluation",
           "revision_request",
-          "bm04"
+          "bm04",
+          "item_coding"
         ],
         "title": "DraftRecipe",
         "type": "string"
@@ -3352,6 +3353,58 @@
           "memberships"
         ],
         "title": "InviteMemberRequest",
+        "type": "object"
+      },
+      "ItemCodeRule": {
+        "additionalProperties": false,
+        "description": "How a tenant's codes are made: `EL-00042`, then `EL-00042-01` for its\nfirst SKU.",
+        "properties": {
+          "digits": {
+            "maximum": 8.0,
+            "minimum": 3.0,
+            "title": "Digits",
+            "type": "integer"
+          },
+          "prefix": {
+            "pattern": "^[A-Z0-9]{1,10}$",
+            "title": "Prefix",
+            "type": "string"
+          },
+          "separator": {
+            "default": "-",
+            "enum": [
+              "-",
+              ".",
+              "/",
+              ""
+            ],
+            "title": "Separator",
+            "type": "string"
+          },
+          "sku_digits": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Sku Digits",
+            "type": "integer"
+          },
+          "sku_separator": {
+            "default": "-",
+            "enum": [
+              "-",
+              ".",
+              "/",
+              ""
+            ],
+            "title": "Sku Separator",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prefix",
+          "digits",
+          "sku_digits"
+        ],
+        "title": "ItemCodeRule",
         "type": "object"
       },
       "ItemCodeView": {
@@ -8203,7 +8256,8 @@
           "criteria_measured",
           "revision_checked",
           "bm04_sources",
-          "terms_match_bm04"
+          "terms_match_bm04",
+          "codes_free"
         ],
         "title": "StepCheck",
         "type": "string"
@@ -9207,6 +9261,43 @@
           "recipients"
         ],
         "title": "SupplyChainFollowUpPolicy",
+        "type": "object"
+      },
+      "SupplyChainItemCodeRule": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_id": {
+            "const": "supply_chain_item_code_rule",
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ItemCodeRule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version"
+        ],
+        "title": "SupplyChainItemCodeRule",
         "type": "object"
       },
       "SupplyChainPackagingPolicy": {
@@ -14298,6 +14389,67 @@
           }
         },
         "summary": "Get Import Template",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/item-code-rule": {
+      "get": {
+        "operationId": "get_item_code_rule_api_v1_supply_chain_item_code_rule_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainItemCodeRule"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Item Code Rule",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "description": "Replaces the tenant's own rule, whole (`rule: null`: none).",
+        "operationId": "set_item_code_rule_api_v1_supply_chain_item_code_rule_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainItemCodeRule"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainItemCodeRule"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Item Code Rule",
         "tags": [
           "supply_chain"
         ]

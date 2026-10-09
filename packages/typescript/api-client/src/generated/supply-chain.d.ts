@@ -429,6 +429,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/item-code-rule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Item Code Rule */
+        get: operations["get_item_code_rule_api_v1_supply_chain_item_code_rule_get"];
+        /**
+         * Set Item Code Rule
+         * @description Replaces the tenant's own rule, whole (`rule: null`: none).
+         */
+        put: operations["set_item_code_rule_api_v1_supply_chain_item_code_rule_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/packaging-policy": {
         parameters: {
             query?: never;
@@ -1826,7 +1847,7 @@ export interface components {
          *     result field a person types is never filled.
          * @enum {string}
          */
-        DraftRecipe: "case_facts" | "sample_evaluation" | "revision_request" | "bm04";
+        DraftRecipe: "case_facts" | "sample_evaluation" | "revision_request" | "bm04" | "item_coding";
         /** DraftSourceView */
         DraftSourceView: {
             /**
@@ -2040,6 +2061,31 @@ export interface components {
          * @enum {string}
          */
         Incoterm: "EXW" | "FCA" | "CPT" | "CIP" | "DAP" | "DPU" | "DDP" | "FAS" | "FOB" | "CFR" | "CIF";
+        /**
+         * ItemCodeRule
+         * @description How a tenant's codes are made: `EL-00042`, then `EL-00042-01` for its
+         *     first SKU.
+         */
+        ItemCodeRule: {
+            /** Digits */
+            digits: number;
+            /** Prefix */
+            prefix: string;
+            /**
+             * Separator
+             * @default -
+             * @enum {string}
+             */
+            separator: "-" | "." | "/" | "";
+            /** Sku Digits */
+            sku_digits: number;
+            /**
+             * Sku Separator
+             * @default -
+             * @enum {string}
+             */
+            sku_separator: "-" | "." | "/" | "";
+        };
         /**
          * ItemCodeView
          * @description The case's official item code (step 9).
@@ -3316,7 +3362,7 @@ export interface components {
          * @description Code's checks of a step, each a finding when it fails.
          * @enum {string}
          */
-        StepCheck: "sources_present" | "sources_read" | "drafts_complete" | "criteria_measured" | "revision_checked" | "bm04_sources" | "terms_match_bm04";
+        StepCheck: "sources_present" | "sources_read" | "drafts_complete" | "criteria_measured" | "revision_checked" | "bm04_sources" | "terms_match_bm04" | "codes_free";
         /** StepDecisionRequest */
         StepDecisionRequest: {
             /**
@@ -3645,6 +3691,19 @@ export interface components {
             recipients: {
                 [key: string]: string[];
             };
+            /** Schema Version */
+            schema_version: string;
+        };
+        /** SupplyChainItemCodeRule */
+        SupplyChainItemCodeRule: {
+            /**
+             * Policy Id
+             * @constant
+             */
+            policy_id: "supply_chain_item_code_rule";
+            /** Policy Version */
+            policy_version: string;
+            rule?: components["schemas"]["ItemCodeRule"] | null;
             /** Schema Version */
             schema_version: string;
         };
@@ -4555,6 +4614,59 @@ export interface operations {
                 };
                 content: {
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": unknown;
+                };
+            };
+        };
+    };
+    get_item_code_rule_api_v1_supply_chain_item_code_rule_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainItemCodeRule"];
+                };
+            };
+        };
+    };
+    set_item_code_rule_api_v1_supply_chain_item_code_rule_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplyChainItemCodeRule"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainItemCodeRule"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
