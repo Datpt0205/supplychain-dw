@@ -111,6 +111,7 @@ from dw_supply_chain.sla_policy import (
 )
 from dw_supply_chain.testing.extraction_eval import grade_document_extraction
 from dw_supply_chain.testing.po_cases import InMemoryPOCases
+from dw_supply_chain.testing.preparation_eval import grade_step_preparation
 from dw_supply_chain.testing.product_cases import (
     InMemoryDirectory,
     InMemoryProductCases,
@@ -1013,4 +1014,5 @@ SUPPLY_CHAIN_GRADERS: dict[str, Grader] = {
     "supply_chain.chat_case_answer": grade_chat_case_answer,
     "supply_chain.brief_prompt_containment": grade_brief_prompt_containment,
     "supply_chain.document_extraction": grade_document_extraction,
+    "supply_chain.step_preparation": grade_step_preparation,
 }

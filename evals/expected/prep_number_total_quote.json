@@ -1,0 +1,13 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "total": null
+  },
+  "gaps": [
+    {
+      "field": "total",
+      "reason": "number_mismatch"
+    }
+  ]
+}

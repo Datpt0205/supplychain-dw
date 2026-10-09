@@ -171,6 +171,11 @@ class ExtractDocuments:
     # The profile the call runs on: None is the deployment's own (`luna` for
     # Elmich, ADR 0025 point 10). Stored on each row as given.
     model_profile: str | None = None
+    # A document type whose reading runs on another profile than the process's
+    # (`supply_chain_model_routes`, ticket ai-automation/06): only a profile that
+    # passed the model gate for that task gets here, checked when the policy
+    # loads. Stored on each row as used.
+    routes: Mapping[DocumentType, str] = field(default_factory=dict)
     batch_size: int = 20
     specs: Mapping[DocumentType, ExtractionSpec] = field(
         default_factory=lambda: dict(EXTRACTION_SPECS)
@@ -272,7 +277,7 @@ class ExtractDocuments:
             prompt_id=spec.prompt_id,
             prompt_version=spec.prompt_version,
             variables={DOCUMENT_TEXT_VARIABLE: redacted.text},
-            model_profile=self.model_profile,
+            model_profile=self.routes.get(document.doc_type, self.model_profile),
             route_kind="structured_extraction",
         )
         try:
@@ -340,7 +345,7 @@ class ExtractDocuments:
             sha256=document.sha256,
             prompt_id=spec.prompt_id,
             prompt_version=spec.prompt_version,
-            model_profile=self.model_profile,
+            model_profile=self.routes.get(document.doc_type, self.model_profile),
             status=status,
             text=text,
             fields=fields or {},

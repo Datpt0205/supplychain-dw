@@ -635,6 +635,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                         clock=clock,
                     ),
                     model_profile=settings.model_profile,
+                    configs_dir=REPO_ROOT / "configs",
+                    gates_dir=REPO_ROOT / "evals" / "gates",
                     ids=ids,
                     clock=clock,
                 )

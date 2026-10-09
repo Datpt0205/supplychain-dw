@@ -29,3 +29,7 @@ PRODUCT_ACTION_DUTIES_POLICY_FILE = "supply_chain_product_action_duties@1.3.0.ya
 # worker; both read the policy for the case page and the lane.
 STEP_PREPARATION_POLICY_FILE = "supply_chain_step_preparation@1.0.0.yaml"
 STEP_PREPARATION_WORKER_FILE = "supply_chain_step_preparation.yaml"
+# Which profile each model task runs on (ticket ai-automation/06): read by
+# the worker's extraction lane, and by scripts/model_gate.py for the gate's
+# dataset and threshold.
+MODEL_ROUTES_POLICY_FILE = "supply_chain_model_routes@1.0.0.yaml"

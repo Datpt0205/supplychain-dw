@@ -1,0 +1,18 @@
+{
+  "outcome": "proposed",
+  "draft_fields": {
+    "proposal_code": "DX-2026-041",
+    "evaluator": "Lab QC",
+    "conclusion": null,
+    "evaluated_on": null
+  },
+  "suggestions": {
+    "conclusion": "Đạt",
+    "evaluated_on": "2026-10-08"
+  },
+  "required_input": [
+    "evaluated_on",
+    "conclusion"
+  ],
+  "case_state": "sample_testing"
+}

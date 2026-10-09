@@ -72,11 +72,17 @@ def _grade(
         return GradeResult.fail("grader raised", error=f"{type(exc).__name__}: {exc}")
 
 
-def run_dataset(dataset: EvalDataset, repo_root: Path, graders: Mapping[str, Grader]) -> EvalReport:
+def run_dataset(
+    dataset: EvalDataset,
+    repo_root: Path,
+    graders: Mapping[str, Grader],
+    *,
+    context: GraderContext | None = None,
+) -> EvalReport:
     """Grade every case with `graders`, the ONLY table consulted: the caller
     (the eval composition root) decides which graders exist. No default, so a
     caller that forgets the table is a type error, not an empty table."""
-    ctx = GraderContext(repo_root=repo_root)
+    ctx = context or GraderContext(repo_root=repo_root)
     results = tuple(
         CaseResult(
             case_id=case.case_id,

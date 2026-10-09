@@ -1,0 +1,13 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "incoterm": null
+  },
+  "gaps": [
+    {
+      "field": "incoterm",
+      "reason": "quote_not_found"
+    }
+  ]
+}

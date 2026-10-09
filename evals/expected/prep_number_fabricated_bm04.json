@@ -1,0 +1,13 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "moq": null
+  },
+  "gaps": [
+    {
+      "field": "moq",
+      "reason": "value_not_in_quote"
+    }
+  ]
+}

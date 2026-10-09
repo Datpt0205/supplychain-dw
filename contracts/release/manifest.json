@@ -65,9 +65,14 @@
       "checksum": "274ac7da2d0b159e4f9ccbd264e724b93964f42492377625000439794efd054a",
       "dataset_id": "supply_chain_smoke",
       "version": "1.9.0"
+    },
+    {
+      "checksum": "fd80b3ba2c0edeba65a5e60abcf38d5e44ac1c8ca3eb09e4af6f0004bee30083",
+      "dataset_id": "supply_chain_preparation",
+      "version": "1.0.0"
     }
   ],
-  "git_sha": "43ef16f82bd6df5892b17b29c4b068d2879b0114",
+  "git_sha": "31237ccf61ad109cdb5b0862e196634911ebcfd2",
   "knowledge_index_version": "2026-07-25.structure-1",
   "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
@@ -106,6 +111,11 @@
       "checksum": "2874eb49fef659491ad1f32a20a8458a2663cb8ee5320bd8adc270a482f63f46",
       "policy_id": "supply_chain_follow_ups",
       "version": "1.2.0"
+    },
+    {
+      "checksum": "5484554b3b82d59acc4807074bfdb6adba24e65e526ccce4849d6ea09087831e",
+      "policy_id": "supply_chain_model_routes",
+      "version": "1.0.0"
     },
     {
       "checksum": "78b88c0ac6d0a061aee75a4f762746c84ae8dba05565b9e5c1e593ad7b1ba5e0",

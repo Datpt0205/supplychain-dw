@@ -1,0 +1,13 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "evaluated_on": null
+  },
+  "gaps": [
+    {
+      "field": "evaluated_on",
+      "reason": "value_not_in_quote"
+    }
+  ]
+}

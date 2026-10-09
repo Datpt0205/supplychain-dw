@@ -134,3 +134,13 @@ superseded | rejected | applied`), khóa theo (dòng lịch sử, phiên bản p
 7. **Chứng từ dựng khi duyệt** in đủ trường, giá cũng vậy, như file người tải lên; ai đọc
    được chứng từ của hồ sơ thì đọc được file. Chưa bước nào Elmich bật có trường giá; ticket
    PO (AI-14) phải quyết lại điểm này trước khi bật.
+
+## Sửa đổi 2026-10-09 (tạm, lát AI-06; cổng mô hình)
+
+Điểm 10 thành cơ chế: policy `supply_chain_model_routes@1.0.0` đặt profile cho từng tác vụ
+(`extract.<loại chứng từ>`); tác vụ không có route chạy trên profile của process (`luna`).
+Route tới profile ngoài `ungated_profiles` chỉ nạp được khi `evals/gates/<profile>.json` là
+kết quả **live** của dataset cổng (`supply_chain_preparation@1.0.0`) qua tác vụ đó: không ca
+an ninh nào trượt và tỉ lệ đạt ≥ `min_pass_rate` (1.0). Ngưỡng có một chủ là policy; file
+kết quả chỉ có điểm. Chạy mock chỉ chứng minh script và bảng, không bao giờ là bằng chứng.
+Profile `qwen` là chỗ giữ, chưa đo.

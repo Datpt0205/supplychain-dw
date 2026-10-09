@@ -1,0 +1,13 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "quantity": null
+  },
+  "gaps": [
+    {
+      "field": "quantity",
+      "reason": "value_not_in_quote"
+    }
+  ]
+}

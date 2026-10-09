@@ -90,7 +90,7 @@ Ticket 01–20 `resolved`; UAT-02 chạy với Elmich; `process.md` mục 4 cộ
 | 03  | [Bản nháp và mẫu chứng từ](issues/03-drafts-and-templates.md)                              | L    | resolved        | —          |
 | 04  | [Skill registry](issues/04-skills-registry.md)                                             | M    | resolved        | —          |
 | 05  | [Đề xuất bước: chuẩn bị và duyệt để chuyển](issues/05-step-proposals.md)                   | L    | resolved        | 02, 03     |
-| 06  | [Eval chuẩn bị và cổng Qwen](issues/06-preparation-evals-and-qwen-gate.md)                 | M    | ready-for-agent | 02, 03     |
+| 06  | [Eval chuẩn bị và cổng Qwen](issues/06-preparation-evals-and-qwen-gate.md)                 | M    | resolved        | 02, 03     |
 | 07  | [Tin gửi NCC: AI soạn, người gửi](issues/07-supplier-messages.md)                          | M    | ready-for-agent | 03, 05     |
 | 08  | [Bước 1: đọc danh sách SP đề xuất](issues/08-step-1-proposal-list.md)                      | M    | ready-for-agent | 02, 05     |
 | 09  | [Bước 3–5: biên bản, phiếu, kiểm vòng](issues/09-steps-3-5-evaluation-and-revision.md)     | L    | ready-for-agent | 04, 05     |

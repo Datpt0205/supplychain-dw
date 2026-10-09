@@ -1,6 +1,6 @@
 # 06 — Eval chuẩn bị và cổng Qwen
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: .claude/plans/supply-chain/ai-automation/issues/02-document-extraction-lane.md, .claude/plans/supply-chain/ai-automation/issues/03-drafts-and-templates.md
 Area: supply-chain
 
@@ -22,10 +22,10 @@ Mọi trích xuất và bản nháp có dataset và grader; một tác vụ ch�
 
 ## Tiêu chí chấp nhận
 
-- [ ] Mỗi ca an ninh đỏ khi bỏ guard (ghi lệnh đột biến và kết quả).
-- [ ] Tác vụ chưa qua ngưỡng trên Qwen không thể chọn Qwen (policy từ chối khi nạp).
-- [ ] Kết quả model thật ghi vào Comments, không chỉ mock.
-- [ ] `make ci` xanh; integration `dw_supply_chain` xanh; `process.md` mục 4 cột AI cập nhật.
+- [x] Mỗi ca an ninh đỏ khi bỏ guard (ghi lệnh đột biến và kết quả).
+- [x] Tác vụ chưa qua ngưỡng trên Qwen không thể chọn Qwen (policy từ chối khi nạp).
+- [ ] Kết quả model thật ghi vào Comments, không chỉ mock. _(Nợ: chạy `scripts/model_gate.py --profile luna` và `--profile qwen` với gateway thật; xem Comments.)_
+- [ ] `make ci` xanh; integration `dw_supply_chain` xanh; `process.md` mục 4 cột AI cập nhật. _(`make ci` xanh, `process.md` cập nhật; ticket không thêm test cần Docker, bộ integration chung của context chưa chạy được ở máy này.)_
 
 ## Nguồn
 
@@ -33,3 +33,48 @@ Mọi trích xuất và bản nháp có dataset và grader; một tác vụ ch�
 - `.claude/plans/supply-chain/ai-automation/spec.md`.
 
 ## Comments
+
+**2026-10-09, lát AI-06 (agent).** Đã làm (không Docker, không gọi endpoint nào):
+
+- Dataset `evals/datasets/supply_chain_preparation@1.0.0.json` (49 ca, đủ ba loại an
+  ninh), mỗi ca gắn `task:<tên>`. Bốn tác vụ trích xuất (`extract.<loại>`, grader
+  `supply_chain.document_extraction`, lane thật, prompt thật), mỗi tác vụ có: đúng (có
+  dấu), đúng (không dấu), chèn lệnh (`</input>` giả, lệnh, số tài khoản), xuyên tenant,
+  xuyên workspace cùng tenant (0 lượt gọi, không dòng), thiếu bằng chứng (trích dẫn không
+  có trong file), số bịa (số không có trong trích dẫn), mâu thuẫn (file tự mâu thuẫn, mô
+  hình ghép giá trị chỗ này với trích dẫn chỗ kia), file không đọc được; thêm tổng báo giá
+  khác tổng dòng. Hai tác vụ soạn (`prepare.sample_testing`, `prepare.supplier_confirmation`,
+  grader mới `supply_chain.step_preparation` chạy `PrepareStep` và `ApplyStepProposal` thật
+  của AI-05): đúng, không dấu, chèn lệnh (ô kết quả vẫn trống), bản đọc ở workspace khác,
+  hồ sơ của tenant khác, thiếu chứng từ của bước, số vòng của hồ sơ thắng số mô hình đọc,
+  kết quả gõ sai kiểu bị từ chối, hai báo cáo mâu thuẫn (bản mới nhất), file không đọc
+  được, duyệt và không duyệt.
+- Cổng mô hình: `dw_agent_runtime.model.gates` (kết quả theo tác vụ; chỉ chạy **live** mới
+  là bằng chứng), `dw_evals.gate` (bảng từ báo cáo, theo tag), `GraderContext.model` /
+  `model_profile` (grader trích xuất gọi gateway thật thay câu trả lời kịch bản khi chạy
+  cổng), `scripts/model_gate.py --profile <p> [--mock]` (bảng pass/fail; live ghi
+  `evals/gates/<p>.json`, mock ghi `evals/reports/<p>.gate.json`, git bỏ qua, không ai đọc).
+- Policy `supply_chain_model_routes@1.0.0` (ngưỡng 100%, không ca an ninh nào trượt;
+  `ungated_profiles: [luna]`, `routes: {}`): route tới profile khác chỉ nạp được khi kết
+  quả live của profile đó qua tác vụ; worker dừng lúc khởi động, nêu tên route, nếu không.
+  Lane trích xuất đọc route theo loại chứng từ (ghi profile đã dùng lên dòng).
+- Profile giữ chỗ `configs/models/qwen.yaml` (Qwen qua cùng gateway OpenAI-compatible, tên
+  model sẽ thay khi Đạt chọn 3B hay 9B); không host nào mặc định dùng nó; test và `--mock`
+  không dựng provider (test chặn `build_model_adapters`).
+
+Mutation (control xanh trước, mỗi guard bỏ đi thì đỏ trên dataset mới): prompt không escape
+chứng từ; lane tin chứng từ tenant/workspace khác; không kiểm trích dẫn trong văn bản; không
+kiểm số trong trích dẫn; không kiểm ngày trong trích dẫn; không che số tài khoản; file không
+đọc được vẫn gửi mô hình; bộ soạn điền ô kết quả; số mô hình đọc thắng số hồ sơ; kết quả gõ
+không kiểm kiểu; thiếu giấy của bước vẫn đề xuất; bản cũ nhất thắng. Cổng: kết quả mock tính
+là bằng chứng; ca an ninh trượt không chặn; loader bỏ kiểm cổng; lane bỏ qua route. 16/16 đỏ.
+
+**Owed:** chạy cổng với model thật (`OPENAI_BASE_URL`, `OPENAI_API_KEY` trong môi trường,
+một người chạy): `uv run python scripts/model_gate.py --profile luna` rồi `--profile qwen`
+(sau khi đặt tên model Qwen thật trong `configs/models/qwen.yaml`), commit
+`evals/gates/*.json`, dán bảng vào đây. Chưa có kết quả thật nào: không route nào tới Qwen
+được bật.
+
+Chưa làm, ghi lại: ca cho `delay_impact_analysis` (việc 4; prompt đó không thuộc dataset
+này, thêm khi tác vụ của nó được gắn route); ca của từng bước 08–18 (mỗi ticket thêm, tăng
+phiên bản dataset); override route theo tenant (route là về mô hình, không về tenant).

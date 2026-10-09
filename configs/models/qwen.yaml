@@ -1,0 +1,22 @@
+schema_version: "1.0"
+profile_id: qwen
+routing_policy_version: "1.0.0"
+# PLACEHOLDER, unmeasured (ticket ai-automation/06). A Qwen model served behind
+# the same OpenAI-compatible gateway as `luna` (OPENAI_BASE_URL); the model id
+# is the gateway's name for it and is replaced when Đạt picks the size (3B or
+# 9B). Nothing runs here unless asked: no host defaults to this profile, and a
+# Supply Chain task routes here only after `scripts/model_gate.py --profile qwen`
+# ran LIVE and its result passed that task (supply_chain_model_routes refuses
+# the route when it loads otherwise). Tests and `--mock` never build a provider
+# for it: no endpoint is called.
+structured_extraction:
+  provider: openai_compatible
+  model: qwen3-8b-instruct
+  timeout_seconds: 60
+reasoning:
+  provider: openai_compatible
+  model: qwen3-8b-instruct
+  timeout_seconds: 90
+budgets:
+  max_input_tokens_per_run: 40000
+  max_cost_usd_per_run: 0.50

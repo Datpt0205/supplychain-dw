@@ -1,0 +1,19 @@
+{
+  "step": "sample_testing",
+  "documents": [
+    {
+      "doc_type": "sample_evaluation",
+      "text": "Ket qua: Dat\nNgay danh gia: 08/10/2026\n",
+      "reading": {
+        "result": {
+          "value": "pass",
+          "quote": "Ket qua: Dat"
+        },
+        "evaluated_on": {
+          "value": "2026-10-08",
+          "quote": "Ngay danh gia: 08/10/2026"
+        }
+      }
+    }
+  ]
+}

@@ -17,8 +17,10 @@ what the scripted model answers, and what must come out:
   block, never in the system prompt.
 
 Whether a real model obeys an instruction in a document is measured by the
-live gate (ticket ai-automation/06); what this grades is what code guarantees
-whatever the model does.
+live gate (ticket ai-automation/06): a model gate run hands the grader a real
+gateway and a profile (`GraderContext.model`), the case's scripted reading is
+not used, and the same expectations grade what the model read. Otherwise what
+this grades is what code guarantees whatever the model does.
 """
 
 from __future__ import annotations
@@ -50,6 +52,7 @@ from dw_supply_chain.testing.extraction import (
     ListQueue,
     PlainTextReader,
     RecordingExtractions,
+    RecordingGateway,
     ScriptedGateway,
     StaticPlans,
 )
@@ -64,7 +67,7 @@ def _id(kind: str, name: str) -> uuid.UUID:
 
 async def _run(
     ctx: GraderContext, input_data: dict[str, Any]
-) -> tuple[ScriptedGateway, RecordingExtractions, ExtractionOutcome]:
+) -> tuple[ScriptedGateway | RecordingGateway, RecordingExtractions, ExtractionOutcome]:
     doc_type = DocumentType(input_data["doc_type"])
     spec = EXTRACTION_SPECS[doc_type]
     text: str = input_data["document_text"]
@@ -88,9 +91,13 @@ async def _run(
         uploaded_at=_NOW,
     )
     reading = input_data.get("model_reading")
-    gateway = ScriptedGateway(
-        ctx.prompt_registry,
-        answer=None if reading is None else spec.reading.model_validate(reading),
+    gateway: ScriptedGateway | RecordingGateway = (
+        RecordingGateway(ctx.prompt_registry, ctx.model)
+        if ctx.model is not None
+        else ScriptedGateway(
+            ctx.prompt_registry,
+            answer=None if reading is None else spec.reading.model_validate(reading),
+        )
     )
     extractions = RecordingExtractions()
     lane = ExtractDocuments(
@@ -113,7 +120,7 @@ async def _run(
         plans=StaticPlans({_id("tenant", t): "professional" for t in ("a", "b")}),
         ids=Uuid4Generator(),
         clock=FixedClock(_NOW),
-        model_profile="luna",
+        model_profile=ctx.model_profile or "luna",
     )
     outcome = await lane.run_once()
     return gateway, extractions, outcome

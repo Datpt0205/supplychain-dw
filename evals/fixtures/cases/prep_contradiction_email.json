@@ -1,0 +1,10 @@
+{
+  "doc_type": "supplier_confirmation_email",
+  "document_text": "Ngày giao: 20/11/2026\nĐiều chỉnh: ngày giao mới 05/12/2026\nSố lượng: 1200 cái\n",
+  "model_reading": {
+    "delivery_date": {
+      "value": "2026-12-05",
+      "quote": "Ngày giao: 20/11/2026"
+    }
+  }
+}

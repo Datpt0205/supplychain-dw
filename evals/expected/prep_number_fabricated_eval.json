@@ -1,0 +1,13 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "sample_round": null
+  },
+  "gaps": [
+    {
+      "field": "sample_round",
+      "reason": "value_not_in_quote"
+    }
+  ]
+}

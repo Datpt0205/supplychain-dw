@@ -1,0 +1,28 @@
+{
+  "step": "sample_testing",
+  "documents": [
+    {
+      "doc_type": "sample_evaluation",
+      "text": "BIÊN BẢN TEST CỦA LAB\nNgày đánh giá: 08/10/2026\nNgười đánh giá: Lab QC\nKết quả: Đạt\n",
+      "reading": {
+        "result": {
+          "value": "pass",
+          "quote": "Kết quả: Đạt"
+        },
+        "evaluated_on": {
+          "value": "2026-10-08",
+          "quote": "Ngày đánh giá: 08/10/2026"
+        },
+        "evaluator": {
+          "value": "Lab QC",
+          "quote": "Người đánh giá: Lab QC"
+        },
+        "sample_round": {
+          "value": "7",
+          "quote": "Vòng 7"
+        }
+      },
+      "reading_in": "other_workspace"
+    }
+  ]
+}

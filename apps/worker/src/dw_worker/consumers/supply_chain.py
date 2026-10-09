@@ -137,9 +137,11 @@ from dw_supply_chain.application.step_proposals import ApplyStepProposal, StepPr
 from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.step_proposal import STEP_PROPOSAL_PREFIX
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
+from dw_supply_chain.model_routes import load_supply_chain_model_routes
 from dw_supply_chain.policy_files import (
     ADVANCE_PRODUCT_CASE_WORKER_FILE,
     FOLLOW_UP_POLICY_FILE,
+    MODEL_ROUTES_POLICY_FILE,
     PRODUCT_ACTION_DUTIES_POLICY_FILE,
     PRODUCT_APPROVALS_POLICY_FILE,
     PRODUCT_SIGNOFF_WORKER_FILE,
@@ -234,12 +236,20 @@ def build_document_extraction(
     *,
     gateway: ModelGateway,
     model_profile: str,
+    configs_dir: Path,
+    gates_dir: Path,
     ids: IdGenerator,
     clock: UtcClock,
 ) -> ExtractDocuments:
     """The extraction lane (ticket ai-automation/02). `gateway` is the
     process's one-call gateway (`ModelStack.one_call`): the plan's daily
-    allowance is checked before each call and the call's spend recorded."""
+    allowance is checked before each call and the call's spend recorded.
+    A document type routed to another profile (`supply_chain_model_routes`)
+    runs there; a route to a profile that has not passed the model gate stops
+    the worker at start, naming it."""
+    routes = load_supply_chain_model_routes(
+        configs_dir / "policies" / MODEL_ROUTES_POLICY_FILE, gates_dir
+    )
     return ExtractDocuments(
         queue=SqlExtractionQueue(sessions),
         documents=SqlCaseDocumentRepository(sessions),
@@ -251,6 +261,7 @@ def build_document_extraction(
         ids=ids,
         clock=clock,
         model_profile=model_profile,
+        routes=routes.extraction_routes(),
     )
 
 

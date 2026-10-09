@@ -1,0 +1,13 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "lead_time_days": null
+  },
+  "gaps": [
+    {
+      "field": "lead_time_days",
+      "reason": "value_not_in_quote"
+    }
+  ]
+}

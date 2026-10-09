@@ -15,6 +15,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -100,6 +101,30 @@ class StaticPlans:
 
     async def plan_of(self, tenant_id: uuid.UUID) -> str | None:
         return self.plans.get(tenant_id)
+
+
+@dataclass
+class RecordingGateway:
+    """A real gateway (a model gate run, ticket ai-automation/06), with every
+    request rendered through `registry` and kept, as `ScriptedGateway` keeps
+    them, so the same checks run on what a live model was sent."""
+
+    registry: PromptRegistry
+    inner: Any
+    sent: list[RenderedPrompt] = field(default_factory=list)
+    contexts: list[RunContext] = field(default_factory=list)
+
+    async def generate_structured(
+        self, request: ModelRequest, output_type: type[OutputT], *, run_context: RunContext
+    ) -> OutputT:
+        self.sent.append(
+            self.registry.render(request.prompt_id, request.prompt_version, request.variables)
+        )
+        self.contexts.append(run_context)
+        answer: OutputT = await self.inner.generate_structured(
+            request, output_type, run_context=run_context
+        )
+        return answer
 
 
 @dataclass

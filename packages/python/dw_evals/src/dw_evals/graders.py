@@ -39,9 +39,17 @@ class GradeResult(BaseModel):
 
 @dataclass
 class GraderContext:
-    """Shared, lazily-initialized resources for graders."""
+    """Shared, lazily-initialized resources for graders.
+
+    `model` and `model_profile`: set only by a model gate run
+    (`scripts/model_gate.py`, ticket ai-automation/06), a real `ModelGateway`
+    and the profile to call it with. A grader that reads documents with a model
+    uses them instead of its case's scripted reading; every other run leaves
+    them None, so smoke evals never call a model."""
 
     repo_root: Path
+    model: Any = None
+    model_profile: str | None = None
     _prompt_registry: Any = field(default=None, init=False)
 
     @property
