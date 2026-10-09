@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Mapping
+from dataclasses import dataclass
 
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import (
@@ -41,6 +43,7 @@ from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
 from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardStore
 from dw_agent_runtime.allowance import DailyAllowance
 from dw_agent_runtime.approval_codes import ApprovalViewService
+from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_agent_runtime.model.run_policy import load_worker_run_policy
 from dw_api.bootstrap.container import ApiContainer
 from dw_api.bootstrap.identity import build_token_verifier
@@ -58,6 +61,8 @@ from dw_api.bootstrap.paths import (
     SUPPLY_CHAIN_PRODUCT_APPROVALS,
     SUPPLY_CHAIN_PRODUCT_SIGNOFF_WORKER,
     SUPPLY_CHAIN_SLA_POLICY,
+    SUPPLY_CHAIN_STEP_PREPARATION_POLICY,
+    SUPPLY_CHAIN_STEP_PREPARATION_WORKER,
     WORKER_RUN_POLICY,
 )
 from dw_api.bootstrap.runtime import build_runtime
@@ -98,8 +103,9 @@ from dw_platform.adapters.persistence.support_grants import (
 from dw_platform.adapters.persistence.tenant_members import SqlTenantMembersRepository
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
 from dw_platform.adapters.persistence.zalo_link_repo import SqlZaloLink
+from dw_platform.application.access_context import AccessContext
 from dw_platform.application.admin_console import AdminConsoleService
-from dw_platform.application.approval_codes import ApprovalSubjectVersions, DecisionCodeKey
+from dw_platform.application.approval_codes import DecisionCodeKey
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_platform.application.hierarchy import HierarchyService
@@ -333,7 +339,9 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
     # approval types' subject version on `approval_subjects` at the seam below
     # (`approval_subjects.register(prefix, port)`); a type nobody answers for
     # is decided on the web only.
-    approval_subjects = ApprovalSubjectVersions()
+    # The decision's own registry: a decision on a stamped subject version
+    # reads the same ports a view receipt does (ticket ai-automation/05).
+    approval_subjects = wiring.approval_flow.subjects
     code_secret = settings.approval_code_secret.get_secret_value()
     container.approval_views = ApprovalViewService(
         uow_factory=uow_factory,
@@ -1035,6 +1043,103 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         clock=wiring.seam.clock,
     )
 
+    # Step proposals (ADR 0025, ticket ai-automation/05): the worker's lane
+    # starts the preparation runs; this process hosts the same graph so a
+    # decision on the web resumes the run here. Strict like the product
+    # prefix (a decision needs a comment, the requester, the lane, cannot
+    # decide), and its subject version is what a decision must still find.
+    from dw_supply_chain.adapters.persistence.document_extraction_repository import (
+        SqlExtractionReadings,
+    )
+    from dw_supply_chain.adapters.persistence.step_preparation_repository import (
+        SqlPreparationRecords,
+        SqlProposalOutcomes,
+    )
+    from dw_supply_chain.application import step_preparation as sc_preparation
+    from dw_supply_chain.application import step_proposals as sc_proposals
+    from dw_supply_chain.domain.step_proposal import STEP_PROPOSAL_PREFIX
+    from dw_supply_chain.presentation.step_proposal_routes import StepProposalHandlers
+    from dw_supply_chain.step_preparation_policy import load_supply_chain_step_preparation
+    from dw_supply_chain.workflows import step_preparation_graph
+
+    platform_default_step_preparation = load_supply_chain_step_preparation(
+        SUPPLY_CHAIN_STEP_PREPARATION_POLICY
+    )
+    preparation_records = SqlPreparationRecords(wiring.seam.session_factory)
+    proposal_subject = sc_proposals.StepProposalSubject(
+        cases=product_case_repo, drafts=draft_repo, documents=document_repo
+    )
+    preparer = sc_preparation.PrepareStep(
+        cases=product_case_repo,
+        documents=document_repo,
+        readings=SqlExtractionReadings(wiring.seam.session_factory),
+        drafts=draft_repo,
+        prepare_draft=sc_drafts.PrepareDocumentDraft(
+            cases=case_lookups,
+            drafts=draft_repo,
+            templates=tenant_templates,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        templates=tenant_templates,
+        records=preparation_records,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    applier = sc_proposals.ApplyStepProposal(
+        cases=product_case_repo,
+        drafts=draft_repo,
+        documents=document_repo,
+        templates=tenant_templates,
+        renderer=DocxRenderer(),
+        storage=document_storage,
+        subject=proposal_subject,
+        outcomes=SqlProposalOutcomes(wiring.seam.session_factory),
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    wiring.seam.graphs.register(
+        step_preparation_graph.WORKER_ID,
+        step_preparation_graph.GRAPH_VERSION,
+        lambda: step_preparation_graph.build_step_preparation_graph(preparer, applier),
+    )
+    wiring.seam.workers.load_file(SUPPLY_CHAIN_STEP_PREPARATION_WORKER)
+    wiring.approval_flow.strict_approval_prefixes = (
+        wiring.approval_flow.strict_approval_prefixes | frozenset({STEP_PROPOSAL_PREFIX})
+    )
+    approval_subjects.register(STEP_PROPOSAL_PREFIX, proposal_subject)
+    container.supply_chain_step_proposals = StepProposalHandlers(
+        get_proposal=sc_proposals.GetStepProposal(
+            cases=product_case_repo,
+            records=preparation_records,
+            approvals=pending_approvals,
+            subject=proposal_subject,
+            templates=tenant_templates,
+            policy_override_repo=policy_override_repo,
+            platform_default_policy=platform_default_step_preparation,
+            authz=authorization,
+        ),
+        decide=sc_proposals.DecideStepProposal(
+            cases=product_case_repo,
+            approvals=pending_approvals,
+            templates=tenant_templates,
+            decisions=PlatformStepDecisions(wiring.approval_flow, authorization),
+            policy_override_repo=policy_override_repo,
+            platform_default_policy=platform_default_step_preparation,
+        ),
+        get_policy=sc_proposals.GetStepPreparationPolicy(
+            policy_override_repo=policy_override_repo,
+            platform_default_policy=platform_default_step_preparation,
+            authz=authorization,
+        ),
+        set_policy=sc_proposals.SetStepPreparationPolicyOverride(
+            policy_override_repo=policy_override_repo,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+    )
+
     # Build your context from `container.runtime` (the RuntimeSeam) and attach
     # its handlers, then mount its router in `main.create_app`. Nothing above
     # this line may import a business package. A context offering support
@@ -1042,6 +1147,33 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
     # and `.register_resource(...)` (ADR 0024).
 
     return container
+
+
+@dataclass(frozen=True)
+class PlatformStepDecisions:
+    """`StepDecisionPort` over the platform's decision, with this
+    deployment's authorization: the one place a step proposal is decided."""
+
+    flow: ApproveAndResumeService
+    authorization: ScopeAuthorizationService
+
+    async def decide(
+        self,
+        context: AccessContext,
+        *,
+        approval_id: uuid.UUID,
+        approve: bool,
+        comment: str,
+        typed_input: Mapping[str, str] | None,
+    ) -> None:
+        await self.flow.decide(
+            approval_id=approval_id,
+            approve=approve,
+            comment=comment,
+            context=context,
+            authorization=self.authorization,
+            typed_input=typed_input,
+        )
 
 
 def build_engine(url: str, *, pool_pre_ping: bool = True) -> AsyncEngine:

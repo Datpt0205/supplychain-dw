@@ -100,3 +100,37 @@ nháp phiếu chỉnh sửa, tờ trình, BM04, email chốt NCC, PO mà không 
 5. **Quyết định trên bản nháp:** từ chối (lý do bắt buộc) có ở lát này; duyệt chỉ qua
    approval của bước (ticket 05), trong giao dịch thêm chứng từ. Sửa trường tạo phiên bản
    mới; phiên bản cũ đọc được, trạng thái `superseded`.
+
+## Sửa đổi 2026-10-09 (tạm, lát AI-05; đề xuất bước)
+
+1. **Hai khóa payload nền tảng** (ứng viên upstream, `dw_platform.domain.approval`):
+   `subject_version` (phiên bản chủ thể lúc trình; `ApproveAndResumeService.decide` từ chối
+   409 `subject_changed` trước khi ghi gì nếu phiên bản hiện tại khác, hay không ai trả lời
+   được) và `required_input` (giá trị người duyệt phải gõ; duyệt thiếu bị 422, giá trị đến
+   run qua `input` của resume, không mã Zalo nào mang được nên loại đó chỉ duyệt trên web).
+   `supersede_stale`: chỉ người yêu cầu (lane) kết thúc approval của mình khi chủ thể đã
+   đổi: hủy run đang chờ trước, rồi approval (`cancelled`, audit `approval.superseded`).
+   Nền tảng không có trạng thái `superseded`: "superseded" là `cancelled` + audit + dòng
+   `step_preparations`, không thêm giá trị CHECK cho bảng approval.
+2. **Chủ thể của đề xuất** = phiên bản hồ sơ + từng bản nháp còn là phiên bản mở mới nhất
+   với cùng `content_sha256` + chứng từ mới nhất của từng loại nguồn. Sửa bản nháp, tải
+   chứng từ nguồn mới, hay bấm bước bằng tay đều đổi chủ thể. Lần chuẩn bị lại của cùng
+   dòng lịch sử dùng lại bản nháp đã sửa (lineage ghi trong `step_preparations`).
+3. **`step_preparations`** (mới): một dòng mỗi thay đổi (`proposed | not_prepared |
+superseded | rejected | applied`), khóa theo (dòng lịch sử, phiên bản policy). Quyết
+   định vẫn ở `approval_requests`; dòng này là hệ quả, cho trang hồ sơ và lane. Lane chỉ
+   ghi `not_prepared` khi lý do đổi, thử lại sau 5 phút; không chuẩn bị lại sau
+   `rejected` hay `applied`.
+4. **Approval là strict** (`supply_chain.step_proposal.` trong `strict_approval_prefixes`):
+   quyết định nào cũng cần nhận xét; người yêu cầu là lane nên không ai bị chặn vì tự duyệt.
+   Không duyệt: nhận xét là lý do từ chối bản nháp.
+5. **Chưa có lượt gọi mô hình riêng của run chuẩn bị.** Công thức đầu (`case_facts`) điền
+   bản nháp bằng code từ dữ liệu hồ sơ và trường có trích dẫn mà lane trích xuất (AI-02) đã
+   đọc; gợi ý cạnh ô kết quả cũng từ đó. Nguồn chưa đọc thì "chưa chuẩn bị được", không gọi
+   mô hình lần hai. Prompt soạn riêng từng loại chứng từ đến với ticket của bước (08–18).
+6. **Hành động đề xuất được** chỉ là bước tiến mà đầu vào duy nhất là chứng từ
+   (`PREPARABLE_ACTIONS`); policy 1.0.0 từ chối bước PO (AI-14 trở đi) và bước cần lý do,
+   tên NCC hay mã khi nạp.
+7. **Chứng từ dựng khi duyệt** in đủ trường, giá cũng vậy, như file người tải lên; ai đọc
+   được chứng từ của hồ sơ thì đọc được file. Chưa bước nào Elmich bật có trường giá; ticket
+   PO (AI-14) phải quyết lại điểm này trước khi bật.

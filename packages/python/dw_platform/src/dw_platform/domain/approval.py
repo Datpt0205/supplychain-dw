@@ -18,6 +18,20 @@ from dw_kernel.ids import TenantId, UserId, WorkspaceId
 # this?" (the inbox's `can_decide`) must ask the question decide enforces.
 APPROVALS_DECIDE = "approvals.decide"
 
+# Payload keys a graph may stamp on the approval it raises, read where the
+# decision is made (`ApproveAndResumeService.decide`), never by a model:
+#
+# - `subject_version`: the version of what is decided on, as the graph saw it
+#   when it raised the request. A decision is refused while the subject's
+#   current version (`ApprovalSubjectVersionPort`) is another one, and the
+#   requester may then supersede the request (`supersede_stale`).
+# - `required_input`: names of values a person must type to APPROVE (a test
+#   result, a count). The decision carries them and the resumed run receives
+#   them; an approval without them is refused, and no chat code can carry them,
+#   so such a request is decided on the web only.
+SUBJECT_VERSION_KEY = "subject_version"
+REQUIRED_INPUT_KEY = "required_input"
+
 
 def decided_event_type(approval_type: str) -> str:
     """The outbox event a decision on a run-less approval of this type announces.

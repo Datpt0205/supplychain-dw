@@ -1,0 +1,35 @@
+schema_version: "1.0"
+policy_id: supply_chain_step_preparation
+policy_version: "1.0.0"
+
+# Override của TENANT ELMICH (không phải platform default): các bước AI chuẩn bị
+# (ADR 0025, ticket ai-automation/05). Ghi bằng
+#   uv run python scripts/seed_supply_chain_demo.py elmich-step-preparation
+# (local) hoặc PUT /api/v1/supply-chain/step-preparation-policy (máy chủ,
+# docs/deploy/host.md mục 7), qua handler kiểm schema, quyền
+# supply_chain.action_duties.write và audit.
+#
+# Chỉ các bước đã có công thức ở lát AI-05; các bước khác thêm khi ticket của
+# chúng (AI-08 đến AI-18) mang bản nháp và phép kiểm riêng.
+steps:
+  # Bước 3-5, test mẫu (việc vật lý): AI dựng biên bản đánh giá mẫu từ dữ liệu
+  # hồ sơ và chứng từ đã đọc; ô kết luận và ngày đánh giá để trống, gợi ý của
+  # AI (từ báo cáo test tải lên, nếu có) đặt bên cạnh. R&D nhập rồi duyệt trên
+  # web; duyệt xong biên bản thành chứng từ và hồ sơ sang "Chờ BGĐ duyệt".
+  - case_kind: product
+    state: sample_testing
+    action: pass_sample
+    sources: [sample_evaluation, supplier_quotation]
+    drafts:
+      - doc_type: sample_evaluation
+        recipe: case_facts
+    checks: [sources_read, drafts_complete]
+    physical: true
+    result_fields: [evaluated_on, conclusion]
+  # Bước 8, chốt với NCC: AI đọc email xác nhận của NCC đã tải lên; TP Cung ứng
+  # duyệt "sang bước mã hàng với email này" (web hoặc Zalo bằng mã của cổng).
+  - case_kind: product
+    state: supplier_confirmation
+    action: confirm_with_supplier
+    sources: [supplier_confirmation_email]
+    checks: [sources_present, sources_read]

@@ -9,6 +9,11 @@ instead: one outbox event, `decided_event_type(approval_type)`, written in the
 decision's own transaction. A context that wants a consequence registers a
 handler for its type where the worker is composed; this service never learns
 which types exist.
+
+Two payload keys a graph may stamp are read here (`dw_platform.domain.approval`):
+`subject_version` refuses a decision on something that changed since the request
+was raised (and lets its requester supersede it, `supersede_stale`), and
+`required_input` makes an approval carry the values a person typed.
 """
 
 from __future__ import annotations
@@ -23,10 +28,11 @@ from dw_agent_runtime.adapters.run_store import RunRecord, RunStatus, SqlWorkerR
 from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.ports import WorkflowRunnerPort
 from dw_kernel.autonomy import FAIL_CLOSED_LEVEL
-from dw_kernel.errors import ConflictError, NotFoundError
+from dw_kernel.errors import ConflictError, DomainError, NotFoundError
 from dw_kernel.ids import UserId
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.approval_codes import ApprovalSubjectVersions
 from dw_platform.application.authorization import (
     ApprovalAudience,
     ScopeAuthorizationService,
@@ -36,8 +42,11 @@ from dw_platform.application.authorization import (
 from dw_platform.application.ports import PlatformUnitOfWork, PlatformUnitOfWorkFactory
 from dw_platform.domain.approval import (
     APPROVALS_DECIDE,
+    REQUIRED_INPUT_KEY,
+    SUBJECT_VERSION_KEY,
     ApprovalDecision,
     ApprovalRequest,
+    ApprovalStatus,
     DecisionOutcome,
     decided_event_type,
 )
@@ -60,6 +69,10 @@ DECIDED_EVENT_SCHEMA = "1.0"
 # also records what admitted it; every other decision writes `approval.decided`.
 DECIDED_ACTION = "approval.decided"
 CHANNEL_DECIDED_ACTION = "approval.channel_decided"
+# The requester ended its own request because what it decides on changed.
+SUPERSEDED_ACTION = "approval.superseded"
+# The refusal a decision on a changed subject gets, by name (HTTP 409).
+SUBJECT_CHANGED = "subject_changed"
 
 
 class DecisionAdmission(Protocol):
@@ -90,6 +103,11 @@ class ApproveAndResumeService:
     # before anything is written: a rule the inbox merely hides a button for is
     # a rule a direct POST walks past.
     decision_guards: Mapping[str, DecisionGuard] = field(default_factory=dict)
+    # Who answers "which version of the subject is current?" per type prefix:
+    # the registry the portal's view receipts read too (ADR 0007), filled at
+    # each composition root. A request stamped with `subject_version` whose
+    # type nobody answers for is never decided (fail closed).
+    subjects: ApprovalSubjectVersions = field(default_factory=ApprovalSubjectVersions)
 
     def is_strict(self, approval_type: str) -> bool:
         """Whether this type demands a second person and a written reason.
@@ -162,6 +180,113 @@ class ApproveAndResumeService:
             )
         return record
 
+    @staticmethod
+    def required_input(request: ApprovalRequest) -> tuple[str, ...]:
+        """The values a person must type to approve `request`; a stamp that is
+        not a list of names refuses every decision rather than none."""
+        raw = request.payload.get(REQUIRED_INPUT_KEY)
+        if raw is None:
+            return ()
+        if not isinstance(raw, list) or not all(isinstance(n, str) and n for n in raw):
+            raise ConflictError(
+                "this approval's required input is malformed",
+                details={"approval_id": str(request.id)},
+            )
+        return tuple(raw)
+
+    def _typed_input(
+        self, request: ApprovalRequest, approve: bool, given: Mapping[str, str] | None
+    ) -> dict[str, str]:
+        required = self.required_input(request)
+        values = dict(given or {})
+        if not approve:
+            if values:
+                raise DomainError("a rejection carries no typed values", details={})
+            return {}
+        unknown = sorted(set(values) - set(required))
+        if unknown:
+            raise DomainError(
+                "this approval takes no value by that name", details={"unknown": unknown}
+            )
+        missing = sorted(n for n in required if not str(values.get(n, "")).strip())
+        if missing:
+            raise DomainError(
+                "approving this needs the values the person approving types",
+                details={"missing": missing},
+            )
+        return {name: str(values[name]).strip() for name in required}
+
+    async def subject_changed(self, context: AccessContext, request: ApprovalRequest) -> bool:
+        """Whether `request` was stamped with a subject version that is no
+        longer current. Unanswerable (no port, or the subject not found) counts
+        as changed: nothing is decided on a version nobody can name."""
+        stamped = request.payload.get(SUBJECT_VERSION_KEY)
+        if stamped is None:
+            return False
+        port = self.subjects.for_type(request.approval_type)
+        current = None if port is None else await port.version_of(context, request)
+        return current is None or current != stamped
+
+    async def supersede_stale(self, *, approval_id: uuid.UUID, context: AccessContext) -> bool:
+        """The requester ends its own pending request whose subject changed
+        since it was raised: the run it parks is cancelled, then the request
+        (`cancelled`, audited as `approval.superseded`, the requester the
+        actor). False when there was nothing to do: not found, not pending, or
+        still current. Only the requester may (a lane that raised a proposal),
+        never a person deciding one. The run goes first, so a failure in
+        between leaves a pending request no decision can resume (409) and the
+        next call finishes the job; never a cancelled request over a parked
+        run that still holds its thread."""
+        audience = ApprovalAudience(context=context, holds_decide=False)
+        async with self.uow_factory(context) as uow:
+            request = await uow.approvals.get(
+                approval_id, workspace_id=context.workspace_id, audience=audience
+            )
+        if request is None or request.status is not ApprovalStatus.PENDING:
+            return False
+        if request.requested_by.value != context.principal_id:
+            raise permission_denied(
+                action="approvals.supersede",
+                resource_type="approval_request",
+                resource_id=str(approval_id),
+            )
+        if not await self.subject_changed(context, request):
+            return False
+        if request.run_id is not None:
+            run_context = self._run_context_for(context, request.run_id)
+            record = await self.run_store.get(run_context, request.run_id)
+            if record.status is RunStatus.WAITING_APPROVAL:
+                await self.run_store.set_status(
+                    run_context,
+                    request.run_id,
+                    RunStatus.CANCELLED,
+                    error={"type": "Superseded", "message": "the approval's subject changed"},
+                )
+        async with self.uow_factory(context) as uow:
+            current = await uow.approvals.get(
+                approval_id, workspace_id=context.workspace_id, audience=audience
+            )
+            if current is None or current.status is not ApprovalStatus.PENDING:
+                return False
+            current.cancel()
+            await uow.approvals.save(current)
+            await uow.audit.append(
+                AuditEvent(
+                    id=self.id_generator.new_uuid(),
+                    tenant_id=current.tenant_id,
+                    workspace_id=current.workspace_id,
+                    actor_id=current.requested_by,
+                    action=SUPERSEDED_ACTION,
+                    resource_type="approval_request",
+                    resource_id=str(current.id),
+                    occurred_at=self.clock.now().astimezone(UTC),
+                    run_id=current.run_id,
+                    details={"approval_type": current.approval_type, "reason": SUBJECT_CHANGED},
+                )
+            )
+            await uow.commit()
+        return True
+
     async def decide(
         self,
         *,
@@ -173,12 +298,15 @@ class ApproveAndResumeService:
         approved_action_ids: list[str] | None = None,
         channel: str = "web",
         admission: DecisionAdmission | None = None,
+        typed_input: Mapping[str, str] | None = None,
     ) -> ApprovalRequest:
         """Decide, then resume the run. `channel` is where the decision came
         from (`web`, or `zalo` through `ChannelApprovalDecisionService`): it is
         written on the decision row and is the resumed run's channel.
         `admission`, when given, must admit this decision inside the same unit
-        of work (see `DecisionAdmission`)."""
+        of work (see `DecisionAdmission`). `typed_input`: the values a request
+        stamped with `required_input` needs to be approved, and nothing else;
+        the resumed run receives them as `input`."""
         async with self.uow_factory(context) as uow:
             # Narrowed to the caller's workspace by the repository: RLS on
             # approval_requests narrows by tenant only. Another workspace's
@@ -228,6 +356,15 @@ class ApproveAndResumeService:
             guard = self.decision_guards.get(request.approval_type)
             if guard is not None:
                 guard(request, context)
+            values = self._typed_input(request, approve, typed_input)
+            # Before anything is written: a decision on what is no longer the
+            # thing that was raised is refused by name, and the request stays
+            # pending for its requester to supersede.
+            if await self.subject_changed(context, request):
+                raise ConflictError(
+                    "what this approval decides on has changed since it was raised",
+                    details={"approval_id": str(request.id), "reason": SUBJECT_CHANGED},
+                )
             record = await self._resumable_run(context, request)
             admitted = None if admission is None else await admission.admit(uow, request, context)
 
@@ -265,6 +402,8 @@ class ApproveAndResumeService:
             }
             if approved_action_ids is not None:
                 resume_payload["approved_action_ids"] = approved_action_ids
+            if values:
+                resume_payload["input"] = values
             await self.runner.resume(
                 run_context=RunContext(
                     run_id=request.run_id,

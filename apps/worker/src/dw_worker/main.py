@@ -88,6 +88,7 @@ from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementSe
 from dw_platform.retention_policy import load_retention_policy
 from dw_supply_chain.application.document_extraction import EXTRACTION_LANE
 from dw_supply_chain.application.follow_up_sweep import FOLLOW_UP_SWEEP_LANE
+from dw_supply_chain.application.step_preparation import PREPARATION_LANE
 from dw_worker.composition import (
     REPO_ROOT,
     build_case_document_storage,
@@ -125,6 +126,9 @@ from dw_worker.consumers.supply_chain import (
     build_proposal_draft_retention,
     build_stage_one_report,
     build_stage_one_report_consumer,
+    build_step_preparation,
+    build_step_preparation_consumer,
+    build_step_preparation_stack,
     build_zalo_case_query_command,
     build_zalo_proposal_command,
     product_approval_subjects,
@@ -244,6 +248,9 @@ def build_channel_decision_command(
         run_store=runner.run_store,
         clock=clock,
         id_generator=ids,
+        # The same ports the receipt read: a decision on a subject that moved
+        # since its approval was raised is refused (ticket ai-automation/05).
+        subjects=subjects,
     )
     flow.strict_approval_prefixes |= strict_approval_prefixes
     secret = settings.approval_code_secret.get_secret_value()
@@ -420,6 +427,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     document_orphans: RetentionPrunePort | None = None
     # Supply Chain's document extraction lane: a database, the bucket and a model.
     document_extraction: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's step preparation lane: a database and the bucket.
+    step_preparation: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's chat proposal drafts past their 30 minutes: a database.
     proposal_drafts_retention: RetentionPrunePort | None = None
     # Supply Chain's closed follow-ups past their tenant's term: a database.
@@ -492,6 +501,19 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         approval_codes_retention = SqlApprovalCodeRetention(session_factory=sessions)
         # The runner that hosts BGĐ's review graph: the reconcile lane starts
         # reviews on it, and a decision sent from Zalo resumes them on it.
+        # Step preparation (ticket ai-automation/05) needs the case-document
+        # bucket too: an approved draft becomes a stored file.
+        step_stack = (
+            build_step_preparation_stack(
+                sessions,
+                build_case_document_storage(settings),
+                configs_dir=REPO_ROOT / "configs",
+                ids=ids,
+                clock=clock,
+            )
+            if settings.s3_endpoint_url
+            else None
+        )
         review_runner = build_product_review_runner(
             sessions,
             configs_dir=REPO_ROOT / "configs",
@@ -499,7 +521,20 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
             clock=clock,
             telemetry=telemetry,
             release_manifest_ref=release_manifest_ref_for(settings, REPO_ROOT),
+            step_preparation=step_stack,
         )
+        review_subjects = product_approval_subjects(sessions, step_stack)
+        if step_stack is not None:
+            step_preparation = build_step_preparation_consumer(
+                build_step_preparation(
+                    sessions,
+                    runner=review_runner,
+                    subjects=review_subjects,
+                    configs_dir=REPO_ROOT / "configs",
+                    ids=ids,
+                    clock=clock,
+                )
+            )
         proposal_drafts_retention = build_proposal_draft_retention(sessions)
         follow_ups_retention = build_follow_up_retention(
             sessions, policies_dir=REPO_ROOT / "configs" / "policies"
@@ -537,7 +572,7 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                     settings,
                     sessions,
                     runner=review_runner,
-                    subjects=product_approval_subjects(sessions),
+                    subjects=review_subjects,
                     strict_approval_prefixes=PRODUCT_STRICT_APPROVAL_PREFIXES,
                     ids=ids,
                     clock=clock,
@@ -671,6 +706,15 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         registry.register(
             EXTRACTION_LANE,
             document_extraction,
+            interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
+        )
+
+    # AI prepares a step, a person approves the move (ticket ai-automation/05):
+    # a minute, the extraction lane's cadence, whose readings it waits on.
+    if step_preparation is not None:
+        registry.register(
+            PREPARATION_LANE,
+            step_preparation,
             interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
         )
 

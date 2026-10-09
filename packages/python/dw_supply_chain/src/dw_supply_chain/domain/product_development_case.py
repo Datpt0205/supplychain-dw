@@ -230,6 +230,15 @@ _FORWARD: dict[ProductAction, tuple[ProductDevState, ProductDevState]] = {
     ),
     ProductAction.PLACE_ORDER: (ProductDevState.READY_TO_ORDER, ProductDevState.ORDERED),
 }
+
+
+def forward_step(action: ProductAction) -> tuple[ProductDevState, ProductDevState] | None:
+    """The state a forward step leaves and the one it reaches, or None for a
+    step that is not one (a pause, a coding step): what a proposal to take it
+    names (ticket ai-automation/05), read from the table the step guards with."""
+    return _FORWARD.get(action)
+
+
 _INTERRUPTS: dict[ProductAction, ProductDevState] = {
     ProductAction.WAIT_FOR_EXTERNAL: ProductDevState.WAITING_EXTERNAL,
     ProductAction.FLAG_BLOCKED: ProductDevState.BLOCKED,
@@ -1103,6 +1112,9 @@ class ProductCaseTransition:
     occurred_at: datetime
     # The paper of a step outside the rounds (BM04, the supplier's email).
     document_id: uuid.UUID | None = None
+    # The history row's own id: what a step's preparation is keyed by
+    # (ticket ai-automation/05). None only for a row built in memory.
+    id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -107,6 +107,49 @@ def _draft(row: Row[Any]) -> DocumentDraft:
     )
 
 
+async def insert_draft(
+    session: AsyncSession, context: AccessContext, draft: NewDocumentDraft
+) -> None:
+    """One draft version, in the caller's transaction."""
+    await session.execute(
+        sa.insert(_d).values(
+            id=draft.id,
+            tenant_id=context.tenant_id,
+            workspace_id=context.workspace_id,
+            **{_CASE_COLUMN[draft.case_kind].name: draft.case_id},
+            lineage_id=draft.lineage_id,
+            version=draft.version,
+            doc_type=draft.doc_type.value,
+            template_id=draft.template_id,
+            template_version=draft.template_version,
+            prompt_id=draft.prompt_id,
+            prompt_version=draft.prompt_version,
+            fields=draft.fields,
+            gaps=draft.gaps,
+            sources=draft.sources,
+            content_sha256=draft.content_sha256,
+            created_by=context.principal_id,
+        )
+    )
+
+
+async def insert_decision(
+    session: AsyncSession, context: AccessContext, decision: NewDraftDecision
+) -> None:
+    """One decision on one draft version, in the caller's transaction."""
+    await session.execute(
+        sa.insert(_x).values(
+            id=decision.id,
+            tenant_id=context.tenant_id,
+            workspace_id=context.workspace_id,
+            draft_id=decision.draft_id,
+            decision=decision.decision.value,
+            reason=decision.reason,
+            decided_by=context.principal_id,
+        )
+    )
+
+
 @dataclass(frozen=True)
 class SqlDocumentDraftRepository:
     """Implements `DocumentDraftRepositoryPort`."""
@@ -118,26 +161,7 @@ class SqlDocumentDraftRepository:
     ) -> DocumentDraft:
         try:
             async with tenant_session(self.session_factory, _scope(context)) as session:
-                await session.execute(
-                    sa.insert(_d).values(
-                        id=draft.id,
-                        tenant_id=context.tenant_id,
-                        workspace_id=context.workspace_id,
-                        **{_CASE_COLUMN[draft.case_kind].name: draft.case_id},
-                        lineage_id=draft.lineage_id,
-                        version=draft.version,
-                        doc_type=draft.doc_type.value,
-                        template_id=draft.template_id,
-                        template_version=draft.template_version,
-                        prompt_id=draft.prompt_id,
-                        prompt_version=draft.prompt_version,
-                        fields=draft.fields,
-                        gaps=draft.gaps,
-                        sources=draft.sources,
-                        content_sha256=draft.content_sha256,
-                        created_by=context.principal_id,
-                    )
-                )
+                await insert_draft(session, context, draft)
                 await SqlAuditRepository(session).append(audit)
                 row = (
                     await session.execute(_select_with_state(context).where(_d.c.id == draft.id))
@@ -178,17 +202,7 @@ class SqlDocumentDraftRepository:
     ) -> None:
         try:
             async with tenant_session(self.session_factory, _scope(context)) as session:
-                await session.execute(
-                    sa.insert(_x).values(
-                        id=decision.id,
-                        tenant_id=context.tenant_id,
-                        workspace_id=context.workspace_id,
-                        draft_id=decision.draft_id,
-                        decision=decision.decision.value,
-                        reason=decision.reason,
-                        decided_by=context.principal_id,
-                    )
-                )
+                await insert_decision(session, context, decision)
                 await SqlAuditRepository(session).append(audit)
         except IntegrityError as exc:
             if ALREADY_DECIDED in str(exc.orig):

@@ -757,3 +757,26 @@ async def test_drafts_decisions_and_template_overrides_are_append_only(
                     assert bool(granted) is held, (table, verb)
     finally:
         await migrator.dispose()
+
+
+async def test_step_preparations_are_append_only(db_urls: DatabaseUrls) -> None:
+    """Migration 1a8527a5b426 (ticket ai-automation/05): `dw_app` reads and
+    inserts what each preparation of a step came to, and never edits or
+    deletes a row (it leaves with its case by cascade)."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+            for verb, held in (
+                ("SELECT", True),
+                ("INSERT", True),
+                ("UPDATE", False),
+                ("DELETE", False),
+                ("TRUNCATE", False),
+            ):
+                granted = await conn.scalar(
+                    sa.text("SELECT has_table_privilege('dw_app', :t, :v)"),
+                    {"t": "supply_chain.step_preparations", "v": verb},
+                )
+                assert bool(granted) is held, verb
+    finally:
+        await migrator.dispose()

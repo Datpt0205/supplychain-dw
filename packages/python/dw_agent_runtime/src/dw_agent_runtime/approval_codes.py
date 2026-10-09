@@ -12,7 +12,8 @@ the page says in words:
 - the viewer did not ask for it (for every type: on the web this applies to
   strict prefixes only, ADR 0007 point 3);
 - a context answers for the type's subject version (`ApprovalSubjectVersions`)
-  and names one; otherwise the type is decided on the web only;
+  and names one, and the approval needs no typed values (`required_input`);
+  otherwise it is decided on the web only;
 - the viewer has linked a chat to decide from;
 - a strict type has a comment (amendment 2026-10-06: the comment is written on
   the portal, and the chat carries only the code);
@@ -192,7 +193,9 @@ class ApprovalViewService:
             return CodeUnavailable.CANNOT_DECIDE
         if request.requested_by.value == context.principal_id:
             return CodeUnavailable.REQUESTER
-        if subject_version is None:
+        # No version to bind a code to, or values only a form can carry (a
+        # test result): decided on the web only.
+        if subject_version is None or self.approval_flow.required_input(request):
             return CodeUnavailable.WEB_ONLY
         if self.key is None:
             return CodeUnavailable.CHANNEL_OFF

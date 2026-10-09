@@ -399,7 +399,7 @@ class SqlProductCaseRepository:
                     "this SKU is already removed", details={"sku_id": str(change.sku_id)}
                 )
 
-    def _refusal(
+    def refusal(
         self, exc: IntegrityError, case: ProductDevelopmentCase, steps: list[ProductCaseStep]
     ) -> DWError | None:
         name = _constraint(exc)
@@ -472,7 +472,7 @@ class SqlProductCaseRepository:
                 await self._write_steps(session, context, case, steps)
                 await SqlAuditRepository(session).append(audit)
         except IntegrityError as exc:
-            refusal = self._refusal(exc, case, steps)
+            refusal = self.refusal(exc, case, steps)
             if refusal is None:
                 raise
             raise refusal from exc
@@ -514,40 +514,52 @@ class SqlProductCaseRepository:
             async with tenant_session(
                 self.session_factory, TenantScope.from_access_context(context)
             ) as session:
-                supplier = await _supplier_of(session, context, case)
-                result = await session.execute(
-                    sa.update(_c)
-                    .where(
-                        *_in_scope(_c, context),
-                        _c.c.id == case.id.value,
-                        _c.c.version == case.version - 1,
-                    )
-                    .values(
-                        supplier_id=supplier.id if supplier else None,
-                        supplier_name=supplier.name if supplier else None,
-                        state=case.state.value,
-                        interrupted_state=(
-                            case.interrupted_state.value if case.interrupted_state else None
-                        ),
-                        sample_round=case.sample_round,
-                        signoff_round=case.signoff_round,
-                        pic_user_id=case.pic_user_id,
-                        version=case.version,
-                    )
-                )
-                assert isinstance(result, CursorResult)
-                if result.rowcount != 1:
-                    raise ConflictError(
-                        "product case was modified concurrently",
-                        details={"case_id": str(case.id)},
-                    )
-                await self._write_steps(session, context, case, steps)
+                await self.save_in(session, context, case, steps)
                 await SqlAuditRepository(session).append(audit)
         except IntegrityError as exc:
-            refusal = self._refusal(exc, case, steps)
+            refusal = self.refusal(exc, case, steps)
             if refusal is None:
                 raise
             raise refusal from exc
+
+    async def save_in(
+        self,
+        session: AsyncSession,
+        context: AccessContext,
+        case: ProductDevelopmentCase,
+        steps: list[ProductCaseStep],
+    ) -> None:
+        """`save`'s writes in the caller's transaction (a step proposal's
+        approval writes its documents in the same one): the optimistic UPDATE
+        and the history rows of `steps`."""
+        supplier = await _supplier_of(session, context, case)
+        result = await session.execute(
+            sa.update(_c)
+            .where(
+                *_in_scope(_c, context),
+                _c.c.id == case.id.value,
+                _c.c.version == case.version - 1,
+            )
+            .values(
+                supplier_id=supplier.id if supplier else None,
+                supplier_name=supplier.name if supplier else None,
+                state=case.state.value,
+                interrupted_state=(
+                    case.interrupted_state.value if case.interrupted_state else None
+                ),
+                sample_round=case.sample_round,
+                signoff_round=case.signoff_round,
+                pic_user_id=case.pic_user_id,
+                version=case.version,
+            )
+        )
+        assert isinstance(result, CursorResult)
+        if result.rowcount != 1:
+            raise ConflictError(
+                "product case was modified concurrently",
+                details={"case_id": str(case.id)},
+            )
+        await self._write_steps(session, context, case, steps)
 
     async def place_order(
         self,
@@ -722,6 +734,7 @@ class SqlProductCaseRepository:
                 actor_id=row.actor_id,
                 occurred_at=row.occurred_at,
                 document_id=row.document_id,
+                id=row.id,
             )
         )
 

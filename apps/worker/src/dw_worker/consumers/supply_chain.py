@@ -26,6 +26,11 @@ same runner, so `PRODUCT_STRICT_APPROVAL_PREFIXES` and `product_approval_subject
 give the worker's approval flow what `wiring.py` gives the API's: the strict
 prefix and the case-version port.
 
+Step preparation (ticket ai-automation/05) runs on that runner too, when the
+case-document bucket exists (a confirmed draft becomes a stored file): the lane
+`supply_chain_step_preparation` starts the runs, a decision on Zalo resumes
+them here, one on the web in the API, which hosts the same graph.
+
 The Zalo proposal command (zalo-channel ticket 04, Z4b) is built here too: the
 chat's "Đồng ý" creates a product case through the same `ProposeProductCase`
 the API's route calls, over the same tables and the same duty policy file.
@@ -48,10 +53,13 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from dw_agent_runtime.adapters.checkpoint import SqlAlchemyCheckpointSaver
+from dw_agent_runtime.adapters.docx_templates import DocxRenderer, DocxTemplateInspector
 from dw_agent_runtime.adapters.langgraph_runner import LangGraphWorkflowRunner
 from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
 from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardStore
+from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_agent_runtime.autonomy import AutonomyApprovalPolicy
+from dw_agent_runtime.doc_templates import DocTemplateRegistry
 from dw_agent_runtime.model.budget import RunBudgetLedger
 from dw_agent_runtime.model.run_policy import load_worker_run_policy
 from dw_agent_runtime.ports import ModelGateway
@@ -73,9 +81,14 @@ from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementSe
 from dw_supply_chain.adapters.persistence.case_document_repository import (
     SqlCaseDocumentRepository,
 )
+from dw_supply_chain.adapters.persistence.document_draft_repository import (
+    SqlDocTemplateOverrides,
+    SqlDocumentDraftRepository,
+)
 from dw_supply_chain.adapters.persistence.document_extraction_repository import (
     SqlDocumentExtractionRepository,
     SqlExtractionQueue,
+    SqlExtractionReadings,
 )
 from dw_supply_chain.adapters.persistence.follow_up_repository import (
     SqlFollowUpRepository,
@@ -90,6 +103,10 @@ from dw_supply_chain.adapters.persistence.proposal_draft_repository import (
     SqlProposalDraftRepository,
     SqlProposalDraftRetention,
 )
+from dw_supply_chain.adapters.persistence.step_preparation_repository import (
+    SqlPreparationRecords,
+    SqlProposalOutcomes,
+)
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
@@ -97,6 +114,10 @@ from dw_supply_chain.adapters.storage.minio_case_documents import MinioCaseDocum
 from dw_supply_chain.application.approval_subject import ProductCaseApprovalSubject
 from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.daily_report import SendStageOneReport
+from dw_supply_chain.application.document_drafts import (
+    PrepareDocumentDraft,
+    TenantDocTemplates,
+)
 from dw_supply_chain.application.document_extraction import (
     DocumentText,
     ExtractDocuments,
@@ -111,6 +132,10 @@ from dw_supply_chain.application.product_reviews import (
     EnsureProductApproval,
     ReconcileProductApprovals,
 )
+from dw_supply_chain.application.step_preparation import PrepareStep, PrepareSteps
+from dw_supply_chain.application.step_proposals import ApplyStepProposal, StepProposalSubject
+from dw_supply_chain.domain.case_document import CaseKind
+from dw_supply_chain.domain.step_proposal import STEP_PROPOSAL_PREFIX
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
 from dw_supply_chain.policy_files import (
     ADVANCE_PRODUCT_CASE_WORKER_FILE,
@@ -119,14 +144,17 @@ from dw_supply_chain.policy_files import (
     PRODUCT_APPROVALS_POLICY_FILE,
     PRODUCT_SIGNOFF_WORKER_FILE,
     SLA_POLICY_FILE,
+    STEP_PREPARATION_POLICY_FILE,
+    STEP_PREPARATION_WORKER_FILE,
 )
 from dw_supply_chain.presentation.zalo_case_query import ZaloCaseQueryCommand
 from dw_supply_chain.presentation.zalo_proposal import ZaloProposalCommand
 from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.product_approvals import load_supply_chain_product_approvals
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
+from dw_supply_chain.step_preparation_policy import load_supply_chain_step_preparation
 from dw_supply_chain.workflows import advance_product_case_graph as product_review_graph
-from dw_supply_chain.workflows import product_signoff_graph
+from dw_supply_chain.workflows import product_signoff_graph, step_preparation_graph
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +281,65 @@ def build_document_orphan_sweep(
     )
 
 
+@dataclass(frozen=True)
+class StepPreparationStack:
+    """What the preparation graph is built from, and the subject a
+    decision on its approval must still find (ticket ai-automation/05)."""
+
+    preparer: PrepareStep
+    applier: ApplyStepProposal
+    subject: StepProposalSubject
+
+
+def build_step_preparation_stack(
+    sessions: async_sessionmaker[AsyncSession],
+    storage: MinioCaseDocumentStorage,
+    *,
+    configs_dir: Path,
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> StepPreparationStack:
+    """The preparer and the applier over the same tables, templates and bucket
+    the API's are built on."""
+    product_cases = SqlProductCaseRepository(sessions)
+    documents = SqlCaseDocumentRepository(sessions)
+    drafts = SqlDocumentDraftRepository(sessions)
+    registry = DocTemplateRegistry(inspector=DocxTemplateInspector())
+    registry.load_directory(configs_dir / "doc_templates")
+    templates = TenantDocTemplates(registry=registry, overrides=SqlDocTemplateOverrides(sessions))
+    subject = StepProposalSubject(cases=product_cases, drafts=drafts, documents=documents)
+    preparer = PrepareStep(
+        cases=product_cases,
+        documents=documents,
+        readings=SqlExtractionReadings(sessions),
+        drafts=drafts,
+        prepare_draft=PrepareDocumentDraft(
+            cases={CaseKind.PO: SqlPOCaseRepository(sessions), CaseKind.PRODUCT: product_cases},
+            drafts=drafts,
+            templates=templates,
+            ids=ids,
+            clock=clock,
+        ),
+        templates=templates,
+        records=SqlPreparationRecords(sessions),
+        ids=ids,
+        clock=clock,
+    )
+    applier = ApplyStepProposal(
+        cases=product_cases,
+        drafts=drafts,
+        documents=documents,
+        templates=templates,
+        renderer=DocxRenderer(),
+        storage=storage,
+        subject=subject,
+        outcomes=SqlProposalOutcomes(sessions),
+        ids=ids,
+        clock=clock,
+    )
+    return StepPreparationStack(preparer=preparer, applier=applier, subject=subject)
+
+
 def build_product_review_runner(
     sessions: async_sessionmaker[AsyncSession],
     *,
@@ -261,6 +348,7 @@ def build_product_review_runner(
     clock: UtcClock,
     telemetry: TelemetryPort,
     release_manifest_ref: str | None,
+    step_preparation: StepPreparationStack | None = None,
 ) -> LangGraphWorkflowRunner:
     """This process's runner: the review and sign-off graphs registered once,
     their workers loaded from the shipped files, the run store's staleness from the shipped
@@ -279,9 +367,20 @@ def build_product_review_runner(
         product_signoff_graph.GRAPH_VERSION,
         lambda: product_signoff_graph.build_product_signoff_graph(product_cases, ids, clock),
     )
+    if step_preparation is not None:
+        stack = step_preparation
+        graphs.register(
+            step_preparation_graph.WORKER_ID,
+            step_preparation_graph.GRAPH_VERSION,
+            lambda: step_preparation_graph.build_step_preparation_graph(
+                stack.preparer, stack.applier
+            ),
+        )
     workers = WorkerRegistry(graph_registry=graphs)
     workers.load_file(configs_dir / "workers" / ADVANCE_PRODUCT_CASE_WORKER_FILE)
     workers.load_file(configs_dir / "workers" / PRODUCT_SIGNOFF_WORKER_FILE)
+    if step_preparation is not None:
+        workers.load_file(configs_dir / "workers" / STEP_PREPARATION_WORKER_FILE)
     run_policy = load_worker_run_policy(configs_dir / "policies" / "worker_runs@1.0.0.yaml")
     return LangGraphWorkflowRunner(
         worker_registry=workers,
@@ -336,20 +435,88 @@ def build_product_review_reconcile(
 # What this context adds to the worker's approval flow, as `wiring.py` adds it
 # to the API's: its prefix is strict (the requester cannot decide, a decision
 # needs a comment). Passed to `build_channel_decision_command`.
-PRODUCT_STRICT_APPROVAL_PREFIXES = frozenset({product_review_graph.APPROVAL_TYPE_PREFIX})
+PRODUCT_STRICT_APPROVAL_PREFIXES = frozenset(
+    {product_review_graph.APPROVAL_TYPE_PREFIX, STEP_PROPOSAL_PREFIX}
+)
 
 
 def product_approval_subjects(
     sessions: async_sessionmaker[AsyncSession],
+    step_preparation: StepPreparationStack | None = None,
 ) -> ApprovalSubjectVersions:
     """The case's version as the subject a decision on Zalo must still find
-    (ADR 0007), registered under this context's prefix."""
+    (ADR 0007), registered under this context's prefix; and a step proposal's
+    subject (its case, drafts and sources) under its own, when this process
+    hosts the preparation graph."""
     subjects = ApprovalSubjectVersions()
     subjects.register(
         product_review_graph.APPROVAL_TYPE_PREFIX,
         ProductCaseApprovalSubject(SqlProductCaseRepository(sessions)),
     )
+    if step_preparation is not None:
+        subjects.register(STEP_PROPOSAL_PREFIX, step_preparation.subject)
     return subjects
+
+
+def build_step_preparation(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    runner: LangGraphWorkflowRunner,
+    subjects: ApprovalSubjectVersions,
+    configs_dir: Path,
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> PrepareSteps:
+    """The lane `supply_chain_step_preparation`, starting runs on `runner`
+    (which must host the preparation graph) and superseding its own stale
+    proposals through the platform's approval flow over the same subjects."""
+    flow = ApproveAndResumeService(
+        uow_factory=SqlPlatformUnitOfWorkFactory(sessions),
+        runner=runner,
+        run_store=runner.run_store,
+        clock=clock,
+        id_generator=ids,
+        subjects=subjects,
+    )
+    policies = configs_dir / "policies"
+    return PrepareSteps(
+        workspaces=SqlWorkspacesWithCases(sessions),
+        cases=SqlProductCaseRepository(sessions),
+        policy_override_repo=SqlPolicyOverrideRepository(sessions),
+        platform_default_policy=load_supply_chain_step_preparation(
+            policies / STEP_PREPARATION_POLICY_FILE
+        ),
+        platform_default_duties=load_supply_chain_product_action_duties(
+            policies / PRODUCT_ACTION_DUTIES_POLICY_FILE
+        ),
+        plans=SqlTenantPlans(sessions),
+        runner=runner,
+        # Bookkeeping, never shown to a person: not narrowed by who asks.
+        approvals=SqlPendingApprovalQuery(sessions, ScopeAuthorizationService()),
+        supersede=flow,
+        records=SqlPreparationRecords(sessions),
+        holders=SqlScopeHolders(sessions),
+        notifier=SqlNotificationRepository(sessions),
+        ids=ids,
+        clock=clock,
+        worker_id=step_preparation_graph.WORKER_ID,
+        worker_version=step_preparation_graph.WORKER_VERSION,
+    )
+
+
+def build_step_preparation_consumer(lane: PrepareSteps) -> Callable[[], Awaitable[None]]:
+    async def consume() -> None:
+        outcome = await lane.run()
+        if outcome.started or outcome.superseded or outcome.not_started:
+            logger.info(
+                "step preparation: started=%d superseded=%d not_started=%d failed_workspaces=%d",
+                outcome.started,
+                outcome.superseded,
+                outcome.not_started,
+                outcome.failed_workspaces,
+            )
+
+    return consume
 
 
 def build_zalo_proposal_command(

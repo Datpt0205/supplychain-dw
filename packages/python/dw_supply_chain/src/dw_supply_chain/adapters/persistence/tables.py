@@ -191,6 +191,9 @@ case_documents = sa.Table(
     sa.Column(
         "uploaded_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
+    # `uploaded`, or `ai_prepared` naming the draft it came from (cbebad572558).
+    sa.Column("origin", sa.Text, nullable=False, server_default="uploaded"),
+    sa.Column("draft_id", UUID(as_uuid=True), nullable=True),
 )
 
 product_dev_cases = sa.Table(
@@ -529,6 +532,29 @@ doc_template_overrides = sa.Table(
     sa.Column("docx", sa.LargeBinary, nullable=False),
     sa.Column("checksum", sa.Text, nullable=False),
     sa.Column("uploaded_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+# What each preparation of a step came to (ticket ai-automation/05): one row per
+# change, append-only, keyed by the history row that brought the case into the
+# step and the policy version it was prepared under.
+step_preparations = sa.Table(
+    "step_preparations",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("transition_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("policy_version", sa.Text, nullable=False),
+    sa.Column("action", sa.Text, nullable=False),
+    sa.Column("outcome", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text, nullable=True),
+    sa.Column("run_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("draft_lineages", JSONB, nullable=False),
+    sa.Column("recorded_by", UUID(as_uuid=True), nullable=False),
     sa.Column(
         "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),

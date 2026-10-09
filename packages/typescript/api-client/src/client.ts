@@ -30,6 +30,7 @@ import {
   poCommercialSchema,
   poPaymentSchema,
   documentDraftSchema,
+  stepProposalSchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -99,6 +100,8 @@ import {
   type POPayment,
   type RedactableAmount,
   type DocumentDraft,
+  type StepProposal,
+  type ProposalResultField,
   type DraftField,
   type DraftStatus,
   type TemplateFieldKind,
@@ -425,6 +428,21 @@ const _draftsMirrorTheRoute: [
   SameType<TemplateFieldKind, SupplyChainGenerated["TemplateFieldKind"]>,
 ] = [true, true, true, true, true];
 void _draftsMirrorTheRoute;
+
+// Ticket ai-automation/05: step proposals.
+const _stepProposalMirrorsTheRoute: [
+  SameType<StepProposal, SupplyChainGenerated["StepProposalView"]>,
+  SameType<keyof StepProposal, keyof SupplyChainGenerated["StepProposalView"]>,
+  SameType<
+    keyof ProposalResultField,
+    keyof SupplyChainGenerated["ResultFieldView"]
+  >,
+] = [true, true, true];
+void _stepProposalMirrorsTheRoute;
+
+/** `POST /product-cases/{id}/step-proposal/decision`'s body. */
+export type StepDecisionBody =
+  SupplyChainOperations["decide_step_proposal_api_v1_supply_chain_product_cases__case_id__step_proposal_decision_post"]["requestBody"]["content"]["application/json"];
 
 const _dailyBriefMirrorsTheRoute: [
   SameType<DailyBrief, SupplyChainGenerated["DailyBriefView"]>,
@@ -1721,6 +1739,31 @@ export class ApiClient {
     );
   }
 
+  /** What AI prepared for the case's current step, and its pending
+   * proposal (ticket ai-automation/05). */
+  getStepProposal(caseId: string): Promise<StepProposal> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/step-proposal`,
+      stepProposalSchema,
+    );
+  }
+
+  /** Approve or not the case's pending proposal; a physical step's result is
+   * typed here. The platform decides and the case moves when approved. */
+  decideStepProposal(
+    caseId: string,
+    body: StepDecisionBody,
+    idempotencyKey: string,
+  ): Promise<StepProposal> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/step-proposal/decision`,
+      stepProposalSchema,
+      { body, idempotencyKey },
+    );
+  }
+
   /** The draft as its template prints it (DOCX), prices hidden per scope. */
   async downloadDraft(draftId: string): Promise<Blob> {
     const response = await this.rawRequest(
@@ -1940,6 +1983,8 @@ export class ApiClient {
 
 export type {
   DocumentDraft,
+  StepProposal,
+  ProposalResultField,
   DraftField,
   DraftStatus,
   TemplateFieldKind,

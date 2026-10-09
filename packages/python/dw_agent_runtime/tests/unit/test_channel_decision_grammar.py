@@ -234,4 +234,10 @@ def test_only_the_web_route_and_the_chat_decision_service_reach_decide() -> None
     assert _decide_callers() == {
         "apps/api/src/dw_api/routes/v1/approvals.py",
         "packages/python/dw_agent_runtime/src/dw_agent_runtime/channel_decisions.py",
+        # The case page's decision on a step proposal (ticket ai-automation/05):
+        # a person's web request carrying a typed result, through the
+        # composition root's adapter of the same `decide`. No graph node, tool
+        # or chat command reaches either.
+        "packages/python/dw_supply_chain/src/dw_supply_chain/application/step_proposals.py",
+        "apps/api/src/dw_api/bootstrap/wiring.py",
     }

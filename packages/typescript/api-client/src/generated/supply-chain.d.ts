@@ -871,6 +871,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/product-cases/{case_id}/step-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Step Proposal */
+        get: operations["get_step_proposal_api_v1_supply_chain_product_cases__case_id__step_proposal_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/product-cases/{case_id}/step-proposal/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Step Proposal
+         * @description A decision resumes the run that applies it, so a retry after a
+         *     timeout must not decide twice: `Idempotency-Key` is honoured.
+         */
+        post: operations["decide_step_proposal_api_v1_supply_chain_product_cases__case_id__step_proposal_decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
         parameters: {
             query?: never;
@@ -933,6 +971,27 @@ export interface paths {
          *     above where a retry could otherwise create a second resource.
          */
         put: operations["set_sla_policy_override_route_api_v1_supply_chain_sla_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/step-preparation-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Step Preparation Policy */
+        get: operations["get_step_preparation_policy_api_v1_supply_chain_step_preparation_policy_get"];
+        /**
+         * Set Step Preparation Policy
+         * @description Replaces the tenant's own policy, whole.
+         */
+        put: operations["set_step_preparation_policy_api_v1_supply_chain_step_preparation_policy_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1483,6 +1542,15 @@ export interface components {
             /** Value */
             value: string | null;
         };
+        /**
+         * DraftRecipe
+         * @description How a draft's fields are filled. `case_facts`: the case's own fields
+         *     (code, name, Category, supplier, round) and the cited readings of the
+         *     step's source documents whose field has the template field's name; a
+         *     result field a person types is never filled.
+         * @enum {string}
+         */
+        DraftRecipe: "case_facts";
         /** DraftSourceView */
         DraftSourceView: {
             /**
@@ -1557,6 +1625,15 @@ export interface components {
             title: string;
             /** Version */
             version: number;
+        };
+        /** FindingView */
+        FindingView: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Subject */
+            subject: string;
         };
         /**
          * FollowUpItemView
@@ -2051,6 +2128,42 @@ export interface components {
          * @enum {string}
          */
         PreProductionTest: "pending" | "passed" | "failed";
+        /** PreparedDraft */
+        PreparedDraft: {
+            doc_type: components["schemas"]["DocumentType"];
+            recipe: components["schemas"]["DraftRecipe"];
+        };
+        /** PreparedStep */
+        PreparedStep: {
+            action: components["schemas"]["ProductAction"];
+            case_kind: components["schemas"]["CaseKind"];
+            /**
+             * Checks
+             * @default []
+             */
+            checks: components["schemas"]["StepCheck"][];
+            /**
+             * Drafts
+             * @default []
+             */
+            drafts: components["schemas"]["PreparedDraft"][];
+            /**
+             * Physical
+             * @default false
+             */
+            physical: boolean;
+            /**
+             * Result Fields
+             * @default []
+             */
+            result_fields: string[];
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["DocumentType"][];
+            state: components["schemas"]["ProductDevState"];
+        };
         /** PricedLineView */
         PricedLineView: {
             line_total: components["schemas"]["RedactableAmount"];
@@ -2382,6 +2495,27 @@ export interface components {
             /** Unit Price */
             unit_price?: number | string | null;
         };
+        /** ProposalDraftView */
+        ProposalDraftView: {
+            /** Doc Type */
+            doc_type: string;
+            /**
+             * Draft Id
+             * Format: uuid
+             */
+            draft_id: string;
+            /** Gaps */
+            gaps: string[];
+            /** Version */
+            version: number;
+        };
+        /** ProposalSourceView */
+        ProposalSourceView: {
+            /** Doc Type */
+            doc_type: string;
+            /** Document Id */
+            document_id: string | null;
+        };
         /**
          * ProposeProductCaseRequest
          * @description Step 1. JSON only: product images are uploaded after the case exists,
@@ -2440,6 +2574,16 @@ export interface components {
         RejectDraftRequest: {
             /** Reason */
             reason: string;
+        };
+        /** ResultFieldView */
+        ResultFieldView: {
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            suggestion: components["schemas"]["SuggestionView"] | null;
         };
         /**
          * ReviewRaise
@@ -2615,10 +2759,83 @@ export interface components {
             /** Update Overdue Count */
             update_overdue_count: number;
         };
+        /**
+         * StepCheck
+         * @description Code's checks of a step, each a finding when it fails.
+         * @enum {string}
+         */
+        StepCheck: "sources_present" | "sources_read" | "drafts_complete";
+        /** StepDecisionRequest */
+        StepDecisionRequest: {
+            /**
+             * Approval Id
+             * Format: uuid
+             */
+            approval_id: string;
+            /** Approve */
+            approve: boolean;
+            /**
+             * Comment
+             * @default
+             */
+            comment: string;
+            /** Result */
+            result?: {
+                [key: string]: string;
+            };
+        };
+        /** StepProposalView */
+        StepProposalView: {
+            /** Action */
+            action: string | null;
+            /** Action Document Id */
+            action_document_id: string | null;
+            /** Approval Id */
+            approval_id: string | null;
+            /** Can Decide */
+            can_decide: boolean;
+            /** Drafts */
+            drafts: components["schemas"]["ProposalDraftView"][];
+            /** Findings */
+            findings: components["schemas"]["FindingView"][];
+            /** Physical */
+            physical: boolean;
+            /** Prepared */
+            prepared: boolean;
+            /** Reason */
+            reason: string | null;
+            /** Recorded At */
+            recorded_at: string | null;
+            /** Required Scope */
+            required_scope: string | null;
+            /** Result Fields */
+            result_fields: components["schemas"]["ResultFieldView"][];
+            /** Sources */
+            sources: components["schemas"]["ProposalSourceView"][];
+            /** Stale */
+            stale: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "none" | "proposed" | "not_prepared" | "superseded" | "rejected" | "applied";
+        };
         /** SubmitSupplierUpdateRequest */
         SubmitSupplierUpdateRequest: {
             /** Raw Text */
             raw_text: string;
+        };
+        /**
+         * SuggestionView
+         * @description What AI read for a result field: shown beside it, never its value.
+         */
+        SuggestionView: {
+            /** Document Id */
+            document_id: string | null;
+            /** Quote */
+            quote: string;
+            /** Value */
+            value: string;
         };
         /** SupplierBankAccountRequest */
         SupplierBankAccountRequest: {
@@ -2874,6 +3091,20 @@ export interface components {
             /** Schema Version */
             schema_version: string;
             supplier_update: components["schemas"]["SupplierUpdateCadence"];
+        };
+        /** SupplyChainStepPreparation */
+        SupplyChainStepPreparation: {
+            /** Policy Id */
+            policy_id: string;
+            /** Policy Version */
+            policy_version: string;
+            /** Schema Version */
+            schema_version: string;
+            /**
+             * Steps
+             * @default []
+             */
+            steps: components["schemas"]["PreparedStep"][];
         };
         /** TakePackagingStepRequest */
         TakePackagingStepRequest: {
@@ -4803,6 +5034,75 @@ export interface operations {
             };
         };
     };
+    get_step_proposal_api_v1_supply_chain_product_cases__case_id__step_proposal_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepProposalView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_step_proposal_api_v1_supply_chain_product_cases__case_id__step_proposal_decision_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StepDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepProposalView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_product_case_transitions_api_v1_supply_chain_product_cases__case_id__transitions_get: {
         parameters: {
             query?: {
@@ -4936,6 +5236,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SupplyChainSLAPolicy"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_step_preparation_policy_api_v1_supply_chain_step_preparation_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainStepPreparation"];
+                };
+            };
+        };
+    };
+    set_step_preparation_policy_api_v1_supply_chain_step_preparation_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplyChainStepPreparation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainStepPreparation"];
                 };
             };
             /** @description Validation Error */

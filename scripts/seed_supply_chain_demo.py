@@ -5,6 +5,7 @@ Usage (reads `.env`; `make` exports it, a plain shell needs `set -a; source .env
     uv run python scripts/seed_supply_chain_demo.py supplier-update PO-DEMO-001
     uv run python scripts/seed_supply_chain_demo.py elmich-sla
     uv run python scripts/seed_supply_chain_demo.py elmich-packaging
+    uv run python scripts/seed_supply_chain_demo.py elmich-step-preparation
     uv run python scripts/seed_supply_chain_demo.py e2e-fixtures
     uv run python scripts/seed_supply_chain_demo.py e2e-cleanup [E2E-<code>]
 
@@ -52,6 +53,11 @@ one. Run it again after editing the file; a later `PUT` replaces it whole.
 after R&D passes the pre-production test; slice PK) for tenant Alpha, as Bình,
 through `SetPackagingPolicyOverride`, the handler behind `PUT
 /packaging-policy`, for the same reasons as `elmich-sla`.
+
+`elmich-step-preparation` turns on the steps AI prepares for tenant Alpha
+(`scripts/elmich_step_preparation_override.yaml`; ticket ai-automation/05),
+as Bình, through `SetStepPreparationPolicyOverride`, the handler behind
+`PUT /step-preparation-policy`, for the same reasons.
 
 `e2e-fixtures` is what the browser suite (`apps/web/e2e/supply-chain.spec.ts`)
 needs beyond `seed`: Khánh linked to a Zalo chat that does not exist
@@ -105,6 +111,7 @@ from dw_supply_chain.application.handlers import (
     SetSLAPolicyOverride,
 )
 from dw_supply_chain.application.packaging_designs import SetPackagingPolicyOverride
+from dw_supply_chain.application.step_proposals import SetStepPreparationPolicyOverride
 from dw_supply_chain.domain.po_case import POCase, POCaseId
 from dw_supply_chain.domain.supplier_update import (
     SupplierEventType,
@@ -114,9 +121,11 @@ from dw_supply_chain.domain.supplier_update import (
 )
 from dw_supply_chain.packaging_policy import load_supply_chain_packaging_policy
 from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
+from dw_supply_chain.step_preparation_policy import load_supply_chain_step_preparation
 
 ELMICH_SLA = Path(__file__).resolve().parent / "elmich_sla_override.yaml"
 ELMICH_PACKAGING = Path(__file__).resolve().parent / "elmich_packaging_override.yaml"
+ELMICH_STEP_PREPARATION = Path(__file__).resolve().parent / "elmich_step_preparation_override.yaml"
 # Bình, `sc_process_admin`: the persona who sets the SLA.
 PROCESS_OWNER = "dev|binh.tran"
 
@@ -351,6 +360,26 @@ async def elmich_packaging(migrator: AsyncEngine, app: AsyncEngine) -> None:
     )
 
 
+async def elmich_step_preparation(migrator: AsyncEngine, app: AsyncEngine) -> None:
+    policy = load_supply_chain_step_preparation(ELMICH_STEP_PREPARATION)
+    owner = _context(await _user_id(migrator, PROCESS_OWNER)).model_copy(
+        update={
+            "roles": frozenset({"sc_process_admin"}),
+            "scopes": frozenset({ACTION_DUTIES_WRITE}),
+        }
+    )
+    await SetStepPreparationPolicyOverride(
+        policy_override_repo=SqlPolicyOverrideRepository(async_sessionmaker(app)),
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=SystemClock(),
+    ).handle(owner, policy)
+    print(
+        "elmich step preparation written for tenant Alpha: "
+        + ", ".join(f"{s.state.value} -> {s.action.value}" for s in policy.steps)
+    )
+
+
 # A second Alpha workspace, only for the browser suite (`e2e-fixtures`).
 E2E_WS = uuid.uuid5(ALPHA, "e2e-second-workspace")
 E2E_BOD = "dev|khanh.ngo"
@@ -463,6 +492,8 @@ async def main(argv: list[str]) -> None:
             await elmich_sla(migrator, app)
         elif argv == ["elmich-packaging"]:
             await elmich_packaging(migrator, app)
+        elif argv == ["elmich-step-preparation"]:
+            await elmich_step_preparation(migrator, app)
         elif argv == ["e2e-fixtures"]:
             await e2e_fixtures(migrator)
         elif argv[:1] == ["e2e-cleanup"] and len(argv) <= 2:

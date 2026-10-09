@@ -329,6 +329,20 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # Step proposals (ticket ai-automation/05): own router.
+    if container.supply_chain_step_proposals is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.step_proposal_routes import build_step_proposal_router
+
+        app.include_router(
+            build_step_proposal_router(
+                container.supply_chain_step_proposals,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
     # Product-development cases (stage 1): their own router on their own guard,
     # as the documents router is.
     if (

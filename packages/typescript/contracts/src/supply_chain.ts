@@ -1098,3 +1098,70 @@ export const documentDraftSchema = z.object({
   created_at: z.string(),
 });
 export type DocumentDraft = z.infer<typeof documentDraftSchema>;
+
+// Ticket ai-automation/05: AI prepares a step, a person approves the move.
+
+/** What AI read for a result field: shown beside the field, never its value. */
+export const proposalSuggestionSchema = z.object({
+  value: z.string(),
+  quote: z.string(),
+  document_id: z.string().uuid().nullable(),
+});
+
+/** A result a person types to approve a physical step (a test, a count). */
+export const proposalResultFieldSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  kind: z.string(),
+  suggestion: proposalSuggestionSchema.nullable(),
+});
+export type ProposalResultField = z.infer<typeof proposalResultFieldSchema>;
+
+export const proposalFindingSchema = z.object({
+  code: z.string(),
+  subject: z.string(),
+  message: z.string(),
+});
+export type ProposalFinding = z.infer<typeof proposalFindingSchema>;
+
+export const stepProposalStatusSchema = z.enum([
+  "none",
+  "proposed",
+  "not_prepared",
+  "superseded",
+  "rejected",
+  "applied",
+]);
+export type StepProposalStatus = z.infer<typeof stepProposalStatusSchema>;
+
+/** Mirrors `StepProposalView`: the case page's "AI đã chuẩn bị" block. */
+export const stepProposalSchema = z.object({
+  prepared: z.boolean(),
+  action: z.string().nullable(),
+  status: stepProposalStatusSchema,
+  reason: z.string().nullable(),
+  recorded_at: z.string().nullable(),
+  approval_id: z.string().uuid().nullable(),
+  required_scope: z.string().nullable(),
+  stale: z.boolean(),
+  can_decide: z.boolean(),
+  physical: z.boolean(),
+  drafts: z.array(
+    z.object({
+      draft_id: z.string().uuid(),
+      doc_type: z.string(),
+      version: z.number().int(),
+      gaps: z.array(z.string()),
+    }),
+  ),
+  sources: z.array(
+    z.object({
+      doc_type: z.string(),
+      document_id: z.string().uuid().nullable(),
+    }),
+  ),
+  action_document_id: z.string().uuid().nullable(),
+  findings: z.array(proposalFindingSchema),
+  result_fields: z.array(proposalResultFieldSchema),
+});
+export type StepProposal = z.infer<typeof stepProposalSchema>;

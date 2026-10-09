@@ -14,7 +14,8 @@ cross-tenant read this lane makes: ids only.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+import uuid
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import sqlalchemy as sa
@@ -28,6 +29,8 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence import tables
 from dw_supply_chain.application.document_extraction import NewExtraction, QueuedDocument
+from dw_supply_chain.application.step_preparation import StoredReading
+from dw_supply_chain.domain.extraction import ExtractionStatus
 
 _e = tables.document_extractions
 UNIQUE_READING = "uq_document_extractions_tenant_id_document_id_prompt"
@@ -95,6 +98,45 @@ class SqlExtractionQueue:
         return [
             QueuedDocument(
                 tenant_id=r.tenant_id, workspace_id=r.workspace_id, document_id=r.document_id
+            )
+            for r in rows
+        ]
+
+
+@dataclass(frozen=True)
+class SqlExtractionReadings:
+    """Implements `ExtractionReadingsPort`: the readings of some documents, under
+    the caller's tenant and workspace (RLS, and named in the statement)."""
+
+    session_factory: async_sessionmaker[AsyncSession]
+
+    async def readings(
+        self, context: AccessContext, document_ids: Sequence[uuid.UUID]
+    ) -> list[StoredReading]:
+        if not document_ids:
+            return []
+        async with tenant_session(
+            self.session_factory, TenantScope.from_access_context(context)
+        ) as session:
+            rows = (
+                await session.execute(
+                    sa.select(_e).where(
+                        _e.c.tenant_id == context.tenant_id,
+                        _e.c.workspace_id == context.workspace_id,
+                        _e.c.document_id.in_(list(document_ids)),
+                    )
+                )
+            ).all()
+        return [
+            StoredReading(
+                id=r.id,
+                document_id=r.document_id,
+                sha256=r.sha256,
+                prompt_id=r.prompt_id,
+                prompt_version=r.prompt_version,
+                status=ExtractionStatus(r.status),
+                fields=dict(r.fields),
+                gaps=list(r.gaps),
             )
             for r in rows
         ]

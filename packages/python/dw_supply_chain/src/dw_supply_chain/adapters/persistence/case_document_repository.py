@@ -83,6 +83,61 @@ def _in_scope(context: AccessContext) -> tuple[sa.ColumnElement[bool], ...]:
     return (_d.c.tenant_id == context.tenant_id, _d.c.workspace_id == context.workspace_id)
 
 
+async def insert_case_document(
+    session: AsyncSession,
+    context: AccessContext,
+    document: NewCaseDocument,
+    *,
+    draft_id: uuid.UUID | None = None,
+) -> Row[tuple[object, ...]]:
+    """The INSERT of one document row, in the caller's transaction: an upload
+    (`origin = uploaded`), or a confirmed draft (`ai_prepared`, its draft named;
+    `ck_case_documents_draft_origin` holds the two together)."""
+    case_column = _CASE_COLUMN[document.case_kind]
+    next_version = (
+        sa.select(sa.func.coalesce(sa.func.max(_d.c.version), 0) + 1)
+        .where(
+            _d.c.tenant_id == context.tenant_id,
+            case_column == document.case_id,
+            _d.c.doc_type == document.doc_type.value,
+        )
+        .scalar_subquery()
+    )
+    return (
+        await session.execute(
+            sa.insert(_d)
+            .values(
+                id=document.id.value,
+                tenant_id=context.tenant_id,
+                workspace_id=context.workspace_id,
+                **{case_column.name: document.case_id},
+                doc_type=document.doc_type.value,
+                object_key=document.object_key,
+                filename=document.filename,
+                content_type=document.content_type,
+                size_bytes=document.size_bytes,
+                sha256=document.sha256,
+                version=next_version,
+                uploaded_by=context.principal_id,
+                origin="uploaded" if draft_id is None else "ai_prepared",
+                draft_id=draft_id,
+            )
+            .returning(_d)
+        )
+    ).one()
+
+
+def version_refusal(exc: IntegrityError, document: NewCaseDocument) -> ConflictError | None:
+    """Two documents of one type racing for one version: the second is told
+    to try again, by the constraint's name."""
+    if any(name in str(exc.orig) for name in VERSION_CONSTRAINTS):
+        return ConflictError(
+            "another upload of this document type took the same version; try again",
+            details={"case_id": str(document.case_id), "doc_type": document.doc_type.value},
+        )
+    return None
+
+
 @dataclass(frozen=True)
 class SqlCaseDocumentRepository:
     """Implements `CaseDocumentRepositoryPort` and `CaseDocumentKeysPort`."""
@@ -92,51 +147,17 @@ class SqlCaseDocumentRepository:
     async def add(
         self, context: AccessContext, document: NewCaseDocument, *, audit: AuditEvent
     ) -> CaseDocument:
-        case_column = _CASE_COLUMN[document.case_kind]
-        next_version = (
-            sa.select(sa.func.coalesce(sa.func.max(_d.c.version), 0) + 1)
-            .where(
-                _d.c.tenant_id == context.tenant_id,
-                case_column == document.case_id,
-                _d.c.doc_type == document.doc_type.value,
-            )
-            .scalar_subquery()
-        )
         try:
             async with tenant_session(
                 self.session_factory, TenantScope.from_access_context(context)
             ) as session:
-                row = (
-                    await session.execute(
-                        sa.insert(_d)
-                        .values(
-                            id=document.id.value,
-                            tenant_id=context.tenant_id,
-                            workspace_id=context.workspace_id,
-                            **{case_column.name: document.case_id},
-                            doc_type=document.doc_type.value,
-                            object_key=document.object_key,
-                            filename=document.filename,
-                            content_type=document.content_type,
-                            size_bytes=document.size_bytes,
-                            sha256=document.sha256,
-                            version=next_version,
-                            uploaded_by=context.principal_id,
-                        )
-                        .returning(_d)
-                    )
-                ).one()
+                row = await insert_case_document(session, context, document)
                 await SqlAuditRepository(session).append(audit)
         except IntegrityError as exc:
-            if any(name in str(exc.orig) for name in VERSION_CONSTRAINTS):
-                raise ConflictError(
-                    "another upload of this document type took the same version; try again",
-                    details={
-                        "case_id": str(document.case_id),
-                        "doc_type": document.doc_type.value,
-                    },
-                ) from exc
-            raise
+            refusal = version_refusal(exc, document)
+            if refusal is None:
+                raise
+            raise refusal from exc
         return _document(row)
 
     async def list_for_case(

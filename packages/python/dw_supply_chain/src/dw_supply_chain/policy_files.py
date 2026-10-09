@@ -24,3 +24,8 @@ PRODUCT_APPROVALS_POLICY_FILE = "supply_chain_product_approvals@1.1.0.yaml"
 ADVANCE_PRODUCT_CASE_WORKER_FILE = "supply_chain_advance_product_case.yaml"
 PRODUCT_SIGNOFF_WORKER_FILE = "supply_chain_product_signoff.yaml"
 PRODUCT_ACTION_DUTIES_POLICY_FILE = "supply_chain_product_action_duties@1.3.0.yaml"
+# Both hosts run step preparations (ticket ai-automation/05): the worker's lane
+# starts them, a decision on the web resumes them in the API, one on Zalo in the
+# worker; both read the policy for the case page and the lane.
+STEP_PREPARATION_POLICY_FILE = "supply_chain_step_preparation@1.0.0.yaml"
+STEP_PREPARATION_WORKER_FILE = "supply_chain_step_preparation.yaml"

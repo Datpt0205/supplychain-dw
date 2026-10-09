@@ -162,11 +162,11 @@ export DW_DATABASE_URL="postgresql+asyncpg://dw_migrator:<DW_DB_MIGRATOR_PASSWOR
 
 `scripts/seed_supply_chain_demo.py` chỉ chạy với `DW_API_PROFILE=local`; không dùng ở đây.
 
-## 7. Override của Elmich (SLA, đóng gói)
+## 7. Override của Elmich (SLA, đóng gói, các bước AI chuẩn bị)
 
-Hai file `scripts/elmich_sla_override.yaml` và `scripts/elmich_packaging_override.yaml`
-là dữ liệu của tenant, ghi qua API (kiểm schema, quyền, audit). Lệnh seed của chúng chỉ
-chạy ở `local`, nên trên máy chủ gửi thẳng:
+Ba file `scripts/elmich_sla_override.yaml`, `scripts/elmich_packaging_override.yaml` và
+`scripts/elmich_step_preparation_override.yaml` là dữ liệu của tenant, ghi qua API (kiểm
+schema, quyền, audit). Lệnh seed của chúng chỉ chạy ở `local`, nên trên máy chủ gửi thẳng:
 
 ```bash
 uv run python -c "import json,sys,yaml; print(json.dumps(yaml.safe_load(open(sys.argv[1]))))" \
@@ -174,10 +174,11 @@ uv run python -c "import json,sys,yaml; print(json.dumps(yaml.safe_load(open(sys
 curl -fsS -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   --data @/tmp/sla.json https://$A/api/v1/supply-chain/sla-policy
 # tương tự elmich_packaging_override.yaml -> PUT /api/v1/supply-chain/packaging-policy
+# tương tự elmich_step_preparation_override.yaml -> PUT /api/v1/supply-chain/step-preparation-policy
 ```
 
 `$TOKEN` là access token của một người trong tenant Elmich có
-`supply_chain.sla_policy.write` (SLA) và `supply_chain.action_duties.write` (đóng gói).
+`supply_chain.sla_policy.write` (SLA) và `supply_chain.action_duties.write` (đóng gói, các bước AI chuẩn bị).
 Chưa có màn hình nào cho việc này; lấy token từ header `Authorization` trong tab Network
 của trình duyệt sau khi đăng nhập, và xóa `/tmp/*.json` sau đó. Số SLA còn chờ Elmich
 xác nhận (ghi trong file).

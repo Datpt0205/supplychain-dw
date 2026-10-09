@@ -14,7 +14,7 @@ from dw_agent_runtime.approval_flow import (
 )
 from dw_agent_runtime.contracts import RunContext
 from dw_kernel.autonomy import AutonomyLevel
-from dw_kernel.errors import ConflictError, NotFoundError, PermissionDeniedError
+from dw_kernel.errors import ConflictError, DomainError, NotFoundError, PermissionDeniedError
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.ports import FixedClock, SequentialIdGenerator
 from dw_platform.application.access_context import AccessContext
@@ -130,6 +130,14 @@ class FakeRunStore:
     actor_clearance: str = "confidential"
     actor_record_visibility: str = "restricted"
     actor_visible_owners: frozenset[uuid.UUID] | None = REQUESTER_OWNERS
+
+    statuses: list[RunStatus] = field(default_factory=list)
+
+    async def set_status(
+        self, run_context: RunContext, run_id: uuid.UUID, status: RunStatus, **_: Any
+    ) -> None:
+        self.statuses.append(status)
+        self.status = status
 
     async def get(self, run_context: RunContext, run_id: uuid.UUID) -> RunRecord:
         if run_context.workspace_id != self.workspace_id:
@@ -1127,3 +1135,187 @@ async def test_a_channel_decision_keeps_its_own_audit_and_writes_one_row() -> No
     )
 
     assert [event.action for event in audit.events] == [CHANNEL_DECIDED_ACTION]
+
+
+# ---- subject version and typed input (ticket ai-automation/05) -------------
+
+SUBJECT_TYPE = "ctx.step_proposal.move"
+
+
+@dataclass
+class FakeSubjects:
+    """`ApprovalSubjectVersionPort`: the subject's current version, or None."""
+
+    current: str | None
+    asked: list[uuid.UUID] = field(default_factory=list)
+
+    async def version_of(self, context: AccessContext, request: ApprovalRequest) -> str | None:
+        self.asked.append(request.id)
+        return self.current
+
+
+def stamped_service(
+    current: str | None,
+    *,
+    payload: dict[str, Any] | None = None,
+    register: bool = True,
+    runner: FakeRunner | None = None,
+    run_store: FakeRunStore | None = None,
+    audit: FakeAudit | None = None,
+) -> tuple[ApproveAndResumeService, ApprovalRequest]:
+    request = make_request(
+        SUBJECT_TYPE, run_id=RUN_ID, payload=payload or {"subject_version": "v1"}
+    )
+    service = make_service(
+        request, frozenset(), runner=runner or FakeRunner(hosted=True), audit=audit
+    )
+    if run_store is not None:
+        service.run_store = cast(Any, run_store)
+    if register:
+        service.subjects.register("ctx.step_proposal.", FakeSubjects(current))
+    return service, request
+
+
+async def test_a_decision_on_a_changed_subject_is_refused_and_nothing_moves() -> None:
+    runner = FakeRunner(hosted=True)
+    service, request = stamped_service("v2", runner=runner)
+    with pytest.raises(ConflictError) as refused:
+        await decide(service, APPROVER, "ok")
+    assert refused.value.details["reason"] == "subject_changed"
+    assert request.status is ApprovalStatus.PENDING
+    assert runner.resumed == []
+
+
+async def test_a_decision_on_the_current_subject_goes_through() -> None:
+    runner = FakeRunner(hosted=True)
+    service, request = stamped_service("v1", runner=runner)
+    await decide(service, APPROVER, "ok")
+    assert request.status is ApprovalStatus.APPROVED
+    assert runner.resumed == [RUN_ID]
+
+
+@pytest.mark.parametrize("register", [True, False])
+async def test_a_stamp_nobody_can_answer_for_refuses_the_decision(register: bool) -> None:
+    # A port that finds no subject, or no port at all: fail closed.
+    service, request = stamped_service(None, register=register)
+    with pytest.raises(ConflictError):
+        await decide(service, APPROVER, "ok")
+    assert request.status is ApprovalStatus.PENDING
+
+
+async def test_an_unstamped_request_never_asks_for_the_subject() -> None:
+    subjects = FakeSubjects("anything")
+    service = make_service(make_request("demo.dispatch"), frozenset())
+    service.subjects.register("demo.", subjects)
+    await decide(service, APPROVER, "")
+    assert subjects.asked == []
+
+
+REQUIRED = {"subject_version": "v1", "required_input": ["result"]}
+
+
+async def test_approving_without_the_typed_values_is_refused() -> None:
+    runner = FakeRunner(hosted=True)
+    service, request = stamped_service("v1", payload=REQUIRED, runner=runner)
+    for given in (None, {"result": "   "}):
+        with pytest.raises(DomainError):
+            await service.decide(
+                approval_id=request.id,
+                approve=True,
+                comment="ok",
+                context=make_context(APPROVER),
+                authorization=ScopeAuthorizationService(),
+                typed_input=given,
+            )
+    assert request.status is ApprovalStatus.PENDING
+    assert runner.resumed == []
+
+
+async def test_the_typed_values_reach_the_resumed_run() -> None:
+    runner = FakeRunner(hosted=True)
+    service, request = stamped_service("v1", payload=REQUIRED, runner=runner)
+    await service.decide(
+        approval_id=request.id,
+        approve=True,
+        comment="ok",
+        context=make_context(APPROVER),
+        authorization=ScopeAuthorizationService(),
+        typed_input={"result": " Đạt "},
+    )
+    assert runner.payloads[0]["input"] == {"result": "Đạt"}
+
+
+async def test_a_value_the_approval_does_not_name_is_refused_not_dropped() -> None:
+    service, request = stamped_service("v1", payload=REQUIRED)
+    with pytest.raises(DomainError):
+        await service.decide(
+            approval_id=request.id,
+            approve=True,
+            comment="ok",
+            context=make_context(APPROVER),
+            authorization=ScopeAuthorizationService(),
+            typed_input={"result": "Đạt", "price": "1"},
+        )
+    with pytest.raises(DomainError):
+        await service.decide(
+            approval_id=request.id,
+            approve=False,
+            comment="không",
+            context=make_context(APPROVER),
+            authorization=ScopeAuthorizationService(),
+            typed_input={"result": "Đạt"},
+        )
+    assert request.status is ApprovalStatus.PENDING
+
+
+async def test_a_rejection_needs_no_typed_values() -> None:
+    service, request = stamped_service("v1", payload=REQUIRED)
+    await service.decide(
+        approval_id=request.id,
+        approve=False,
+        comment="không",
+        context=make_context(APPROVER),
+        authorization=ScopeAuthorizationService(),
+    )
+    assert request.status is ApprovalStatus.REJECTED
+
+
+async def test_a_malformed_required_input_stamp_refuses_every_decision() -> None:
+    service, _ = stamped_service(
+        "v1", payload={"subject_version": "v1", "required_input": "result"}
+    )
+    with pytest.raises(ConflictError):
+        await decide(service, APPROVER, "ok")
+
+
+async def test_the_requester_supersedes_its_stale_request_run_first() -> None:
+    run_store = FakeRunStore()
+    audit = FakeAudit()
+    service, request = stamped_service("v2", run_store=run_store, audit=audit)
+    assert await service.supersede_stale(approval_id=request.id, context=make_context(REQUESTER))
+    assert run_store.statuses == [RunStatus.CANCELLED]
+    assert request.status is ApprovalStatus.CANCELLED
+    (event,) = audit.events
+    assert event.action == "approval.superseded"
+    assert event.actor_id == UserId(REQUESTER)
+    assert event.details["reason"] == "subject_changed"
+
+
+async def test_a_current_request_is_not_superseded() -> None:
+    run_store = FakeRunStore()
+    service, request = stamped_service("v1", run_store=run_store)
+    assert not await service.supersede_stale(
+        approval_id=request.id, context=make_context(REQUESTER)
+    )
+    assert run_store.statuses == []
+    assert request.status is ApprovalStatus.PENDING
+
+
+async def test_only_the_requester_supersedes() -> None:
+    service, request = stamped_service("v2")
+    service.subjects = type(service.subjects)()
+    service.subjects.register("ctx.step_proposal.", FakeSubjects("v2"))
+    # The approver can see it (unstamped scope), but it is not theirs to end.
+    with pytest.raises(PermissionDeniedError):
+        await service.supersede_stale(approval_id=request.id, context=make_context(APPROVER))
+    assert request.status is ApprovalStatus.PENDING

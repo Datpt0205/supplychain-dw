@@ -2172,6 +2172,14 @@
         "title": "DraftFieldView",
         "type": "object"
       },
+      "DraftRecipe": {
+        "description": "How a draft's fields are filled. `case_facts`: the case's own fields\n(code, name, Category, supplier, round) and the cited readings of the\nstep's source documents whose field has the template field's name; a\nresult field a person types is never filled.",
+        "enum": [
+          "case_facts"
+        ],
+        "title": "DraftRecipe",
+        "type": "string"
+      },
       "DraftSourceView": {
         "properties": {
           "document_id": {
@@ -2456,6 +2464,29 @@
           "created_at"
         ],
         "title": "FeedbackView",
+        "type": "object"
+      },
+      "FindingView": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "subject",
+          "message"
+        ],
+        "title": "FindingView",
         "type": "object"
       },
       "FollowUpItemView": {
@@ -5008,6 +5039,84 @@
         "title": "PreProductionTest",
         "type": "string"
       },
+      "PreparedDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "doc_type": {
+            "$ref": "#/components/schemas/DocumentType"
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/DraftRecipe"
+          }
+        },
+        "required": [
+          "doc_type",
+          "recipe"
+        ],
+        "title": "PreparedDraft",
+        "type": "object"
+      },
+      "PreparedStep": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ProductAction"
+          },
+          "case_kind": {
+            "$ref": "#/components/schemas/CaseKind"
+          },
+          "checks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/StepCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "drafts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PreparedDraft"
+            },
+            "maxItems": 5,
+            "title": "Drafts",
+            "type": "array"
+          },
+          "physical": {
+            "default": false,
+            "title": "Physical",
+            "type": "boolean"
+          },
+          "result_fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Result Fields",
+            "type": "array"
+          },
+          "sources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DocumentType"
+            },
+            "maxItems": 10,
+            "title": "Sources",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProductDevState"
+          }
+        },
+        "required": [
+          "case_kind",
+          "state",
+          "action"
+        ],
+        "title": "PreparedStep",
+        "type": "object"
+      },
       "PricedLineView": {
         "properties": {
           "line_total": {
@@ -5973,6 +6082,64 @@
         "title": "ProfilePricesRequest",
         "type": "object"
       },
+      "ProposalDraftView": {
+        "properties": {
+          "doc_type": {
+            "title": "Doc Type",
+            "type": "string"
+          },
+          "draft_id": {
+            "format": "uuid",
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "gaps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "draft_id",
+          "doc_type",
+          "version",
+          "gaps"
+        ],
+        "title": "ProposalDraftView",
+        "type": "object"
+      },
+      "ProposalSourceView": {
+        "properties": {
+          "doc_type": {
+            "title": "Doc Type",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          }
+        },
+        "required": [
+          "doc_type",
+          "document_id"
+        ],
+        "title": "ProposalSourceView",
+        "type": "object"
+      },
       "ProposeProductCaseRequest": {
         "additionalProperties": false,
         "description": "Step 1. JSON only: product images are uploaded after the case exists,\nthrough its documents (doc_type `product_image`). `category` is a key of\nthe tenant's list (`GET /product-categories`); the handler refuses any\nother.",
@@ -6254,6 +6421,40 @@
           "duration_hours"
         ],
         "title": "RequestSupportGrantBody",
+        "type": "object"
+      },
+      "ResultFieldView": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "kind",
+          "suggestion"
+        ],
+        "title": "ResultFieldView",
         "type": "object"
       },
       "ReviewRaise": {
@@ -7015,6 +7216,198 @@
         "title": "StateSummaryView",
         "type": "object"
       },
+      "StepCheck": {
+        "description": "Code's checks of a step, each a finding when it fails.",
+        "enum": [
+          "sources_present",
+          "sources_read",
+          "drafts_complete"
+        ],
+        "title": "StepCheck",
+        "type": "string"
+      },
+      "StepDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_id": {
+            "format": "uuid",
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "comment": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Comment",
+            "type": "string"
+          },
+          "result": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 10,
+            "title": "Result",
+            "type": "object"
+          }
+        },
+        "required": [
+          "approval_id",
+          "approve"
+        ],
+        "title": "StepDecisionRequest",
+        "type": "object"
+      },
+      "StepProposalView": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "action_document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Document Id"
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
+          "can_decide": {
+            "title": "Can Decide",
+            "type": "boolean"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalDraftView"
+            },
+            "title": "Drafts",
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/FindingView"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "physical": {
+            "title": "Physical",
+            "type": "boolean"
+          },
+          "prepared": {
+            "title": "Prepared",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          },
+          "required_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Scope"
+          },
+          "result_fields": {
+            "items": {
+              "$ref": "#/components/schemas/ResultFieldView"
+            },
+            "title": "Result Fields",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalSourceView"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "none",
+              "proposed",
+              "not_prepared",
+              "superseded",
+              "rejected",
+              "applied"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prepared",
+          "action",
+          "status",
+          "reason",
+          "recorded_at",
+          "approval_id",
+          "required_scope",
+          "stale",
+          "can_decide",
+          "physical",
+          "drafts",
+          "sources",
+          "action_document_id",
+          "findings",
+          "result_fields"
+        ],
+        "title": "StepProposalView",
+        "type": "object"
+      },
       "SubmitSupplierUpdateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7029,6 +7422,38 @@
           "raw_text"
         ],
         "title": "SubmitSupplierUpdateRequest",
+        "type": "object"
+      },
+      "SuggestionView": {
+        "description": "What AI read for a result field: shown beside it, never its value.",
+        "properties": {
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "quote",
+          "document_id"
+        ],
+        "title": "SuggestionView",
         "type": "object"
       },
       "SupplierBankAccountRequest": {
@@ -7754,6 +8179,41 @@
           "supplier_update"
         ],
         "title": "SupplyChainSLAPolicy",
+        "type": "object"
+      },
+      "SupplyChainStepPreparation": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PreparedStep"
+            },
+            "maxItems": 40,
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version"
+        ],
+        "title": "SupplyChainStepPreparation",
         "type": "object"
       },
       "SupportGrantModel": {
@@ -14575,6 +15035,121 @@
         ]
       }
     },
+    "/api/v1/supply-chain/product-cases/{case_id}/step-proposal": {
+      "get": {
+        "operationId": "get_step_proposal_api_v1_supply_chain_product_cases__case_id__step_proposal_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepProposalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Step Proposal",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/product-cases/{case_id}/step-proposal/decision": {
+      "post": {
+        "description": "A decision resumes the run that applies it, so a retry after a\ntimeout must not decide twice: `Idempotency-Key` is honoured.",
+        "operationId": "decide_step_proposal_api_v1_supply_chain_product_cases__case_id__step_proposal_decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepProposalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Step Proposal",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
       "get": {
         "description": "The case's history, newest first, a page at a time.",
@@ -14801,6 +15376,67 @@
           }
         },
         "summary": "Set Sla Policy Override Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/step-preparation-policy": {
+      "get": {
+        "operationId": "get_step_preparation_policy_api_v1_supply_chain_step_preparation_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainStepPreparation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Step Preparation Policy",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "description": "Replaces the tenant's own policy, whole.",
+        "operationId": "set_step_preparation_policy_api_v1_supply_chain_step_preparation_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainStepPreparation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainStepPreparation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Step Preparation Policy",
         "tags": [
           "supply_chain"
         ]

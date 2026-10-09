@@ -1,0 +1,12 @@
+schema_version: "1.0"
+policy_id: supply_chain_step_preparation
+policy_version: "1.0.0"
+# Which steps AI prepares (ADR 0025 point 9; ticket ai-automation/05): when a
+# case enters a listed state, one preparation run drafts, reads and checks the
+# step and raises one approval "move to step X with documents Y"; the case
+# moves only when a person holding that step's duty approves.
+#
+# The platform prepares nothing: a tenant opts in through its own override
+# (PUT /api/v1/supply-chain/step-preparation-policy). Elmich's is
+# scripts/elmich_step_preparation_override.yaml.
+steps: []
