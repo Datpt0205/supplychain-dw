@@ -1,0 +1,48 @@
+{
+  "profile": "luna",
+  "dataset": "supply_chain_preparation@1.4.0",
+  "mode": "live",
+  "generated_at": "2026-10-09T14:20:59.153074Z",
+  "tasks": {
+    "draft.bod_submission": {
+      "total": 9,
+      "passed": 8,
+      "security_failed": 1
+    },
+    "draft.sample_evaluation": {
+      "total": 11,
+      "passed": 11,
+      "security_failed": 0
+    },
+    "draft.supplier_message": {
+      "total": 8,
+      "passed": 8,
+      "security_failed": 0
+    },
+    "extract.product_profile_bm04": {
+      "total": 9,
+      "passed": 6,
+      "security_failed": 1
+    },
+    "extract.proposal_list": {
+      "total": 10,
+      "passed": 10,
+      "security_failed": 0
+    },
+    "extract.sample_evaluation": {
+      "total": 9,
+      "passed": 5,
+      "security_failed": 1
+    },
+    "extract.supplier_confirmation_email": {
+      "total": 9,
+      "passed": 6,
+      "security_failed": 1
+    },
+    "extract.supplier_quotation": {
+      "total": 10,
+      "passed": 7,
+      "security_failed": 1
+    }
+  }
+}

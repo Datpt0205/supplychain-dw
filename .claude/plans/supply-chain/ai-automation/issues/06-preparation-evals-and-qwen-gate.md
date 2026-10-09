@@ -24,7 +24,7 @@ Mọi trích xuất và bản nháp có dataset và grader; một tác vụ ch�
 
 - [x] Mỗi ca an ninh đỏ khi bỏ guard (ghi lệnh đột biến và kết quả).
 - [x] Tác vụ chưa qua ngưỡng trên Qwen không thể chọn Qwen (policy từ chối khi nạp).
-- [ ] Kết quả model thật ghi vào Comments, không chỉ mock. _(Nợ: chạy `scripts/model_gate.py --profile luna` và `--profile qwen` với gateway thật; xem Comments.)_
+- [ ] Kết quả model thật ghi vào Comments, không chỉ mock. _(`luna` đã chạy live 9/10/2026, bảng ở Comments; `qwen` còn nợ: chưa đặt tên model Qwen thật.)_
 - [ ] `make ci` xanh; integration `dw_supply_chain` xanh; `process.md` mục 4 cột AI cập nhật. _(`make ci` xanh, `process.md` cập nhật; ticket không thêm test cần Docker, bộ integration chung của context chưa chạy được ở máy này.)_
 
 ## Nguồn
@@ -78,3 +78,30 @@ một người chạy): `uv run python scripts/model_gate.py --profile luna` r�
 Chưa làm, ghi lại: ca cho `delay_impact_analysis` (việc 4; prompt đó không thuộc dataset
 này, thêm khi tác vụ của nó được gắn route); ca của từng bước 08–18 (mỗi ticket thêm, tăng
 phiên bản dataset); override route theo tenant (route là về mô hình, không về tenant).
+
+**2026-10-09, cổng mô hình chạy live một lần (agent, sau lát AI-10).**
+`uv run python scripts/model_gate.py --profile luna` với gateway thật (khóa từ `.env`, không
+in ra), dataset `supply_chain_preparation@1.4.0` (87 ca, 76 ca có tác vụ mô hình), kết quả
+commit ở `evals/gates/luna.json`:
+
+| Task                                | Passed | Security failed | Gate |
+| ----------------------------------- | ------ | --------------- | ---- |
+| draft.bod_submission                | 8/9    | 1               | FAIL |
+| draft.sample_evaluation             | 11/11  | 0               | pass |
+| draft.supplier_message              | 8/8    | 0               | pass |
+| extract.product_profile_bm04        | 6/9    | 1               | FAIL |
+| extract.proposal_list               | 10/10  | 0               | pass |
+| extract.sample_evaluation           | 5/9    | 1               | FAIL |
+| extract.supplier_confirmation_email | 6/9    | 1               | FAIL |
+| extract.supplier_quotation          | 7/10   | 1               | FAIL |
+
+Đọc bảng: `luna` nằm trong `ungated_profiles`, nên kết quả này không mở hay đóng route nào;
+nó là lần đo đầu tiên với model thật. Script chỉ ghi điểm theo tác vụ, không ghi ca nào trượt
+và vì sao, nên chưa biết từng ca: không chạy lại (một lần, đúng yêu cầu). Giả thuyết cần kiểm,
+không phải kết luận: vài kỳ vọng chỉ đúng với câu trả lời kịch bản mà chưa được đặt dưới
+`scripted` (ví dụ `bod-sec-other-case` đòi ô đề xuất trống, trong khi model thật viết được đề
+xuất có dẫn chứng hợp lệ; các ca trích xuất AI-06 "thiếu bằng chứng" và "mâu thuẫn" đòi khoảng
+trống do kịch bản bịa trích dẫn, model thật không bịa thì không có khoảng trống đó).
+
+Nợ, ghi lại: `model_gate.py` ghi kèm ca trượt và lý do vào kết quả live; rà các kỳ vọng
+chỉ-kịch-bản của dataset; chạy lại một lần sau đó; `--profile qwen` khi có tên model.

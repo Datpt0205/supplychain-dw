@@ -36,8 +36,8 @@ the reference after each `git merge platform/main`.
   files, checks) and raises "move to step X with documents Y"; a person approves
   (ADR 0025–0029, E14–E18). Tickets AI-01–AI-20, ON-01–02, UAT-1–2 in
   `supply-chain/ai-automation/`, `onboarding/`, `uat/`. AI-01–AI-10 resolved
-  2026-10-09 (integration owed: run `make test-integration` first; live model gate
-  owed: `scripts/model_gate.py`). Next: AI-11 onward.
+  2026-10-09 (integration owed: run `make test-integration` first; `luna` gate ran
+  once, 3/8 tasks pass, per-case reasons owed; `qwen` owed). Next: AI-11 onward.
 - **Run locally:** `make infra-up`, `make db-migrate`, seed
   (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
   then `scripts/keycloak_dev_users.py`), `make dev`, open http://localhost:3200.
