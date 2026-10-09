@@ -39,6 +39,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from dw_supply_chain.domain.case_document import DocumentType
+from dw_supply_chain.domain.commercial import account_digest, normalize_account_number
 
 # What a reader returns, and what the transcription prompt is told to return,
 # when a file has nothing readable (`configs/policies/attachment_ingest@1.1.0.yaml`).
@@ -150,6 +151,65 @@ class SupplierQuotationReading(BaseModel):
     total: Cited = Cited()
 
 
+class InvoiceLineReading(BaseModel):
+    """One line of a supplier's invoice (ticket ai-automation/15): the SKU it
+    names, so code matches it with a PO line, and its numbers as written."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    sku_code: Cited = Cited()
+    description: Cited = Cited()
+    quantity: Cited = Cited()
+    unit_price: Cited = Cited()
+    line_total: Cited = Cited()
+
+
+class ProformaInvoiceReading(BaseModel):
+    """A supplier's proforma invoice (PI), step 11. No account number: the
+    text the model reads has none (`redact_identifiers`); code reads it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    supplier_name: Cited = Cited()
+    invoice_number: Cited = Cited()
+    invoice_date: Cited = Cited()
+    currency: Cited = Cited()
+    lines: list[InvoiceLineReading] = Field(default_factory=list, max_length=200)
+    total: Cited = Cited()
+    deposit_percent: Cited = Cited()
+    deposit_amount: Cited = Cited()
+    beneficiary_name: Cited = Cited()
+    bank_name: Cited = Cited()
+
+
+class CommercialInvoiceReading(BaseModel):
+    """A supplier's commercial invoice, step 16."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    supplier_name: Cited = Cited()
+    invoice_number: Cited = Cited()
+    invoice_date: Cited = Cited()
+    currency: Cited = Cited()
+    lines: list[InvoiceLineReading] = Field(default_factory=list, max_length=200)
+    total: Cited = Cited()
+    beneficiary_name: Cited = Cited()
+    bank_name: Cited = Cited()
+
+
+class BankTransferReading(BaseModel):
+    """The bank's transfer receipt (UNC) Kế toán uploads after paying."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    transfer_date: Cited = Cited()
+    amount: Cited = Cited()
+    currency: Cited = Cited()
+    beneficiary_name: Cited = Cited()
+    bank_name: Cited = Cited()
+    payment_content: Cited = Cited()
+
+
 # ------------------------------------------------------------- specs --------
 
 
@@ -164,6 +224,10 @@ class ExtractionSpec:
     reading: type[BaseModel]
     kinds: Mapping[str, FieldKind]
     options: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    # Whether code reads the beneficiary account numbers the document names
+    # from its text BEFORE redaction (ticket ai-automation/15), keeping their
+    # digests (`ACCOUNTS_FIELD`); the model is never shown them.
+    reads_accounts: bool = False
 
     @property
     def prompt_ref(self) -> str:
@@ -235,6 +299,44 @@ EXTRACTION_SPECS: Mapping[DocumentType, ExtractionSpec] = {
                 "total": FieldKind.NUMBER,
             },
             options={"incoterm": _INCOTERMS},
+        ),
+        ExtractionSpec(
+            doc_type=DocumentType.PROFORMA_INVOICE,
+            prompt_id="supply_chain.extract_proforma_invoice",
+            prompt_version="1.0.0",
+            reading=ProformaInvoiceReading,
+            kinds={
+                "invoice_date": FieldKind.DATE,
+                "quantity": FieldKind.NUMBER,
+                "unit_price": FieldKind.NUMBER,
+                "line_total": FieldKind.NUMBER,
+                "total": FieldKind.NUMBER,
+                "deposit_percent": FieldKind.NUMBER,
+                "deposit_amount": FieldKind.NUMBER,
+            },
+            reads_accounts=True,
+        ),
+        ExtractionSpec(
+            doc_type=DocumentType.COMMERCIAL_INVOICE,
+            prompt_id="supply_chain.extract_commercial_invoice",
+            prompt_version="1.0.0",
+            reading=CommercialInvoiceReading,
+            kinds={
+                "invoice_date": FieldKind.DATE,
+                "quantity": FieldKind.NUMBER,
+                "unit_price": FieldKind.NUMBER,
+                "line_total": FieldKind.NUMBER,
+                "total": FieldKind.NUMBER,
+            },
+            reads_accounts=True,
+        ),
+        ExtractionSpec(
+            doc_type=DocumentType.BANK_TRANSFER_RECEIPT,
+            prompt_id="supply_chain.extract_bank_transfer_receipt",
+            prompt_version="1.0.0",
+            reading=BankTransferReading,
+            kinds={"transfer_date": FieldKind.DATE, "amount": FieldKind.NUMBER},
+            reads_accounts=True,
         ),
     )
 }
@@ -534,6 +636,40 @@ def redact_identifiers(text: str) -> Redacted:
     out = _DIGIT_GROUPS.sub(mask_groups, out)
     out = _DIGIT_RUN.sub(mask, out)
     return Redacted(text=out, count=count)
+
+
+# The key under which code keeps the beneficiary accounts a document names
+# (ticket ai-automation/15). Not a field of any reading model: the model never
+# writes it, and grounding never keeps a key it did not ground.
+ACCOUNTS_FIELD = "beneficiary_accounts"
+
+
+def account_numbers_in(text: str) -> list[str]:
+    """The account numbers a document names AS accounts, normalised: a
+    number written after "STK", "số tài khoản", "account", "A/C" and the
+    like, and an IBAN. A long bare run of digits is masked before the model
+    (`redact_identifiers`) but is not taken for an account here: an amount
+    written without separators would otherwise read as a changed account.
+    Read by code from the text before redaction; never shown to a model."""
+    found: list[str] = []
+    for match in _AFTER_KEYWORD.finditer(text):
+        found.append(normalize_account_number(match.group(2)))
+    for match in _IBAN.finditer(text):
+        found.append(normalize_account_number(match.group(0)))
+    seen: set[str] = set()
+    out: list[str] = []
+    for number in found:
+        if 6 <= len(number) <= 34 and number not in seen:
+            seen.add(number)
+            out.append(number)
+    return out
+
+
+def account_marks(text: str) -> list[dict[str, str]]:
+    """What a reading keeps of each account number `text` names: its digest
+    (`account_digest`, what code compares with the supplier's master) and
+    nothing a person or a model could read the number back from."""
+    return [{"digest": account_digest(number)} for number in account_numbers_in(text)]
 
 
 def is_unreadable(text: str) -> bool:

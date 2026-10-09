@@ -99,7 +99,7 @@ Ticket 01–20 `resolved`; UAT-02 chạy với Elmich; `process.md` mục 4 cộ
 | 12  | [Bước 8: email chốt NCC, kiểm thư trả lời](issues/12-step-8-supplier-confirmation.md)      | M    | resolved        | 07, 11     |
 | 13  | [Bước 9: đề xuất mã hàng, SKU, kiểm danh mục](issues/13-step-9-item-code-proposal.md)      | M    | resolved        | 11, ON-01  |
 | 14  | [Bước 10: PO nháp](issues/14-step-10-purchase-order.md)                                    | M    | resolved        | 01, 12     |
-| 15  | [Bước 11, 16: đặt cọc, thanh toán, đối chiếu](issues/15-steps-11-16-deposit-payment.md)    | L    | ready-for-agent | 14         |
+| 15  | [Bước 11, 16: đặt cọc, thanh toán, đối chiếu](issues/15-steps-11-16-deposit-payment.md)    | L    | resolved        | 14         |
 | 16  | [Bước 12: MKT tối thiểu, kiểm bản in](issues/16-step-12-mkt-and-proof-check.md)            | L    | ready-for-agent | 04, 11     |
 | 17  | [Bước 13–15: file NCC, QC, vận chuyển, đóng cont](issues/17-steps-13-15-supplier-files.md) | L    | ready-for-agent | 05, 14     |
 | 18  | [Bước 17: phiếu nhập kho, đối chiếu số đếm](issues/18-step-17-warehouse.md)                | M    | ready-for-agent | 17         |

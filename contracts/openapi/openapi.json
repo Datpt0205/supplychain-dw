@@ -432,6 +432,53 @@
         "title": "ApprovalViewOutcome",
         "type": "object"
       },
+      "ApprovePOStepRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
+          "draft_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          },
+          "results": {
+            "additionalProperties": {
+              "maxLength": 100,
+              "pattern": "^[^\\x00]*$",
+              "type": "string"
+            },
+            "maxProperties": 10,
+            "title": "Results",
+            "type": "object"
+          },
+          "step": {
+            "$ref": "#/components/schemas/POStepKind"
+          }
+        },
+        "required": [
+          "step"
+        ],
+        "title": "ApprovePOStepRequest",
+        "type": "object"
+      },
       "ApprovePurchaseOrderRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2160,7 +2207,7 @@
         "type": "object"
       },
       "DocumentType": {
-        "description": "ADR 0021's fourteen document types, from process.md section 2, the\nthree papers of step 12's sub-flow (slice PK) and the supplier's quotation\n(ai-automation/02).",
+        "description": "ADR 0021's fourteen document types, from process.md section 2, the\nthree papers of step 12's sub-flow (slice PK), the supplier's quotation\n(ai-automation/02), the tờ trình (ai-automation/03) and the payment papers\nof steps 11 and 16 (ai-automation/15).",
         "enum": [
           "proposal_list",
           "product_image",
@@ -2180,7 +2227,10 @@
           "packaging_design",
           "pre_production_test_report",
           "supplier_quotation",
-          "bod_submission"
+          "bod_submission",
+          "proforma_invoice",
+          "commercial_invoice",
+          "bank_transfer_receipt"
         ],
         "title": "DocumentType",
         "type": "string"
@@ -4903,6 +4953,265 @@
         "title": "POPaymentView",
         "type": "object"
       },
+      "POStepFindingView": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "subject",
+          "message"
+        ],
+        "title": "POStepFindingView",
+        "type": "object"
+      },
+      "POStepKind": {
+        "enum": [
+          "deposit_request",
+          "deposit_payment",
+          "final_payment_request",
+          "final_payment"
+        ],
+        "title": "POStepKind",
+        "type": "string"
+      },
+      "POStepProposalView": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseAction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "can_approve": {
+            "title": "Can Approve",
+            "type": "boolean"
+          },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
+          "draft_doc_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          },
+          "draft_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Version"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/POStepFindingView"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "missing_paper": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposed": {
+            "title": "Proposed",
+            "type": "boolean"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/POStepResultView"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/POStepKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "step",
+          "action",
+          "draft_doc_type",
+          "draft_id",
+          "draft_version",
+          "draft_status",
+          "content_sha256",
+          "findings",
+          "results",
+          "proposed",
+          "can_approve",
+          "blocked_reason",
+          "missing_paper"
+        ],
+        "title": "POStepProposalView",
+        "type": "object"
+      },
+      "POStepResultView": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ResultKind"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "redacted": {
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/POStepSuggestionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "label",
+          "required",
+          "suggestion",
+          "redacted"
+        ],
+        "title": "POStepResultView",
+        "type": "object"
+      },
+      "POStepSuggestionView": {
+        "properties": {
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "quote",
+          "document_id"
+        ],
+        "title": "POStepSuggestionView",
+        "type": "object"
+      },
       "PackagingAction": {
         "enum": [
           "approve_colour",
@@ -7362,6 +7671,15 @@
         "title": "ResultFieldView",
         "type": "object"
       },
+      "ResultKind": {
+        "description": "What a person types for a physical step: an amount (a price field,\nhidden without the commercial scope), a date.",
+        "enum": [
+          "amount",
+          "date"
+        ],
+        "title": "ResultKind",
+        "type": "string"
+      },
       "ReviewRaise": {
         "description": "What asking for the approval a case waits on (BGĐ's review at step 6,\nthe sign-off at step 9) did.",
         "enum": [
@@ -9433,6 +9751,43 @@
         "title": "SupplyChainItemCodeRule",
         "type": "object"
       },
+      "SupplyChainPODocuments": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_id": {
+            "pattern": "^supply_chain_po_documents$",
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "required": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DocumentType"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/CaseAction"
+            },
+            "title": "Required",
+            "type": "object"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version"
+        ],
+        "title": "SupplyChainPODocuments",
+        "type": "object"
+      },
       "SupplyChainPackagingPolicy": {
         "additionalProperties": false,
         "properties": {
@@ -9657,6 +10012,14 @@
             "default": false,
             "title": "Bod Submission",
             "type": "boolean"
+          },
+          "po_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/POStepKind"
+            },
+            "title": "Po Steps",
+            "type": "array"
           },
           "policy_id": {
             "title": "Policy Id",
@@ -15775,6 +16138,120 @@
         ]
       }
     },
+    "/api/v1/supply-chain/po-cases/{case_id}/step-proposal": {
+      "get": {
+        "operationId": "get_po_step_proposal_api_v1_supply_chain_po_cases__case_id__step_proposal_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/POStepProposalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Po Step Proposal",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/step-proposal/approval": {
+      "post": {
+        "operationId": "approve_po_step_api_v1_supply_chain_po_cases__case_id__step_proposal_approval_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovePOStepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/POStepProposalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Po Step",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/po-cases/{case_id}/supplier-messages": {
       "get": {
         "operationId": "list_po_case_supplier_messages_api_v1_supply_chain_po_cases__case_id__supplier_messages_get",
@@ -16156,6 +16633,66 @@
           }
         },
         "summary": "Create Po Case Transition",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-documents-policy": {
+      "get": {
+        "operationId": "get_po_documents_policy_api_v1_supply_chain_po_documents_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainPODocuments"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Po Documents Policy",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "operationId": "put_po_documents_policy_api_v1_supply_chain_po_documents_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainPODocuments"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainPODocuments"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Po Documents Policy",
         "tags": [
           "supply_chain"
         ]

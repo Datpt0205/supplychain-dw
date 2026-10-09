@@ -1,0 +1,32 @@
+{
+  "step": "deposit_request",
+  "master": "0071000123456",
+  "master_in": "other_workspace",
+  "documents": [
+    {
+      "doc_type": "proforma_invoice",
+      "reading": {
+        "invoice_number": "PI-2026-77",
+        "currency": "USD",
+        "total": "4250.00",
+        "deposit_amount": "1275.00",
+        "lines": [
+          {
+            "sku_code": "EL-00001-01",
+            "quantity": "500",
+            "unit_price": "2.50"
+          },
+          {
+            "sku_code": "EL-00001-02",
+            "quantity": "1200",
+            "unit_price": "2.50"
+          }
+        ]
+      },
+      "accounts": [
+        "1903 5555 666 777"
+      ],
+      "in": "other_workspace"
+    }
+  ]
+}

@@ -13,6 +13,8 @@ what the scripted model answers, and what must come out:
 - `fields`: kept values by name (null = must NOT be kept);
 - `gaps`: gaps that must be named;
 - `prompt_must_not_contain`: strings that must not reach the model;
+- `accounts`: the account numbers code must keep the digests of (a paper
+  whose beneficiary account matters, ticket ai-automation/15);
 - `contained_marker`: text that must sit inside the prompt's one untrusted
   block, never in the system prompt;
 - `scripted`: `fields` and `gaps` that hold only for the case's scripted
@@ -50,7 +52,9 @@ from dw_supply_chain.domain.case_document import (
     CaseKind,
     DocumentType,
 )
+from dw_supply_chain.domain.commercial import account_digest
 from dw_supply_chain.domain.extraction import (
+    ACCOUNTS_FIELD,
     EXTRACTION_SPECS,
     normalize,
     numbers_in,
@@ -186,6 +190,16 @@ def grade_document_extraction(
             actual = kept.get(name, {}).get("value") if isinstance(kept.get(name), dict) else None
             if actual != value:
                 return GradeResult.fail(f"field {name}", expected=value, actual=actual)
+        if "accounts" in expected:
+            # Code's reading of the accounts a paper names (ai-automation/15):
+            # the digests of exactly these, whatever the model read.
+            marks = kept.get(ACCOUNTS_FIELD, [])
+            digests = sorted(m["digest"] for m in marks if isinstance(m, dict))
+            wanted_digests = sorted(account_digest(a) for a in expected["accounts"])
+            if digests != wanted_digests:
+                return GradeResult.fail(
+                    "accounts", expected=len(wanted_digests), actual=len(digests)
+                )
         named = {(g["field"], g["reason"]) for g in rows[0].gaps}
         for gap in [*expected.get("gaps", []), *scripted.get("gaps", [])]:
             if (gap["field"], gap["reason"]) not in named:

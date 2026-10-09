@@ -128,6 +128,7 @@ from dw_supply_chain.sla_policy import (
     SupplyChainSLAPolicy,
 )
 from dw_supply_chain.testing.pages import history_page
+from dw_supply_chain.testing.po_papers import open_paper_gate
 from dw_supply_chain.testing.product_cases import InMemoryDirectory, InMemoryProductCases
 from dw_supply_chain.testing.production_gate import open_production_gate
 
@@ -777,6 +778,7 @@ def make_container(
             ),
             runner=resolved_runner,
             production_gate=open_production_gate(),
+            papers=open_paper_gate(),
             ids=Uuid4Generator(),
             clock=SystemClock(),
         ),

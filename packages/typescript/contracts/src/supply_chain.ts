@@ -503,6 +503,10 @@ export const documentTypeSchema = z.enum([
   "supplier_quotation",
   // The submission to BGĐ at step 6 (tờ trình; ai-automation/03).
   "bod_submission",
+  // Steps 11 and 16's papers (ai-automation/15).
+  "proforma_invoice",
+  "commercial_invoice",
+  "bank_transfer_receipt",
 ]);
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 
@@ -1373,3 +1377,53 @@ export const purchaseOrderProposalSchema = z.object({
   blocked_reason: z.string().nullable(),
 });
 export type PurchaseOrderProposal = z.infer<typeof purchaseOrderProposalSchema>;
+
+// Tickets ai-automation/15-18: a PO case's steps 11-17 prepared by code.
+
+/** The API's `POStepKind`: a PO step a tenant lets AI prepare. */
+export const poStepKindSchema = z.enum([
+  "deposit_request",
+  "deposit_payment",
+  "final_payment_request",
+  "final_payment",
+]);
+export type POStepKind = z.infer<typeof poStepKindSchema>;
+
+/** Mirrors `POStepProposalView`: the enabled step of the case's state, its
+ * draft (fields read through the drafts API, prices hidden per scope), what
+ * code finds now (no amount, no account), AI's suggestion beside each result
+ * a person types (an amount redacted without the price scope). */
+export const poStepProposalSchema = z.object({
+  step: poStepKindSchema.nullable(),
+  action: z.string().nullable(),
+  draft_doc_type: documentTypeSchema.nullable(),
+  draft_id: z.string().uuid().nullable(),
+  draft_version: z.number().int().nullable(),
+  draft_status: draftStatusSchema.nullable(),
+  content_sha256: z.string().nullable(),
+  findings: z.array(
+    z.object({ code: z.string(), subject: z.string(), message: z.string() }),
+  ),
+  results: z.array(
+    z.object({
+      name: z.string(),
+      kind: z.enum(["amount", "date"]),
+      label: z.string(),
+      required: z.boolean(),
+      suggestion: z
+        .object({
+          value: z.string().nullable(),
+          quote: z.string().nullable(),
+          document_id: z.string().uuid().nullable(),
+        })
+        .nullable(),
+      redacted: z.boolean(),
+    }),
+  ),
+  proposed: z.boolean(),
+  can_approve: z.boolean(),
+  blocked_reason: z.string().nullable(),
+  missing_paper: documentTypeSchema.nullable(),
+});
+export type POStepProposal = z.infer<typeof poStepProposalSchema>;
+export type POStepResult = POStepProposal["results"][number];

@@ -53,6 +53,7 @@ from dw_supply_chain.domain.commercial import (
     CommercialTerms,
     Incoterm,
     POCommercial,
+    POPayment,
     PricedLine,
     ProductProfile,
     ProfileCommercial,
@@ -96,6 +97,8 @@ class InMemoryPOStore:
     cases: dict[uuid.UUID, POCase] = field(default_factory=dict)
     terms: dict[uuid.UUID, CommercialTerms] = field(default_factory=dict)
     prices: dict[uuid.UUID, dict[uuid.UUID, Decimal]] = field(default_factory=dict)
+    # Recorded deposits and final payments (ticket ai-automation/15).
+    payments: dict[uuid.UUID, list[POPayment]] = field(default_factory=dict)
 
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
         case = self.cases.get(case_id.value)
@@ -141,6 +144,7 @@ class InMemoryPOStore:
                 )
                 for line in case.lines
             ),
+            payments=tuple(self.payments.get(case_id, [])),
         )
 
 

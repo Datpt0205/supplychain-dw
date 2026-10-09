@@ -78,6 +78,7 @@ from dw_platform.adapters.persistence.workspace_names import SqlWorkspaceNames
 from dw_platform.application.approval_codes import ApprovalSubjectVersions
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
+from dw_supply_chain.action_duties import load_supply_chain_action_duties
 from dw_supply_chain.adapters.persistence.case_document_repository import (
     SqlCaseDocumentRepository,
 )
@@ -85,6 +86,7 @@ from dw_supply_chain.adapters.persistence.code_registry import SqlCodeRegistry
 from dw_supply_chain.adapters.persistence.commercial_repository import (
     SqlPOCommercialRepository,
     SqlProductProfileRepository,
+    SqlSupplierAccountLookup,
 )
 from dw_supply_chain.adapters.persistence.document_draft_repository import (
     SqlDocTemplateOverrides,
@@ -151,6 +153,7 @@ from dw_supply_chain.application.follow_up_retention import PruneClosedFollowUps
 from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
 from dw_supply_chain.application.handlers import ListPOCases, ListProductCategories
 from dw_supply_chain.application.item_coding import ItemCodingPreparation
+from dw_supply_chain.application.po_steps import POStepSources, PreparePOSteps
 from dw_supply_chain.application.ports import CaseDocumentObjectListingPort
 from dw_supply_chain.application.product_cases import ListProductCases, ProposeProductCase
 from dw_supply_chain.application.product_reviews import (
@@ -187,6 +190,7 @@ from dw_supply_chain.model_routes import (
     load_supply_chain_model_routes,
 )
 from dw_supply_chain.policy_files import (
+    ACTION_DUTIES_POLICY_FILE,
     ADVANCE_PRODUCT_CASE_WORKER_FILE,
     BM04_SCHEMA_POLICY_FILE,
     FOLLOW_UP_POLICY_FILE,
@@ -859,6 +863,65 @@ def build_purchase_orders_consumer(lane: PreparePurchaseOrders) -> Callable[[], 
         if outcome.drafted or outcome.failed_workspaces:
             logger.info(
                 "purchase orders: drafted=%d failed_workspaces=%d",
+                outcome.drafted,
+                outcome.failed_workspaces,
+            )
+
+    return consume
+
+
+def build_po_steps(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    configs_dir: Path,
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> PreparePOSteps:
+    """The lane `supply_chain_po_steps` (tickets ai-automation/15-18): the
+    paper of each enabled PO step, by code, once per case in the step's
+    state. No model, no bucket."""
+    registry = DocTemplateRegistry(inspector=DocxTemplateInspector())
+    registry.load_directory(configs_dir / "doc_templates")
+    templates = TenantDocTemplates(registry=registry, overrides=SqlDocTemplateOverrides(sessions))
+    drafts = SqlDocumentDraftRepository(sessions)
+    po_cases = SqlPOCaseRepository(sessions)
+    policies = configs_dir / "policies"
+    return PreparePOSteps(
+        workspaces=SqlWorkspacesWithCases(sessions),
+        cases=po_cases,
+        sources=POStepSources(
+            commercial=SqlPOCommercialRepository(sessions),
+            accounts=SqlSupplierAccountLookup(sessions),
+            documents=SqlCaseDocumentRepository(sessions),
+            readings=SqlExtractionReadings(sessions),
+        ),
+        drafts=drafts,
+        prepare_draft=PrepareDocumentDraft(
+            cases={CaseKind.PO: po_cases, CaseKind.PRODUCT: SqlProductCaseRepository(sessions)},
+            drafts=drafts,
+            templates=templates,
+            ids=ids,
+            clock=clock,
+        ),
+        policy_override_repo=SqlPolicyOverrideRepository(sessions),
+        platform_default_policy=load_supply_chain_step_preparation(
+            policies / STEP_PREPARATION_POLICY_FILE
+        ),
+        platform_default_duties=load_supply_chain_action_duties(
+            policies / ACTION_DUTIES_POLICY_FILE
+        ),
+        holders=SqlScopeHolders(sessions),
+        notifier=SqlNotificationRepository(sessions),
+        clock=clock,
+    )
+
+
+def build_po_steps_consumer(lane: PreparePOSteps) -> Callable[[], Awaitable[None]]:
+    async def consume() -> None:
+        outcome = await lane.run()
+        if outcome.drafted or outcome.failed_workspaces:
+            logger.info(
+                "PO steps: drafted=%d failed_workspaces=%d",
                 outcome.drafted,
                 outcome.failed_workspaces,
             )

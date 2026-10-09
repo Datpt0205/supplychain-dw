@@ -140,6 +140,7 @@ from dw_supply_chain.application.product_cases import (
 from dw_supply_chain.presentation.commercial_routes import CommercialHandlers
 from dw_supply_chain.presentation.draft_routes import DraftHandlers
 from dw_supply_chain.presentation.import_routes import ImportHandlers
+from dw_supply_chain.presentation.po_step_routes import POStepHandlers
 from dw_supply_chain.presentation.proposal_list_routes import ProposalListHandlers
 from dw_supply_chain.presentation.purchase_order_routes import PurchaseOrderHandlers
 from dw_supply_chain.presentation.sample_checklist_routes import SampleChecklistHandlers
@@ -269,6 +270,8 @@ class ApiContainer:
     supply_chain_import: ImportHandlers | None = None
     # Step 10's PO draft and its approval (ai-automation/14).
     supply_chain_purchase_orders: PurchaseOrderHandlers | None = None
+    # Steps 11-17 prepared by code, approved on the PO case page (ai-automation/15-18).
+    supply_chain_po_steps: POStepHandlers | None = None
     # Product-development cases (stage 1): their own router on their own guard,
     # as the documents router is.
     supply_chain_propose_product_case: ProposeProductCase | None = None

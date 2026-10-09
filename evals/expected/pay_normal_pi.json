@@ -1,0 +1,16 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "invoice_number": "PI-2026-77",
+    "total": "4250.00",
+    "deposit_amount": "1275.00",
+    "invoice_date": "2026-10-08"
+  },
+  "accounts": [
+    "0071000123456"
+  ],
+  "prompt_must_not_contain": [
+    "0071000123456"
+  ]
+}

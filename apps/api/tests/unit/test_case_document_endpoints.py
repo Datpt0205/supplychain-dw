@@ -614,7 +614,7 @@ async def test_a_download_is_an_attachment_of_the_stored_type_never_sniffed() ->
     world = World(FakeCases(case))
     (uploaded,) = await _send(
         world.container(),
-        [_upload(case, doc_type="deposit_docs", filename='Biên "bản" 1.pdf')],
+        [_upload(case, doc_type="packaging_content", filename='Biên "bản" 1.pdf')],
     )
     document_id = uploaded.json()["id"]
 
@@ -707,7 +707,7 @@ async def test_a_storage_failure_on_download_keeps_the_object_key_on_the_server(
 ) -> None:
     case = _case()
     world = World(FakeCases(case))
-    (uploaded,) = await _send(world.container(), [_upload(case, doc_type="deposit_docs")])
+    (uploaded,) = await _send(world.container(), [_upload(case, doc_type="packaging_content")])
     container = world.container()
     assert container.supply_chain_download_case_document is not None
     container.supply_chain_download_case_document = DownloadCaseDocument(

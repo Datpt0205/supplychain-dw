@@ -31,9 +31,21 @@
       "version": "1.0.0"
     },
     {
+      "checksum": "6a78fd9d7a408b76869ef3bf5f5b36dcd344a494459350a7ed3affcc430079ce",
+      "doc_type": "deposit_docs",
+      "template_id": "supply_chain.deposit_request",
+      "version": "1.0.0"
+    },
+    {
       "checksum": "49ac37dacc33d38d11c66dbf6a0fe8dfacba5b1fa70e63d0d9e5e419bd4836a8",
       "doc_type": "official_item_code",
       "template_id": "supply_chain.official_item_code",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "a0591a525013f4b90f3de3b4f5138299962567c4647b5dffe96f16d88e8ea74a",
+      "doc_type": "payment_docs",
+      "template_id": "supply_chain.payment_request",
       "version": "1.0.0"
     },
     {
@@ -79,12 +91,12 @@
       "version": "1.9.0"
     },
     {
-      "checksum": "dd960e51dd3217146fb2ba4bd180ec75e6a997bb203dddfd265075aab6f9999c",
+      "checksum": "1d4ba79c4522250f7c682dd944f0d4855ce71eedabcd3db587a2eb25565cc583",
       "dataset_id": "supply_chain_preparation",
-      "version": "1.9.0"
+      "version": "1.10.0"
     }
   ],
-  "git_sha": "6ff1ec4adf2d6fa029850dac7881f66788ba89a6",
+  "git_sha": "35ff9e16719ee05857279608114ed33737423639",
   "knowledge_index_version": "2026-07-25.structure-1",
   "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
@@ -130,13 +142,18 @@
       "version": "1.0.0"
     },
     {
-      "checksum": "be2e002b9e34c28368c86301ccdcdf83fdf5d965bf6ffbf1164686b9dd2fe37f",
+      "checksum": "1a469b5a42a93b5f940988c321ea6c373bf7990255d5d034909f2104af25c034",
       "policy_id": "supply_chain_model_routes",
-      "version": "1.9.0"
+      "version": "1.10.0"
     },
     {
       "checksum": "78b88c0ac6d0a061aee75a4f762746c84ae8dba05565b9e5c1e593ad7b1ba5e0",
       "policy_id": "supply_chain_packaging",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "317f54cca1e45250747c213778f567bb5f52ca718e3a4aeb4d12d9fc17b2f702",
+      "policy_id": "supply_chain_po_documents",
       "version": "1.0.0"
     },
     {
@@ -241,6 +258,22 @@
       "version": "1.1.0"
     },
     {
+      "checksum": "80f1c2d9ae11c0288a07945fcf6cfe2a2fbadc14c99ed61eb40972fc038bf2d8",
+      "prompt_id": "supply_chain.extract_bank_transfer_receipt",
+      "skills": [
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "d3f6b9d663e0ab5d8ce88af78969a505e97cb0132a1eb0f95fecb133ce7c395d",
+      "prompt_id": "supply_chain.extract_commercial_invoice",
+      "skills": [
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
       "checksum": "8257241e226ba44472e76249ce536591822bec26eed2bfbc354b241ff96c26e2",
       "prompt_id": "supply_chain.extract_product_profile_bm04",
       "skills": [],
@@ -253,6 +286,14 @@
         "supply_chain.bm04_guide@^1.0.0"
       ],
       "version": "1.1.0"
+    },
+    {
+      "checksum": "9f310aa469fa67988c274e8a0a55a941efc5c6d6cdc1e59442425043662cf1ec",
+      "prompt_id": "supply_chain.extract_proforma_invoice",
+      "skills": [
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.0.0"
     },
     {
       "checksum": "821ac1e13f8a77e347c91ab7eefb9f4511f949e489188869a5662b6c3b9a4159",
@@ -430,6 +471,18 @@
       "checksum": "6a4f8c9b180dcaac46e559ce2d395fdf9826732594a36764afe782b4e1ff80ec",
       "skill_id": "supply_chain.step_documents",
       "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_supplier_confirmation_email",
+        "supply_chain.extract_supplier_quotation",
+        "supply_chain.extract_proforma_invoice",
+        "supply_chain.extract_commercial_invoice",
+        "supply_chain.extract_bank_transfer_receipt"
+      ],
+      "checksum": "a7f98237d118469bf5af88674648066406683f7f8427db1abe0b9f305728d3ee",
+      "skill_id": "supply_chain.step_documents",
+      "version": "1.1.0"
     },
     {
       "applies_to": [],

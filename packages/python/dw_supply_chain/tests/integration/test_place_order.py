@@ -100,6 +100,7 @@ from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE, SLA_
 from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
 from dw_supply_chain.testing.pages import oldest_first
+from dw_supply_chain.testing.po_papers import open_paper_gate
 from dw_supply_chain.testing.production_gate import open_production_gate
 
 pytestmark = pytest.mark.integration
@@ -206,6 +207,7 @@ def _advance_po(stack: Stack) -> AdvancePOCase:
         platform_default_action_duties=_PO_DUTIES,
         runner=stack.runner,
         production_gate=open_production_gate(),
+        papers=open_paper_gate(),
         ids=Uuid4Generator(),
         clock=SystemClock(),
     )
@@ -673,6 +675,7 @@ async def test_an_override_stored_before_create_po_loads_after_the_migration(db:
         platform_default_action_duties=_PO_DUTIES,
         runner=None,  # type: ignore[arg-type]  # the matrix gates nothing: no run starts
         production_gate=open_production_gate(),
+        papers=open_paper_gate(),
         ids=Uuid4Generator(),
         clock=SystemClock(),
     )

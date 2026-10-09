@@ -24,7 +24,10 @@ The order, and what each step refuses:
    empty text is `unreadable`: nothing is guessed, and no file goes to a model
    before its identifiers could be masked.
 5. **Redaction**, then **one structured call** with the text as the prompt's
-   one untrusted variable (ADR 0010), then **grounding** in code.
+   one untrusted variable (ADR 0010), then **grounding** in code. A type whose
+   beneficiary account matters (an invoice, a transfer receipt: ticket
+   ai-automation/15) also gets code's own reading of the account numbers it
+   names, from the text before redaction, kept as digests only.
 
 Errors are recorded, not retried for ever: an invalid model output is
 `refused`, a provider failure after the gateway's own retries is `failed`.
@@ -52,9 +55,11 @@ from dw_platform.domain.audit import AuditEvent, lane_audit_event, system_actor
 from dw_supply_chain.application.ports import TenantPlanPort
 from dw_supply_chain.domain.case_document import CaseDocument, CaseDocumentId, DocumentType
 from dw_supply_chain.domain.extraction import (
+    ACCOUNTS_FIELD,
     EXTRACTION_SPECS,
     ExtractionSpec,
     ExtractionStatus,
+    account_marks,
     gaps_json,
     ground,
     is_unreadable,
@@ -312,6 +317,12 @@ class ExtractDocuments:
             )
             return
         grounded = ground(reading, spec, redacted.text)
+        fields = dict(grounded.fields)
+        if spec.reads_accounts:
+            # Code's reading of the unredacted text, never the model's: the
+            # digests of the accounts the document names, compared with the
+            # supplier's master where a step is prepared (ai-automation/15).
+            fields[ACCOUNTS_FIELD] = account_marks(parsed.text)
         await self._record(
             context,
             document,
@@ -320,7 +331,7 @@ class ExtractDocuments:
             ExtractionStatus.EXTRACTED,
             text=redacted.text,
             redactions=redacted.count,
-            fields=grounded.fields,
+            fields=fields,
             gaps=gaps_json(grounded.gaps),
         )
 

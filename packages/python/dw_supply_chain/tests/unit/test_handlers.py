@@ -82,6 +82,7 @@ from dw_supply_chain.application.handlers import (
     SummarizeDailyBrief,
     duty_scope,
 )
+from dw_supply_chain.application.po_papers import PaperGateResolver
 from dw_supply_chain.application.ports import (
     PO_REFERENCE_PADDING,
     FollowUpRecord,
@@ -91,7 +92,12 @@ from dw_supply_chain.application.product_cases import ListProductCases
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.brief_policy import SupplyChainBriefPolicy
 from dw_supply_chain.domain.brief_summary import BriefSummaryDraft, BriefSummaryStatus
-from dw_supply_chain.domain.case_document import CaseKind
+from dw_supply_chain.domain.case_document import (
+    CaseDocument,
+    CaseDocumentId,
+    CaseKind,
+    DocumentType,
+)
 from dw_supply_chain.domain.case_query import CaseQueryOutcome, GroundedField
 from dw_supply_chain.domain.daily_brief import ENTRIES_SHOWN, BriefSignal
 from dw_supply_chain.domain.delay_impact import (
@@ -129,8 +135,11 @@ from dw_supply_chain.sla_policy import (
     SupplyChainSLAPolicy,
 )
 from dw_supply_chain.testing.pages import history_page
+from dw_supply_chain.testing.po_papers import open_paper_gate
+from dw_supply_chain.testing.po_steps import ELMICH_PO_DOCUMENTS
 from dw_supply_chain.testing.product_cases import InMemoryDirectory, InMemoryProductCases
 from dw_supply_chain.testing.production_gate import open_production_gate
+from dw_supply_chain.testing.step_preparation import InMemoryDocuments
 
 pytestmark = pytest.mark.unit
 
@@ -1326,6 +1335,7 @@ def _advance_po_case_handler(
     platform_default_approval_matrix: SupplyChainApprovalMatrix | None = None,
     platform_default_action_duties: SupplyChainActionDuties | None = None,
     runner: FakeWorkflowRunnerPort | None = None,
+    papers: PaperGateResolver | None = None,
 ) -> AdvancePOCase:
     return AdvancePOCase(
         repo=po_case_repo,
@@ -1336,9 +1346,55 @@ def _advance_po_case_handler(
         or load_supply_chain_action_duties(_SHIPPED_ACTION_DUTIES),
         runner=runner or FakeWorkflowRunnerPort(),
         production_gate=open_production_gate(),
+        papers=papers or open_paper_gate(),
         ids=Uuid4Generator(),
         clock=SystemClock(),
     )
+
+
+async def test_a_step_whose_paper_the_tenant_requires_waits_for_it_on_the_case() -> None:
+    # Ticket ai-automation/15 (QE-02): Elmich confirms the deposit only once
+    # the deposit papers are on THIS case; another case's papers do not count.
+    po_case_repo = FakePOCaseRepository()
+    context = _context()
+    case = await _seeded_case(po_case_repo, context)
+    documents = InMemoryDocuments()
+    papers = PaperGateResolver(
+        documents=documents,
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default=ELMICH_PO_DOCUMENTS,
+    )
+    handler = _advance_po_case_handler(po_case_repo, papers=papers)
+    await handler.handle(context, po_case_id=case.id, action=CaseAction.REQUEST_DEPOSIT)
+
+    def paper(case_id: uuid.UUID) -> CaseDocument:
+        return CaseDocument(
+            id=CaseDocumentId(uuid.uuid4()),
+            tenant_id=context.tenant_id,
+            workspace_id=context.workspace_id,
+            case_kind=CaseKind.PO,
+            case_id=case_id,
+            doc_type=DocumentType.DEPOSIT_DOCS,
+            object_key="k",
+            filename="coc.pdf",
+            content_type="application/pdf",
+            size_bytes=1,
+            sha256="0" * 64,
+            version=1,
+            uploaded_by=uuid.uuid4(),
+            uploaded_at=datetime.now(UTC),
+        )
+
+    documents.rows.append(paper(uuid.uuid4()))
+    with pytest.raises(ConflictError) as refused:
+        await handler.handle(context, po_case_id=case.id, action=CaseAction.CONFIRM_DEPOSIT)
+    assert refused.value.details["missing_document_type"] == "deposit_docs"
+    assert po_case_repo.by_id[case.id.value].state is CaseState.WAITING_DEPOSIT
+
+    documents.rows.append(paper(case.id.value))
+    result = await handler.handle(context, po_case_id=case.id, action=CaseAction.CONFIRM_DEPOSIT)
+    assert isinstance(result, CaseActionApplied)
+    assert result.case.state is CaseState.DEPOSIT_CONFIRMED
 
 
 async def test_advance_dispatches_a_no_reason_action_and_persists_it() -> None:

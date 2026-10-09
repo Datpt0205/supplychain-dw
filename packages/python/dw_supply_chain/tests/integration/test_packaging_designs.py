@@ -79,6 +79,7 @@ from dw_supply_chain.domain.packaging_design import (
 )
 from dw_supply_chain.domain.po_case import CaseAction, CaseState, POCase, POCaseId
 from dw_supply_chain.packaging_policy import load_supply_chain_packaging_policy
+from dw_supply_chain.testing.po_papers import open_paper_gate
 
 pytestmark = pytest.mark.integration
 
@@ -202,6 +203,7 @@ def _advance(db: _Db) -> AdvancePOCase:
             policy_override_repo=SqlPolicyOverrideRepository(db.sessions),
             platform_default=_PACKAGING,
         ),
+        papers=open_paper_gate(),
         ids=Uuid4Generator(),
         clock=SystemClock(),
     )

@@ -1,0 +1,80 @@
+{
+  "doc_type": "commercial_invoice",
+  "document_text": "COMMERCIAL INVOICE\nSeller: Công ty Gia dụng Minh Phát\nInvoice No.: CI-2026-301\nDate: 20/11/2026\nCurrency: USD\nItem code | Description | Qty | Unit price | Amount\nEL-00001-01 | Nồi inox 24cm đỏ | 500 | 2.50 | 1,250.00\nEL-00001-02 | Nồi inox 24cm xanh | 1200 | 2.50 | 3,000.00\nTotal: 4,250.00\nBeneficiary: CONG TY GIA DUNG MINH PHAT\nBank: Vietcombank\nAccount No.: 0071000123456\n",
+  "model_reading": {
+    "supplier_name": {
+      "value": "Công ty Gia dụng Minh Phát",
+      "quote": "Seller: Công ty Gia dụng Minh Phát"
+    },
+    "invoice_number": {
+      "value": "CI-2026-301",
+      "quote": "Invoice No.: CI-2026-301"
+    },
+    "invoice_date": {
+      "value": "2026-11-20",
+      "quote": "Date: 20/11/2026"
+    },
+    "currency": {
+      "value": "USD",
+      "quote": "Currency: USD"
+    },
+    "lines": [
+      {
+        "sku_code": {
+          "value": "EL-00001-01",
+          "quote": "EL-00001-01 | Nồi inox 24cm đỏ | 500 | 2.50 | 1,250.00"
+        },
+        "description": {
+          "value": "Nồi inox 24cm đỏ",
+          "quote": "EL-00001-01 | Nồi inox 24cm đỏ | 500 | 2.50 | 1,250.00"
+        },
+        "quantity": {
+          "value": "500",
+          "quote": "EL-00001-01 | Nồi inox 24cm đỏ | 500 | 2.50 | 1,250.00"
+        },
+        "unit_price": {
+          "value": "2.50",
+          "quote": "EL-00001-01 | Nồi inox 24cm đỏ | 500 | 2.50 | 1,250.00"
+        },
+        "line_total": {
+          "value": "1,250.00",
+          "quote": "EL-00001-01 | Nồi inox 24cm đỏ | 500 | 2.50 | 1,250.00"
+        }
+      },
+      {
+        "sku_code": {
+          "value": "EL-00001-02",
+          "quote": "EL-00001-02 | Nồi inox 24cm xanh | 1200 | 2.50 | 3,000.00"
+        },
+        "description": {
+          "value": "Nồi inox 24cm xanh",
+          "quote": "EL-00001-02 | Nồi inox 24cm xanh | 1200 | 2.50 | 3,000.00"
+        },
+        "quantity": {
+          "value": "1200",
+          "quote": "EL-00001-02 | Nồi inox 24cm xanh | 1200 | 2.50 | 3,000.00"
+        },
+        "unit_price": {
+          "value": "2.50",
+          "quote": "EL-00001-02 | Nồi inox 24cm xanh | 1200 | 2.50 | 3,000.00"
+        },
+        "line_total": {
+          "value": "3,000.00",
+          "quote": "EL-00001-02 | Nồi inox 24cm xanh | 1200 | 2.50 | 3,000.00"
+        }
+      }
+    ],
+    "total": {
+      "value": "4,250.00",
+      "quote": "Total: 4,250.00"
+    },
+    "beneficiary_name": {
+      "value": "CONG TY GIA DUNG MINH PHAT",
+      "quote": "Beneficiary: CONG TY GIA DUNG MINH PHAT"
+    },
+    "bank_name": {
+      "value": "Techcombank",
+      "quote": "Bank: Techcombank"
+    }
+  }
+}

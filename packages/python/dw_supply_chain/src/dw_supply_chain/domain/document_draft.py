@@ -61,6 +61,10 @@ DRAFT_TEMPLATES: Mapping[DocumentType, tuple[str, str]] = {
     # 1.1.0 (ticket ai-automation/14): the deposit beside the order total.
     DocumentType.PURCHASE_ORDER: ("supply_chain.purchase_order", "1.1.0"),
     DocumentType.OFFICIAL_ITEM_CODE: ("supply_chain.official_item_code", "1.0.0"),
+    # Steps 11 and 16 (ticket ai-automation/15): the deposit and final payment
+    # requests, which become the case's deposit and payment papers.
+    DocumentType.DEPOSIT_DOCS: ("supply_chain.deposit_request", "1.0.0"),
+    DocumentType.PAYMENT_DOCS: ("supply_chain.payment_request", "1.0.0"),
 }
 
 _MAX_REASON = 1000

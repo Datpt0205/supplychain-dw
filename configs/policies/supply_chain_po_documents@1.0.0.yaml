@@ -1,0 +1,17 @@
+schema_version: "1.0"
+policy_id: supply_chain_po_documents
+policy_version: "1.0.0"
+
+# Chứng từ một bước của Hồ sơ PO cần có trên hồ sơ trước khi người bấm (ticket
+# ai-automation/15; QE-02): mỗi dòng là "hành động: loại chứng từ". Áp ở mọi
+# đường đi tới bước đó: người bấm, approval của ma trận duyệt, và đề xuất bước do
+# AI chuẩn bị.
+#
+# Đây là PLATFORM DEFAULT: không bước nào đòi chứng từ, để mọi tenant giữ đúng
+# hành vi trước ticket này. Tenant bật qua PUT
+# /api/v1/supply-chain/po-documents-policy (platform.policy_overrides, cùng cơ chế
+# supply_chain_packaging). Override của Elmich đòi hồ sơ đặt cọc trước khi xác
+# nhận đã cọc và hồ sơ thanh toán trước khi xác nhận đã thanh toán
+# (scripts/elmich_po_documents_override.yaml, ghi bằng
+# `uv run python scripts/seed_supply_chain_demo.py elmich-po-documents`).
+required: {}

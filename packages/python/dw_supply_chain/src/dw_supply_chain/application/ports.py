@@ -35,6 +35,7 @@ from dw_supply_chain.domain.follow_up import (
 from dw_supply_chain.domain.packaging_design import PackagingDesign, PackagingHistoryEntry
 from dw_supply_chain.domain.po_case import (
     TERMINAL_STATES,
+    CaseAction,
     CaseState,
     CaseTransition,
     POCase,
@@ -890,3 +891,12 @@ class PackagingDesignRepositoryPort(PackagingDesignReaderPort, Protocol):
         that transaction). Optimistic on `version`; the first step inserts.
         Either refusal is a `ConflictError`."""
         ...
+
+
+class PaperGatePort(Protocol):
+    """Refuses a PO step whose paper the tenant's policy names is not on the
+    case (`application.po_papers.PaperGateResolver`; ticket ai-automation/15)."""
+
+    async def require(
+        self, context: AccessContext, case_id: uuid.UUID, action: CaseAction
+    ) -> None: ...

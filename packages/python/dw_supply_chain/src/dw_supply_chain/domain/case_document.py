@@ -35,8 +35,9 @@ from dw_kernel.errors import DomainError, UnsupportedMediaTypeError
 
 class DocumentType(StrEnum):
     """ADR 0021's fourteen document types, from process.md section 2, the
-    three papers of step 12's sub-flow (slice PK) and the supplier's quotation
-    (ai-automation/02)."""
+    three papers of step 12's sub-flow (slice PK), the supplier's quotation
+    (ai-automation/02), the tờ trình (ai-automation/03) and the payment papers
+    of steps 11 and 16 (ai-automation/15)."""
 
     PROPOSAL_LIST = "proposal_list"
     PRODUCT_IMAGE = "product_image"
@@ -63,6 +64,13 @@ class DocumentType(StrEnum):
     # The submission to BGĐ at step 6 (tờ trình; ai-automation/03): drafted
     # from a template, a document once a person approves it.
     BOD_SUBMISSION = "bod_submission"
+    # Steps 11 and 16 (ticket ai-automation/15): the supplier's proforma and
+    # commercial invoices, and the bank's transfer receipt (UNC) Kế toán
+    # uploads after paying. Read by the extraction lane; their beneficiary
+    # account is compared by code, never shown to a model.
+    PROFORMA_INVOICE = "proforma_invoice"
+    COMMERCIAL_INVOICE = "commercial_invoice"
+    BANK_TRANSFER_RECEIPT = "bank_transfer_receipt"
 
 
 class CaseKind(StrEnum):

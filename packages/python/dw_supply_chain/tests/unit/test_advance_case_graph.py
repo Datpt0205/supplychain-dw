@@ -27,8 +27,10 @@ from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.application.ports import POCaseListFilter
+from dw_supply_chain.domain.case_document import DocumentType
 from dw_supply_chain.domain.packaging_design import PreProductionTest, ProductionGate
-from dw_supply_chain.domain.po_case import CaseState, CaseTransition, POCase, POCaseId
+from dw_supply_chain.domain.po_case import CaseAction, CaseState, CaseTransition, POCase, POCaseId
+from dw_supply_chain.testing.po_papers import open_paper_gate
 from dw_supply_chain.testing.production_gate import open_production_gate
 from dw_supply_chain.workflows.advance_case_graph import (
     APPROVAL_TYPE_PREFIX,
@@ -128,7 +130,19 @@ class _ClosedGate:
         return ProductionGate(required=True, test=PreProductionTest.FAILED)
 
 
-def _compiled(repo: FakePOCaseRepository, gate: Any = None) -> Any:
+class _PaperMissing:
+    """The paper gate of a tenant that requires the deposit papers, on a case
+    that has none (ticket ai-automation/15)."""
+
+    async def paper_for(self, context: AccessContext, action: CaseAction) -> DocumentType | None:
+        return DocumentType.DEPOSIT_DOCS if action is CaseAction.CONFIRM_DEPOSIT else None
+
+    async def require(self, context: AccessContext, case_id: uuid.UUID, action: CaseAction) -> None:
+        if action is CaseAction.CONFIRM_DEPOSIT:
+            raise ConflictError("confirm_deposit cần deposit_docs trên hồ sơ này trước")
+
+
+def _compiled(repo: FakePOCaseRepository, gate: Any = None, papers: Any = None) -> Any:
     # Typed `Any` on purpose, matching `LangGraphWorkflowRunner._graph`'s own
     # return type: a `StateGraph` compiled with full generics makes mypy
     # check `ainvoke`'s `context=` kwarg against a graph-level context type
@@ -136,7 +150,11 @@ def _compiled(repo: FakePOCaseRepository, gate: Any = None) -> Any:
     # graph`'s own `# type: ignore[type-arg]` already documents), not a
     # real type hole in the graph or in `RunContext` itself.
     return build_advance_case_graph(
-        repo, Uuid4Generator(), SystemClock(), gate or open_production_gate()
+        repo,
+        Uuid4Generator(),
+        SystemClock(),
+        gate or open_production_gate(),
+        papers or open_paper_gate(),
     ).compile(checkpointer=MemorySaver())
 
 
@@ -300,3 +318,27 @@ async def test_an_approved_start_production_still_asks_the_gate_when_applied() -
 
     assert repo.saved is None
     assert case.state is CaseState.PRE_PRODUCTION
+
+
+async def test_an_approved_payment_step_still_asks_for_its_paper_when_applied() -> None:
+    """Ticket ai-automation/15: the graph's apply node is a door to every PO
+    step, so the paper the tenant requires is asked there too."""
+    case = _case()
+    case.request_deposit()
+    repo = FakePOCaseRepository(case)
+    graph = _compiled(repo, papers=_PaperMissing())
+    run_context = _run_context(tenant_id=case.tenant_id.value, workspace_id=case.workspace_id.value)
+    config = _config(run_context)
+    await graph.ainvoke(
+        {"po_case_id": str(case.id), "action": "confirm_deposit", "reason": None},
+        config,
+        context=run_context,
+    )
+
+    with pytest.raises(ConflictError, match="deposit_docs"):
+        await graph.ainvoke(
+            Command(resume={"approved": True, "comment": "duyệt"}), config, context=run_context
+        )
+
+    assert repo.saved is None
+    assert case.state is CaseState.WAITING_DEPOSIT

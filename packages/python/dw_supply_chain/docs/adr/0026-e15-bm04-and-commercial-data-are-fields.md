@@ -108,3 +108,18 @@ giao; đặt cọc và thanh toán không có số tiền. Không có gì có c�
    thêm % cọc và tiền cọc (1.0.0 giữ cho bản nháp đã ghim).
 3. Duyệt PO nháp ghi điều khoản và đơn giá vào Hồ sơ PO qua cùng hàm `write_terms` thẻ thương mại
    dùng; người duyệt phải có `commercial.write`.
+
+## Sửa đổi 2026-10-10 (tạm, lát AI-15; cọc, thanh toán, đối chiếu)
+
+1. Mục mở của AI-14 được quyết: `deposit_docs`, `payment_docs`, `proforma_invoice`,
+   `commercial_invoice`, `bank_transfer_receipt` vào `PRICED_DOCUMENT_TYPES` (tải file cần
+   `commercial.read`). `deposit_paid` vào `PRICE_FIELDS`.
+2. Tiền cọc = tổng PO × % cọc của PO, làm tròn tới cent; tiền thanh toán = tổng PO trừ khoản cọc
+   đã ghi (bản mới nhất). Không có khoản cọc đã ghi thì số đề nghị thanh toán để trống và không
+   duyệt được.
+3. Tài khoản thụ hưởng so bằng digest với tài khoản hiện tại của NCC trong danh mục (tìm theo tên
+   chuẩn hóa trong workspace); khác là phát hiện đỏ "tài khoản khác danh mục", không tự chặn; NCC
+   chưa có tài khoản thì không so được và đề nghị không có tài khoản thụ hưởng. Phát hiện không in
+   số tiền hay số tài khoản (người không có quyền giá cũng đọc trang).
+4. Khoản cọc, thanh toán ghi khi Kế toán duyệt xác nhận: số người nhập (gợi ý là số UNC đọc được,
+   đặt cạnh ô), tiền tệ của PO, trích dẫn giấy đề nghị đã duyệt; cùng INSERT thẻ thương mại dùng.

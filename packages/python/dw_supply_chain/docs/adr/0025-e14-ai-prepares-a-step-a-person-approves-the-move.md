@@ -248,3 +248,27 @@ Profile `qwen` là chỗ giữ, chưa đo.
    `purchase_order` dựng từ đó (`origin = ai_prepared`), bước `create_po` (số PO, trạng thái, số
    lượng, lịch sử), điều khoản và đơn giá của Hồ sơ PO, mọi audit; số PO đã có trong công ty hay
    bản nháp đã quyết thì không gì được ghi. Kế toán được báo sau khi ghi, không kèm giá.
+
+## Sửa đổi 2026-10-10 (tạm, lát AI-15; bước Hồ sơ PO do code chuẩn bị, duyệt trên trang Hồ sơ PO)
+
+1. **Bước 11-17 theo mẫu AI-14, không qua approval run.** Mỗi bước Hồ sơ PO AI chuẩn bị là một
+   `POStepKind` (`domain.po_step`): trạng thái đi từ, hành động đích, giấy code soạn, chứng từ đọc,
+   ô kết quả người nhập, có ghi giá hay không. Tenant bật theo tên (`po_steps` của policy chuẩn bị
+   bước; nền tảng: không bước nào; Elmich 1.8.0: bốn bước của AI-15). Việc bước làm là code, không
+   phải policy.
+2. **Lane `supply_chain_po_steps`** soạn MỘT giấy cho mỗi hồ sơ ở trạng thái của bước có giấy (bị
+   từ chối thì không soạn lại), báo người giữ duty của hành động đích theo policy duty của tenant,
+   không kèm số tiền. Không mô hình: mô hình chỉ đọc chứng từ ở lane trích xuất.
+3. **Trang Hồ sơ PO** (`GET /po-cases/{id}/step-proposal`) tính phát hiện lúc mở (chứng từ thiếu,
+   chưa đọc, không đọc được; số tiền, tiền tệ, dòng, tài khoản không khớp; số trong bản nháp khác
+   code) và gợi ý cạnh mỗi ô kết quả để trống (số tiền ẩn khi thiếu quyền xem giá). "AI đề xuất"
+   khi không còn phát hiện; phát hiện không bao giờ tự chặn, người quyết.
+4. **Duyệt** (`POST .../step-proposal/approval`): scope duty của hành động đích theo policy của
+   tenant, thêm `commercial.write` khi bước ghi giá; bước phải bật; hồ sơ đúng trạng thái; bản nháp
+   là phiên bản mở người đó thấy, mọi số là số code tính; ô kết quả hợp lệ; giấy tenant bắt buộc có
+   trên hồ sơ. Một giao dịch: xác nhận bản nháp, chứng từ `ai_prepared`, bước qua đúng
+   `apply_action`, khoản thanh toán (`po_payments`), audit (không số tiền).
+5. **Giấy bắt buộc của bước** (QE-02, tạm): policy `supply_chain_po_documents@1.0.0` (nền tảng:
+   không; Elmich: `confirm_deposit` cần `deposit_docs`, `confirm_payment` cần `payment_docs`), hỏi ở
+   ba cửa của một bước: người bấm (`AdvancePOCase`), apply node của graph duyệt theo ma trận, và
+   đề xuất bước.

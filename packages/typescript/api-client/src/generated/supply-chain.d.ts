@@ -762,6 +762,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/po-cases/{case_id}/step-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Po Step Proposal */
+        get: operations["get_po_step_proposal_api_v1_supply_chain_po_cases__case_id__step_proposal_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/po-cases/{case_id}/step-proposal/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Po Step */
+        post: operations["approve_po_step_api_v1_supply_chain_po_cases__case_id__step_proposal_approval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/po-cases/{case_id}/supplier-messages": {
         parameters: {
             query?: never;
@@ -829,6 +863,24 @@ export interface paths {
         put?: never;
         /** Create Po Case Transition */
         post: operations["create_po_case_transition_api_v1_supply_chain_po_cases__case_id__transitions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/po-documents-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Po Documents Policy */
+        get: operations["get_po_documents_policy_api_v1_supply_chain_po_documents_policy_get"];
+        /** Put Po Documents Policy */
+        put: operations["put_po_documents_policy_api_v1_supply_chain_po_documents_policy_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1388,6 +1440,18 @@ export interface components {
             /** Supplier Name */
             supplier_name?: string | null;
         };
+        /** ApprovePOStepRequest */
+        ApprovePOStepRequest: {
+            /** Content Sha256 */
+            content_sha256?: string | null;
+            /** Draft Id */
+            draft_id?: string | null;
+            /** Results */
+            results?: {
+                [key: string]: string;
+            };
+            step: components["schemas"]["POStepKind"];
+        };
         /** ApprovePurchaseOrderRequest */
         ApprovePurchaseOrderRequest: {
             /** Content Sha256 */
@@ -1829,11 +1893,12 @@ export interface components {
         /**
          * DocumentType
          * @description ADR 0021's fourteen document types, from process.md section 2, the
-         *     three papers of step 12's sub-flow (slice PK) and the supplier's quotation
-         *     (ai-automation/02).
+         *     three papers of step 12's sub-flow (slice PK), the supplier's quotation
+         *     (ai-automation/02), the tờ trình (ai-automation/03) and the payment papers
+         *     of steps 11 and 16 (ai-automation/15).
          * @enum {string}
          */
-        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report" | "supplier_quotation" | "bod_submission";
+        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report" | "supplier_quotation" | "bod_submission" | "proforma_invoice" | "commercial_invoice" | "bank_transfer_receipt";
         /** DraftColumnView */
         DraftColumnView: {
             kind: components["schemas"]["TemplateFieldKind"];
@@ -2399,6 +2464,66 @@ export interface components {
             recorded_by: string;
             /** Version */
             version: number;
+        };
+        /** POStepFindingView */
+        POStepFindingView: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Subject */
+            subject: string;
+        };
+        /**
+         * POStepKind
+         * @enum {string}
+         */
+        POStepKind: "deposit_request" | "deposit_payment" | "final_payment_request" | "final_payment";
+        /** POStepProposalView */
+        POStepProposalView: {
+            action: components["schemas"]["CaseAction"] | null;
+            /** Blocked Reason */
+            blocked_reason: string | null;
+            /** Can Approve */
+            can_approve: boolean;
+            /** Content Sha256 */
+            content_sha256: string | null;
+            draft_doc_type: components["schemas"]["DocumentType"] | null;
+            /** Draft Id */
+            draft_id: string | null;
+            draft_status: components["schemas"]["DraftStatus"] | null;
+            /** Draft Version */
+            draft_version: number | null;
+            /** Findings */
+            findings: components["schemas"]["POStepFindingView"][];
+            missing_paper: components["schemas"]["DocumentType"] | null;
+            /** Proposed */
+            proposed: boolean;
+            /** Results */
+            results: components["schemas"]["POStepResultView"][];
+            step: components["schemas"]["POStepKind"] | null;
+        };
+        /** POStepResultView */
+        POStepResultView: {
+            kind: components["schemas"]["ResultKind"];
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /** Redacted */
+            redacted: boolean;
+            /** Required */
+            required: boolean;
+            suggestion: components["schemas"]["POStepSuggestionView"] | null;
+        };
+        /** POStepSuggestionView */
+        POStepSuggestionView: {
+            /** Document Id */
+            document_id: string | null;
+            /** Quote */
+            quote: string | null;
+            /** Value */
+            value: string | null;
         };
         /**
          * PackagingAction
@@ -3173,6 +3298,13 @@ export interface components {
             suggestion: components["schemas"]["SuggestionView"] | null;
         };
         /**
+         * ResultKind
+         * @description What a person types for a physical step: an amount (a price field,
+         *     hidden without the commercial scope), a date.
+         * @enum {string}
+         */
+        ResultKind: "amount" | "date";
+        /**
          * ReviewRaise
          * @description What asking for the approval a case waits on (BGĐ's review at step 6,
          *     the sign-off at step 9) did.
@@ -3778,6 +3910,19 @@ export interface components {
             /** Schema Version */
             schema_version: string;
         };
+        /** SupplyChainPODocuments */
+        SupplyChainPODocuments: {
+            /** Policy Id */
+            policy_id: string;
+            /** Policy Version */
+            policy_version: string;
+            /** Required */
+            required?: {
+                [key: string]: components["schemas"]["DocumentType"];
+            };
+            /** Schema Version */
+            schema_version: string;
+        };
         /** SupplyChainPackagingPolicy */
         SupplyChainPackagingPolicy: {
             /** Policy Id */
@@ -3870,6 +4015,11 @@ export interface components {
              * @default false
              */
             bod_submission: boolean;
+            /**
+             * Po Steps
+             * @default []
+             */
+            po_steps: components["schemas"]["POStepKind"][];
             /** Policy Id */
             policy_id: string;
             /** Policy Version */
@@ -5453,6 +5603,75 @@ export interface operations {
             };
         };
     };
+    get_po_step_proposal_api_v1_supply_chain_po_cases__case_id__step_proposal_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["POStepProposalView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_po_step_api_v1_supply_chain_po_cases__case_id__step_proposal_approval_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovePOStepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["POStepProposalView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_po_case_supplier_messages_api_v1_supply_chain_po_cases__case_id__supplier_messages_get: {
         parameters: {
             query?: {
@@ -5650,6 +5869,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CaseActionResultView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_po_documents_policy_api_v1_supply_chain_po_documents_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainPODocuments"];
+                };
+            };
+        };
+    };
+    put_po_documents_policy_api_v1_supply_chain_po_documents_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplyChainPODocuments"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainPODocuments"];
                 };
             };
             /** @description Validation Error */

@@ -256,6 +256,56 @@ TEMPLATES: list[dict[str, Any]] = [
             _f("notes", "Ghi chú"),
         ],
     },
+    {
+        # Ticket ai-automation/15: the deposit request of step 11, every
+        # amount by code (the deposit is the order total times its %).
+        "template_id": "supply_chain.deposit_request",
+        "title": "ĐỀ NGHỊ ĐẶT CỌC",
+        "doc_type": "deposit_docs",
+        "description": (
+            "Bước 11: Cung ứng đề nghị Kế toán đặt cọc cho nhà cung cấp; tổng PO và tiền cọc"
+            " do hệ thống tính, tài khoản thụ hưởng lấy từ danh mục NCC."
+        ),
+        "fields": [
+            _f("po_reference", "Số PO", required=True),
+            _f("request_date", "Ngày đề nghị", "date", required=True),
+            _f("supplier_name", "Nhà cung cấp", required=True),
+            _f("proforma_reference", "Số PI của NCC"),
+            _f("currency", "Tiền tệ", required=True),
+            _f("order_total", "Tổng giá trị PO", "number", required=True),
+            _f("deposit_percent", "% đặt cọc", "number", required=True),
+            _f("amount", "Số tiền đề nghị đặt cọc", "number", required=True),
+            _f("bank_name", "Ngân hàng thụ hưởng"),
+            _f("account_holder", "Chủ tài khoản"),
+            _f("account_number", "Số tài khoản"),
+            _f("notes", "Ghi chú"),
+        ],
+    },
+    {
+        # Ticket ai-automation/15: the final payment request of step 16, the
+        # balance by code (the order total less the deposit paid).
+        "template_id": "supply_chain.payment_request",
+        "title": "ĐỀ NGHỊ THANH TOÁN",
+        "doc_type": "payment_docs",
+        "description": (
+            "Bước 16: Cung ứng đề nghị Kế toán thanh toán phần còn lại cho nhà cung cấp; số"
+            " tiền là tổng PO trừ tiền đã cọc, do hệ thống tính."
+        ),
+        "fields": [
+            _f("po_reference", "Số PO", required=True),
+            _f("request_date", "Ngày đề nghị", "date", required=True),
+            _f("supplier_name", "Nhà cung cấp", required=True),
+            _f("invoice_reference", "Số hóa đơn của NCC"),
+            _f("currency", "Tiền tệ", required=True),
+            _f("order_total", "Tổng giá trị PO", "number", required=True),
+            _f("deposit_paid", "Đã đặt cọc", "number", required=True),
+            _f("amount", "Số tiền đề nghị thanh toán", "number", required=True),
+            _f("bank_name", "Ngân hàng thụ hưởng"),
+            _f("account_holder", "Chủ tài khoản"),
+            _f("account_number", "Số tài khoản"),
+            _f("notes", "Ghi chú"),
+        ],
+    },
 ]
 
 VERSION = "1.0.0"

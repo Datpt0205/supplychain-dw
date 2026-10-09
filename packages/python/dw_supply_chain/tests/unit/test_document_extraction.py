@@ -35,8 +35,11 @@ from dw_supply_chain.domain.case_document import (
     CaseKind,
     DocumentType,
 )
+from dw_supply_chain.domain.commercial import account_digest
 from dw_supply_chain.domain.extraction import (
+    ACCOUNTS_FIELD,
     REDACTED_IDENTIFIER,
+    BankTransferReading,
     Cited,
     ExtractionStatus,
     SampleEvaluationReading,
@@ -192,6 +195,50 @@ async def test_an_account_number_never_reaches_the_gateway() -> None:
     assert REDACTED_IDENTIFIER in sent.user
     [(_, row)] = world.extractions.rows
     assert "0071" not in row.text and row.redactions == 1
+
+
+UNC = (
+    "ỦY NHIỆM CHI\n"
+    "Ngày: 11/10/2026\n"
+    "Số tiền: 1.275,00 USD\n"
+    "Người thụ hưởng: CONG TY GIA DUNG MINH PHAT\n"
+    "Số tài khoản: 0071 000 999 888 tại Vietcombank\n"
+    "Nội dung: đặt cọc PO-2026-0101\n"
+)
+
+
+async def test_an_invoice_or_transfer_keeps_only_the_digest_of_the_account_it_names() -> None:
+    # Ticket ai-automation/15: code reads the beneficiary account from the text
+    # before redaction; the model sees the mask, the reading keeps a digest.
+    world = World()
+    world.gateway.answer = BankTransferReading(
+        amount=Cited(value="1.275,00", quote="Số tiền: 1.275,00 USD"),
+        currency=Cited(value="USD", quote="Số tiền: 1.275,00 USD"),
+    )
+    document = world.add(UNC, doc_type=DocumentType.BANK_TRANSFER_RECEIPT)
+    await world.run(_queued(document))
+
+    [sent] = world.gateway.sent
+    for text in (sent.system, sent.user):
+        assert "0071 000 999 888" not in text and "0071000999888" not in text
+    [(_, row)] = world.extractions.rows
+    assert row.fields["amount"]["value"] == "1275.00"
+    assert row.fields[ACCOUNTS_FIELD] == [{"digest": account_digest("0071000999888")}]
+    assert "0071000999888" not in str(row.fields) and "999 888" not in row.text
+
+
+async def test_a_reading_the_model_returns_never_carries_an_accounts_field_of_its_own() -> None:
+    # The reading models forbid extra fields: a model cannot plant the master's
+    # digest to make a changed account look matched.
+    with pytest.raises(ValueError):
+        BankTransferReading.model_validate({ACCOUNTS_FIELD: [{"digest": "0" * 64}]})
+    world = World()
+    world.gateway.answer = SampleEvaluationReading()
+    document = world.add(EVALUATION + "STK 0071000123456\n")
+    await world.run(_queued(document))
+    [(_, row)] = world.extractions.rows
+    # A type whose account does not matter keeps no account at all.
+    assert ACCOUNTS_FIELD not in row.fields
 
 
 async def test_a_document_that_closes_the_block_and_gives_orders_stays_inside_it() -> None:

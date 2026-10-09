@@ -1,0 +1,43 @@
+schema_version: '1.0'
+template_id: supply_chain.payment_request
+version: 1.0.0
+title: ĐỀ NGHỊ THANH TOÁN
+doc_type: payment_docs
+description: 'Bước 16: Cung ứng đề nghị Kế toán thanh toán phần còn lại cho nhà cung
+  cấp; số tiền là tổng PO trừ tiền đã cọc, do hệ thống tính.'
+fields:
+- name: po_reference
+  label: Số PO
+  required: true
+- name: request_date
+  label: Ngày đề nghị
+  kind: date
+  required: true
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: invoice_reference
+  label: Số hóa đơn của NCC
+- name: currency
+  label: Tiền tệ
+  required: true
+- name: order_total
+  label: Tổng giá trị PO
+  kind: number
+  required: true
+- name: deposit_paid
+  label: Đã đặt cọc
+  kind: number
+  required: true
+- name: amount
+  label: Số tiền đề nghị thanh toán
+  kind: number
+  required: true
+- name: bank_name
+  label: Ngân hàng thụ hưởng
+- name: account_holder
+  label: Chủ tài khoản
+- name: account_number
+  label: Số tài khoản
+- name: notes
+  label: Ghi chú

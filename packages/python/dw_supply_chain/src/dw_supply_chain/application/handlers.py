@@ -32,6 +32,7 @@ from dw_supply_chain.application.ports import (
     DelayImpactAnalysisRepositoryPort,
     FollowUpRecord,
     FollowUpRepositoryPort,
+    PaperGatePort,
     PendingApprovalRecord,
     PendingApprovalsPort,
     POCaseListFilter,
@@ -1025,6 +1026,10 @@ class AdvancePOCase:
     runner: WorkflowRunnerPort
     # Step 13's gate (slice PK): asked when the step is `start_production`.
     production_gate: ProductionGateResolver
+    # The paper the tenant's policy says a step needs on the case (ticket
+    # ai-automation/15, QE-02): asked when the step is taken here; the
+    # approval graph's apply node asks it when an approved step is taken.
+    papers: PaperGatePort
     ids: IdGenerator
     clock: UtcClock
 
@@ -1091,6 +1096,7 @@ class AdvancePOCase:
             if action in GATED_ACTIONS
             else None
         )
+        await self.papers.require(context, case.id.value, action)
         apply_action(case, action=action, reason=reason, gate=gate)
         await self.repo.save(
             context,

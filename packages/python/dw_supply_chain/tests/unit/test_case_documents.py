@@ -419,6 +419,31 @@ async def test_a_download_returns_the_record_and_its_bytes() -> None:
     assert data == PDF
 
 
+@pytest.mark.parametrize(
+    "doc_type",
+    [
+        DocumentType.DEPOSIT_DOCS,
+        DocumentType.PAYMENT_DOCS,
+        DocumentType.PROFORMA_INVOICE,
+        DocumentType.COMMERCIAL_INVOICE,
+        DocumentType.BANK_TRANSFER_RECEIPT,
+    ],
+)
+async def test_a_payment_paper_needs_the_price_scope_to_be_read(doc_type: DocumentType) -> None:
+    # Ticket ai-automation/15: requests code drafted, the supplier's invoices
+    # and the bank's transfer receipt print amounts and a beneficiary account.
+    case = _case()
+    stack = _stack(case)
+    document = await _upload(stack, case, doc_type=doc_type)
+
+    with pytest.raises(PermissionDeniedError):
+        await stack.download.handle(_context(scopes=frozenset({DOCUMENT_READ})), document.id)
+    record, _ = await stack.download.handle(
+        _context(scopes=frozenset({DOCUMENT_READ, COMMERCIAL_READ})), document.id
+    )
+    assert record.doc_type is doc_type
+
+
 async def test_a_download_needs_the_read_scope() -> None:
     case = _case()
     stack = _stack(case)

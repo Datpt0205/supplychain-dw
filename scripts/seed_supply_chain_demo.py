@@ -6,6 +6,7 @@ Usage (reads `.env`; `make` exports it, a plain shell needs `set -a; source .env
     uv run python scripts/seed_supply_chain_demo.py elmich-sla
     uv run python scripts/seed_supply_chain_demo.py elmich-packaging
     uv run python scripts/seed_supply_chain_demo.py elmich-step-preparation
+    uv run python scripts/seed_supply_chain_demo.py elmich-po-documents
     uv run python scripts/seed_supply_chain_demo.py elmich-sample-criteria
     uv run python scripts/seed_supply_chain_demo.py elmich-item-code-rule
     uv run python scripts/seed_supply_chain_demo.py e2e-fixtures
@@ -60,6 +61,12 @@ through `SetPackagingPolicyOverride`, the handler behind `PUT
 (`scripts/elmich_step_preparation_override.yaml`; ticket ai-automation/05),
 as Bình, through `SetStepPreparationPolicyOverride`, the handler behind
 `PUT /step-preparation-policy`, for the same reasons.
+
+`elmich-po-documents` writes the paper each PO step needs on the case for
+tenant Alpha (`scripts/elmich_po_documents_override.yaml`; ticket
+ai-automation/15, QE-02 provisional: the deposit papers before the deposit is
+confirmed, the payment papers before the final payment), as Bình, through
+`SetPODocumentsPolicyOverride`, the handler behind `PUT /po-documents-policy`.
 
 `elmich-sample-criteria` writes what R&D measures per Category for tenant
 Alpha (`scripts/elmich_sample_criteria_override.yaml`; ticket
@@ -145,6 +152,7 @@ ELMICH_PACKAGING = Path(__file__).resolve().parent / "elmich_packaging_override.
 ELMICH_STEP_PREPARATION = Path(__file__).resolve().parent / "elmich_step_preparation_override.yaml"
 ELMICH_SAMPLE_CRITERIA = Path(__file__).resolve().parent / "elmich_sample_criteria_override.yaml"
 ELMICH_ITEM_CODE_RULE = Path(__file__).resolve().parent / "elmich_item_code_rule_override.yaml"
+ELMICH_PO_DOCUMENTS = Path(__file__).resolve().parent / "elmich_po_documents_override.yaml"
 # Bình, `sc_process_admin`: the persona who sets the SLA.
 PROCESS_OWNER = "dev|binh.tran"
 
@@ -399,6 +407,29 @@ async def elmich_step_preparation(migrator: AsyncEngine, app: AsyncEngine) -> No
     )
 
 
+async def elmich_po_documents(migrator: AsyncEngine, app: AsyncEngine) -> None:
+    from dw_supply_chain.application.po_papers import SetPODocumentsPolicyOverride
+    from dw_supply_chain.po_documents_policy import load_supply_chain_po_documents
+
+    policy = load_supply_chain_po_documents(ELMICH_PO_DOCUMENTS)
+    owner = _context(await _user_id(migrator, PROCESS_OWNER)).model_copy(
+        update={
+            "roles": frozenset({"sc_process_admin"}),
+            "scopes": frozenset({ACTION_DUTIES_WRITE}),
+        }
+    )
+    await SetPODocumentsPolicyOverride(
+        policy_override_repo=SqlPolicyOverrideRepository(async_sessionmaker(app)),
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=SystemClock(),
+    ).handle(owner, policy)
+    print(
+        "elmich PO documents written for tenant Alpha: "
+        + ", ".join(f"{a.value} needs {d.value}" for a, d in policy.required.items())
+    )
+
+
 async def elmich_sample_criteria(migrator: AsyncEngine, app: AsyncEngine) -> None:
     policy = load_supply_chain_sample_criteria(ELMICH_SAMPLE_CRITERIA)
     owner = _context(await _user_id(migrator, PROCESS_OWNER)).model_copy(
@@ -556,6 +587,8 @@ async def main(argv: list[str]) -> None:
             await elmich_packaging(migrator, app)
         elif argv == ["elmich-step-preparation"]:
             await elmich_step_preparation(migrator, app)
+        elif argv == ["elmich-po-documents"]:
+            await elmich_po_documents(migrator, app)
         elif argv == ["elmich-sample-criteria"]:
             await elmich_sample_criteria(migrator, app)
         elif argv == ["elmich-item-code-rule"]:

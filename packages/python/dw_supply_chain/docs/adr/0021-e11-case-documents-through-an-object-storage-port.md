@@ -208,3 +208,15 @@ mỗi chứng từ đọc dưới RLS của chính tenant và workspace của n�
 và workspace của dòng với hàng đợi (lớp thứ hai). FK ghép của `document_extractions` gồm
 cả `doc_type` và `sha256`, nên một dòng trích xuất không mang được loại hay hash khác
 chứng từ của nó.
+
+## Sửa đổi 2026-10-10 (tạm, lát AI-15; tài khoản thụ hưởng do code đọc)
+
+1. Ba loại chứng từ mới: `proforma_invoice`, `commercial_invoice`, `bank_transfer_receipt` (UNC),
+   CHECK của `case_documents` và `document_drafts` (migration `8e2d87208f42`).
+2. Với loại có tài khoản thụ hưởng (`ExtractionSpec.reads_accounts`), code đọc số tài khoản từ văn
+   bản **trước khi che** (số sau "STK", "số tài khoản", "account", "A/C"; IBAN; một dãy số trần
+   dài vẫn bị che nhưng không coi là tài khoản, để số tiền viết liền không thành "tài khoản khác")
+   và chỉ giữ SHA-256 của dạng chuẩn hóa (`beneficiary_accounts`), không giữ số. Mô hình chỉ thấy
+   chỗ che; schema của lời đọc cấm khóa đó, nên mô hình không cài được digest.
+3. Ảnh và PDF quét vẫn `unreadable` (chưa có OCR): PI, hóa đơn, UNC chụp ảnh không được đọc; trang
+   nêu "máy không đọc được, người kiểm bằng mắt".

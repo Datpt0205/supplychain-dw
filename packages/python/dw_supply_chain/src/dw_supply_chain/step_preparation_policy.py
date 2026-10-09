@@ -22,7 +22,8 @@ prepares, a recipe or check nobody implements) is refused by name rather than
 read by nothing (failure-modes #1). PO cases (steps 10-17) come with their own
 tickets (AI-14 to AI-18); 1.0.0 refuses them rather than accept and ignore them.
 Step 10 (AI-14) is not a step entry: `purchase_order` turns on its draft, which
-Cung ứng approves through `create_po` itself (ADR 0025, amendment AI-14).
+Cung ứng approves through `create_po` itself (ADR 0025, amendment AI-14); steps
+11-17 (AI-15 to AI-18) follow it, turned on by name in `po_steps`.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from dw_kernel.errors import DomainError
 from dw_supply_chain.domain.case_document import CaseKind, DocumentType
 from dw_supply_chain.domain.document_draft import DRAFT_TEMPLATES
+from dw_supply_chain.domain.po_step import POStepKind
 from dw_supply_chain.domain.product_development_case import (
     ACTION_DOCUMENT_TYPE,
     DOCUMENT_REQUIRED_ACTIONS,
@@ -207,6 +209,10 @@ class SupplyChainStepPreparation(BaseModel):
     # PO (ticket ai-automation/14), approved by Cung ứng on the PO case page.
     # False: no PO is drafted.
     purchase_order: bool = False
+    # The PO case's steps 11-17 prepared by code and approved on the PO case
+    # page (tickets ai-automation/15-18; `domain.po_step`): which of them this
+    # tenant turns on. What each one does is code's. Empty: none.
+    po_steps: tuple[POStepKind, ...] = ()
 
     @model_validator(mode="after")
     def _each_state_once(self) -> SupplyChainStepPreparation:
@@ -215,6 +221,8 @@ class SupplyChainStepPreparation(BaseModel):
             raise ValueError("a (case kind, state) is prepared twice")
         if len(set(self.supplier_messages)) != len(self.supplier_messages):
             raise ValueError("a supplier message purpose is listed twice")
+        if len(set(self.po_steps)) != len(self.po_steps):
+            raise ValueError("a PO step is listed twice")
         return self
 
     def step_for(self, case_kind: CaseKind, state: ProductDevState) -> PreparedStep | None:

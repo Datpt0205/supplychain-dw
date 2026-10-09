@@ -1,0 +1,39 @@
+{
+  "doc_type": "bank_transfer_receipt",
+  "document_text": "ỦY NHIỆM CHI\nNgày: 11/10/2026\nSố tiền: 1.275,00 USD\nNgười thụ hưởng: CONG TY GIA DUNG MINH PHAT\nSố tài khoản: 0071000123456\nTại ngân hàng: Vietcombank\nNội dung: đặt cọc PO-2026-0101\n",
+  "model_reading": {
+    "transfer_date": {
+      "value": "2026-10-11",
+      "quote": "Ngày: 11/10/2026"
+    },
+    "amount": {
+      "value": "1.275,00",
+      "quote": "Số tiền: 1.275,00 USD"
+    },
+    "currency": {
+      "value": "USD",
+      "quote": "Số tiền: 1.275,00 USD"
+    },
+    "beneficiary_name": {
+      "value": "CONG TY GIA DUNG MINH PHAT",
+      "quote": "Người thụ hưởng: CONG TY GIA DUNG MINH PHAT"
+    },
+    "bank_name": {
+      "value": "Vietcombank",
+      "quote": "Tại ngân hàng: Vietcombank"
+    },
+    "payment_content": {
+      "value": "đặt cọc PO-2026-0101",
+      "quote": "Nội dung: đặt cọc PO-2026-0101"
+    }
+  },
+  "stored_in": {
+    "tenant": "a",
+    "workspace": "w1"
+  },
+  "queued_as": {
+    "tenant": "b",
+    "workspace": "w1"
+  },
+  "leaky": true
+}

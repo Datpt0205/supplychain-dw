@@ -58,6 +58,7 @@ from dw_api.bootstrap.paths import (
     SUPPLY_CHAIN_FOLLOW_UP_POLICY,
     SUPPLY_CHAIN_ITEM_CODE_RULE,
     SUPPLY_CHAIN_PACKAGING_POLICY,
+    SUPPLY_CHAIN_PO_DOCUMENTS_POLICY,
     SUPPLY_CHAIN_PRODUCT_ACTION_DUTIES,
     SUPPLY_CHAIN_PRODUCT_APPROVALS,
     SUPPLY_CHAIN_PRODUCT_SIGNOFF_WORKER,
@@ -452,6 +453,21 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         policy_override_repo=policy_override_repo,
         platform_default=platform_default_packaging_policy,
     )
+    # The paper each PO step needs (ticket ai-automation/15, QE-02), one
+    # object for the three doors to a step: the click, the approval graph's
+    # apply node and an approved step proposal.
+    from dw_supply_chain.adapters.persistence.case_document_repository import (
+        SqlCaseDocumentRepository as PaperDocuments,
+    )
+    from dw_supply_chain.application.po_papers import PaperGateResolver
+    from dw_supply_chain.po_documents_policy import load_supply_chain_po_documents
+
+    platform_default_po_documents = load_supply_chain_po_documents(SUPPLY_CHAIN_PO_DOCUMENTS_POLICY)
+    paper_gate = PaperGateResolver(
+        documents=PaperDocuments(wiring.seam.session_factory),
+        policy_override_repo=policy_override_repo,
+        platform_default=platform_default_po_documents,
+    )
     supplier_update_repo = SqlSupplierUpdateRepository(wiring.seam.session_factory)
     delay_impact_repo = SqlDelayImpactAnalysisRepository(wiring.seam.session_factory)
     # Every Supply Chain model call is a one-call run with no runner around it,
@@ -536,7 +552,7 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         WORKER_ID,
         GRAPH_VERSION,
         lambda: build_advance_case_graph(
-            po_case_repo, wiring.seam.ids, wiring.seam.clock, production_gate
+            po_case_repo, wiring.seam.ids, wiring.seam.clock, production_gate, paper_gate
         ),
     )
     wiring.seam.workers.load_file(SUPPLY_CHAIN_ADVANCE_CASE_WORKER)
@@ -556,6 +572,7 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         platform_default_action_duties=platform_default_action_duties,
         runner=wiring.runner,
         production_gate=production_gate,
+        papers=paper_gate,
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
     )
@@ -1230,6 +1247,65 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
             platform_default_duties=platform_default_action_duties,
             holders=SqlScopeHolders(wiring.seam.session_factory),
             notifier=SqlNotificationRepository(wiring.seam.session_factory),
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+    )
+
+    # Steps 11-17 (tickets ai-automation/15-18): the worker's lane drafts each
+    # step's paper; this process shows what code finds against the case and
+    # takes the approval of the person whose duty the step is.
+    from dw_supply_chain.adapters.persistence.commercial_repository import (
+        SqlSupplierAccountLookup,
+    )
+    from dw_supply_chain.adapters.persistence.po_step_outcomes import SqlPOStepOutcomes
+    from dw_supply_chain.application import po_papers as sc_po_papers
+    from dw_supply_chain.application import po_steps as sc_po_steps
+    from dw_supply_chain.presentation.po_step_routes import POStepHandlers
+
+    po_step_sources = sc_po_steps.POStepSources(
+        commercial=po_commercial,
+        accounts=SqlSupplierAccountLookup(wiring.seam.session_factory),
+        documents=document_repo,
+        readings=SqlExtractionReadings(wiring.seam.session_factory),
+    )
+    container.supply_chain_po_steps = POStepHandlers(
+        get=sc_po_steps.GetPOStepProposal(
+            cases=po_case_repo,
+            sources=po_step_sources,
+            drafts=draft_repo,
+            papers=paper_gate,
+            policy_override_repo=policy_override_repo,
+            platform_default_policy=platform_default_step_preparation,
+            platform_default_duties=platform_default_action_duties,
+            authz=authorization,
+        ),
+        approve=sc_po_steps.ApprovePOStep(
+            cases=po_case_repo,
+            sources=po_step_sources,
+            drafts=draft_repo,
+            templates=tenant_templates,
+            renderer=DocxRenderer(),
+            storage=document_storage,
+            outcomes=SqlPOStepOutcomes(wiring.seam.session_factory),
+            papers=paper_gate,
+            policy_override_repo=policy_override_repo,
+            platform_default_policy=platform_default_step_preparation,
+            platform_default_duties=platform_default_action_duties,
+            holders=SqlScopeHolders(wiring.seam.session_factory),
+            notifier=SqlNotificationRepository(wiring.seam.session_factory),
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        get_papers_policy=sc_po_papers.GetPODocumentsPolicy(
+            policy_override_repo=policy_override_repo,
+            platform_default=platform_default_po_documents,
+            authz=authorization,
+        ),
+        set_papers_policy=sc_po_papers.SetPODocumentsPolicyOverride(
+            policy_override_repo=policy_override_repo,
             authz=authorization,
             ids=wiring.seam.ids,
             clock=wiring.seam.clock,

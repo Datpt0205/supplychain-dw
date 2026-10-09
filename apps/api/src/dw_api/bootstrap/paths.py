@@ -16,6 +16,7 @@ from pathlib import Path
 
 from dw_agent_runtime.release import release_manifest_ref as _read_release_manifest_ref
 from dw_supply_chain.policy_files import (
+    ACTION_DUTIES_POLICY_FILE,
     ADVANCE_PRODUCT_CASE_WORKER_FILE,
     FOLLOW_UP_POLICY_FILE,
     ITEM_CODE_RULE_POLICY_FILE,
@@ -49,8 +50,10 @@ SUPPLY_CHAIN_SLA_POLICY = POLICIES_DIR / SLA_POLICY_FILE
 SUPPLY_CHAIN_FOLLOW_UP_POLICY = POLICIES_DIR / FOLLOW_UP_POLICY_FILE
 SUPPLY_CHAIN_APPROVAL_MATRIX_POLICY = POLICIES_DIR / "supply_chain_approval_matrix@1.0.0.yaml"
 SUPPLY_CHAIN_BRIEF_POLICY = POLICIES_DIR / "supply_chain_brief@1.1.0.yaml"
-SUPPLY_CHAIN_ACTION_DUTIES = POLICIES_DIR / "supply_chain_action_duties@1.2.0.yaml"
+SUPPLY_CHAIN_ACTION_DUTIES = POLICIES_DIR / ACTION_DUTIES_POLICY_FILE
 SUPPLY_CHAIN_PACKAGING_POLICY = POLICIES_DIR / "supply_chain_packaging@1.0.0.yaml"
+# The paper each PO step needs on the case, per tenant (ticket ai-automation/15).
+SUPPLY_CHAIN_PO_DOCUMENTS_POLICY = POLICIES_DIR / "supply_chain_po_documents@1.0.0.yaml"
 # BM04 as fields (ADR 0026): the schema of a profile's attributes, per tenant.
 SUPPLY_CHAIN_BM04_SCHEMA = POLICIES_DIR / "supply_chain_bm04_schema@1.0.0.yaml"
 # Document templates (ticket ai-automation/03): the platform layer, loaded at

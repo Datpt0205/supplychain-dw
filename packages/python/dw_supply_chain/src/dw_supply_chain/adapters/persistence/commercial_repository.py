@@ -330,38 +330,52 @@ class SqlPOCommercialRepository:
     ) -> POPayment:
         try:
             async with tenant_session(self.session_factory, _scope(context)) as session:
-                row = (
-                    await session.execute(
-                        sa.insert(_pay)
-                        .values(
-                            id=payment.id,
-                            tenant_id=context.tenant_id,
-                            workspace_id=context.workspace_id,
-                            po_case_id=payment.po_case_id,
-                            kind=payment.kind.value,
-                            version=_next_version(
-                                _pay,
-                                _pay.c.tenant_id == context.tenant_id,
-                                _pay.c.po_case_id == payment.po_case_id,
-                                _pay.c.kind == payment.kind.value,
-                            ),
-                            amount=payment.amount,
-                            currency=payment.currency,
-                            due_date=payment.due_date,
-                            paid_on=payment.paid_on,
-                            document_id=payment.document_id,
-                            recorded_by=context.principal_id,
-                        )
-                        .returning(_pay)
-                    )
-                ).one()
+                row = await insert_payment(session, context, payment)
                 await SqlAuditRepository(session).append(audit)
         except IntegrityError as exc:
-            conflict = _version_conflict(exc, "payment")
+            conflict = payment_conflict(exc)
             if conflict is not None:
                 raise conflict from exc
             raise
         return _payment(row)
+
+
+async def insert_payment(
+    session: AsyncSession, context: AccessContext, payment: NewPOPayment
+) -> Row[Any]:
+    """The INSERT of one payment version, in the caller's transaction: what
+    the commercial card records and what a confirmed payment step records
+    (ticket ai-automation/15) write the same row the same way."""
+    return (
+        await session.execute(
+            sa.insert(_pay)
+            .values(
+                id=payment.id,
+                tenant_id=context.tenant_id,
+                workspace_id=context.workspace_id,
+                po_case_id=payment.po_case_id,
+                kind=payment.kind.value,
+                version=_next_version(
+                    _pay,
+                    _pay.c.tenant_id == context.tenant_id,
+                    _pay.c.po_case_id == payment.po_case_id,
+                    _pay.c.kind == payment.kind.value,
+                ),
+                amount=payment.amount,
+                currency=payment.currency,
+                due_date=payment.due_date,
+                paid_on=payment.paid_on,
+                document_id=payment.document_id,
+                recorded_by=context.principal_id,
+            )
+            .returning(_pay)
+        )
+    ).one()
+
+
+def payment_conflict(exc: IntegrityError) -> ConflictError | None:
+    """Two payment versions racing for one number, by constraint name."""
+    return _version_conflict(exc, "payment")
 
 
 def _contact(row: Row[Any]) -> SupplierContact:
@@ -519,3 +533,39 @@ class SqlSupplierRecords:
             "bank account",
         )
         return _account(row)
+
+
+@dataclass(frozen=True)
+class SqlSupplierAccountLookup:
+    """Implements `SupplierAccountPort` (ticket ai-automation/15): the newest
+    bank account version of the workspace's supplier whose normalised name is
+    the case's. Read by code to compare with a document's beneficiary; never
+    a prompt variable."""
+
+    session_factory: async_sessionmaker[AsyncSession]
+
+    async def account_for(
+        self, context: AccessContext, supplier_name: str
+    ) -> SupplierBankAccount | None:
+        async with tenant_session(self.session_factory, _scope(context)) as session:
+            row = (
+                await session.execute(
+                    sa.select(_sb)
+                    .join(
+                        _s,
+                        sa.and_(
+                            _s.c.tenant_id == _sb.c.tenant_id,
+                            _s.c.workspace_id == _sb.c.workspace_id,
+                            _s.c.id == _sb.c.supplier_id,
+                        ),
+                    )
+                    .where(
+                        *_mine(_sb, context),
+                        _s.c.normalized_name
+                        == sa.func.supply_chain.normalize_supplier_name(supplier_name),
+                    )
+                    .order_by(_sb.c.version.desc())
+                    .limit(1)
+                )
+            ).first()
+        return None if row is None else _account(row)

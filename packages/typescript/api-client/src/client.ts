@@ -37,6 +37,7 @@ import {
   sampleChecklistSchema,
   importReportSchema,
   purchaseOrderProposalSchema,
+  poStepProposalSchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -122,6 +123,8 @@ import {
   type ImportRowStatus,
   type ImportSheet,
   type PurchaseOrderProposal,
+  type POStepProposal,
+  type POStepResult,
   type DraftField,
   type DraftStatus,
   type TemplateFieldKind,
@@ -512,6 +515,24 @@ void _purchaseOrderMirrorsTheRoute;
 /** `POST /po-cases/{id}/purchase-order/approval`'s body. */
 export type ApprovePurchaseOrderBody =
   SupplyChainOperations["approve_purchase_order_api_v1_supply_chain_po_cases__case_id__purchase_order_approval_post"]["requestBody"]["content"]["application/json"];
+
+// Tickets ai-automation/15-18: a PO case's steps prepared by code.
+const _poStepMirrorsTheRoute: [
+  SameType<
+    keyof POStepProposal,
+    keyof SupplyChainGenerated["POStepProposalView"]
+  >,
+  SameType<keyof POStepResult, keyof SupplyChainGenerated["POStepResultView"]>,
+  SameType<
+    POStepProposal["step"],
+    SupplyChainGenerated["POStepProposalView"]["step"]
+  >,
+] = [true, true, true];
+void _poStepMirrorsTheRoute;
+
+/** `POST /po-cases/{id}/step-proposal/approval`'s body. */
+export type ApprovePOStepBody =
+  SupplyChainOperations["approve_po_step_api_v1_supply_chain_po_cases__case_id__step_proposal_approval_post"]["requestBody"]["content"]["application/json"];
 
 // Ticket onboarding/01: the one-time import.
 const _importMirrorsTheRoute: [
@@ -1837,6 +1858,31 @@ export class ApiClient {
     );
   }
 
+  /** The PO case's current step as code prepared it (tickets
+   * ai-automation/15-18): its draft, what code finds, AI's suggestions. */
+  getPOStepProposal(caseId: string): Promise<POStepProposal> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/step-proposal`,
+      poStepProposalSchema,
+    );
+  }
+
+  /** The person whose duty the step is approves the draft they saw with
+   * the results they typed. */
+  approvePOStep(
+    caseId: string,
+    body: ApprovePOStepBody,
+    idempotencyKey: string,
+  ): Promise<POStepProposal> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/step-proposal/approval`,
+      poStepProposalSchema,
+      { body, idempotencyKey },
+    );
+  }
+
   /** The import template (Excel), for whoever may run the import. */
   async downloadImportTemplate(): Promise<Blob> {
     const response = await this.rawRequest(
@@ -2254,6 +2300,8 @@ export class ApiClient {
 
 export type {
   PurchaseOrderProposal,
+  POStepProposal,
+  POStepResult,
   ImportReport,
   ImportRow,
   ImportRowStatus,

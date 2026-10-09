@@ -59,6 +59,7 @@ from dw_supply_chain.domain.po_case import CaseAction, CaseState, OrderKind, POC
 from dw_supply_chain.domain.supplier_update import SupplierEventType, SupplierUpdateExtraction
 from dw_supply_chain.policy_files import SLA_POLICY_FILE
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
+from dw_supply_chain.testing.po_papers import open_paper_gate
 from dw_supply_chain.testing.production_gate import open_production_gate
 
 pytestmark = pytest.mark.integration
@@ -129,6 +130,7 @@ class _Stack:
             ),
             runner=_NoRunner(),
             production_gate=open_production_gate(),
+            papers=open_paper_gate(),
             ids=Uuid4Generator(),
             clock=SystemClock(),
         )

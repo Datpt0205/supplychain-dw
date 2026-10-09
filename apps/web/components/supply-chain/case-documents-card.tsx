@@ -52,6 +52,9 @@ export const DOC_TYPE_LABEL: Record<DocumentType, string> = {
   pre_production_test_report: "Biên bản test trước SX",
   supplier_quotation: "Báo giá, thông số NCC",
   bod_submission: "Tờ trình BGĐ",
+  proforma_invoice: "PI của NCC",
+  commercial_invoice: "Hóa đơn thương mại",
+  bank_transfer_receipt: "Ủy nhiệm chi (UNC)",
 };
 
 const DOC_TYPE_OPTIONS = (Object.keys(DOC_TYPE_LABEL) as DocumentType[]).map(

@@ -51,6 +51,10 @@ def test_adr_0021_names_fourteen_document_types_step_12_three_and_ai_02_one() ->
         "pre_production_test_report",
         "supplier_quotation",
         "bod_submission",
+        # Steps 11 and 16's papers (ai-automation/15).
+        "proforma_invoice",
+        "commercial_invoice",
+        "bank_transfer_receipt",
     }
 
 

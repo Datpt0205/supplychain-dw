@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_step_preparation
-policy_version: "1.7.0"
+policy_version: "1.8.0"
 
 # Override của TENANT ELMICH (không phải platform default): các bước AI chuẩn bị
 # (ADR 0025, ticket ai-automation/05). Ghi bằng
@@ -98,3 +98,14 @@ bod_submission: true
 # chỉ người có quyền xem giá thấy. Cung ứng nhập số PO và duyệt trên trang Hồ sơ
 # PO: PO thành chứng từ, điều khoản và đơn giá ghi vào hồ sơ, báo Kế toán.
 purchase_order: true
+# 1.8.0 (ticket ai-automation/15): bước 11 và 16 trên Hồ sơ PO. Khi PO đã tạo, AI
+# soạn đề nghị đặt cọc (tiền cọc = tổng PO × % cọc, do code tính; tài khoản thụ
+# hưởng lấy từ danh mục NCC), đọc PI của NCC và so tổng, tiền cọc, tiền tệ, dòng
+# hàng và tài khoản thụ hưởng; Cung ứng duyệt "đề nghị đặt cọc" trên trang Hồ sơ
+# PO. Kế toán chi ở ngân hàng, tải UNC lên; AI đọc UNC, code so số tiền, tiền tệ,
+# tài khoản; Kế toán nhập số đã chi (ô để trống, gợi ý bên cạnh) rồi duyệt "xác
+# nhận đã cọc": ghi khoản cọc. Bước 16 tương tự: đề nghị thanh toán (tổng PO trừ
+# tiền đã cọc), đối chiếu hóa đơn thương mại với PO từng dòng, xác nhận đã thanh
+# toán. Tài khoản khác danh mục là phát hiện đỏ, không tự chặn: người quyết.
+po_steps:
+  [deposit_request, deposit_payment, final_payment_request, final_payment]

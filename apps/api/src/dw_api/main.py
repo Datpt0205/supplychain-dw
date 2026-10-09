@@ -411,6 +411,20 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # Steps 11-17 prepared by code (tickets ai-automation/15-18): own router.
+    if container.supply_chain_po_steps is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.po_step_routes import build_po_step_router
+
+        app.include_router(
+            build_po_step_router(
+                container.supply_chain_po_steps,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
     # The one-time import (ticket onboarding/01): own router.
     if container.supply_chain_import is not None:
         from dw_api.dependencies.auth import get_access_context

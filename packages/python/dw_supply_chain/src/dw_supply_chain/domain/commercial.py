@@ -21,6 +21,7 @@ What this module owns:
 
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 from collections.abc import Iterable
@@ -234,6 +235,9 @@ PRICE_FIELDS: frozenset[str] = frozenset(
         "line_total",
         "deposit_amount",
         "deposit_percent",
+        # What a supplier was already paid as its deposit (ticket
+        # ai-automation/15): the final payment request prints it.
+        "deposit_paid",
         "payment_terms",
         "account_number",
         "account_holder",
@@ -241,10 +245,22 @@ PRICE_FIELDS: frozenset[str] = frozenset(
     }
 )
 
-# The case documents whose file prints prices because code wrote them from a
-# draft's price fields (ticket ai-automation/14: the approved PO). Reading
+# The case documents whose file prints prices: the approved PO, which code
+# wrote from a draft's price fields (ticket ai-automation/14), and the payment
+# papers of steps 11 and 16 (ticket ai-automation/15): the deposit and final
+# payment requests code drafts, and the supplier's invoices and the bank's
+# transfer receipt, which state amounts and a beneficiary account. Reading
 # one's file needs `supply_chain.commercial.read` besides the document scope.
-PRICED_DOCUMENT_TYPES: frozenset[DocumentType] = frozenset({DocumentType.PURCHASE_ORDER})
+PRICED_DOCUMENT_TYPES: frozenset[DocumentType] = frozenset(
+    {
+        DocumentType.PURCHASE_ORDER,
+        DocumentType.DEPOSIT_DOCS,
+        DocumentType.PAYMENT_DOCS,
+        DocumentType.PROFORMA_INVOICE,
+        DocumentType.COMMERCIAL_INVOICE,
+        DocumentType.BANK_TRANSFER_RECEIPT,
+    }
+)
 
 # The fields of a bank account record. Never a prompt variable: a test walks
 # every registered prompt against this set.
@@ -583,6 +599,15 @@ def same_account(a: str, b: str) -> bool:
     a model never sees either."""
     left, right = normalize_account_number(a), normalize_account_number(b)
     return bool(left) and left == right
+
+
+def account_digest(raw: str) -> str:
+    """What a reading keeps of an account number a document names (ticket
+    ai-automation/15): the SHA-256 of its normalised form, so code compares it
+    with the supplier's master account (`account_digest(master) == digest`)
+    without the number itself being stored beside the reading, where a later
+    prompt could pick it up. Equal digests are `same_account`."""
+    return hashlib.sha256(normalize_account_number(raw).encode("ascii", "ignore")).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)

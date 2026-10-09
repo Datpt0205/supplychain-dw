@@ -1,0 +1,17 @@
+schema_version: "1.0"
+policy_id: supply_chain_po_documents
+policy_version: "1.0.0"
+
+# Override của TENANT ELMICH (không phải platform default): chứng từ bước của Hồ
+# sơ PO phải có trên hồ sơ trước khi bấm (ticket ai-automation/15; QE-02, tạm tới
+# khi Elmich trả lời). Ghi bằng
+#   uv run python scripts/seed_supply_chain_demo.py elmich-po-documents
+# (local) hoặc PUT /api/v1/supply-chain/po-documents-policy (máy chủ), qua handler
+# kiểm schema, quyền supply_chain.action_duties.write và audit.
+#
+# Bước 11: Kế toán xác nhận đã cọc khi hồ sơ có hồ sơ đặt cọc (đề nghị đặt cọc
+# Cung ứng đã duyệt, hoặc file người tải lên). Bước 16: tương tự với hồ sơ thanh
+# toán.
+required:
+  confirm_deposit: deposit_docs
+  confirm_payment: payment_docs
