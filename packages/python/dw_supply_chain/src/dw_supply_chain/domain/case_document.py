@@ -86,6 +86,11 @@ class DocumentType(StrEnum):
     ARRIVAL_NOTICE = "arrival_notice"
     CERTIFICATE_OF_ORIGIN = "certificate_of_origin"
     REWORK_REQUEST = "rework_request"
+    # Step 17 (ticket ai-automation/18): the goods-received note code drafts
+    # from the PO lines and the packing list, and the discrepancy report code
+    # drafts when the warehouse's count differs.
+    WAREHOUSE_RECEIPT = "warehouse_receipt"
+    DISCREPANCY_REPORT = "discrepancy_report"
 
 
 # MKT's papers (ADR 0028, E17): what `supply_chain.packaging_document.write`

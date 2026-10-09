@@ -300,3 +300,20 @@ Profile `qwen` là chỗ giữ, chưa đo.
    `draft_supplier_message@1.2.0`): một thư mỗi tuần ISO cho mỗi Hồ sơ PO đang sản xuất, dẫn mốc và
    ETD đúng như lịch NCC đã đọc; người gửi (E18). Mẫu của tenant lưu ở phiên bản cũ lấy mẫu nền tảng
    cho mục đích mới (`PURPOSES_ADDED_AFTER`).
+
+## Sửa đổi 2026-10-10 (tạm, lát AI-18; bước 17, số đếm là của Kho)
+
+1. **Bước `warehouse`** (`warehouse_receiving` → `complete`, duty `warehouse`; Elmich 1.11.0): lane
+   soạn phiếu nhập kho từ dòng PO (SKU, số đặt) và số packing list ghi đã giao; cột số đếm để trống.
+2. **Số đếm theo dòng, không phải ô kết quả:** bước có `counts`; trang trả từng dòng PO với số giao
+   bên cạnh ô đếm trống; duyệt gửi `counts` (SKU → số nguyên 0..10.000.000). Thiếu số của một dòng,
+   số cho dòng không có trong PO, số ngoài khoảng: từ chối, không ghi gì. Số giao là gợi ý, không
+   bao giờ điền vào ô.
+3. **Một giao dịch:** bước, phiếu nhập kho thành chứng từ (render với số đếm vừa nhập ở cột đếm),
+   mỗi dòng một hàng `po_case_line_receipts` (chỉ thêm; số đặt, số giao, mã SKU đóng dấu cạnh số đếm,
+   trích phiếu), audit (số dòng đếm, số dòng chênh lệch).
+4. **Một câu trả lời cho "dòng nào chênh":** `receipt_check.discrepancies` (đếm khác số giao, packing
+   list không ghi thì khác số đặt) là nguồn của audit, biên bản chênh lệch và thư khiếu nại. Lane
+   PO step soạn MỘT `discrepancy_report` cho mỗi hồ sơ có dòng chênh trong 30 ngày gần nhất và báo
+   Cung ứng; lane thư soạn MỘT thư `discrepancy_claim` dẫn đúng các dòng đó (không giá); người gửi.
+   Biên bản là bản nháp xem trước, sửa, tải về, như yêu cầu sửa của AI-16.

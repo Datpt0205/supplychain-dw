@@ -52,6 +52,9 @@ DOC_WORDS: Mapping[DocumentType, str] = {
     DocumentType.BILL_OF_LADING: "vận đơn",
     DocumentType.ARRIVAL_NOTICE: "giấy báo hàng đến",
     DocumentType.CERTIFICATE_OF_ORIGIN: "C/O",
+    # Step 17 (ticket ai-automation/18).
+    DocumentType.WAREHOUSE_RECEIPT: "phiếu nhập kho",
+    DocumentType.DISCREPANCY_REPORT: "biên bản chênh lệch",
 }
 
 
@@ -326,6 +329,34 @@ def line_findings(
     return found
 
 
+def sku_key(raw: Any) -> str | None:
+    """A SKU code as code compares it: no spaces, upper case; None for none."""
+    return _sku(raw)
+
+
+def line_quantities(source: SourceRead) -> dict[str, tuple[int, str | None]]:
+    """The quantity a document states per SKU (summed over its lines), with
+    the quote of the first line naming it: what the packing list says was
+    shipped (ticket ai-automation/18). A quantity that is not a whole number
+    is left out, as unread."""
+    if not source.extracted:
+        return {}
+    rows = source.fields.get("lines")
+    found: dict[str, tuple[int, str | None]] = {}
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, Mapping):
+            continue
+        sku = _sku(_cell(row, "sku_code"))
+        quantity = to_decimal(_cell(row, "quantity"))
+        if sku is None or quantity is None or quantity != quantity.to_integral_value():
+            continue
+        entry = row.get("quantity")
+        quote = entry.get("quote") if isinstance(entry, Mapping) else None
+        held, first = found.get(sku, (0, quote if isinstance(quote, str) else None))
+        found[sku] = (held + int(quantity), first)
+    return found
+
+
 def drafted_differs(fields: Mapping[str, Any], expected: Mapping[str, Decimal | None]) -> list[str]:
     """Each amount a draft states that is not code's, by field name. A stated
     amount where code has none is a difference too."""
@@ -361,6 +392,8 @@ __all__ = [
     "doc_words",
     "drafted_differs",
     "line_findings",
+    "line_quantities",
     "same_amount",
+    "sku_key",
     "source_findings",
 ]

@@ -1,0 +1,35 @@
+{
+  "purpose": "discrepancy_claim",
+  "contact": {
+    "name": "Chị Lan",
+    "email": "lan@minhphat.example"
+  },
+  "receipts": [
+    [
+      500,
+      500,
+      480
+    ],
+    [
+      1200,
+      1200,
+      1200
+    ]
+  ],
+  "model_writing": {
+    "paragraphs": [
+      {
+        "text": "Kính gửi Quý công ty, chúng tôi xin thông báo kết quả kiểm đếm khi nhập kho.",
+        "cites": [
+          "case"
+        ]
+      },
+      {
+        "text": "SKU EL-00001-01 thiếu 50 sản phẩm.",
+        "cites": [
+          "receipts"
+        ]
+      }
+    ]
+  }
+}

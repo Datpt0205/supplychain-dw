@@ -48,6 +48,9 @@ class MessagePurpose(StrEnum):
     # The weekly chase of a PO case in production (ticket ai-automation/17),
     # from the supplier's own schedule.
     PRODUCTION_PROGRESS = "production_progress"
+    # The claim to the supplier when the warehouse's count differs from what
+    # it shipped (ticket ai-automation/18), from the counts recorded.
+    DISCREPANCY_CLAIM = "discrepancy_claim"
 
 
 class MessageStatus(StrEnum):

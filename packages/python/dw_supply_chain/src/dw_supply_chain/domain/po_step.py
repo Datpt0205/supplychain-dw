@@ -45,6 +45,9 @@ class POStepKind(StrEnum):
     PRODUCTION = "production"
     QC = "qc"
     ARRIVAL = "arrival"
+    # Step 17 (ticket ai-automation/18): the warehouse counts each PO line;
+    # code reconciles the counts with the packing list and the PO.
+    WAREHOUSE = "warehouse"
 
 
 class ResultKind(StrEnum):
@@ -92,6 +95,9 @@ class POStepSpec:
     # step is offered as.
     outcome_field: str | None = None
     outcomes: Mapping[str, CaseAction] = field(default_factory=dict)
+    # A step a person approves with a count per PO line (the warehouse's),
+    # beside what the packing list says was shipped.
+    counts: bool = False
 
     def action_for(self, typed: Mapping[str, object]) -> CaseAction:
         """The step the typed outcome takes; the step's own when it has none."""
@@ -195,6 +201,14 @@ PO_STEPS: Mapping[POStepKind, POStepSpec] = {
                 DocumentType.CERTIFICATE_OF_ORIGIN,
             ),
             results=(ResultField("eta", ResultKind.DATE, "Ngày hàng đến cảng"),),
+        ),
+        POStepSpec(
+            kind=POStepKind.WAREHOUSE,
+            state=CaseState.WAREHOUSE_RECEIVING,
+            action=CaseAction.COMPLETE,
+            draft=DocumentType.WAREHOUSE_RECEIPT,
+            sources=(DocumentType.PACKING_LIST,),
+            counts=True,
         ),
     )
 }

@@ -43,7 +43,7 @@ import logging
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -73,6 +73,7 @@ from dw_supply_chain.application.handlers import (
 )
 from dw_supply_chain.application.ports import (
     FollowUpRecord,
+    LineReceiptsPort,
     POCaseListFilter,
     ProductCaseListFilter,
     ReviewNotifierPort,
@@ -98,6 +99,7 @@ from dw_supply_chain.domain.product_development_case import (
     ProductDevelopmentCaseId,
     ProductDevState,
 )
+from dw_supply_chain.domain.receipt_check import discrepancies
 from dw_supply_chain.domain.supplier_message import (
     SUPPLIER_SIDE_KINDS,
     SUPPLIER_SIDE_MILESTONES,
@@ -120,7 +122,7 @@ logger = logging.getLogger(__name__)
 MESSAGES_LANE = "supply_chain_supplier_messages"
 MESSAGES_WORKER_ID = "supply_chain.supplier_messages"
 MESSAGES_WORKER_VERSION = "1.0.0"
-MESSAGE_PROMPT = WritingPrompt("supply_chain.draft_supplier_message", "1.2.0")
+MESSAGE_PROMPT = WritingPrompt("supply_chain.draft_supplier_message", "1.3.0")
 MESSAGE_DRAFTED = "supply_chain.supplier_message.drafted"
 MESSAGE_SENT = "supply_chain.supplier_message.sent"
 _RESOURCE = "supplier_message"
@@ -132,6 +134,7 @@ PURPOSE_LABELS: Mapping[MessagePurpose, str] = {
     MessagePurpose.SUPPLIER_CONFIRMATION: "Xác nhận sản phẩm với NCC",
     MessagePurpose.SAMPLE_REVISION_REQUEST: "Gửi phiếu yêu cầu chỉnh sửa mẫu",
     MessagePurpose.PRODUCTION_PROGRESS: "Hỏi tiến độ sản xuất hằng tuần",
+    MessagePurpose.DISCREPANCY_CLAIM: "Khiếu nại chênh lệch hàng nhập kho",
 }
 # The step a case enters that a message of this purpose goes with.
 _STEP_PURPOSES: Mapping[MessagePurpose, ProductDevState] = {
@@ -685,6 +688,11 @@ class MessageLaneCount:
         )
 
 
+# How long after a count its claim is still drafted (the discrepancy
+# report's own window: the lane reads the counts of this window only).
+CLAIM_WINDOW = timedelta(days=30)
+
+
 @dataclass(frozen=True)
 class DraftSupplierMessages:
     """The worker lane `supply_chain_supplier_messages` (module docstring)."""
@@ -706,6 +714,9 @@ class DraftSupplierMessages:
     # the weekly progress chase; a host without them drafts none.
     po_listing: POCaseListingPort | None = None
     readings: ExtractionReadingsPort | None = None
+    # The warehouse's counts (ticket ai-automation/18): the claim letter when
+    # a count differs from what was shipped; a host without them drafts none.
+    receipts: LineReceiptsPort | None = None
     batch: int = _BATCH
 
     async def run(self) -> MessageLaneCount:
@@ -761,7 +772,38 @@ class DraftSupplierMessages:
             requests.extend(await self._revision_requests(context))
         if MessagePurpose.PRODUCTION_PROGRESS in purposes:
             requests.extend(await self._progress_requests(context))
+        if MessagePurpose.DISCREPANCY_CLAIM in purposes:
+            requests.extend(await self._claim_requests(context))
         return requests
+
+    async def _claim_requests(self, context: AccessContext) -> list[MessageRequest]:
+        """One claim per PO case whose count, recorded in the window, differs
+        from what was shipped: the lines as the warehouse recorded them (no
+        price), the same words the discrepancy report prints."""
+        if self.receipts is None:
+            return []
+        since = self.drafter.clock.now() - CLAIM_WINDOW
+        found: list[MessageRequest] = []
+        for case_id in await self.receipts.discrepant_cases(context, since=since):
+            lines = discrepancies(await self.receipts.for_case(context, case_id))
+            if not lines:
+                continue
+            found.append(
+                MessageRequest(
+                    case_kind=CaseKind.PO,
+                    case_id=case_id,
+                    purpose=MessagePurpose.DISCREPANCY_CLAIM,
+                    source_key=f"discrepancy_claim:{case_id}",
+                    evidence=(
+                        EvidenceItem(
+                            f"receipts:{case_id}",
+                            "Số Kho đếm khi nhập kho",
+                            "; ".join(line.words() for line in lines),
+                        ),
+                    ),
+                )
+            )
+        return found
 
     async def _progress_requests(self, context: AccessContext) -> list[MessageRequest]:
         """One chase a week (ISO week) for each PO case in production: the

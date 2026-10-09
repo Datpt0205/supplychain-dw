@@ -18,7 +18,9 @@ workspace: `in`), payments already recorded (`payments`), a person's edit of
 the draft (`edit`) and a decision (`decide`: `scopes`, `results`). Expected:
 `drafts`, `draft_fields` (null: must be empty), `findings` (codes that must
 be named), `findings_absent`, `proposed`, `decision` (`applied`/`refused`),
-`case_state`, `payment` (the payment the decision recorded, null: none) and
+`case_state`, `payment` (the payment the decision recorded, null: none),
+`receipts` and `reports` (step 17: counts recorded, discrepancy reports the
+lane drafts after; `decide.counts` lists the counts in the PO's line order) and
 `must_not_contain` (text no notice and no finding may hold: an amount, an
 account).
 """
@@ -130,6 +132,17 @@ async def _run(input_data: dict[str, Any]) -> dict[str, Any]:
         out["findings"], out["proposed"] = [], False
     decide = input_data.get("decide")
     if decide is not None:
+        # Counts are given in the PO's line order (step 17).
+        typed_counts = decide.get("counts")
+        counts = (
+            None
+            if typed_counts is None
+            else {
+                line.sku_id: int(n)
+                for line, n in zip(case.lines, typed_counts, strict=False)
+                if n is not None
+            }
+        )
         try:
             await world.approver().handle(
                 world.context(frozenset(decide.get("scopes", PO_STEP_SCOPES))),
@@ -138,10 +151,19 @@ async def _run(input_data: dict[str, Any]) -> dict[str, Any]:
                 draft_id=None if draft is None else draft.id,
                 content_sha256=None if draft is None else draft.content_sha256,
                 results=decide.get("results", {}),
+                counts=counts,
             )
             out["decision"] = "applied"
         except (DomainError, ConflictError, PermissionDeniedError, NotFoundError):
             out["decision"] = "refused"
+        out["texts"].append(_words(world))
+    if spec.counts:
+        # The lane's next run: the discrepancy report, if a count differs.
+        await world.lane().run()
+        out["receipts"] = len(world.receipts.rows)
+        out["reports"] = sum(
+            1 for d in world.drafts.rows if d.doc_type is DocumentType.DISCREPANCY_REPORT
+        )
         out["texts"].append(_words(world))
     out["case_state"] = world.store.cases[case.id.value].state.value
     recorded = [
@@ -159,7 +181,7 @@ def grade_po_step(
     ctx: GraderContext, input_data: dict[str, Any], expected: dict[str, Any]
 ) -> GradeResult:
     out = asyncio.run(_run(input_data))
-    for key in ("drafts", "proposed", "decision", "case_state", "payment"):
+    for key in ("drafts", "proposed", "decision", "case_state", "payment", "receipts", "reports"):
         if key in expected and out.get(key) != expected[key]:
             return GradeResult.fail(key, expected=expected[key], actual=out.get(key))
     for name, value in expected.get("draft_fields", {}).items():

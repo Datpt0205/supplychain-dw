@@ -101,6 +101,7 @@ from dw_supply_chain.adapters.persistence.follow_up_repository import (
     SqlFollowUpRepository,
     SqlWorkspacesWithCases,
 )
+from dw_supply_chain.adapters.persistence.line_receipts import SqlLineReceipts
 from dw_supply_chain.adapters.persistence.packaging_design_repository import (
     SqlPackagingDesignRepository,
 )
@@ -443,6 +444,7 @@ def build_supplier_messages(
         # The weekly production chase (ticket ai-automation/17).
         po_listing=SqlPOCaseRepository(sessions),
         readings=SqlExtractionReadings(sessions),
+        receipts=SqlLineReceipts(sessions),
     )
 
 
@@ -925,6 +927,7 @@ def build_po_steps(
         holders=SqlScopeHolders(sessions),
         notifier=SqlNotificationRepository(sessions),
         clock=clock,
+        receipts=SqlLineReceipts(sessions),
     )
 
 

@@ -418,6 +418,60 @@ TEMPLATES: list[dict[str, Any]] = [
             _f("notes", "Ghi chú"),
         ],
     },
+    {
+        "template_id": "supply_chain.warehouse_receipt",
+        "title": "PHIẾU NHẬP KHO",
+        "doc_type": "warehouse_receipt",
+        "description": (
+            "Bước 17: các dòng của PO (SKU, số đặt) và số nhà cung cấp ghi đã giao trên packing"
+            " list, do hệ thống chép; cột số đếm là số Kho nhập khi duyệt bước."
+        ),
+        "fields": [
+            _f("po_reference", "Số PO", required=True),
+            _f("supplier_name", "Nhà cung cấp", required=True),
+            _f("received_on", "Ngày nhập kho", "date", required=True),
+            _table(
+                "items",
+                "Hàng nhập kho",
+                [
+                    ("sku_code", "Mã SKU", "text"),
+                    ("variant", "Biến thể", "text"),
+                    ("ordered", "Số đặt (PO)", "number"),
+                    ("shipped", "Số giao (packing list)", "number"),
+                    ("counted", "Số đếm", "number"),
+                ],
+                required=True,
+            ),
+            _f("notes", "Ghi chú"),
+        ],
+    },
+    {
+        "template_id": "supply_chain.discrepancy_report",
+        "title": "BIÊN BẢN CHÊNH LỆCH HÀNG NHẬP KHO",
+        "doc_type": "discrepancy_report",
+        "description": (
+            "Bước 17: từng dòng có số đếm khác số giao (hoặc số đặt khi packing list không ghi),"
+            " do hệ thống chép từ số Kho đã ghi; căn cứ khiếu nại nhà cung cấp."
+        ),
+        "fields": [
+            _f("po_reference", "Số PO", required=True),
+            _f("supplier_name", "Nhà cung cấp", required=True),
+            _f("prepared_on", "Ngày lập biên bản", "date", required=True),
+            _table(
+                "items",
+                "Dòng chênh lệch",
+                [
+                    ("sku_code", "Mã SKU", "text"),
+                    ("ordered", "Số đặt (PO)", "number"),
+                    ("shipped", "Số giao (packing list)", "number"),
+                    ("counted", "Số đếm", "number"),
+                    ("difference", "Chênh lệch", "number"),
+                ],
+                required=True,
+            ),
+            _f("notes", "Ghi chú"),
+        ],
+    },
 ]
 
 VERSION = "1.0.0"

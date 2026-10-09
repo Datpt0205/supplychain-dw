@@ -44,6 +44,7 @@ from dw_supply_chain.domain.extraction import (
 from dw_supply_chain.domain.follow_up import FollowUpKind
 from dw_supply_chain.domain.po_case import CaseState
 from dw_supply_chain.domain.product_development_case import ProductDevState
+from dw_supply_chain.domain.receipt_check import LineCount, NewLineReceipt
 from dw_supply_chain.domain.supplier_message import MessagePurpose, SupplierMessageWriting
 from dw_supply_chain.testing.extraction import RecordingGateway, ScriptedGateway
 from dw_supply_chain.testing.po_steps import POStepWorld
@@ -126,10 +127,55 @@ async def _run_progress(
     return world.gateway, world
 
 
+async def _run_claim(
+    ctx: GraderContext, input_data: dict[str, Any], world: MessageWorld
+) -> tuple[Any, MessageWorld]:
+    """The claim when the warehouse's count differs (ticket ai-automation/18),
+    run through the REAL lane over the counts recorded (`receipts`: one
+    `[ordered, shipped, counted]` per PO line, in line order), cited by the
+    scripted writing as `receipts`."""
+    spec = input_data.get("case", {})
+    lives = spec.get("in", "own")
+    steps = POStepWorld(tenant_id=world.tenant_id, workspace_id=world.workspace_id)
+    case = steps.add_case(
+        CaseState.COMPLETED,
+        tenant=uuid.uuid4() if lives == "other_tenant" else None,
+        workspace=uuid.uuid4() if lives == "other_workspace" else None,
+    )
+    world.po_cases.cases[case.id.value] = case
+    world.po_cases.leaky = spec.get("leaky", False)
+    world.receipts.leaky = spec.get("leaky", False)
+    contact = input_data.get("contact")
+    if contact is not None:
+        world.add_contact(case.supplier_name, contact["name"], contact.get("email"))
+    for line, (ordered, shipped, counted) in zip(
+        case.lines, input_data.get("receipts", []), strict=False
+    ):
+        world.receipts.rows.append(
+            (
+                case.tenant_id.value,
+                case.workspace_id.value,
+                NewLineReceipt(
+                    id=uuid.uuid4(),
+                    po_case_id=case.id.value,
+                    line=LineCount(line.sku_id, line.sku_code or "", ordered, shipped, counted),
+                    document_id=None,
+                ),
+                world.clock.now(),
+            )
+        )
+    world.gateway = _gateway(ctx, input_data, {"receipts": f"receipts:{case.id}"})
+    world.enable(MessagePurpose.DISCREPANCY_CLAIM)
+    await world.lane().run()
+    return world.gateway, world
+
+
 async def _run(ctx: GraderContext, input_data: dict[str, Any]) -> tuple[Any, MessageWorld]:
     world = MessageWorld(gateway=None, model_profile=ctx.model_profile)
     if input_data["purpose"] == MessagePurpose.PRODUCTION_PROGRESS.value:
         return await _run_progress(ctx, input_data, world)
+    if input_data["purpose"] == MessagePurpose.DISCREPANCY_CLAIM.value:
+        return await _run_claim(ctx, input_data, world)
     spec = input_data.get("case", {})
     lives = spec.get("in", "own")
     supplier = spec.get("supplier_name", "Công ty Gia dụng Minh Phát")

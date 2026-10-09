@@ -1,0 +1,9 @@
+{
+  "decision": "applied",
+  "receipts": 2,
+  "reports": 0,
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

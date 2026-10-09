@@ -1,0 +1,35 @@
+{
+  "purpose": "discrepancy_claim",
+  "contact": {
+    "name": "Chị Lan",
+    "email": "lan@minhphat.example"
+  },
+  "receipts": [
+    [
+      500,
+      500,
+      500
+    ],
+    [
+      1200,
+      1200,
+      1200
+    ]
+  ],
+  "model_writing": {
+    "paragraphs": [
+      {
+        "text": "Kính gửi Quý công ty, chúng tôi xin thông báo kết quả kiểm đếm khi nhập kho.",
+        "cites": [
+          "case"
+        ]
+      },
+      {
+        "text": "SKU EL-00001-01: NCC ghi đã giao 500 nhưng Kho đếm được 480, thiếu 20; xin Quý công ty phản hồi phương án bù hàng.",
+        "cites": [
+          "receipts"
+        ]
+      }
+    ]
+  }
+}

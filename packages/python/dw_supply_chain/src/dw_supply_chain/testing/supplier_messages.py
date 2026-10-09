@@ -42,6 +42,7 @@ from dw_supply_chain.domain.product_development_case import (
 from dw_supply_chain.domain.supplier_message import MessagePurpose
 from dw_supply_chain.step_preparation_policy import SupplyChainStepPreparation
 from dw_supply_chain.supplier_message_policy import load_supply_chain_supplier_messages
+from dw_supply_chain.testing.po_steps import InMemoryLineReceipts
 from dw_supply_chain.testing.step_preparation import (
     NOW,
     REPO_ROOT,
@@ -53,7 +54,7 @@ from dw_supply_chain.testing.step_preparation import (
 )
 
 TEMPLATES = load_supply_chain_supplier_messages(
-    REPO_ROOT / "configs" / "policies" / "supply_chain_supplier_messages@1.2.0.yaml"
+    REPO_ROOT / "configs" / "policies" / "supply_chain_supplier_messages@1.3.0.yaml"
 )
 PLATFORM_POLICY = SupplyChainStepPreparation.model_validate(
     {
@@ -290,6 +291,7 @@ class MessageWorld:
     drafts: InMemoryDrafts = field(default_factory=InMemoryDrafts)
     profiles: InMemoryProfiles = field(default_factory=InMemoryProfiles)
     readings: InMemoryReadings = field(default_factory=InMemoryReadings)
+    receipts: InMemoryLineReceipts = field(default_factory=InMemoryLineReceipts)
 
     def __post_init__(self) -> None:
         self.plans.plans[self.tenant_id] = "professional"
@@ -339,6 +341,7 @@ class MessageWorld:
             profiles=self.profiles,
             po_listing=self.po_cases,
             readings=self.readings,
+            receipts=self.receipts,
         )
 
     def enable(self, *purposes: MessagePurpose) -> None:

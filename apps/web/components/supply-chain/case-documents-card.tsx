@@ -64,6 +64,8 @@ export const DOC_TYPE_LABEL: Record<DocumentType, string> = {
   arrival_notice: "Giấy báo hàng đến",
   certificate_of_origin: "Giấy chứng nhận xuất xứ (C/O)",
   rework_request: "Phiếu yêu cầu sửa hàng",
+  warehouse_receipt: "Phiếu nhập kho",
+  discrepancy_report: "Biên bản chênh lệch nhập kho",
 };
 
 const DOC_TYPE_OPTIONS = (Object.keys(DOC_TYPE_LABEL) as DocumentType[]).map(

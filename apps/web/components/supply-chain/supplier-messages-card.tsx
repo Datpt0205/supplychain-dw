@@ -37,6 +37,7 @@ export const MESSAGE_PURPOSE_LABEL: Record<SupplierMessagePurpose, string> = {
   supplier_confirmation: "Xác nhận sản phẩm",
   sample_revision_request: "Gửi phiếu yêu cầu chỉnh sửa mẫu",
   production_progress: "Hỏi tiến độ sản xuất hằng tuần",
+  discrepancy_claim: "Khiếu nại chênh lệch hàng nhập kho",
 };
 export const MESSAGE_STATUS_LABEL: Record<
   SupplierMessageStatus,

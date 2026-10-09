@@ -524,6 +524,9 @@ export const documentTypeSchema = z.enum([
   "arrival_notice",
   "certificate_of_origin",
   "rework_request",
+  // Step 17's goods-received note and discrepancy report (ai-automation/18).
+  "warehouse_receipt",
+  "discrepancy_report",
 ]);
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 
@@ -1229,6 +1232,8 @@ export const supplierMessagePurposeSchema = z.enum([
   "sample_revision_request",
   // The weekly chase of a PO case in production (ai-automation/17).
   "production_progress",
+  // The claim when the warehouse's count differs (ai-automation/18).
+  "discrepancy_claim",
 ]);
 export type SupplierMessagePurpose = z.infer<
   typeof supplierMessagePurposeSchema
@@ -1436,6 +1441,7 @@ export const poStepKindSchema = z.enum([
   "production",
   "qc",
   "arrival",
+  "warehouse",
 ]);
 export type POStepKind = z.infer<typeof poStepKindSchema>;
 
@@ -1478,6 +1484,19 @@ export const poStepProposalSchema = z.object({
   can_approve: z.boolean(),
   blocked_reason: z.string().nullable(),
   missing_paper: documentTypeSchema.nullable(),
+  // Step 17: the PO lines the warehouse counts, what the packing list says
+  // was shipped beside each empty count (ai-automation/18).
+  lines: z.array(
+    z.object({
+      sku_id: z.string().uuid(),
+      sku_code: z.string().nullable(),
+      variant_label: z.string().nullable(),
+      ordered: z.number().int().nullable(),
+      shipped: z.number().int().nullable(),
+      quote: z.string().nullable(),
+      document_id: z.string().uuid().nullable(),
+    }),
+  ),
 });
 export type POStepProposal = z.infer<typeof poStepProposalSchema>;
 export type POStepResult = POStepProposal["results"][number];

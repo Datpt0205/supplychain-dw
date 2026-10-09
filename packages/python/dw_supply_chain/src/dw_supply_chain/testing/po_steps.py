@@ -60,6 +60,7 @@ from dw_supply_chain.domain.po_case import (
     POCaseLine,
     Shipping,
 )
+from dw_supply_chain.domain.receipt_check import LineCount, NewLineReceipt
 from dw_supply_chain.po_documents_policy import load_supply_chain_po_documents
 from dw_supply_chain.step_preparation_policy import SupplyChainStepPreparation
 from dw_supply_chain.testing.purchase_orders import (
@@ -123,12 +124,45 @@ class InMemoryAccounts:
 
 
 @dataclass
+class InMemoryLineReceipts:
+    """`LineReceiptsPort` under RLS: (tenant, workspace, receipt, recorded at),
+    append-only. `leaky` models an adapter that forgot RLS, so the lane's own
+    checks are what a test grades."""
+
+    rows: list[tuple[uuid.UUID, uuid.UUID, NewLineReceipt, datetime]] = field(default_factory=list)
+    leaky: bool = False
+
+    def _mine(self, context: AccessContext) -> list[tuple[NewLineReceipt, datetime]]:
+        return [
+            (r, at)
+            for t, w, r, at in self.rows
+            if self.leaky or (t, w) == (context.tenant_id, context.workspace_id)
+        ]
+
+    async def for_case(self, context: AccessContext, case_id: uuid.UUID) -> list[LineCount]:
+        latest: dict[uuid.UUID, LineCount] = {}
+        for receipt, _ in self._mine(context):
+            if receipt.po_case_id == case_id:
+                latest[receipt.line.sku_id] = receipt.line
+        return sorted(latest.values(), key=lambda line: line.sku_code)
+
+    async def discrepant_cases(self, context: AccessContext, *, since: datetime) -> list[uuid.UUID]:
+        found: dict[uuid.UUID, None] = {}
+        for receipt, at in self._mine(context):
+            line = receipt.line
+            if at >= since and line.counted != line.expected:
+                found[receipt.po_case_id] = None
+        return list(found)
+
+
+@dataclass
 class InMemoryPOStepOutcomes:
     """`POStepOutcomesPort`: all or nothing."""
 
     store: InMemoryPOStore
     drafts: InMemoryDrafts
     documents: InMemoryDocuments
+    receipts: InMemoryLineReceipts = field(default_factory=InMemoryLineReceipts)
     audits: list[AuditEvent] = field(default_factory=list)
     applied: int = 0
 
@@ -144,6 +178,7 @@ class InMemoryPOStepOutcomes:
         audits: Sequence[AuditEvent],
         closed: NewDraftDecision | None,
         shipping: Shipping | None,
+        receipts: Sequence[NewLineReceipt],
     ) -> None:
         stored = self.store.cases[case.id.value]
         if stored.version != case.version - 1:
@@ -206,6 +241,9 @@ class InMemoryPOStepOutcomes:
                     recorded_at=NOW,
                 )
             )
+        self.receipts.rows.extend(
+            (context.tenant_id, context.workspace_id, r, NOW) for r in receipts
+        )
         self.audits.extend(audits)
         self.applied += 1
 
@@ -219,6 +257,7 @@ class POStepWorld:
     documents: InMemoryDocuments = field(default_factory=InMemoryDocuments)
     readings: InMemoryReadings = field(default_factory=InMemoryReadings)
     drafts: InMemoryDrafts = field(default_factory=InMemoryDrafts)
+    receipts: InMemoryLineReceipts = field(default_factory=InMemoryLineReceipts)
     storage: InMemoryStorage = field(default_factory=InMemoryStorage)
     templates: PlatformTemplates = field(default_factory=PlatformTemplates)
     notifier: RecordingNotifier = field(default_factory=RecordingNotifier)
@@ -231,7 +270,9 @@ class POStepWorld:
     outcomes: InMemoryPOStepOutcomes = field(init=False)
 
     def __post_init__(self) -> None:
-        self.outcomes = InMemoryPOStepOutcomes(self.store, self.drafts, self.documents)
+        self.outcomes = InMemoryPOStepOutcomes(
+            self.store, self.drafts, self.documents, self.receipts
+        )
         self.overrides = Overrides(
             {
                 "supply_chain_step_preparation": self.preparation.model_dump(mode="json"),
@@ -295,6 +336,7 @@ class POStepWorld:
             holders=self.holders(),
             notifier=self.notifier,
             clock=self.clock,
+            receipts=self.receipts,
         )
 
     def page(self) -> GetPOStepProposal:

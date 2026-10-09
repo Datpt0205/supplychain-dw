@@ -83,9 +83,14 @@ def load_supply_chain_supplier_messages(path: Path) -> SupplyChainSupplierMessag
 # those, and only those (the duty policies' `from_stored`, the same rule).
 PURPOSES_ADDED_AFTER: dict[str, frozenset[MessagePurpose]] = {
     "1.0.0": frozenset(
-        {MessagePurpose.SAMPLE_REVISION_REQUEST, MessagePurpose.PRODUCTION_PROGRESS}
+        {
+            MessagePurpose.SAMPLE_REVISION_REQUEST,
+            MessagePurpose.PRODUCTION_PROGRESS,
+            MessagePurpose.DISCREPANCY_CLAIM,
+        }
     ),
-    "1.1.0": frozenset({MessagePurpose.PRODUCTION_PROGRESS}),
+    "1.1.0": frozenset({MessagePurpose.PRODUCTION_PROGRESS, MessagePurpose.DISCREPANCY_CLAIM}),
+    "1.2.0": frozenset({MessagePurpose.DISCREPANCY_CLAIM}),
 }
 
 

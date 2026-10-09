@@ -1,0 +1,48 @@
+{
+  "step": "warehouse",
+  "documents": [
+    {
+      "doc_type": "packing_list",
+      "reading": {
+        "lines": [
+          {
+            "sku_code": "EL-00001-01",
+            "quantity": "500"
+          },
+          {
+            "sku_code": "EL-00001-02",
+            "quantity": "1200"
+          }
+        ]
+      }
+    }
+  ],
+  "edit": {
+    "items": [
+      {
+        "sku_code": "EL-00001-01",
+        "variant": null,
+        "ordered": "500",
+        "shipped": "1",
+        "counted": null
+      },
+      {
+        "sku_code": "EL-00001-02",
+        "variant": null,
+        "ordered": "1200",
+        "shipped": "1200",
+        "counted": null
+      }
+    ]
+  },
+  "decide": {
+    "scopes": [
+      "supply_chain.duty.warehouse",
+      "supply_chain.po_case.read"
+    ],
+    "counts": [
+      500,
+      1200
+    ]
+  }
+}

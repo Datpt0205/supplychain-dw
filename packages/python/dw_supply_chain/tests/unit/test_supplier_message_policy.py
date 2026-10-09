@@ -93,6 +93,18 @@ def test_a_tenant_wording_from_before_a_purpose_existed_takes_the_platforms_for_
     )
 
 
+def test_a_tenant_wording_from_1_2_0_takes_the_platforms_claim_letter() -> None:
+    raw = _raw()
+    raw["policy_version"] = "1.2.0"
+    del raw["templates"]["discrepancy_claim"]
+    resolved = _resolve(raw)
+    platform = load_supply_chain_supplier_messages(SHIPPED)
+    assert (
+        resolved.templates[MessagePurpose.DISCREPANCY_CLAIM]
+        == platform.templates[MessagePurpose.DISCREPANCY_CLAIM]
+    )
+
+
 def test_a_current_tenant_wording_missing_a_purpose_is_still_refused() -> None:
     raw = _raw()
     del raw["templates"]["production_progress"]

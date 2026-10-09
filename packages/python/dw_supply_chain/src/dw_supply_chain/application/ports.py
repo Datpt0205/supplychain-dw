@@ -49,6 +49,7 @@ from dw_supply_chain.domain.product_development_case import (
     SampleRound,
 )
 from dw_supply_chain.domain.product_proposal import DraftClaim, ProposalDraft, ProposalField
+from dw_supply_chain.domain.receipt_check import LineCount
 from dw_supply_chain.domain.supplier_update import SupplierUpdate, SupplierUpdateId
 
 
@@ -900,3 +901,17 @@ class PaperGatePort(Protocol):
     async def require(
         self, context: AccessContext, case_id: uuid.UUID, action: CaseAction
     ) -> None: ...
+
+
+class LineReceiptsPort(Protocol):
+    """The warehouse's counts recorded at step 17 (ticket ai-automation/18),
+    under the caller's tenant and workspace."""
+
+    async def for_case(self, context: AccessContext, case_id: uuid.UUID) -> list[LineCount]:
+        """The case's counted lines as stamped when counted; none before."""
+        ...
+
+    async def discrepant_cases(self, context: AccessContext, *, since: datetime) -> list[uuid.UUID]:
+        """The PO cases with a line counted since `since` whose count is not
+        what was shipped (or, the packing list silent, ordered)."""
+        ...

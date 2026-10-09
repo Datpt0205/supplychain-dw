@@ -87,6 +87,7 @@ function qc(overrides: Partial<POStepProposal> = {}): POStepProposal {
     can_approve: true,
     blocked_reason: null,
     missing_paper: null,
+    lines: [],
     ...overrides,
   };
 }
@@ -144,6 +145,7 @@ function confirmation(overrides: Partial<POStepProposal> = {}): POStepProposal {
     can_approve: true,
     blocked_reason: null,
     missing_paper: null,
+    lines: [],
     ...overrides,
   };
 }
@@ -295,6 +297,84 @@ describe("POStepCard", () => {
         qc_result: "fail",
         container_number: "",
         reason: "Lỗi nặng vượt Ac",
+      },
+    });
+  });
+
+  it("asks the warehouse for every line's count and sends what was typed", async () => {
+    const lines = [
+      {
+        sku_id: "33333333-3333-4333-8333-333333333333",
+        sku_code: "EL-00001-01",
+        variant_label: null,
+        ordered: 500,
+        shipped: 500,
+        quote: "EL-00001-01 500 pcs",
+        document_id: null,
+      },
+      {
+        sku_id: "44444444-4444-4444-8444-444444444444",
+        sku_code: "EL-00001-02",
+        variant_label: null,
+        ordered: 1200,
+        shipped: null,
+        quote: null,
+        document_id: null,
+      },
+    ];
+    const warehouse = confirmation({
+      step: "warehouse",
+      action: "complete",
+      draft_doc_type: "warehouse_receipt",
+      draft_id: "22222222-2222-4222-8222-222222222222",
+      draft_version: 1,
+      draft_status: "open",
+      content_sha256: "b".repeat(64),
+      findings: [],
+      results: [],
+      proposed: true,
+      lines,
+    });
+    getPOStepProposal.mockResolvedValue(warehouse);
+    approvePOStep.mockResolvedValue(confirmation({ step: null }));
+    renderCard();
+    await waitFor(() =>
+      expect(screen.getByText("NCC ghi đã giao: 500")).toBeTruthy(),
+    );
+    expect(screen.getByText("Packing list không ghi số giao")).toBeTruthy();
+    const record = () =>
+      screen.getByRole("button", {
+        name: /Ghi số đếm và nhập kho/,
+      }) as HTMLButtonElement;
+    // The shipped quantity is beside the field, never in it.
+    expect(
+      (screen.getByLabelText("Số đếm EL-00001-01") as HTMLInputElement).value,
+    ).toBe("");
+    fireEvent.change(screen.getByLabelText("Số đếm EL-00001-01"), {
+      target: { value: "480" },
+    });
+    // One line still empty: locked.
+    await waitFor(() => expect(screen.getByText(FILL_RESULTS)).toBeTruthy());
+    expect(record().disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Số đếm EL-00001-02"), {
+      target: { value: "1200" },
+    });
+    await waitFor(() => expect(record().disabled).toBe(false));
+    fireEvent.click(record());
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Ghi số đếm và nhập kho?").length,
+      ).toBeGreaterThan(0),
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /Ghi số đếm và nhập kho/ }).at(-1)!,
+    );
+    await waitFor(() => expect(approvePOStep).toHaveBeenCalledTimes(1));
+    expect(approvePOStep.mock.calls[0]?.[1]).toMatchObject({
+      step: "warehouse",
+      counts: {
+        "33333333-3333-4333-8333-333333333333": 480,
+        "44444444-4444-4444-8444-444444444444": 1200,
       },
     });
   });

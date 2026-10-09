@@ -4,8 +4,8 @@ The draft's confirmation (or, for the outcome not chosen, its closing
 decision), the document made from it (`origin = ai_prepared`, its
 `draft_id`), the step (`SqlPOCaseRepository.save_in`: optimistic on the
 version, the history row), the shipping dates and container it learnt, the
-payment (`insert_payment`, what the commercial card writes) and every audit
-event. A confirmation of a version already
+payment (`insert_payment`, what the commercial card writes), the warehouse's
+counts (`insert_receipts`) and every audit event. A confirmation of a version already
 decided meets the decisions' UNIQUE, a case saved meanwhile its version guard:
 either refuses the whole.
 """
@@ -36,11 +36,13 @@ from dw_supply_chain.adapters.persistence.document_draft_repository import (
     ALREADY_DECIDED,
     insert_decision,
 )
+from dw_supply_chain.adapters.persistence.line_receipts import insert_receipts
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
 from dw_supply_chain.application.document_drafts import NewDraftDecision
 from dw_supply_chain.application.ports import NewCaseDocument
 from dw_supply_chain.domain.commercial import NewPOPayment
 from dw_supply_chain.domain.po_case import POCase, Shipping
+from dw_supply_chain.domain.receipt_check import NewLineReceipt
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,7 @@ class SqlPOStepOutcomes:
         audits: Sequence[AuditEvent],
         closed: NewDraftDecision | None,
         shipping: Shipping | None,
+        receipts: Sequence[NewLineReceipt],
     ) -> None:
         cases = SqlPOCaseRepository(self.session_factory)
         try:
@@ -78,6 +81,7 @@ class SqlPOStepOutcomes:
                     await cases.write_shipping_in(session, case.id, shipping)
                 if payment is not None:
                     await insert_payment(session, context, payment)
+                await insert_receipts(session, context, receipts)
                 audit_log = SqlAuditRepository(session)
                 for event in audits:
                     await audit_log.append(event)

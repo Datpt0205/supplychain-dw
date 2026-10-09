@@ -8,6 +8,7 @@ import {
   Card,
   Flex,
   Input,
+  InputNumber,
   List,
   Select,
   Tooltip,
@@ -107,6 +108,8 @@ export function POStepCard({
     useCallback(() => apiClient().getPOStepProposal(caseId), [caseId]),
   );
   const [typed, setTyped] = useState<Record<string, string>>({});
+  // Step 17: the warehouse's count per PO line, by SKU id; never prefilled.
+  const [counts, setCounts] = useState<Record<string, number | null>>({});
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const proposal: POStepProposal | null = resource.data;
@@ -129,11 +132,13 @@ export function POStepCard({
   const chosen = proposal.results
     .filter((r) => r.kind === "choice")
     .map((r) => typed[r.name] ?? "")[0];
-  const unfilled = proposal.results.some(
-    (r) =>
-      (r.required || (r.required_for !== null && r.required_for === chosen)) &&
-      !(typed[r.name] ?? "").trim(),
-  );
+  const unfilled =
+    proposal.results.some(
+      (r) =>
+        (r.required ||
+          (r.required_for !== null && r.required_for === chosen)) &&
+        !(typed[r.name] ?? "").trim(),
+    ) || proposal.lines.some((line) => counts[line.sku_id] == null);
   const lock = !online
     ? OFFLINE_STEP
     : (proposal.blocked_reason ?? (unfilled ? FILL_RESULTS : null));
@@ -146,6 +151,17 @@ export function POStepCard({
       results: Object.fromEntries(
         proposal.results.map((r) => [r.name, (typed[r.name] ?? "").trim()]),
       ),
+      // Only a step that takes counts sends them (step 17).
+      ...(proposal.lines.length > 0
+        ? {
+            counts: Object.fromEntries(
+              proposal.lines.map((line) => [
+                line.sku_id,
+                counts[line.sku_id] ?? 0,
+              ]),
+            ),
+          }
+        : {}),
     };
     setBusy(true);
     setRefusal(null);
@@ -153,6 +169,7 @@ export function POStepCard({
       await apiClient().approvePOStep(caseId, body, attemptKey(body));
       void message.success(`${words.approve}: đã ghi.`);
       setTyped({});
+      setCounts({});
       resource.reload();
       onApproved();
     } catch (caught) {
@@ -228,6 +245,48 @@ export function POStepCard({
               proposal.missing_paper}{" "}
             trên hồ sơ trước khi duyệt.
           </Typography.Text>
+        ) : null}
+        {proposal.lines.length > 0 ? (
+          <List
+            size="small"
+            aria-label="Số đếm từng dòng"
+            dataSource={proposal.lines}
+            renderItem={(line) => (
+              <List.Item>
+                <Flex gap="small" align="center" wrap>
+                  <Typography.Text code>
+                    {line.sku_code ?? line.sku_id}
+                  </Typography.Text>
+                  {line.variant_label ? (
+                    <Typography.Text>{line.variant_label}</Typography.Text>
+                  ) : null}
+                  <Typography.Text>PO: {line.ordered ?? "—"}</Typography.Text>
+                  <InputNumber
+                    aria-label={`Số đếm ${line.sku_code ?? line.sku_id}`}
+                    placeholder="Số đếm"
+                    min={0}
+                    max={10_000_000}
+                    precision={0}
+                    value={counts[line.sku_id] ?? null}
+                    onChange={(value) =>
+                      setCounts((held) => ({
+                        ...held,
+                        [line.sku_id]: typeof value === "number" ? value : null,
+                      }))
+                    }
+                    disabled={!proposal.can_approve}
+                  />
+                  <Tooltip title={line.quote || undefined}>
+                    <Typography.Text>
+                      {line.shipped === null
+                        ? "Packing list không ghi số giao"
+                        : `NCC ghi đã giao: ${line.shipped}`}
+                    </Typography.Text>
+                  </Tooltip>
+                </Flex>
+              </List.Item>
+            )}
+          />
         ) : null}
         {proposal.results.map((result) => (
           <Flex key={result.name} gap="small" align="center" wrap>

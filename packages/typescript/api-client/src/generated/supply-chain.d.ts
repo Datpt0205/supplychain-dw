@@ -1461,6 +1461,10 @@ export interface components {
         ApprovePOStepRequest: {
             /** Content Sha256 */
             content_sha256?: string | null;
+            /** Counts */
+            counts?: {
+                [key: string]: number;
+            };
             /** Draft Id */
             draft_id?: string | null;
             /** Results */
@@ -1915,7 +1919,7 @@ export interface components {
          *     of steps 11 and 16 (ai-automation/15).
          * @enum {string}
          */
-        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report" | "supplier_quotation" | "bod_submission" | "proforma_invoice" | "commercial_invoice" | "bank_transfer_receipt" | "colour_revision_request" | "design_revision_request" | "production_schedule" | "qc_report" | "packing_list" | "bill_of_lading" | "arrival_notice" | "certificate_of_origin" | "rework_request";
+        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report" | "supplier_quotation" | "bod_submission" | "proforma_invoice" | "commercial_invoice" | "bank_transfer_receipt" | "colour_revision_request" | "design_revision_request" | "production_schedule" | "qc_report" | "packing_list" | "bill_of_lading" | "arrival_notice" | "certificate_of_origin" | "rework_request" | "warehouse_receipt" | "discrepancy_report";
         /** DraftColumnView */
         DraftColumnView: {
             kind: components["schemas"]["TemplateFieldKind"];
@@ -2265,7 +2269,7 @@ export interface components {
          * MessagePurpose
          * @enum {string}
          */
-        MessagePurpose: "sample_request" | "supplier_reminder" | "supplier_confirmation" | "sample_revision_request" | "production_progress";
+        MessagePurpose: "sample_request" | "supplier_reminder" | "supplier_confirmation" | "sample_revision_request" | "production_progress" | "discrepancy_claim";
         /**
          * MessageStatus
          * @enum {string}
@@ -2488,6 +2492,30 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * POStepCountLineView
+         * @description A PO line the warehouse counts (step 17): the count is typed, never
+         *     filled; what the packing list says was shipped sits beside it.
+         */
+        POStepCountLineView: {
+            /** Document Id */
+            document_id: string | null;
+            /** Ordered */
+            ordered: number | null;
+            /** Quote */
+            quote: string | null;
+            /** Shipped */
+            shipped: number | null;
+            /** Sku Code */
+            sku_code: string | null;
+            /**
+             * Sku Id
+             * Format: uuid
+             */
+            sku_id: string;
+            /** Variant Label */
+            variant_label: string | null;
+        };
         /** POStepFindingView */
         POStepFindingView: {
             /** Code */
@@ -2501,7 +2529,7 @@ export interface components {
          * POStepKind
          * @enum {string}
          */
-        POStepKind: "deposit_request" | "deposit_payment" | "final_payment_request" | "final_payment" | "production" | "qc" | "arrival";
+        POStepKind: "deposit_request" | "deposit_payment" | "final_payment_request" | "final_payment" | "production" | "qc" | "arrival" | "warehouse";
         /** POStepProposalView */
         POStepProposalView: {
             action: components["schemas"]["CaseAction"] | null;
@@ -2519,6 +2547,8 @@ export interface components {
             draft_version: number | null;
             /** Findings */
             findings: components["schemas"]["POStepFindingView"][];
+            /** Lines */
+            lines: components["schemas"]["POStepCountLineView"][];
             missing_paper: components["schemas"]["DocumentType"] | null;
             /** Proposed */
             proposed: boolean;

@@ -99,10 +99,13 @@ class InMemoryPOStore:
     prices: dict[uuid.UUID, dict[uuid.UUID, Decimal]] = field(default_factory=dict)
     # Recorded deposits and final payments (ticket ai-automation/15).
     payments: dict[uuid.UUID, list[POPayment]] = field(default_factory=dict)
+    # An adapter that forgot RLS on `get`: the caller's own workspace check is
+    # what a test grades then.
+    leaky: bool = False
 
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
         case = self.cases.get(case_id.value)
-        if case is None or not _sees(context, case):
+        if case is None or not (self.leaky or _sees(context, case)):
             return None
         return replace(case, _pending_transitions=[], _pending_line_quantities={})
 

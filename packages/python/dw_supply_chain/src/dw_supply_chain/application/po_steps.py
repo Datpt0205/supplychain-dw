@@ -33,7 +33,7 @@ import logging
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Protocol
 
@@ -66,6 +66,7 @@ from dw_supply_chain.application.handlers import (
 from dw_supply_chain.application.po_case_audit import po_case_audit
 from dw_supply_chain.application.ports import (
     CaseDocumentStoragePort,
+    LineReceiptsPort,
     NewCaseDocument,
     POCaseListFilter,
     ReviewNotifierPort,
@@ -105,6 +106,8 @@ from dw_supply_chain.domain.payment_check import (
     currency_findings,
     drafted_differs,
     line_findings,
+    line_quantities,
+    sku_key,
     source_findings,
 )
 from dw_supply_chain.domain.po_case import (
@@ -124,6 +127,13 @@ from dw_supply_chain.domain.po_step import (
     step_for_state,
 )
 from dw_supply_chain.domain.purchase_order_draft import decimal_text
+from dw_supply_chain.domain.receipt_check import (
+    LineCount,
+    LineDiscrepancy,
+    NewLineReceipt,
+    counted_lines,
+    discrepancies,
+)
 from dw_supply_chain.domain.shipping_check import (
     container_findings,
     customs_findings,
@@ -187,12 +197,14 @@ class POStepOutcomesPort(Protocol):
         audits: Sequence[AuditEvent],
         closed: NewDraftDecision | None,
         shipping: Shipping | None,
+        receipts: Sequence[NewLineReceipt],
     ) -> None:
         """The draft's confirmation and the document made from it (naming the
         draft), or the closing of a draft whose outcome was not taken; the
         step (optimistic on the case's version), the shipping dates and
-        container it learnt, the payment, every audit event: all or nothing. A
-        draft already decided, or a case saved meanwhile, is a `ConflictError`."""
+        container it learnt, the payment, the warehouse's counts, every audit
+        event: all or nothing. A draft already decided, or a case saved
+        meanwhile, is a `ConflictError`."""
         ...
 
 
@@ -680,6 +692,84 @@ class ArrivalRecipe:
         return found or _suggest(facts.source(DocumentType.BILL_OF_LADING), {"eta": "eta"})
 
 
+@dataclass(frozen=True)
+class WarehouseRecipe:
+    """Step 17 (ticket ai-automation/18): the goods-received note drafted from
+    the PO's lines and what the packing list says was shipped; the counts are
+    the warehouse's, typed at approval and reconciled by code
+    (`domain.receipt_check`)."""
+
+    def wants_draft(self, facts: POStepFacts) -> bool:
+        return True
+
+    def draft_values(self, facts: POStepFacts, today: date) -> dict[str, FieldInput]:
+        shipped = line_quantities(facts.source(DocumentType.PACKING_LIST))
+        values: dict[str, FieldInput] = {
+            "received_on": FieldInput(value=today.isoformat()),
+            "supplier_name": FieldInput(value=facts.case.supplier_name),
+        }
+        _put(values, "po_reference", facts.case.po_reference)
+        rows = []
+        for line in facts.case.lines:
+            held = shipped.get(sku_key(line.sku_code) or "")
+            rows.append(
+                {
+                    "sku_code": line.sku_code,
+                    "variant": line.variant_label,
+                    "ordered": None if line.quantity is None else str(line.quantity),
+                    "shipped": None if held is None else str(held[0]),
+                    "counted": None,
+                }
+            )
+        values["items"] = FieldInput(value=rows)
+        return values
+
+    def expected(self, facts: POStepFacts) -> dict[str, Decimal | None]:
+        return {}
+
+    def findings(self, facts: POStepFacts) -> list[Finding]:
+        packing = facts.source(DocumentType.PACKING_LIST)
+        return source_findings(packing) + line_findings(facts.ordered(), packing, prices=False)
+
+    def suggestions(self, facts: POStepFacts) -> dict[str, Suggestion]:
+        return {}
+
+
+def shipped_by_line(facts: POStepFacts) -> dict[uuid.UUID, tuple[int, str | None]]:
+    """What the packing list says was shipped, per PO line (by its SKU)."""
+    shipped = line_quantities(facts.source(DocumentType.PACKING_LIST))
+    return {
+        line.sku_id: shipped[key]
+        for line in facts.case.lines
+        if (key := sku_key(line.sku_code)) is not None and key in shipped
+    }
+
+
+def discrepancy_values(
+    case: POCase, lines: Sequence[LineDiscrepancy], today: date
+) -> dict[str, FieldInput]:
+    """The discrepancy report, every number the warehouse's or the PO's as
+    recorded with the count (`LineDiscrepancy`), never re-read."""
+    values: dict[str, FieldInput] = {
+        "prepared_on": FieldInput(value=today.isoformat()),
+        "supplier_name": FieldInput(value=case.supplier_name),
+        "items": FieldInput(
+            value=[
+                {
+                    "sku_code": line.sku_code,
+                    "ordered": None if line.ordered is None else str(line.ordered),
+                    "shipped": None if line.shipped is None else str(line.shipped),
+                    "counted": str(line.counted),
+                    "difference": str(line.difference),
+                }
+                for line in lines
+            ]
+        ),
+    }
+    _put(values, "po_reference", case.po_reference)
+    return values
+
+
 # One recipe per step: the lane, the page and the approval read the same one.
 RECIPES: Mapping[POStepKind, POStepRecipe] = {
     POStepKind.DEPOSIT_REQUEST: DepositRequestRecipe(),
@@ -689,6 +779,7 @@ RECIPES: Mapping[POStepKind, POStepRecipe] = {
     POStepKind.PRODUCTION: ProductionRecipe(),
     POStepKind.QC: QcRecipe(),
     POStepKind.ARRIVAL: ArrivalRecipe(),
+    POStepKind.WAREHOUSE: WarehouseRecipe(),
 }
 assert set(RECIPES) == set(POStepKind), "every PO step has a recipe"
 
@@ -736,7 +827,11 @@ _DRAFTED_TITLE: Mapping[DocumentType, str] = {
     DocumentType.DEPOSIT_DOCS: "AI đã soạn đề nghị đặt cọc",
     DocumentType.PAYMENT_DOCS: "AI đã soạn đề nghị thanh toán",
     DocumentType.REWORK_REQUEST: "AI đã soạn yêu cầu làm lại (QC không đạt theo số)",
+    DocumentType.WAREHOUSE_RECEIPT: "AI đã soạn phiếu nhập kho",
 }
+# How long after a count its discrepancy is still drafted into a report: the
+# lane reads the counts of this window, not every case ever completed.
+DISCREPANCY_WINDOW = timedelta(days=30)
 
 
 @dataclass(slots=True)
@@ -760,6 +855,9 @@ class PreparePOSteps:
     holders: ScopeHoldersPort
     notifier: ReviewNotifierPort
     clock: UtcClock
+    # The warehouse's counts (ticket ai-automation/18): a discrepancy report
+    # is drafted from them; a host without them drafts none.
+    receipts: LineReceiptsPort | None = None
 
     async def run(self) -> POStepCount:
         count = POStepCount()
@@ -773,6 +871,8 @@ class PreparePOSteps:
                     spec = PO_STEPS[kind]
                     if spec.draft is not None:
                         count.drafted += await self._workspace(context, spec)
+                if POStepKind.WAREHOUSE in enabled:
+                    count.drafted += await self.discrepancy_reports(context)
             except Exception:
                 logger.exception(
                     "PO step drafting failed for a workspace",
@@ -838,6 +938,44 @@ class PreparePOSteps:
         )
         return 1
 
+    async def discrepancy_reports(self, context: AccessContext) -> int:
+        """One discrepancy report for each PO case whose count, recorded in
+        the window, differs from what was shipped; Cung ứng is told. A case
+        with a report already (whatever became of it) is not drafted again."""
+        if self.receipts is None:
+            return 0
+        since = self.clock.now() - DISCREPANCY_WINDOW
+        drafted = 0
+        for case_id in await self.receipts.discrepant_cases(context, since=since):
+            existing = await self.drafts.latest_for_case(context, CaseKind.PO, case_id)
+            if any(d.doc_type is DocumentType.DISCREPANCY_REPORT for d in existing):
+                continue
+            case = await self.cases.get(context, POCaseId(case_id))
+            if case is None or case.workspace_id.value != context.workspace_id:
+                continue
+            lines = discrepancies(await self.receipts.for_case(context, case_id))
+            if not lines:
+                continue
+            draft = await self.prepare_draft.handle(
+                context,
+                case_kind=CaseKind.PO,
+                case_id=case_id,
+                doc_type=DocumentType.DISCREPANCY_REPORT,
+                values=discrepancy_values(case, lines, self.clock.now().date()),
+            )
+            await notify_duty_holders(
+                context,
+                holders=self.holders,
+                notifier=self.notifier,
+                duty=CaseDuty.ORDERING,
+                source_key=f"supply_chain.po_step_draft:{draft.lineage_id}",
+                title=f"AI đã soạn biên bản chênh lệch nhập kho: {case.supplier_name}",
+                body="Số Kho đếm khác số NCC giao; biên bản và thư khiếu nại chờ người kiểm.",
+                link=po_case_link(case_id),
+            )
+            drafted += 1
+        return drafted
+
 
 # ------------------------------------------------------------------- page --
 
@@ -848,6 +986,20 @@ class ResultView:
     suggestion: Suggestion | None
     # The suggestion is an amount the caller may not read.
     redacted: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CountLineView:
+    """A PO line the warehouse counts: what was ordered, and beside the empty
+    count what the packing list says was shipped (None: not read)."""
+
+    sku_id: uuid.UUID
+    sku_code: str | None
+    variant_label: str | None
+    ordered: int | None
+    shipped: int | None
+    quote: str | None
+    document_id: uuid.UUID | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -863,6 +1015,8 @@ class POStepProposal:
     blocked: str | None
     # The paper the tenant requires for the step, when it is not on the case.
     missing_paper: DocumentType | None = None
+    # The lines to count, for a step that takes counts.
+    lines: tuple[CountLineView, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -916,6 +1070,7 @@ class GetPOStepProposal:
             can_approve=blocked is None,
             blocked=blocked,
             missing_paper=missing_paper,
+            lines=_count_lines(facts) if spec.counts else (),
         )
 
     async def _blocked(
@@ -944,6 +1099,69 @@ class GetPOStepProposal:
         ):
             return "Duyệt bước này ghi số tiền: cần quyền ghi dữ liệu thương mại"
         return None
+
+
+def _count_lines(facts: POStepFacts) -> tuple[CountLineView, ...]:
+    shipped = shipped_by_line(facts)
+    packing = facts.source(DocumentType.PACKING_LIST)
+    return tuple(
+        CountLineView(
+            sku_id=line.sku_id,
+            sku_code=line.sku_code,
+            variant_label=line.variant_label,
+            ordered=line.quantity,
+            shipped=shipped[line.sku_id][0] if line.sku_id in shipped else None,
+            quote=shipped[line.sku_id][1] if line.sku_id in shipped else None,
+            document_id=packing.document_id if line.sku_id in shipped else None,
+        )
+        for line in facts.case.lines
+    )
+
+
+def _counted(
+    spec: POStepSpec,
+    case: POCase,
+    facts: POStepFacts,
+    counts: Mapping[uuid.UUID, int] | None,
+) -> list[LineCount]:
+    """The warehouse's counts for a step that takes them, each held beside
+    what was ordered and shipped; refused for a step that does not."""
+    if not spec.counts:
+        if counts:
+            raise DomainError("bước này không nhập số đếm", details={"field": "counts"})
+        return []
+    shipped = shipped_by_line(facts)
+    by_code = {
+        line.sku_code or str(line.sku_id): shipped[line.sku_id][0]
+        for line in case.lines
+        if line.sku_id in shipped
+    }
+    return counted_lines(
+        [(line.sku_id, line.sku_code or str(line.sku_id), line.quantity) for line in case.lines],
+        by_code,
+        counts or {},
+    )
+
+
+def _with_counts(fields: Mapping[str, Any], counted: Sequence[LineCount]) -> dict[str, Any]:
+    """The goods-received note's fields with the count typed at approval in
+    each line's `counted` cell (by SKU): the filed note carries the counts."""
+    out = dict(fields)
+    entry = out.get("items")
+    rows = entry.get("value") if isinstance(entry, Mapping) else None
+    if not counted or not isinstance(rows, list):
+        return out
+    by_code = {line.sku_code: line.counted for line in counted}
+    out["items"] = {
+        **entry,  # type: ignore[dict-item]
+        "value": [
+            {**row, "counted": str(by_code[row["sku_code"]])}
+            if isinstance(row, Mapping) and row.get("sku_code") in by_code
+            else row
+            for row in rows
+        ],
+    }
+    return out
 
 
 def _result_view(field_: ResultField, suggestion: Suggestion | None, visible: bool) -> ResultView:
@@ -1095,6 +1313,11 @@ _NEXT_DUTY_NOTICE: Mapping[CaseAction, tuple[CaseDuty, str, str]] = {
         "Hàng đã về cảng",
         "Logistics đã xác nhận hàng về cảng; bước tiếp theo là đề nghị thanh toán.",
     ),
+    CaseAction.COMPLETE: (
+        CaseDuty.ORDERING,
+        "Hàng đã nhập kho",
+        "Kho đã đếm và nhập kho; hồ sơ PO hoàn tất.",
+    ),
 }
 
 
@@ -1126,6 +1349,7 @@ class ApprovePOStep:
         draft_id: uuid.UUID | None,
         content_sha256: str | None,
         results: Mapping[str, str],
+        counts: Mapping[uuid.UUID, int] | None = None,
     ) -> POCase:
         spec = PO_STEPS[kind]
         typed = _typed_results(spec, results)
@@ -1166,12 +1390,23 @@ class ApprovePOStep:
                 details={"case_id": str(case_id), "missing_document_type": missing.value},
             )
         payment = self._payment(spec, case, facts, typed)
+        counted = _counted(spec, case, facts, counts)
         before = case.state
         apply_action(case, action=action, reason=typed.get("reason"))
         # The paper of the outcome taken becomes the case's; one drafted for
         # an outcome not taken (a rework request when QC passed) is closed.
         taken = draft if draft is not None and _draft_serves(spec, action) else None
-        document, confirmation = await self._document(context, case, taken)
+        document, confirmation = await self._document(context, case, taken, counted)
+        receipts = [
+            NewLineReceipt(
+                id=self.ids.new_uuid(),
+                po_case_id=case.id.value,
+                line=line,
+                document_id=None if document is None else document.id.value,
+            )
+            for line in counted
+        ]
+        differing = discrepancies(counted)
         closed = (
             None
             if draft is None or taken is not None
@@ -1201,6 +1436,11 @@ class ApprovePOStep:
                     **(
                         {"container_number": shipping.container_number}
                         if shipping is not None and shipping.container_number
+                        else {}
+                    ),
+                    **(
+                        {"counted_lines": len(counted), "differing_lines": len(differing)}
+                        if counted
                         else {}
                     ),
                 },
@@ -1252,8 +1492,14 @@ class ApprovePOStep:
             audits=audits,
             closed=closed,
             shipping=shipping,
+            receipts=receipts,
         )
         duty, title, body = _NEXT_DUTY_NOTICE[action]
+        if differing:
+            body += (
+                f" {len(differing)} dòng có số đếm khác số NCC giao: AI soạn biên bản chênh lệch."
+            )
+
         await notify_duty_holders(
             context,
             holders=self.holders,
@@ -1331,12 +1577,18 @@ class ApprovePOStep:
         )
 
     async def _document(
-        self, context: AccessContext, case: POCase, draft: DocumentDraft | None
+        self,
+        context: AccessContext,
+        case: POCase,
+        draft: DocumentDraft | None,
+        counted: Sequence[LineCount] = (),
     ) -> tuple[NewCaseDocument | None, NewDraftDecision | None]:
         if draft is None:
             return None, None
         template = await self.templates.resolve(context, draft.template_id, draft.template_version)
-        rendered = self.renderer.render(template, template_values(draft.fields, hide_prices=False))
+        rendered = self.renderer.render(
+            template, template_values(_with_counts(draft.fields, counted), hide_prices=False)
+        )
         document_id = self.ids.new_uuid()
         key = ObjectKey.build(
             tenant_id=context.tenant_id,
@@ -1389,9 +1641,11 @@ class ApprovePOStep:
 
 
 __all__ = [
+    "DISCREPANCY_WINDOW",
     "PO_STEPS_LANE",
     "RECIPES",
     "ApprovePOStep",
+    "CountLineView",
     "GetPOStepProposal",
     "POStepCount",
     "POStepFacts",

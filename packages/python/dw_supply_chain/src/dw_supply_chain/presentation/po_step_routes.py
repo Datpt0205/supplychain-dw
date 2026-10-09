@@ -33,6 +33,7 @@ from dw_supply_chain.domain.case_document import DocumentType
 from dw_supply_chain.domain.document_draft import DraftStatus
 from dw_supply_chain.domain.po_case import CaseAction, POCaseId
 from dw_supply_chain.domain.po_step import POStepKind, ResultKind
+from dw_supply_chain.domain.receipt_check import MAX_COUNT
 from dw_supply_chain.po_documents_policy import SupplyChainPODocuments
 from dw_supply_chain.presentation.routes import SupportsIdempotentRecord
 
@@ -68,6 +69,19 @@ class POStepResultView(BaseModel):
     redacted: bool
 
 
+class POStepCountLineView(BaseModel):
+    """A PO line the warehouse counts (step 17): the count is typed, never
+    filled; what the packing list says was shipped sits beside it."""
+
+    sku_id: uuid.UUID
+    sku_code: str | None
+    variant_label: str | None
+    ordered: int | None
+    shipped: int | None
+    quote: str | None
+    document_id: uuid.UUID | None
+
+
 class POStepProposalView(BaseModel):
     # null: the case's current state has no step AI prepares for this tenant.
     step: POStepKind | None
@@ -83,6 +97,8 @@ class POStepProposalView(BaseModel):
     can_approve: bool
     blocked_reason: str | None
     missing_paper: DocumentType | None
+    # The lines to count; empty for a step that takes no counts.
+    lines: list[POStepCountLineView]
 
 
 class ApprovePOStepRequest(BaseModel):
@@ -93,6 +109,10 @@ class ApprovePOStepRequest(BaseModel):
     content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     results: dict[str, Annotated[str, Field(max_length=100, pattern=_NO_NUL)]] = Field(
         default_factory=dict, max_length=10
+    )
+    # The warehouse's count per PO line (step 17), by SKU id.
+    counts: dict[uuid.UUID, Annotated[int, Field(ge=0, le=MAX_COUNT)]] = Field(
+        default_factory=dict, max_length=500
     )
 
 
@@ -133,6 +153,18 @@ def _view(found: POStepProposal) -> POStepProposalView:
         can_approve=found.can_approve,
         blocked_reason=found.blocked,
         missing_paper=found.missing_paper,
+        lines=[
+            POStepCountLineView(
+                sku_id=line.sku_id,
+                sku_code=line.sku_code,
+                variant_label=line.variant_label,
+                ordered=line.ordered,
+                shipped=line.shipped,
+                quote=line.quote,
+                document_id=line.document_id,
+            )
+            for line in found.lines
+        ],
     )
 
 
@@ -175,6 +207,7 @@ def build_po_step_router(
             draft_id=body.draft_id,
             content_sha256=body.content_sha256,
             results=body.results,
+            counts=body.counts,
         )
         view = _view(await h.get.handle(context, POCaseId(case_id)))
         recorded: POStepProposalView = await idempotency.record(view)

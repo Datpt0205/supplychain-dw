@@ -447,6 +447,19 @@
             ],
             "title": "Content Sha256"
           },
+          "counts": {
+            "additionalProperties": {
+              "maximum": 10000000.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxProperties": 500,
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
           "draft_id": {
             "anyOf": [
               {
@@ -2240,7 +2253,9 @@
           "bill_of_lading",
           "arrival_notice",
           "certificate_of_origin",
-          "rework_request"
+          "rework_request",
+          "warehouse_receipt",
+          "discrepancy_report"
         ],
         "title": "DocumentType",
         "type": "string"
@@ -3991,7 +4006,8 @@
           "supplier_reminder",
           "supplier_confirmation",
           "sample_revision_request",
-          "production_progress"
+          "production_progress",
+          "discrepancy_claim"
         ],
         "title": "MessagePurpose",
         "type": "string"
@@ -5002,6 +5018,94 @@
         "title": "POPaymentView",
         "type": "object"
       },
+      "POStepCountLineView": {
+        "description": "A PO line the warehouse counts (step 17): the count is typed, never\nfilled; what the packing list says was shipped sits beside it.",
+        "properties": {
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "ordered": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordered"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "shipped": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipped"
+          },
+          "sku_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Code"
+          },
+          "sku_id": {
+            "format": "uuid",
+            "title": "Sku Id",
+            "type": "string"
+          },
+          "variant_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Label"
+          }
+        },
+        "required": [
+          "sku_id",
+          "sku_code",
+          "variant_label",
+          "ordered",
+          "shipped",
+          "quote",
+          "document_id"
+        ],
+        "title": "POStepCountLineView",
+        "type": "object"
+      },
       "POStepFindingView": {
         "properties": {
           "code": {
@@ -5033,7 +5137,8 @@
           "final_payment",
           "production",
           "qc",
-          "arrival"
+          "arrival",
+          "warehouse"
         ],
         "title": "POStepKind",
         "type": "string"
@@ -5126,6 +5231,13 @@
             "title": "Findings",
             "type": "array"
           },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/POStepCountLineView"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
           "missing_paper": {
             "anyOf": [
               {
@@ -5171,7 +5283,8 @@
           "proposed",
           "can_approve",
           "blocked_reason",
-          "missing_paper"
+          "missing_paper",
+          "lines"
         ],
         "title": "POStepProposalView",
         "type": "object"

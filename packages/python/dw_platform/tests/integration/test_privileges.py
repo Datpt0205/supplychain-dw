@@ -858,3 +858,27 @@ async def test_the_catalogue_is_insert_only_and_a_supplier_code_the_one_supplier
             assert "supply_chain.import" in scopes
     finally:
         await migrator.dispose()
+
+
+async def test_the_warehouse_counts_are_append_only(db_urls: DatabaseUrls) -> None:
+    """Migration e0a7cb26a3bf (ticket ai-automation/18): `dw_app` reads and
+    inserts the warehouse's counts and never edits or deletes one (a recount
+    is the line's next version; the counts leave only with their case, by
+    cascade). Asked of the catalog, so a later blanket GRANT goes red."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+            for verb, held in (
+                ("SELECT", True),
+                ("INSERT", True),
+                ("UPDATE", False),
+                ("DELETE", False),
+                ("TRUNCATE", False),
+            ):
+                granted = await conn.scalar(
+                    sa.text("SELECT has_table_privilege('dw_app', :t, :v)"),
+                    {"t": "supply_chain.po_case_line_receipts", "v": verb},
+                )
+                assert bool(granted) is held, verb
+    finally:
+        await migrator.dispose()

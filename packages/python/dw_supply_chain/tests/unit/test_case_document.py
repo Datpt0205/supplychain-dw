@@ -66,6 +66,9 @@ def test_adr_0021_names_fourteen_document_types_step_12_three_and_ai_02_one() ->
         "arrival_notice",
         "certificate_of_origin",
         "rework_request",
+        # Step 17 (ai-automation/18).
+        "warehouse_receipt",
+        "discrepancy_report",
     }
 
 

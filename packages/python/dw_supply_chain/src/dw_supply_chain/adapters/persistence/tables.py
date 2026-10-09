@@ -425,6 +425,28 @@ po_payments = sa.Table(
     ),
 )
 
+# The warehouse's count of each PO line at step 17 (ticket ai-automation/18),
+# append-only; what was ordered and shipped stamped beside it.
+po_case_line_receipts = sa.Table(
+    "po_case_line_receipts",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("po_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("sku_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("sku_code", sa.Text, nullable=False),
+    sa.Column("ordered", sa.Integer, nullable=True),
+    sa.Column("shipped", sa.Integer, nullable=True),
+    sa.Column("counted", sa.Integer, nullable=False),
+    sa.Column("document_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("recorded_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "recorded_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
 # A supplier's contact person and bank account, append-only versions.
 supplier_contacts = sa.Table(
     "supplier_contacts",

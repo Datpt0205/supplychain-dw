@@ -57,4 +57,10 @@ export const PO_STEP_LABEL: Record<
     approve: "Xác nhận hàng đến cảng",
     confirm: "Ngày ETA đã nhập được ghi vào hồ sơ và hồ sơ sang hàng đến cảng.",
   },
+  warehouse: {
+    title: "Bước 17: nhập kho (AI soạn phiếu, Kho đếm)",
+    approve: "Ghi số đếm và nhập kho",
+    confirm:
+      "Số đếm từng dòng được ghi, phiếu nhập kho thành chứng từ của hồ sơ và hồ sơ hoàn tất. Dòng nào khác số NCC giao thì AI soạn biên bản chênh lệch và thư khiếu nại.",
+  },
 };

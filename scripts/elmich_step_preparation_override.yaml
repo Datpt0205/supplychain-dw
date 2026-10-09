@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_step_preparation
-policy_version: "1.10.0"
+policy_version: "1.11.0"
 
 # Override của TENANT ELMICH (không phải platform default): các bước AI chuẩn bị
 # (ADR 0025, ticket ai-automation/05). Ghi bằng
@@ -83,6 +83,8 @@ steps:
 # 1.2.0: phiếu yêu cầu chỉnh sửa đã duyệt cũng có thư gửi NCC (ai-automation/09).
 # 1.10.0 (ticket ai-automation/17): thư hỏi tiến độ sản xuất hằng tuần cho Hồ sơ
 # PO đang sản xuất, nhắc lại các mốc và ETD đúng như lịch NCC gửi.
+# 1.11.0 (ticket ai-automation/18): thư khiếu nại khi số Kho đếm khác số NCC
+# giao, nêu từng SKU chênh lệch đúng như số đã ghi; không giá.
 supplier_messages:
   [
     sample_request,
@@ -90,6 +92,7 @@ supplier_messages:
     supplier_confirmation,
     sample_revision_request,
     production_progress,
+    discrepancy_claim,
   ]
 # 1.3.0 (ticket ai-automation/10): bước 6, AI soạn tờ trình BGĐ (tóm tắt, rủi
 # ro, đề xuất có dẫn chứng; mã, tên, kết quả đánh giá, giá do code điền) trước
@@ -117,6 +120,10 @@ purchase_order: true
 # Hàng về cảng: đề xuất khi giấy báo hàng đến được đọc; code so packing list với
 # PO theo SKU, số container giữa các chứng từ, hồ sơ hải quan còn thiếu gì;
 # Logistics nhập ngày hàng đến rồi duyệt.
+# 1.11.0 (ticket ai-automation/18): bước 17. AI soạn phiếu nhập kho từ dòng PO và
+# packing list; Kho nhập số đếm từng dòng (ô để trống, số NCC giao bên cạnh) rồi
+# duyệt: số đếm được ghi, phiếu thành chứng từ, hồ sơ hoàn tất. Số đếm khác số
+# giao: code soạn biên bản chênh lệch và thư khiếu nại NCC, người gửi.
 po_steps:
   [
     deposit_request,
@@ -126,6 +133,7 @@ po_steps:
     production,
     qc,
     arrival,
+    warehouse,
   ]
 # 1.9.0 (ticket ai-automation/16; ADR 0028): bước 12. Khi màu được duyệt, AI
 # chuẩn bị gói cho MKT (khung nội dung bao bì và sách HDSD từ BM04, ô bắt buộc
