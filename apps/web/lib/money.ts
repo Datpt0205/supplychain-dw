@@ -155,3 +155,19 @@ export function moneyInWords(amount: number): string {
   const text = `${amount < 0 ? "âm " : ""}${readNumber(Math.abs(amount), false)} đồng`;
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
+
+/**
+ * A decimal price or amount as the server sends it (a string, any currency):
+ * `1.234,5 USD`. Thousands with dots and decimals with a comma, as for đồng;
+ * trailing zeros of the decimals dropped. Never a float on the way: the
+ * string is split, not parsed, so 0.1 + 0.2 never shows.
+ */
+export function formatPrice(value: string, currency: string | null): string {
+  const negative = value.startsWith("-");
+  const [whole = "0", fraction = ""] = value.replace(/^-/, "").split(".");
+  const digits = whole.replace(/^0+(?=\d)/, "");
+  const withDots = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  const decimals = fraction.replace(/0+$/, "");
+  const number = `${negative ? "-" : ""}${withDots}${decimals ? `,${decimals}` : ""}`;
+  return currency ? `${number}${NBSP}${currency}` : number;
+}

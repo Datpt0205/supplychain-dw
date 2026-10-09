@@ -85,7 +85,7 @@ Ticket 01–20 `resolved`; UAT-02 chạy với Elmich; `process.md` mục 4 cộ
 
 | #   | Ticket                                                                                     | Size | Status          | Blocked by |
 | --- | ------------------------------------------------------------------------------------------ | ---- | --------------- | ---------- |
-| 01  | [Dữ liệu thương mại và BM04 là trường](issues/01-commercial-data-and-bm04-fields.md)       | L    | ready-for-agent | —          |
+| 01  | [Dữ liệu thương mại và BM04 là trường](issues/01-commercial-data-and-bm04-fields.md)       | L    | resolved        | —          |
 | 02  | [Lane trích xuất chứng từ](issues/02-document-extraction-lane.md)                          | L    | ready-for-agent | —          |
 | 03  | [Bản nháp và mẫu chứng từ](issues/03-drafts-and-templates.md)                              | L    | ready-for-agent | —          |
 | 04  | [Skill registry](issues/04-skills-registry.md)                                             | M    | ready-for-agent | —          |

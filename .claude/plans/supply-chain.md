@@ -87,7 +87,7 @@ means platform code, an upstream candidate (ADR 0011).
 | HR4   | `hardening/issues/04-supplier-master-record.md`                           | no      | resolved        | —                                   |
 | HR5   | `hardening/issues/05-ops-and-settings-screen.md`                          | partly  | resolved        | H                                   |
 | HR6   | `hardening/issues/06-cleanup.md`                                          | partly  | resolved        | —                                   |
-| AI-01 | `ai-automation/issues/01-commercial-data-and-bm04-fields.md` (L)          | no      | ready-for-agent | —                                   |
+| AI-01 | `ai-automation/issues/01-commercial-data-and-bm04-fields.md` (L)          | no      | resolved        | —                                   |
 | AI-02 | `ai-automation/issues/02-document-extraction-lane.md` (L)                 | partly  | ready-for-agent | —                                   |
 | AI-03 | `ai-automation/issues/03-drafts-and-templates.md` (L)                     | partly  | ready-for-agent | —                                   |
 | AI-04 | `ai-automation/issues/04-skills-registry.md` (M)                          | yes     | ready-for-agent | —                                   |
@@ -175,6 +175,7 @@ against (E18: AI drafts, a person sends).
 | HR5    | `b88d322` | Backup dumps `dw` and `keycloak` (restore `--latest` per database); `deploy.sh … hosted` adds the host overlay and its health gate asks by service; chat URL build arg gone; approval code secret documented; `/supply-chain/settings` reads and sets SLA and the pre-production rule, locked with reasons without the write scopes.                                                  |
 | HR6    | `935e0f8` | `dw_provisioner` grants have one owner (`platform.grant_provisioner_privileges()`, `f38f027d8342`; users/plans read-only); ADRs 0016–0019, 0021 moved into the package; Playwright removes its `E2E-…` case (`e2e-cleanup`); mypy covers the apps' integration tests; the slow vitest query replaced (11 s → 0.7 s).                                                                  |
 | M3     | `4890979` | Platform `ab33703` merged: prompts through the containing registry (5 new versions, delay analysis raw only for days and milestones, hostile-value tests; `supply_chain@1.8.0`); decision audit with channel decisions; SoD second person and role recheck (two Open items closed); `sc_*` role labels; one `@dw/ui` PageHeader/RegionState in this theme; merge head `cee9cf387387`. |
+| AI-01  | this      | BM04 and commercial data as fields (`82221a867e62`, not run): `product_profiles`, `po_payments`, supplier contacts and bank accounts (workspace RLS, append-only), PO terms and line prices, `commercial.read                                                                                                                                                                         | write`(redacted in the handler,`{value: null, redacted: true}`), BM04 schema policy 1.0.0 with tenant override, Zalo views disjoint from `PRICE_FIELDS`, `Bm04ProfileCard`/`POCommercialCard`, `MaskedValue`; ADR 0026 amended; integration owed (no Docker). |
 
 ## Open — named, not fixed, still true after the port
 

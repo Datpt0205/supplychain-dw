@@ -885,3 +885,127 @@ export const packagingPolicySchema = z.object({
   require_pre_production_test: z.boolean(),
 });
 export type PackagingPolicy = z.infer<typeof packagingPolicySchema>;
+
+// ---- commercial data and BM04 as fields (ADR 0026, ticket ai-automation/01) --
+
+/** Incoterms 2020; one list, `Incoterm` in `dw_supply_chain`. */
+export const incotermSchema = z.enum([
+  "EXW",
+  "FCA",
+  "CPT",
+  "CIP",
+  "DAP",
+  "DPU",
+  "DDP",
+  "FAS",
+  "FOB",
+  "CFR",
+  "CIF",
+]);
+export type Incoterm = z.infer<typeof incotermSchema>;
+
+export const paymentKindSchema = z.enum(["deposit", "final"]);
+export type PaymentKind = z.infer<typeof paymentKindSchema>;
+
+/** A price or amount: its value as a decimal string, or null with `redacted`
+ * when the caller lacks `supply_chain.commercial.read` (never a 0). */
+export const redactableAmountSchema = z.object({
+  value: z.string().nullable(),
+  redacted: z.boolean(),
+});
+export type RedactableAmount = z.infer<typeof redactableAmountSchema>;
+
+export const bm04FieldKindSchema = z.enum([
+  "text",
+  "number",
+  "integer",
+  "boolean",
+  "choice",
+]);
+export type Bm04FieldKind = z.infer<typeof bm04FieldKindSchema>;
+
+/** One field of the tenant's BM04 schema (`Bm04Field`). */
+export const bm04FieldSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  kind: bm04FieldKindSchema,
+  required: z.boolean(),
+  unit: z.string().nullable().optional(),
+  max_length: z.number().int().nullable().optional(),
+  options: z.array(z.string()).nullable().optional(),
+});
+export type Bm04Field = z.infer<typeof bm04FieldSchema>;
+
+/** The tenant's BM04 schema, read and replaced whole (`/bm04-schema`). */
+export const bm04SchemaSchema = z.object({
+  schema_version: z.string(),
+  policy_id: z.string(),
+  policy_version: z.string(),
+  fields: z.array(bm04FieldSchema),
+});
+export type Bm04Schema = z.infer<typeof bm04SchemaSchema>;
+
+/** Mirrors `ProductProfileView`: the latest BM04 version (`version` null
+ * before the first save) and the schema it is filled against. */
+export const productProfileSchema = z.object({
+  product_dev_case_id: z.string().uuid(),
+  version: z.number().int().nullable(),
+  attributes: z.record(z.string(), z.unknown()),
+  unit_price: redactableAmountSchema,
+  currency: z.string().nullable(),
+  moq: z.number().int().nullable(),
+  lead_time_days: z.number().int().nullable(),
+  incoterm: incotermSchema.nullable(),
+  schema_version: z.string().nullable(),
+  bm04_schema: bm04SchemaSchema,
+  prices_visible: z.boolean(),
+  can_edit: z.boolean(),
+  can_edit_prices: z.boolean(),
+  created_by: z.string().uuid().nullable(),
+  created_at: z.string().nullable(),
+});
+export type ProductProfile = z.infer<typeof productProfileSchema>;
+
+/** Mirrors `PricedLineView`. */
+export const pricedLineSchema = z.object({
+  sku_id: z.string().uuid(),
+  sku_code: z.string().nullable(),
+  variant_label: z.string().nullable(),
+  quantity: z.number().int().nullable(),
+  unit_price: redactableAmountSchema,
+  line_total: redactableAmountSchema,
+});
+export type PricedLine = z.infer<typeof pricedLineSchema>;
+
+/** Mirrors `POPaymentView`. */
+export const poPaymentSchema = z.object({
+  id: z.string().uuid(),
+  kind: paymentKindSchema,
+  version: z.number().int(),
+  amount: redactableAmountSchema,
+  currency: z.string(),
+  due_date: z.string().nullable(),
+  paid_on: z.string().nullable(),
+  document_id: z.string().uuid().nullable(),
+  recorded_by: z.string().uuid(),
+  recorded_at: z.string(),
+});
+export type POPayment = z.infer<typeof poPaymentSchema>;
+
+/** Mirrors `POCommercialView`. `order_total` is computed by the server and
+ * null (not redacted) while a line lacks a quantity or a price. */
+export const poCommercialSchema = z.object({
+  po_case_id: z.string().uuid(),
+  currency: z.string().nullable(),
+  incoterm: incotermSchema.nullable(),
+  payment_terms: z.string().nullable(),
+  payment_terms_redacted: z.boolean(),
+  deposit_percent: redactableAmountSchema,
+  expected_delivery_date: z.string().nullable(),
+  lines: z.array(pricedLineSchema),
+  order_total: redactableAmountSchema,
+  payments: z.array(poPaymentSchema),
+  prices_visible: z.boolean(),
+  can_edit: z.boolean(),
+});
+export type POCommercial = z.infer<typeof poCommercialSchema>;

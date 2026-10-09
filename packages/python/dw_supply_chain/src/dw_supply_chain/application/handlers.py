@@ -193,6 +193,13 @@ async def notify_duty_holders(
 DOCUMENT_READ = "supply_chain.document.read"
 DOCUMENT_WRITE = "supply_chain.document.write"
 
+# Prices, payment terms, payments and a supplier's bank account
+# (`application.commercial`, ADR 0026): read and written only with these, and
+# never through a chat (`presentation.zalo_views`). Declared here for the same
+# reason as the document scopes.
+COMMERCIAL_READ = "supply_chain.commercial.read"
+COMMERCIAL_WRITE = "supply_chain.commercial.write"
+
 # Product-development cases (`application.product_cases`), declared here for
 # the same reason. Reading every case of the workspace. Opening a case, as
 # `PO_CASE_WRITE` for a PO case (lead decision 9); `propose` is also a step of

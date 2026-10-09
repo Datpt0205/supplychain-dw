@@ -75,6 +75,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/bm04-schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Bm04 Schema */
+        get: operations["get_bm04_schema_api_v1_supply_chain_bm04_schema_get"];
+        /**
+         * Set Bm04 Schema
+         * @description Replaces the tenant's BM04 schema, whole. No `Idempotency-Key`, as for
+         *     the other policies' `PUT`.
+         */
+        put: operations["set_bm04_schema_api_v1_supply_chain_bm04_schema_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/brief-policy": {
         parameters: {
             query?: never;
@@ -348,6 +370,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/po-cases/{case_id}/commercial": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Po Commercial */
+        get: operations["get_po_commercial_api_v1_supply_chain_po_cases__case_id__commercial_get"];
+        /** Set Po Commercial */
+        put: operations["set_po_commercial_api_v1_supply_chain_po_cases__case_id__commercial_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/po-cases/{case_id}/create-po": {
         parameters: {
             query?: never;
@@ -449,6 +489,23 @@ export interface paths {
         put?: never;
         /** Take Packaging Step */
         post: operations["take_packaging_step_api_v1_supply_chain_po_cases__case_id__packaging_design_steps_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/po-cases/{case_id}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Po Payment */
+        post: operations["record_po_payment_api_v1_supply_chain_po_cases__case_id__payments_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -672,6 +729,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/product-cases/{case_id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Product Profile */
+        get: operations["get_product_profile_api_v1_supply_chain_product_cases__case_id__profile_get"];
+        put?: never;
+        /** Save Product Profile */
+        post: operations["save_product_profile_api_v1_supply_chain_product_cases__case_id__profile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
         parameters: {
             query?: never;
@@ -735,6 +810,59 @@ export interface paths {
          */
         put: operations["set_sla_policy_override_route_api_v1_supply_chain_sla_policy_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/suppliers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Suppliers */
+        get: operations["list_suppliers_api_v1_supply_chain_suppliers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/suppliers/{supplier_id}/bank-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Supplier Bank Account */
+        get: operations["get_supplier_bank_account_api_v1_supply_chain_suppliers__supplier_id__bank_account_get"];
+        put?: never;
+        /** Save Supplier Bank Account */
+        post: operations["save_supplier_bank_account_api_v1_supply_chain_suppliers__supplier_id__bank_account_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/suppliers/{supplier_id}/contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Supplier Contact */
+        get: operations["get_supplier_contact_api_v1_supply_chain_suppliers__supplier_id__contact_get"];
+        put?: never;
+        /** Save Supplier Contact */
+        post: operations["save_supplier_contact_api_v1_supply_chain_suppliers__supplier_id__contact_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -805,6 +933,30 @@ export interface components {
             missing_update: components["schemas"]["MissingUpdateStatusView"] | null;
             sla: components["schemas"]["SLAEvaluationView"] | null;
         };
+        /** Bm04Field */
+        Bm04Field: {
+            /** Key */
+            key: string;
+            kind: components["schemas"]["Bm04FieldKind"];
+            /** Label */
+            label: string;
+            /** Max Length */
+            max_length?: number | null;
+            /** Options */
+            options?: string[] | null;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /** Unit */
+            unit?: string | null;
+        };
+        /**
+         * Bm04FieldKind
+         * @enum {string}
+         */
+        Bm04FieldKind: "text" | "number" | "integer" | "boolean" | "choice";
         /** Body_upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post */
         Body_upload_case_document_api_v1_supply_chain_po_cases__case_id__documents_post: {
             doc_type: components["schemas"]["DocumentType"];
@@ -1207,6 +1359,12 @@ export interface components {
             milestone: components["schemas"]["CaseState"];
         };
         /**
+         * Incoterm
+         * @description Incoterms 2020: who carries cost and risk to where.
+         * @enum {string}
+         */
+        Incoterm: "EXW" | "FCA" | "CPT" | "CIP" | "DAP" | "DPU" | "DDP" | "FAS" | "FOB" | "CFR" | "CIF";
+        /**
          * ItemCodeView
          * @description The case's official item code (step 9).
          */
@@ -1218,6 +1376,16 @@ export interface components {
              * Format: uuid
              */
             id: string;
+        };
+        /** LinePriceRequest */
+        LinePriceRequest: {
+            /**
+             * Sku Id
+             * Format: uuid
+             */
+            sku_id: string;
+            /** Unit Price */
+            unit_price?: number | string | null;
         };
         /**
          * MissingUpdateStatus
@@ -1363,6 +1531,33 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** POCommercialView */
+        POCommercialView: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Currency */
+            currency: string | null;
+            deposit_percent: components["schemas"]["RedactableAmount"];
+            /** Expected Delivery Date */
+            expected_delivery_date: string | null;
+            incoterm: components["schemas"]["Incoterm"] | null;
+            /** Lines */
+            lines: components["schemas"]["PricedLineView"][];
+            order_total: components["schemas"]["RedactableAmount"];
+            /** Payment Terms */
+            payment_terms: string | null;
+            /** Payment Terms Redacted */
+            payment_terms_redacted: boolean;
+            /** Payments */
+            payments: components["schemas"]["POPaymentView"][];
+            /**
+             * Po Case Id
+             * Format: uuid
+             */
+            po_case_id: string;
+            /** Prices Visible */
+            prices_visible: boolean;
+        };
         /** POLineQuantity */
         POLineQuantity: {
             /** Quantity */
@@ -1372,6 +1567,36 @@ export interface components {
              * Format: uuid
              */
             sku_id: string;
+        };
+        /** POPaymentView */
+        POPaymentView: {
+            amount: components["schemas"]["RedactableAmount"];
+            /** Currency */
+            currency: string;
+            /** Document Id */
+            document_id: string | null;
+            /** Due Date */
+            due_date: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["PaymentKind"];
+            /** Paid On */
+            paid_on: string | null;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /**
+             * Recorded By
+             * Format: uuid
+             */
+            recorded_by: string;
+            /** Version */
+            version: number;
         };
         /**
          * PackagingAction
@@ -1503,6 +1728,12 @@ export interface components {
             next_cursor: string | null;
         };
         /**
+         * PaymentKind
+         * @description Step 11's deposit and step 16's final payment.
+         * @enum {string}
+         */
+        PaymentKind: "deposit" | "final";
+        /**
          * PendingReviewView
          * @description The approval a waiting case is held on (BGĐ's review, or the current
          *     sign-off step): which approval, since when, and the scope stamped on it,
@@ -1554,6 +1785,22 @@ export interface components {
          * @enum {string}
          */
         PreProductionTest: "pending" | "passed" | "failed";
+        /** PricedLineView */
+        PricedLineView: {
+            line_total: components["schemas"]["RedactableAmount"];
+            /** Quantity */
+            quantity: number | null;
+            /** Sku Code */
+            sku_code: string | null;
+            /**
+             * Sku Id
+             * Format: uuid
+             */
+            sku_id: string;
+            unit_price: components["schemas"]["RedactableAmount"];
+            /** Variant Label */
+            variant_label: string | null;
+        };
         /**
          * ProductAction
          * @description Every step a person takes on a product-development case.
@@ -1827,6 +2074,48 @@ export interface components {
          * @enum {string}
          */
         ProductDevState: "proposed" | "sample_requested" | "sample_testing" | "revision_requested" | "pending_bod_review" | "profile_in_progress" | "supplier_confirmation" | "item_coding" | "pending_signoff" | "ready_to_order" | "ordered" | "waiting_external" | "blocked" | "manual_review" | "cancelled";
+        /** ProductProfileView */
+        ProductProfileView: {
+            /** Attributes */
+            attributes: {
+                [key: string]: unknown;
+            };
+            bm04_schema: components["schemas"]["SupplyChainBm04Schema"];
+            /** Can Edit */
+            can_edit: boolean;
+            /** Can Edit Prices */
+            can_edit_prices: boolean;
+            /** Created At */
+            created_at: string | null;
+            /** Created By */
+            created_by: string | null;
+            /** Currency */
+            currency: string | null;
+            incoterm: components["schemas"]["Incoterm"] | null;
+            /** Lead Time Days */
+            lead_time_days: number | null;
+            /** Moq */
+            moq: number | null;
+            /** Prices Visible */
+            prices_visible: boolean;
+            /**
+             * Product Dev Case Id
+             * Format: uuid
+             */
+            product_dev_case_id: string;
+            /** Schema Version */
+            schema_version: string | null;
+            unit_price: components["schemas"]["RedactableAmount"];
+            /** Version */
+            version: number | null;
+        };
+        /** ProfilePricesRequest */
+        ProfilePricesRequest: {
+            /** Currency */
+            currency?: string | null;
+            /** Unit Price */
+            unit_price?: number | string | null;
+        };
         /**
          * ProposeProductCaseRequest
          * @description Step 1. JSON only: product images are uploaded after the case exists,
@@ -1855,6 +2144,31 @@ export interface components {
             pic_user_id: string;
             /** Reason */
             reason: string;
+        };
+        /** RecordPaymentRequest */
+        RecordPaymentRequest: {
+            /** Amount */
+            amount: number | string;
+            /** Currency */
+            currency: string;
+            /** Document Id */
+            document_id?: string | null;
+            /** Due Date */
+            due_date?: string | null;
+            kind: components["schemas"]["PaymentKind"];
+            /** Paid On */
+            paid_on?: string | null;
+        };
+        /**
+         * RedactableAmount
+         * @description A price or amount: its value, or null with `redacted` when the caller
+         *     lacks `supply_chain.commercial.read`.
+         */
+        RedactableAmount: {
+            /** Redacted */
+            redacted: boolean;
+            /** Value */
+            value: string | null;
         };
         /**
          * ReviewRaise
@@ -1943,6 +2257,37 @@ export interface components {
             /** Round No */
             round_no: number;
         };
+        /**
+         * SaveProductProfileRequest
+         * @description `prices` absent keeps the last version's price and currency; present, it
+         *     needs `supply_chain.commercial.write`.
+         */
+        SaveProductProfileRequest: {
+            /** Attributes */
+            attributes?: {
+                [key: string]: unknown;
+            };
+            incoterm?: components["schemas"]["Incoterm"] | null;
+            /** Lead Time Days */
+            lead_time_days?: number | null;
+            /** Moq */
+            moq?: number | null;
+            prices?: components["schemas"]["ProfilePricesRequest"] | null;
+        };
+        /** SetPOCommercialRequest */
+        SetPOCommercialRequest: {
+            /** Currency */
+            currency?: string | null;
+            /** Deposit Percent */
+            deposit_percent?: number | string | null;
+            /** Expected Delivery Date */
+            expected_delivery_date?: string | null;
+            incoterm?: components["schemas"]["Incoterm"] | null;
+            /** Line Prices */
+            line_prices?: components["schemas"]["LinePriceRequest"][];
+            /** Payment Terms */
+            payment_terms?: string | null;
+        };
         /** SignoffStepView */
         SignoffStepView: {
             /** Label */
@@ -1993,6 +2338,66 @@ export interface components {
         SubmitSupplierUpdateRequest: {
             /** Raw Text */
             raw_text: string;
+        };
+        /** SupplierBankAccountRequest */
+        SupplierBankAccountRequest: {
+            /** Account Holder */
+            account_holder: string;
+            /** Account Number */
+            account_number: string;
+            /** Bank Name */
+            bank_name: string;
+        };
+        /**
+         * SupplierBankAccountView
+         * @description Every field null with `redacted` when the caller lacks the commercial
+         *     read scope.
+         */
+        SupplierBankAccountView: {
+            /** Account Holder */
+            account_holder: string | null;
+            /** Account Number */
+            account_number: string | null;
+            /** Bank Name */
+            bank_name: string | null;
+            /** Can Edit */
+            can_edit: boolean;
+            /** Redacted */
+            redacted: boolean;
+            /**
+             * Supplier Id
+             * Format: uuid
+             */
+            supplier_id: string;
+            /** Version */
+            version: number | null;
+        };
+        /** SupplierContactRequest */
+        SupplierContactRequest: {
+            /** Email */
+            email?: string | null;
+            /** Name */
+            name: string;
+            /** Phone */
+            phone?: string | null;
+        };
+        /** SupplierContactView */
+        SupplierContactView: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Email */
+            email: string | null;
+            /** Name */
+            name: string | null;
+            /** Phone */
+            phone: string | null;
+            /**
+             * Supplier Id
+             * Format: uuid
+             */
+            supplier_id: string;
+            /** Version */
+            version: number | null;
         };
         /**
          * SupplierEventType
@@ -2058,6 +2463,18 @@ export interface components {
             /** Source Ref */
             source_ref: string;
         };
+        /** SupplierView */
+        SupplierView: {
+            /** Code */
+            code: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** SupplyChainActionDuties */
         SupplyChainActionDuties: {
             /** Action Duties */
@@ -2078,6 +2495,17 @@ export interface components {
              * @default []
              */
             approval_required_actions: components["schemas"]["CaseAction"][];
+            /** Policy Id */
+            policy_id: string;
+            /** Policy Version */
+            policy_version: string;
+            /** Schema Version */
+            schema_version: string;
+        };
+        /** SupplyChainBm04Schema */
+        SupplyChainBm04Schema: {
+            /** Fields */
+            fields: components["schemas"]["Bm04Field"][];
             /** Policy Id */
             policy_id: string;
             /** Policy Version */
@@ -2342,6 +2770,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AttentionItemView"][];
+                };
+            };
+        };
+    };
+    get_bm04_schema_api_v1_supply_chain_bm04_schema_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainBm04Schema"];
+                };
+            };
+        };
+    };
+    set_bm04_schema_api_v1_supply_chain_bm04_schema_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplyChainBm04Schema"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyChainBm04Schema"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2817,6 +3298,75 @@ export interface operations {
             };
         };
     };
+    get_po_commercial_api_v1_supply_chain_po_cases__case_id__commercial_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["POCommercialView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_po_commercial_api_v1_supply_chain_po_cases__case_id__commercial_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPOCommercialRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["POCommercialView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_po_route_api_v1_supply_chain_po_cases__case_id__create_po_post: {
         parameters: {
             query?: never;
@@ -3042,6 +3592,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PackagingStateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_po_payment_api_v1_supply_chain_po_cases__case_id__payments_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordPaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["POPaymentView"];
                 };
             };
             /** @description Validation Error */
@@ -3605,6 +4193,75 @@ export interface operations {
             };
         };
     };
+    get_product_profile_api_v1_supply_chain_product_cases__case_id__profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductProfileView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_product_profile_api_v1_supply_chain_product_cases__case_id__profile_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveProductProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductProfileView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_product_case_transitions_api_v1_supply_chain_product_cases__case_id__transitions_get: {
         parameters: {
             query?: {
@@ -3738,6 +4395,164 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SupplyChainSLAPolicy"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_suppliers_api_v1_supply_chain_suppliers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierView"][];
+                };
+            };
+        };
+    };
+    get_supplier_bank_account_api_v1_supply_chain_suppliers__supplier_id__bank_account_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                supplier_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierBankAccountView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_supplier_bank_account_api_v1_supply_chain_suppliers__supplier_id__bank_account_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                supplier_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplierBankAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierBankAccountView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_supplier_contact_api_v1_supply_chain_suppliers__supplier_id__contact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                supplier_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierContactView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_supplier_contact_api_v1_supply_chain_suppliers__supplier_id__contact_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                supplier_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplierContactRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierContactView"];
                 };
             };
             /** @description Validation Error */

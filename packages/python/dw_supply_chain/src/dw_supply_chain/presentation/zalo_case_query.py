@@ -26,7 +26,9 @@ question". What this module adds is only the reply, built by code from the
 * the question's own words each filter came from, and what was left out
   (`ignored`, `unusable`);
 * identifiers and states only — no amount, document or free-text note leaves
-  through the chat (QE-20, provisional);
+  through the chat (QE-20, provisional; E15): each line is built from the
+  chat's view of the case (`zalo_views`), whose field list a test holds
+  disjoint from every price field;
 * a PO the asker cannot see — another tenant's, another workspace's — reads
   exactly as one that does not exist: the lookup never returns it.
 
@@ -64,6 +66,7 @@ from dw_supply_chain.presentation.zalo_proposal import (
     NOT_UNDERSTOOD,
     quota_spent,
 )
+from dw_supply_chain.presentation.zalo_views import po_case_view, product_case_view
 
 Reply = Callable[[str], Awaitable[None]]
 
@@ -159,17 +162,21 @@ def _base(web_url: str) -> str:
 
 
 def _case_line(case: POCase, web_url: str) -> str:
-    reference = case.po_reference or "(chưa có số PO)"
+    # Through the chat's view only (`zalo_views`): a reply cannot name what
+    # the view does not carry.
+    view = po_case_view(case)
+    reference = view.po_reference or "(chưa có số PO)"
     return (
-        f"- {reference} — {case.supplier_name}: {CASE_STATE_LABELS[case.state]} "
-        f"{_base(web_url)}{_PO_CASES_PATH}/{case.id.value}"
+        f"- {reference} — {view.supplier_name}: {CASE_STATE_LABELS[view.state]} "
+        f"{_base(web_url)}{_PO_CASES_PATH}/{view.id}"
     )
 
 
 def _product_line(case: ProductDevelopmentCase, web_url: str) -> str:
+    view = product_case_view(case)
     return (
-        f"- {case.proposal_code} — {case.product_name}: {PRODUCT_STATE_LABELS[case.state]} "
-        f"{_base(web_url)}{_PRODUCT_CASES_PATH}/{case.id.value}"
+        f"- {view.proposal_code} — {view.product_name}: {PRODUCT_STATE_LABELS[view.state]} "
+        f"{_base(web_url)}{_PRODUCT_CASES_PATH}/{view.id}"
     )
 
 

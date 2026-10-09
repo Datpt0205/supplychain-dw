@@ -654,3 +654,45 @@ async def test_the_application_reads_and_creates_suppliers_and_never_renames_one
                 assert bool(granted) is held, verb
     finally:
         await migrator.dispose()
+
+
+async def test_commercial_tables_are_append_only_and_a_line_price_is_the_one_new_update(
+    db_urls: DatabaseUrls,
+) -> None:
+    """Migration 82221a867e62 (ADR 0026): `dw_app` reads and inserts BM04
+    profiles, payments, supplier contacts and bank accounts, and never edits or
+    deletes one (each leaves only with its case or supplier, by cascade). On
+    `po_case_lines` it may UPDATE `unit_price` beside `quantity`, nothing else.
+    Asked of the catalog, so a later blanket GRANT goes red."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+            for table in (
+                "product_profiles",
+                "po_payments",
+                "supplier_contacts",
+                "supplier_bank_accounts",
+            ):
+                for verb, held in (
+                    ("SELECT", True),
+                    ("INSERT", True),
+                    ("UPDATE", False),
+                    ("DELETE", False),
+                    ("TRUNCATE", False),
+                ):
+                    granted = await conn.scalar(
+                        sa.text("SELECT has_table_privilege('dw_app', :t, :v)"),
+                        {"t": f"supply_chain.{table}", "v": verb},
+                    )
+                    assert bool(granted) is held, (table, verb)
+            for column, held in (("unit_price", True), ("quantity", True), ("sku_id", False)):
+                granted = await conn.scalar(
+                    sa.text(
+                        "SELECT has_column_privilege('dw_app', 'supply_chain.po_case_lines',"
+                        " :c, 'UPDATE')"
+                    ),
+                    {"c": column},
+                )
+                assert bool(granted) is held, column
+    finally:
+        await migrator.dispose()

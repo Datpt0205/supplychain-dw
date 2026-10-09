@@ -88,6 +88,9 @@ vi.mock("../../../lib/session", () => ({
     uploadProductCaseDocument,
     placeProductOrder,
     listProductCategories,
+    // The BM04 card loads on its own (ticket ai-automation/01); these tests
+    // are about the rest of the page, so it stays loading.
+    getProductProfile: () => new Promise(() => {}),
   }),
 }));
 

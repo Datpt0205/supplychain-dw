@@ -51,6 +51,7 @@ _OPERATIONS = {
     "supply_chain.supplier_update.write",
     "supply_chain.delay_impact.write",
     handlers.DOCUMENT_WRITE,
+    handlers.COMMERCIAL_WRITE,
     handlers.PRODUCT_CASE_WRITE,
     _APPROVE_BOD,
     *_SIGNOFF_SCOPES,

@@ -52,3 +52,18 @@ export function formatDateTimeFull(iso: string | null | undefined): string {
   if (!iso) return "—";
   return `${formatDateTime(iso)} (${VN_TIME})`;
 }
+
+/** A date-only value (`YYYY-MM-DD`) as the day a `DatePicker` shows, or null.
+ * The day as written: no midnight, so no zone can move it. */
+export function calendarDay(
+  iso: string | null | undefined,
+): dayjs.Dayjs | null {
+  return iso && DATE_ONLY.test(iso) ? dayjs(iso, "YYYY-MM-DD") : null;
+}
+
+/** The day a `DatePicker` holds, as the server's `YYYY-MM-DD`, or null. */
+export function calendarDayIso(
+  day: dayjs.Dayjs | null | undefined,
+): string | null {
+  return day ? day.format("YYYY-MM-DD") : null;
+}

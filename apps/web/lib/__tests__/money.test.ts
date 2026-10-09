@@ -4,6 +4,7 @@ import {
   formatMoney,
   formatMoneyNumber,
   formatMoneyShort,
+  formatPrice,
   moneyInWords,
   moneyInputFormatter,
   moneyInputParser,
@@ -92,5 +93,14 @@ describe("moneyInWords (Bằng chữ)", () => {
 
   it("refuses a fraction rather than rounding it", () => {
     expect(() => moneyInWords(1.5)).toThrow(RangeError);
+  });
+});
+
+describe("formatPrice", () => {
+  it("groups thousands, keeps the decimals and names the currency", () => {
+    expect(formatPrice("1234.5000", "USD")).toBe(`1.234,5${NBSP}USD`);
+    expect(formatPrice("0", "VND")).toBe(`0${NBSP}VND`);
+    expect(formatPrice("18450000000.00", null)).toBe("18.450.000.000");
+    expect(formatPrice("0.0001", "USD")).toBe(`0,0001${NBSP}USD`);
   });
 });

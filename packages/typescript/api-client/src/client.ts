@@ -25,6 +25,10 @@ import {
   caseApprovalsSchema,
   slaPolicySchema,
   packagingPolicySchema,
+  bm04SchemaSchema,
+  productProfileSchema,
+  poCommercialSchema,
+  poPaymentSchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -84,6 +88,15 @@ import {
   type CaseApprovals,
   type SLAPolicy,
   type PackagingPolicy,
+  type Bm04Field,
+  type Bm04Schema,
+  type Incoterm,
+  type PaymentKind,
+  type PricedLine,
+  type ProductProfile,
+  type POCommercial,
+  type POPayment,
+  type RedactableAmount,
   type AttentionItem,
   type FollowUp,
   type CaseDocument,
@@ -365,6 +378,35 @@ const _packagingMirrorsTheRoute: [
   SameType<PackagingState, SupplyChainGenerated["PackagingStateView"]>,
 ] = [true, true, true, true, true, true];
 void _packagingMirrorsTheRoute;
+
+// Ticket ai-automation/01: BM04 as fields and the PO case's commercial data.
+const _commercialMirrorsTheRoute: [
+  SameType<Incoterm, SupplyChainGenerated["Incoterm"]>,
+  SameType<PaymentKind, SupplyChainGenerated["PaymentKind"]>,
+  SameType<RedactableAmount, SupplyChainGenerated["RedactableAmount"]>,
+  SameType<Bm04Schema, SupplyChainGenerated["SupplyChainBm04Schema"]>,
+  SameType<keyof Bm04Field, keyof SupplyChainGenerated["Bm04Field"]>,
+  SameType<ProductProfile, SupplyChainGenerated["ProductProfileView"]>,
+  SameType<
+    keyof ProductProfile,
+    keyof SupplyChainGenerated["ProductProfileView"]
+  >,
+  SameType<POCommercial, SupplyChainGenerated["POCommercialView"]>,
+  SameType<keyof POCommercial, keyof SupplyChainGenerated["POCommercialView"]>,
+  SameType<keyof PricedLine, keyof SupplyChainGenerated["PricedLineView"]>,
+  SameType<keyof POPayment, keyof SupplyChainGenerated["POPaymentView"]>,
+] = [true, true, true, true, true, true, true, true, true, true, true];
+void _commercialMirrorsTheRoute;
+
+/** `POST /product-cases/{id}/profile`'s body. */
+export type SaveProductProfileBody =
+  SupplyChainOperations["save_product_profile_api_v1_supply_chain_product_cases__case_id__profile_post"]["requestBody"]["content"]["application/json"];
+/** `PUT /po-cases/{id}/commercial`'s body. */
+export type SetPOCommercialBody =
+  SupplyChainOperations["set_po_commercial_api_v1_supply_chain_po_cases__case_id__commercial_put"]["requestBody"]["content"]["application/json"];
+/** `POST /po-cases/{id}/payments`'s body. */
+export type RecordPaymentBody =
+  SupplyChainOperations["record_po_payment_api_v1_supply_chain_po_cases__case_id__payments_post"]["requestBody"]["content"]["application/json"];
 
 const _dailyBriefMirrorsTheRoute: [
   SameType<DailyBrief, SupplyChainGenerated["DailyBriefView"]>,
@@ -1431,6 +1473,76 @@ export class ApiClient {
     );
   }
 
+  /** A product case's BM04: the latest version (prices redacted without
+   * `commercial.read`) and the tenant's schema. */
+  getProductProfile(caseId: string): Promise<ProductProfile> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/profile`,
+      productProfileSchema,
+    );
+  }
+
+  /** Saves a new BM04 version; `prices` absent keeps the last price. */
+  saveProductProfile(
+    caseId: string,
+    body: SaveProductProfileBody,
+    idempotencyKey: string,
+  ): Promise<ProductProfile> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/profile`,
+      productProfileSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** The tenant's BM04 schema: its own override, else the platform's. */
+  getBm04Schema(): Promise<Bm04Schema> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/bm04-schema",
+      bm04SchemaSchema,
+    );
+  }
+
+  /** A PO case's terms, priced lines, computed total and payments. */
+  getPOCommercial(caseId: string): Promise<POCommercial> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/commercial`,
+      poCommercialSchema,
+    );
+  }
+
+  /** Replaces a PO case's terms and line prices (needs `commercial.write`). */
+  setPOCommercial(
+    caseId: string,
+    body: SetPOCommercialBody,
+    idempotencyKey: string,
+  ): Promise<POCommercial> {
+    return this.request(
+      "PUT",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/commercial`,
+      poCommercialSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Records a new version of the case's deposit or final payment. */
+  recordPOPayment(
+    caseId: string,
+    body: RecordPaymentBody,
+    idempotencyKey: string,
+  ): Promise<POPayment> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/payments`,
+      poPaymentSchema,
+      { body, idempotencyKey },
+    );
+  }
+
   /** The pending approvals naming one PO case, filtered by the server. */
   listPOCaseApprovals(caseId: string): Promise<CaseApprovals> {
     return this.request(
@@ -1759,6 +1871,15 @@ export class ApiClient {
 }
 
 export type {
+  Bm04Field,
+  Bm04Schema,
+  Incoterm,
+  PaymentKind,
+  PricedLine,
+  ProductProfile,
+  POCommercial,
+  POPayment,
+  RedactableAmount,
   Approval,
   ApprovalViewOutcome,
   AuditEvent,

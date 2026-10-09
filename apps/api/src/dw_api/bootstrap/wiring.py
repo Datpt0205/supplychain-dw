@@ -49,6 +49,7 @@ from dw_api.bootstrap.paths import (
     SUPPLY_CHAIN_ADVANCE_CASE_WORKER,
     SUPPLY_CHAIN_ADVANCE_PRODUCT_CASE_WORKER,
     SUPPLY_CHAIN_APPROVAL_MATRIX_POLICY,
+    SUPPLY_CHAIN_BM04_SCHEMA,
     SUPPLY_CHAIN_BRIEF_POLICY,
     SUPPLY_CHAIN_FOLLOW_UP_POLICY,
     SUPPLY_CHAIN_PACKAGING_POLICY,
@@ -784,6 +785,81 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         authz=authorization,
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
+    )
+    # Commercial data and BM04 as fields (ADR 0026, ticket ai-automation/01):
+    # prices behind `supply_chain.commercial.*`, read and written only here.
+    from dw_supply_chain.adapters.persistence.commercial_repository import (
+        SqlPOCommercialRepository,
+        SqlProductProfileRepository,
+        SqlSupplierRecords,
+    )
+    from dw_supply_chain.application import commercial as sc_commercial
+    from dw_supply_chain.bm04_schema import load_supply_chain_bm04_schema
+    from dw_supply_chain.presentation.commercial_routes import CommercialHandlers
+
+    bm04_schemas = sc_commercial.Bm04SchemaSource(
+        policy_override_repo=policy_override_repo,
+        platform_default=load_supply_chain_bm04_schema(SUPPLY_CHAIN_BM04_SCHEMA),
+    )
+    profiles = SqlProductProfileRepository(wiring.seam.session_factory)
+    po_commercial = SqlPOCommercialRepository(wiring.seam.session_factory)
+    supplier_records = SqlSupplierRecords(wiring.seam.session_factory)
+    container.supply_chain_commercial = CommercialHandlers(
+        get_profile=sc_commercial.GetProductProfile(
+            cases=product_case_repo, profiles=profiles, schemas=bm04_schemas, authz=authorization
+        ),
+        save_profile=sc_commercial.SaveProductProfile(
+            cases=product_case_repo,
+            profiles=profiles,
+            schemas=bm04_schemas,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        get_schema=sc_commercial.GetBm04Schema(schemas=bm04_schemas, authz=authorization),
+        set_schema=sc_commercial.SetBm04SchemaOverride(
+            policy_override_repo=policy_override_repo,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        get_commercial=sc_commercial.GetPOCommercial(
+            cases=po_case_repo, commercial=po_commercial, authz=authorization
+        ),
+        set_commercial=sc_commercial.SetPOCommercialTerms(
+            cases=po_case_repo,
+            commercial=po_commercial,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        record_payment=sc_commercial.RecordPOPayment(
+            cases=po_case_repo,
+            commercial=po_commercial,
+            documents=document_repo,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        list_suppliers=sc_commercial.ListSuppliers(suppliers=supplier_records, authz=authorization),
+        get_contact=sc_commercial.GetSupplierContact(
+            contacts=supplier_records, authz=authorization
+        ),
+        save_contact=sc_commercial.SaveSupplierContact(
+            contacts=supplier_records,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        get_bank_account=sc_commercial.GetSupplierBankAccount(
+            accounts=supplier_records, authz=authorization
+        ),
+        save_bank_account=sc_commercial.SaveSupplierBankAccount(
+            accounts=supplier_records,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
     )
 
     # Product-development cases (stage 1, ADR 0016). Built here, beside the

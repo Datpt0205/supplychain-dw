@@ -50,6 +50,7 @@ const api = {
   listWorkspaceMembers: vi.fn(),
   createPO: vi.fn(),
   getPackagingDesign: vi.fn(),
+  getPOCommercial: vi.fn(),
 };
 vi.mock("../../../lib/session", () => ({ apiClient: () => api }));
 
@@ -59,6 +60,8 @@ import POCaseWorkspacePage from "../po-cases/[id]/page";
 beforeEach(() => {
   // Step 12's card loads on its own; these tests are about the rest of the page.
   api.getPackagingDesign.mockReturnValue(new Promise(() => {}));
+  // So is the commercial card (ticket ai-automation/01).
+  api.getPOCommercial.mockReturnValue(new Promise(() => {}));
 });
 
 afterEach(() => {

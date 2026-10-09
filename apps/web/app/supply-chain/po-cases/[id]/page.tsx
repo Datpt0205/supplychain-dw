@@ -50,6 +50,7 @@ import {
 } from "../../../../components/supply-chain/missing-update-badge";
 import { OriginTag } from "../../../../components/supply-chain/origin-tag";
 import { PackagingDesignCard } from "../../../../components/supply-chain/packaging-design-card";
+import { POCommercialCard } from "../../../../components/supply-chain/po-commercial-card";
 import { poReferenceLabel } from "../../../../components/supply-chain/po-reference";
 import {
   SlaStatusTag,
@@ -505,6 +506,8 @@ export default function POCaseWorkspacePage() {
             />
           )}
         </Card>
+
+        <POCommercialCard caseId={id} />
 
         <PackagingDesignCard
           caseId={id}

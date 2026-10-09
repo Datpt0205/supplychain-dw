@@ -22,3 +22,4 @@ export {
   type RegionKind,
   type RegionStateProps,
 } from "./region-state";
+export { MaskedValue } from "./masked-value";

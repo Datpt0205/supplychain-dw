@@ -602,6 +602,87 @@
         "title": "AuditEventView",
         "type": "object"
       },
+      "Bm04Field": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/Bm04FieldKind"
+          },
+          "label": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "max_length": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 2000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Length"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "kind"
+        ],
+        "title": "Bm04Field",
+        "type": "object"
+      },
+      "Bm04FieldKind": {
+        "enum": [
+          "text",
+          "number",
+          "integer",
+          "boolean",
+          "choice"
+        ],
+        "title": "Bm04FieldKind",
+        "type": "string"
+      },
       "Body_submit_feedback_api_v1_feedback_post": {
         "properties": {
           "images": {
@@ -2278,6 +2359,24 @@
         "title": "InboxView",
         "type": "object"
       },
+      "Incoterm": {
+        "description": "Incoterms 2020: who carries cost and risk to where.",
+        "enum": [
+          "EXW",
+          "FCA",
+          "CPT",
+          "CIP",
+          "DAP",
+          "DPU",
+          "DDP",
+          "FAS",
+          "FOB",
+          "CFR",
+          "CIF"
+        ],
+        "title": "Incoterm",
+        "type": "string"
+      },
       "IngestJobView": {
         "properties": {
           "attempts": {
@@ -2543,6 +2642,37 @@
           "scope"
         ],
         "title": "KnowledgeDocumentView",
+        "type": "object"
+      },
+      "LinePriceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "sku_id": {
+            "format": "uuid",
+            "title": "Sku Id",
+            "type": "string"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          }
+        },
+        "required": [
+          "sku_id"
+        ],
+        "title": "LinePriceRequest",
         "type": "object"
       },
       "MeResponse": {
@@ -3599,6 +3729,107 @@
         "title": "POCaseView",
         "type": "object"
       },
+      "POCommercialView": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "deposit_percent": {
+            "$ref": "#/components/schemas/RedactableAmount"
+          },
+          "expected_delivery_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Delivery Date"
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Incoterm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/PricedLineView"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "order_total": {
+            "$ref": "#/components/schemas/RedactableAmount"
+          },
+          "payment_terms": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Terms"
+          },
+          "payment_terms_redacted": {
+            "title": "Payment Terms Redacted",
+            "type": "boolean"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/POPaymentView"
+            },
+            "title": "Payments",
+            "type": "array"
+          },
+          "po_case_id": {
+            "format": "uuid",
+            "title": "Po Case Id",
+            "type": "string"
+          },
+          "prices_visible": {
+            "title": "Prices Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "po_case_id",
+          "currency",
+          "incoterm",
+          "payment_terms",
+          "payment_terms_redacted",
+          "deposit_percent",
+          "expected_delivery_date",
+          "lines",
+          "order_total",
+          "payments",
+          "prices_visible",
+          "can_edit"
+        ],
+        "title": "POCommercialView",
+        "type": "object"
+      },
       "POLineQuantity": {
         "additionalProperties": false,
         "properties": {
@@ -3619,6 +3850,89 @@
           "quantity"
         ],
         "title": "POLineQuantity",
+        "type": "object"
+      },
+      "POPaymentView": {
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/RedactableAmount"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PaymentKind"
+          },
+          "paid_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid On"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "recorded_by": {
+            "format": "uuid",
+            "title": "Recorded By",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "version",
+          "amount",
+          "currency",
+          "due_date",
+          "paid_on",
+          "document_id",
+          "recorded_by",
+          "recorded_at"
+        ],
+        "title": "POPaymentView",
         "type": "object"
       },
       "PackagingAction": {
@@ -4100,6 +4414,15 @@
         "title": "Page",
         "type": "object"
       },
+      "PaymentKind": {
+        "description": "Step 11's deposit and step 16's final payment.",
+        "enum": [
+          "deposit",
+          "final"
+        ],
+        "title": "PaymentKind",
+        "type": "string"
+      },
       "PendingReviewView": {
         "description": "The approval a waiting case is held on (BGĐ's review, or the current\nsign-off step): which approval, since when, and the scope stamped on it,\nwhich is who may decide it. For a sign-off, the step it is, its number,\nand every step of the round in order, all as stamped when the case was\nsubmitted. Decided at `/approvals`, never from the case.",
         "properties": {
@@ -4264,6 +4587,64 @@
         ],
         "title": "PreProductionTest",
         "type": "string"
+      },
+      "PricedLineView": {
+        "properties": {
+          "line_total": {
+            "$ref": "#/components/schemas/RedactableAmount"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "sku_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku Code"
+          },
+          "sku_id": {
+            "format": "uuid",
+            "title": "Sku Id",
+            "type": "string"
+          },
+          "unit_price": {
+            "$ref": "#/components/schemas/RedactableAmount"
+          },
+          "variant_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Label"
+          }
+        },
+        "required": [
+          "sku_id",
+          "sku_code",
+          "variant_label",
+          "quantity",
+          "unit_price",
+          "line_total"
+        ],
+        "title": "PricedLineView",
+        "type": "object"
       },
       "ProductAction": {
         "description": "Every step a person takes on a product-development case.\n\nIts own enum, never `CaseAction`: five names are shared (`cancel`,\n`resume`, `wait_for_external`, `flag_blocked`, `flag_manual_review`) and a\nPO policy or approval keyed by one of them must not reach this case.",
@@ -4997,6 +5378,181 @@
         "title": "ProductDevState",
         "type": "string"
       },
+      "ProductProfileView": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "bm04_schema": {
+            "$ref": "#/components/schemas/SupplyChainBm04Schema"
+          },
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "can_edit_prices": {
+            "title": "Can Edit Prices",
+            "type": "boolean"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Incoterm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lead_time_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Time Days"
+          },
+          "moq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moq"
+          },
+          "prices_visible": {
+            "title": "Prices Visible",
+            "type": "boolean"
+          },
+          "product_dev_case_id": {
+            "format": "uuid",
+            "title": "Product Dev Case Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version"
+          },
+          "unit_price": {
+            "$ref": "#/components/schemas/RedactableAmount"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "product_dev_case_id",
+          "version",
+          "attributes",
+          "unit_price",
+          "currency",
+          "moq",
+          "lead_time_days",
+          "incoterm",
+          "schema_version",
+          "bm04_schema",
+          "prices_visible",
+          "can_edit",
+          "can_edit_prices",
+          "created_by",
+          "created_at"
+        ],
+        "title": "ProductProfileView",
+        "type": "object"
+      },
+      "ProfilePricesRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          }
+        },
+        "title": "ProfilePricesRequest",
+        "type": "object"
+      },
       "ProposeProductCaseRequest": {
         "additionalProperties": false,
         "description": "Step 1. JSON only: product images are uploaded after the case exists,\nthrough its documents (doc_type `product_image`). `category` is a key of\nthe tenant's list (`GET /product-categories`); the handler refuses any\nother.",
@@ -5074,6 +5630,101 @@
           "reason"
         ],
         "title": "ReassignPicRequest",
+        "type": "object"
+      },
+      "RecordPaymentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
+          },
+          "currency": {
+            "maxLength": 8,
+            "title": "Currency",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PaymentKind"
+          },
+          "paid_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid On"
+          }
+        },
+        "required": [
+          "kind",
+          "amount",
+          "currency"
+        ],
+        "title": "RecordPaymentRequest",
+        "type": "object"
+      },
+      "RedactableAmount": {
+        "description": "A price or amount: its value, or null with `redacted` when the caller\nlacks `supply_chain.commercial.read`.",
+        "properties": {
+          "redacted": {
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "redacted"
+        ],
+        "title": "RedactableAmount",
         "type": "object"
       },
       "RejectSupportGrantBody": {
@@ -5500,6 +6151,61 @@
         "title": "SampleRoundView",
         "type": "object"
       },
+      "SaveProductProfileRequest": {
+        "additionalProperties": false,
+        "description": "`prices` absent keeps the last version's price and currency; present, it\nneeds `supply_chain.commercial.write`.",
+        "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Incoterm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lead_time_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Time Days"
+          },
+          "moq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moq"
+          },
+          "prices": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfilePricesRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "SaveProductProfileRequest",
+        "type": "object"
+      },
       "SetManagerBody": {
         "properties": {
           "manager_user_id": {
@@ -5533,6 +6239,84 @@
           "memberships"
         ],
         "title": "SetMembershipsRequest",
+        "type": "object"
+      },
+      "SetPOCommercialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "deposit_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Percent"
+          },
+          "expected_delivery_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Delivery Date"
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Incoterm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line_prices": {
+            "items": {
+              "$ref": "#/components/schemas/LinePriceRequest"
+            },
+            "maxItems": 500,
+            "title": "Line Prices",
+            "type": "array"
+          },
+          "payment_terms": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Terms"
+          }
+        },
+        "title": "SetPOCommercialRequest",
         "type": "object"
       },
       "SetPermissionSetsBody": {
@@ -5793,6 +6577,216 @@
         "title": "SubmitSupplierUpdateRequest",
         "type": "object"
       },
+      "SupplierBankAccountRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "account_holder": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Account Holder",
+            "type": "string"
+          },
+          "account_number": {
+            "maxLength": 64,
+            "minLength": 6,
+            "title": "Account Number",
+            "type": "string"
+          },
+          "bank_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Bank Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bank_name",
+          "account_number",
+          "account_holder"
+        ],
+        "title": "SupplierBankAccountRequest",
+        "type": "object"
+      },
+      "SupplierBankAccountView": {
+        "description": "Every field null with `redacted` when the caller lacks the commercial\nread scope.",
+        "properties": {
+          "account_holder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Holder"
+          },
+          "account_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Number"
+          },
+          "bank_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank Name"
+          },
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "redacted": {
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "supplier_id": {
+            "format": "uuid",
+            "title": "Supplier Id",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "supplier_id",
+          "version",
+          "bank_name",
+          "account_number",
+          "account_holder",
+          "redacted",
+          "can_edit"
+        ],
+        "title": "SupplierBankAccountView",
+        "type": "object"
+      },
+      "SupplierContactRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 254,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SupplierContactRequest",
+        "type": "object"
+      },
+      "SupplierContactView": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "supplier_id": {
+            "format": "uuid",
+            "title": "Supplier Id",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "supplier_id",
+          "version",
+          "name",
+          "email",
+          "phone",
+          "can_edit"
+        ],
+        "title": "SupplierContactView",
+        "type": "object"
+      },
       "SupplierEventType": {
         "enum": [
           "production_delay",
@@ -5957,6 +6951,37 @@
         "title": "SupplierUpdateView",
         "type": "object"
       },
+      "SupplierView": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "code"
+        ],
+        "title": "SupplierView",
+        "type": "object"
+      },
       "SupplyChainActionDuties": {
         "additionalProperties": false,
         "properties": {
@@ -6024,6 +7049,43 @@
           "policy_version"
         ],
         "title": "SupplyChainApprovalMatrix",
+        "type": "object"
+      },
+      "SupplyChainBm04Schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/Bm04Field"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Fields",
+            "type": "array"
+          },
+          "policy_id": {
+            "pattern": "^supply_chain_bm04_schema$",
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_id",
+          "policy_version",
+          "fields"
+        ],
+        "title": "SupplyChainBm04Schema",
         "type": "object"
       },
       "SupplyChainBriefPolicy": {
@@ -10245,6 +11307,67 @@
         ]
       }
     },
+    "/api/v1/supply-chain/bm04-schema": {
+      "get": {
+        "operationId": "get_bm04_schema_api_v1_supply_chain_bm04_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainBm04Schema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Bm04 Schema",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "description": "Replaces the tenant's BM04 schema, whole. No `Idempotency-Key`, as for\nthe other policies' `PUT`.",
+        "operationId": "set_bm04_schema_api_v1_supply_chain_bm04_schema_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplyChainBm04Schema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplyChainBm04Schema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Bm04 Schema",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/brief-policy": {
       "get": {
         "description": "The caller's own tenant's effective brief order — their own\noverride if they have set one, the platform default otherwise.",
@@ -10906,6 +12029,118 @@
         ]
       }
     },
+    "/api/v1/supply-chain/po-cases/{case_id}/commercial": {
+      "get": {
+        "operationId": "get_po_commercial_api_v1_supply_chain_po_cases__case_id__commercial_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/POCommercialView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Po Commercial",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "put": {
+        "operationId": "set_po_commercial_api_v1_supply_chain_po_cases__case_id__commercial_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPOCommercialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/POCommercialView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Po Commercial",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/po-cases/{case_id}/create-po": {
       "post": {
         "description": "Step 10 on a case awaiting its PO. A reference already taken in\nthe tenant is a 409 naming it; a line still without a quantity, 409.",
@@ -11293,6 +12528,77 @@
           }
         },
         "summary": "Take Packaging Step",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/payments": {
+      "post": {
+        "operationId": "record_po_payment_api_v1_supply_chain_po_cases__case_id__payments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordPaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/POPaymentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Po Payment",
         "tags": [
           "supply_chain"
         ]
@@ -12295,6 +13601,118 @@
         ]
       }
     },
+    "/api/v1/supply-chain/product-cases/{case_id}/profile": {
+      "get": {
+        "operationId": "get_product_profile_api_v1_supply_chain_product_cases__case_id__profile_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductProfileView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Product Profile",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "post": {
+        "operationId": "save_product_profile_api_v1_supply_chain_product_cases__case_id__profile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveProductProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductProfileView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Product Profile",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
       "get": {
         "description": "The case's history, newest first, a page at a time.",
@@ -12521,6 +13939,255 @@
           }
         },
         "summary": "Set Sla Policy Override Route",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/suppliers": {
+      "get": {
+        "operationId": "list_suppliers_api_v1_supply_chain_suppliers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupplierView"
+                  },
+                  "title": "Response List Suppliers Api V1 Supply Chain Suppliers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Suppliers",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/suppliers/{supplier_id}/bank-account": {
+      "get": {
+        "operationId": "get_supplier_bank_account_api_v1_supply_chain_suppliers__supplier_id__bank_account_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "supplier_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Supplier Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierBankAccountView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Supplier Bank Account",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "post": {
+        "operationId": "save_supplier_bank_account_api_v1_supply_chain_suppliers__supplier_id__bank_account_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "supplier_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Supplier Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierBankAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierBankAccountView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Supplier Bank Account",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/suppliers/{supplier_id}/contact": {
+      "get": {
+        "operationId": "get_supplier_contact_api_v1_supply_chain_suppliers__supplier_id__contact_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "supplier_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Supplier Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierContactView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Supplier Contact",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "post": {
+        "operationId": "save_supplier_contact_api_v1_supply_chain_suppliers__supplier_id__contact_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "supplier_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Supplier Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierContactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierContactView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Supplier Contact",
         "tags": [
           "supply_chain"
         ]

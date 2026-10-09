@@ -59,6 +59,13 @@ po_cases = sa.Table(
     sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=True),
     sa.Column("pic_user_id", UUID(as_uuid=True), nullable=True),
     sa.Column("category", sa.Text, nullable=True),
+    # Commercial terms (82221a867e62, ADR 0026): read and written only by
+    # `commercial_repository`, behind `supply_chain.commercial.*`.
+    sa.Column("currency", sa.Text, nullable=True),
+    sa.Column("incoterm", sa.Text, nullable=True),
+    sa.Column("payment_terms", sa.Text, nullable=True),
+    sa.Column("deposit_percent", sa.Numeric(5, 2), nullable=True),
+    sa.Column("expected_delivery_date", sa.Date, nullable=True),
 )
 
 # One planned line of a PO case: a SKU and how many (NULL until `create_po`
@@ -72,6 +79,8 @@ po_case_lines = sa.Table(
     sa.Column("po_case_id", UUID(as_uuid=True), nullable=False),
     sa.Column("sku_id", UUID(as_uuid=True), nullable=False),
     sa.Column("quantity", sa.Integer, nullable=True),
+    # NULL until someone with `supply_chain.commercial.write` sets it.
+    sa.Column("unit_price", sa.Numeric(18, 4), nullable=True),
     sa.Column(
         "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
@@ -359,5 +368,84 @@ packaging_design_events = sa.Table(
     sa.Column("document_id", UUID(as_uuid=True), nullable=True),
     sa.Column(
         "occurred_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+
+# BM04 as fields (82221a867e62, ADR 0026): one row per save, append-only.
+product_profiles = sa.Table(
+    "product_profiles",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("unit_price", sa.Numeric(18, 4), nullable=True),
+    sa.Column("currency", sa.Text, nullable=True),
+    sa.Column("moq", sa.Integer, nullable=True),
+    sa.Column("lead_time_days", sa.Integer, nullable=True),
+    sa.Column("incoterm", sa.Text, nullable=True),
+    sa.Column("attributes", JSONB, nullable=False),
+    sa.Column("schema_version", sa.Text, nullable=False),
+    sa.Column("created_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+# A PO case's deposit and final payment, one row per version, append-only.
+po_payments = sa.Table(
+    "po_payments",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("po_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("amount", sa.Numeric(18, 2), nullable=False),
+    sa.Column("currency", sa.Text, nullable=False),
+    sa.Column("due_date", sa.Date, nullable=True),
+    sa.Column("paid_on", sa.Date, nullable=True),
+    sa.Column("document_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("recorded_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "recorded_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+# A supplier's contact person and bank account, append-only versions.
+supplier_contacts = sa.Table(
+    "supplier_contacts",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("supplier_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("name", sa.Text, nullable=False),
+    sa.Column("email", sa.Text, nullable=True),
+    sa.Column("phone", sa.Text, nullable=True),
+    sa.Column("created_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+supplier_bank_accounts = sa.Table(
+    "supplier_bank_accounts",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("supplier_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("bank_name", sa.Text, nullable=False),
+    sa.Column("account_number", sa.Text, nullable=False),
+    sa.Column("account_holder", sa.Text, nullable=False),
+    sa.Column("created_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )

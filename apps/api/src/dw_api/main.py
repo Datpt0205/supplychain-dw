@@ -300,6 +300,21 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # Commercial data and BM04 as fields (ADR 0026, ticket ai-automation/01):
+    # its own router on its own guard, as the documents router is.
+    if container.supply_chain_commercial is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.commercial_routes import build_commercial_router
+
+        app.include_router(
+            build_commercial_router(
+                container.supply_chain_commercial,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
     # Product-development cases (stage 1): their own router on their own guard,
     # as the documents router is.
     if (

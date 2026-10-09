@@ -137,6 +137,7 @@ from dw_supply_chain.application.product_cases import (
     ProposeProductCase,
     ReassignProductCasePic,
 )
+from dw_supply_chain.presentation.commercial_routes import CommercialHandlers
 
 
 @dataclass(frozen=True)
@@ -243,6 +244,9 @@ class ApiContainer:
     supply_chain_take_packaging_step: TakePackagingStep | None = None
     supply_chain_get_packaging_policy: GetPackagingPolicy | None = None
     supply_chain_set_packaging_policy_override: SetPackagingPolicyOverride | None = None
+    # Commercial data and BM04 as fields (ADR 0026, ticket ai-automation/01):
+    # its own router on its own guard, wired with the documents a payment cites.
+    supply_chain_commercial: CommercialHandlers | None = None
     # Product-development cases (stage 1): their own router on their own guard,
     # as the documents router is.
     supply_chain_propose_product_case: ProposeProductCase | None = None
