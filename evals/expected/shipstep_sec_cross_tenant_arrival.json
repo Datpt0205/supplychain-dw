@@ -1,0 +1,7 @@
+{
+  "decision": "refused",
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

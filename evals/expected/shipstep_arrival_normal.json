@@ -1,0 +1,9 @@
+{
+  "proposed": true,
+  "decision": "applied",
+  "case_state": "arrived_port",
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

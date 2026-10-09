@@ -33,6 +33,64 @@ import {
   OFFLINE_STEP,
 } from "../po-step-labels";
 
+/** Step 14 (ai-automation/17): QC's verdict, code's suggestion beside it, a
+ * reason required only for a fail, a rework request drafted. */
+function qc(overrides: Partial<POStepProposal> = {}): POStepProposal {
+  return {
+    step: "qc",
+    action: "pass_qc",
+    draft_doc_type: "rework_request",
+    draft_id: "22222222-2222-4222-8222-222222222222",
+    draft_version: 1,
+    draft_status: "open",
+    content_sha256: "a".repeat(64),
+    findings: [
+      {
+        code: "qc_stated_differs",
+        subject: "qc_report",
+        message: "Báo cáo kết luận đạt nhưng số lỗi vượt Ac",
+      },
+    ],
+    results: [
+      {
+        name: "qc_result",
+        kind: "choice",
+        label: "Kết quả QC",
+        required: true,
+        options: ["pass", "fail"],
+        required_for: null,
+        suggestion: { value: "fail", quote: null, document_id: null },
+        redacted: false,
+      },
+      {
+        name: "container_number",
+        kind: "text",
+        label: "Số container",
+        required: false,
+        options: [],
+        required_for: null,
+        suggestion: null,
+        redacted: false,
+      },
+      {
+        name: "reason",
+        kind: "text",
+        label: "Lý do không đạt",
+        required: false,
+        options: [],
+        required_for: "fail",
+        suggestion: null,
+        redacted: false,
+      },
+    ],
+    proposed: false,
+    can_approve: true,
+    blocked_reason: null,
+    missing_paper: null,
+    ...overrides,
+  };
+}
+
 const CASE_ID = "11111111-1111-4111-8111-111111111111";
 
 function confirmation(overrides: Partial<POStepProposal> = {}): POStepProposal {
@@ -58,6 +116,8 @@ function confirmation(overrides: Partial<POStepProposal> = {}): POStepProposal {
         kind: "amount",
         label: "Số tiền đã chi",
         required: true,
+        options: [],
+        required_for: null,
         suggestion: {
           value: "1.275,00",
           quote: "Số tiền: 1.275,00 USD",
@@ -70,6 +130,8 @@ function confirmation(overrides: Partial<POStepProposal> = {}): POStepProposal {
         kind: "date",
         label: "Ngày chi",
         required: true,
+        options: [],
+        required_for: null,
         suggestion: {
           value: "2026-10-11",
           quote: "Ngày: 11/10/2026",
@@ -159,6 +221,8 @@ describe("POStepCard", () => {
             kind: "amount",
             label: "Số tiền đã chi",
             required: true,
+            options: [],
+            required_for: null,
             suggestion: null,
             redacted: true,
           },
@@ -191,6 +255,48 @@ describe("POStepCard", () => {
     renderCard();
     await waitFor(() => expect(screen.getByText(OFFLINE_STEP)).toBeTruthy());
     expect(approveButton().disabled).toBe(true);
+  });
+
+  it("leaves QC's verdict to QC and asks a reason only for a fail", async () => {
+    getPOStepProposal.mockResolvedValue(qc());
+    approvePOStep.mockResolvedValue(qc({ step: null }));
+    renderCard();
+    await waitFor(() =>
+      expect(screen.getByText("Kết luận khác số lỗi")).toBeTruthy(),
+    );
+    // The suggestion is in words beside the empty choice, never chosen.
+    expect(screen.getByText("AI gợi ý: Không đạt")).toBeTruthy();
+    expect(screen.getByText(/phiếu yêu cầu sửa hàng/)).toBeTruthy();
+    const record = () =>
+      screen.getByRole("button", {
+        name: /Ghi kết quả QC/,
+      }) as HTMLButtonElement;
+    expect(record().disabled).toBe(true);
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Kết quả QC" }));
+    fireEvent.click(await screen.findByTitle("Không đạt"));
+    // A fail without its reason stays locked.
+    await waitFor(() => expect(screen.getByText(FILL_RESULTS)).toBeTruthy());
+    expect(record().disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Lý do không đạt"), {
+      target: { value: "Lỗi nặng vượt Ac" },
+    });
+    await waitFor(() => expect(record().disabled).toBe(false));
+    fireEvent.click(record());
+    await waitFor(() =>
+      expect(screen.getAllByText("Ghi kết quả QC?").length).toBeGreaterThan(0),
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /Ghi kết quả QC/ }).at(-1)!,
+    );
+    await waitFor(() => expect(approvePOStep).toHaveBeenCalledTimes(1));
+    expect(approvePOStep.mock.calls[0]?.[1]).toMatchObject({
+      step: "qc",
+      results: {
+        qc_result: "fail",
+        container_number: "",
+        reason: "Lỗi nặng vượt Ac",
+      },
+    });
   });
 
   it("renders nothing for a state no prepared step covers", async () => {

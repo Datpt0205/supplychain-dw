@@ -1,0 +1,15 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "scripted": {
+    "fields": {
+      "inspected_on": null
+    },
+    "gaps": [
+      {
+        "field": "inspected_on",
+        "reason": "value_not_in_quote"
+      }
+    ]
+  }
+}

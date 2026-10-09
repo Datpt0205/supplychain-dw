@@ -58,7 +58,7 @@ from dw_kernel.errors import (
     QuotaExceededError,
 )
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
-from dw_kernel.pagination import MAX_PAGE_SIZE, page_request
+from dw_kernel.pagination import MAX_PAGE_SIZE, Page, PageRequest, page_request
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import AuthorizationPort, PolicyOverridePort
@@ -73,6 +73,7 @@ from dw_supply_chain.application.handlers import (
 )
 from dw_supply_chain.application.ports import (
     FollowUpRecord,
+    POCaseListFilter,
     ProductCaseListFilter,
     ReviewNotifierPort,
     TenantPlanPort,
@@ -81,15 +82,17 @@ from dw_supply_chain.application.step_preparation import (
     CaseDocumentListPort,
     CaseDraftsPort,
     CaseListingPort,
+    ExtractionReadingsPort,
     entered_current_state,
     resolve_step_preparation,
 )
 from dw_supply_chain.domain.case_document import CaseKind, DocumentType
 from dw_supply_chain.domain.commercial import PRICE_FIELDS, ProductProfile, SupplierContact
 from dw_supply_chain.domain.document_draft import DraftStatus, field_value
+from dw_supply_chain.domain.extraction import ExtractionStatus
 from dw_supply_chain.domain.follow_up import FollowUpKind
 from dw_supply_chain.domain.grounded_writing import EvidenceItem, ground_sentences
-from dw_supply_chain.domain.po_case import POCase, POCaseId, reference_label
+from dw_supply_chain.domain.po_case import CaseState, POCase, POCaseId, reference_label
 from dw_supply_chain.domain.product_development_case import (
     ProductDevelopmentCase,
     ProductDevelopmentCaseId,
@@ -117,7 +120,7 @@ logger = logging.getLogger(__name__)
 MESSAGES_LANE = "supply_chain_supplier_messages"
 MESSAGES_WORKER_ID = "supply_chain.supplier_messages"
 MESSAGES_WORKER_VERSION = "1.0.0"
-MESSAGE_PROMPT = WritingPrompt("supply_chain.draft_supplier_message", "1.1.0")
+MESSAGE_PROMPT = WritingPrompt("supply_chain.draft_supplier_message", "1.2.0")
 MESSAGE_DRAFTED = "supply_chain.supplier_message.drafted"
 MESSAGE_SENT = "supply_chain.supplier_message.sent"
 _RESOURCE = "supplier_message"
@@ -128,6 +131,7 @@ PURPOSE_LABELS: Mapping[MessagePurpose, str] = {
     MessagePurpose.SUPPLIER_REMINDER: "Nhắc NCC cập nhật",
     MessagePurpose.SUPPLIER_CONFIRMATION: "Xác nhận sản phẩm với NCC",
     MessagePurpose.SAMPLE_REVISION_REQUEST: "Gửi phiếu yêu cầu chỉnh sửa mẫu",
+    MessagePurpose.PRODUCTION_PROGRESS: "Hỏi tiến độ sản xuất hằng tuần",
 }
 # The step a case enters that a message of this purpose goes with.
 _STEP_PURPOSES: Mapping[MessagePurpose, ProductDevState] = {
@@ -259,6 +263,14 @@ class ProductCaseGetPort(Protocol):
 
 class POCaseGetPort(Protocol):
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None: ...
+
+
+class POCaseListingPort(Protocol):
+    """The workspace's PO cases in one state (ticket ai-automation/17)."""
+
+    async def list_page(
+        self, context: AccessContext, request: PageRequest, case_filter: POCaseListFilter
+    ) -> Page[POCase]: ...
 
 
 class OpenFollowUpsPort(Protocol):
@@ -690,6 +702,10 @@ class DraftSupplierMessages:
     # The case's BM04 versions (ticket ai-automation/12): the confirmation at
     # step 8 is drafted from the latest one, never with its price.
     profiles: Bm04ProfileReadPort | None = None
+    # PO cases in production and their schedules (ticket ai-automation/17):
+    # the weekly progress chase; a host without them drafts none.
+    po_listing: POCaseListingPort | None = None
+    readings: ExtractionReadingsPort | None = None
     batch: int = _BATCH
 
     async def run(self) -> MessageLaneCount:
@@ -743,7 +759,87 @@ class DraftSupplierMessages:
                 requests.extend(await self._step_requests(context, purpose, state))
         if MessagePurpose.SAMPLE_REVISION_REQUEST in purposes:
             requests.extend(await self._revision_requests(context))
+        if MessagePurpose.PRODUCTION_PROGRESS in purposes:
+            requests.extend(await self._progress_requests(context))
         return requests
+
+    async def _progress_requests(self, context: AccessContext) -> list[MessageRequest]:
+        """One chase a week (ISO week) for each PO case in production: the
+        case's facts and the supplier's own schedule as read (milestones and
+        ETD; no price) the message may cite."""
+        if self.po_listing is None:
+            return []
+        year, week, _ = self.drafter.clock.now().date().isocalendar()
+        found: list[MessageRequest] = []
+        case_filter = POCaseListFilter(state=CaseState.PRODUCTION)
+        cursor: str | None = None
+        while True:
+            page = await self.po_listing.list_page(
+                context,
+                page_request(
+                    limit=MAX_PAGE_SIZE,
+                    cursor=cursor,
+                    query=case_filter.page_query(context.tenant_id),
+                ),
+                case_filter,
+            )
+            for case in page.items:
+                found.append(
+                    MessageRequest(
+                        case_kind=CaseKind.PO,
+                        case_id=case.id.value,
+                        purpose=MessagePurpose.PRODUCTION_PROGRESS,
+                        source_key=f"production_progress:{case.id}:{year}-W{week:02d}",
+                        evidence=await self._schedule(context, case.id.value),
+                    )
+                )
+            if page.next_cursor is None:
+                return found
+            cursor = page.next_cursor
+
+    async def _schedule(
+        self, context: AccessContext, case_id: uuid.UUID
+    ) -> tuple[EvidenceItem, ...]:
+        """The newest production schedule's reading, as words a message may
+        cite: its ETD and milestones as the supplier wrote them."""
+        if self.documents is None or self.readings is None:
+            return ()
+        documents = [
+            d
+            for d in await self.documents.list_for_case(context, CaseKind.PO, case_id)
+            if d.doc_type is DocumentType.PRODUCTION_SCHEDULE and d.case_id == case_id
+        ]
+        if not documents:
+            return ()
+        paper = max(documents, key=lambda d: (d.version, d.uploaded_at))
+        reading = next(
+            (
+                r
+                for r in await self.readings.readings(context, [paper.id.value])
+                if r.sha256 == paper.sha256 and r.status is ExtractionStatus.EXTRACTED
+            ),
+            None,
+        )
+        if reading is None:
+            return ()
+        lines = []
+        etd = field_value(reading.fields, "etd")
+        if etd:
+            lines.append(f"ETD: {etd}")
+        rows = reading.fields.get("milestones")
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, Mapping):
+                continue
+            name = field_value(row, "name")
+            planned = field_value(row, "planned_date")
+            status = field_value(row, "status")
+            if name:
+                lines.append(
+                    f"{name}: {planned or 'chưa ghi ngày'}" + (f" ({status})" if status else "")
+                )
+        if not lines:
+            return ()
+        return (EvidenceItem(f"doc:{paper.id}", "Lịch sản xuất của NCC", "; ".join(lines)),)
 
     async def _revision_requests(self, context: AccessContext) -> list[MessageRequest]:
         """One message per revision request document of a case waiting for its

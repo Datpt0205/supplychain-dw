@@ -272,3 +272,31 @@ Profile `qwen` là chỗ giữ, chưa đo.
    không; Elmich: `confirm_deposit` cần `deposit_docs`, `confirm_payment` cần `payment_docs`), hỏi ở
    ba cửa của một bước: người bấm (`AdvancePOCase`), apply node của graph duyệt theo ma trận, và
    đề xuất bước.
+
+## Sửa đổi 2026-10-10 (tạm, lát AI-17; bước 13-15, kết quả là lựa chọn của người)
+
+1. **Ba bước nữa theo mẫu AI-15:** `production` (bước 13, `send_to_qc`, đọc lịch sản xuất, ô ETD
+   không bắt buộc), `qc` (bước 14) và `arrival` (bước 15, `arrive_at_port`, đọc giấy báo hàng đến,
+   B/L, packing list, hóa đơn thương mại, C/O; ô ETA bắt buộc). Elmich 1.10.0 bật cả ba.
+2. **Một bước, hai kết quả:** bước `qc` có ô lựa chọn `qc_result` (Đạt / Không đạt) do QC nhập;
+   hành động đích suy từ lựa chọn (`pass_qc`, `fail_qc`) TRƯỚC khi kiểm duty, nên duty kiểm là duty
+   của hành động thật. Ô `reason` chỉ bắt buộc khi chọn Không đạt (`required_for`), ô số container
+   (ISO 6346, code chuẩn hóa) không bắt buộc. Gợi ý của code cạnh ô theo SỐ lỗi so với Ac báo cáo
+   ghi, không theo chữ "PASS"; chữ khác số là phát hiện đỏ. Không có bảng AQL trong code: Ac lấy từ
+   báo cáo, thiếu thì "không đọc được số lỗi".
+3. **Giấy chỉ của một kết quả:** phiếu yêu cầu sửa hàng (`rework_request`) được soạn khi số lỗi vượt
+   Ac (`draft_optional`); duyệt Không đạt thì phiếu thành chứng từ cùng bước, duyệt Đạt thì bản nháp
+   bị đóng (`rejected`, lý do ghi hành động đã đi) trong cùng giao dịch.
+4. **Ngày và container ghi cùng bước:** `po_cases.etd`, `eta`, `container_number` (migration
+   `0c3b3a73be30`, CHECK ISO 6346) chỉ do bước đã duyệt ghi, từ ô người nhập, không từ gợi ý.
+5. **Phép kiểm của code:** lịch sản xuất có ETD muộn hơn ngày giao dự kiến của PO; packing list so
+   từng SKU với PO (không giá); số container của packing list phải có trên B/L và giấy báo; hồ sơ hải
+   quan theo skill `customs_file@1.1.0` (C/O là tùy chọn); bước 16 thêm packing list và báo cáo QC
+   mới nhất (đối chiếu ba bên). Phát hiện không bao giờ tự chặn.
+6. **Đóng cont vẫn không phải bước riêng** (QO-6, chờ QE-15): số container nằm trên `pass_qc`.
+   Biên bản test trước SX chưa do AI soạn (bước 13 hôm nay chỉ đọc lịch). Ảnh và bản quét không đọc
+   được (chưa có OCR): bước nêu "máy không đọc được", người kiểm.
+7. **Thư hỏi tiến độ hằng tuần** (`production_progress`, mẫu 1.2.0, prompt
+   `draft_supplier_message@1.2.0`): một thư mỗi tuần ISO cho mỗi Hồ sơ PO đang sản xuất, dẫn mốc và
+   ETD đúng như lịch NCC đã đọc; người gửi (E18). Mẫu của tenant lưu ở phiên bản cũ lấy mẫu nền tảng
+   cho mục đích mới (`PURPOSES_ADDED_AFTER`).

@@ -66,6 +66,10 @@ po_cases = sa.Table(
     sa.Column("payment_terms", sa.Text, nullable=True),
     sa.Column("deposit_percent", sa.Numeric(5, 2), nullable=True),
     sa.Column("expected_delivery_date", sa.Date, nullable=True),
+    # Steps 13-15 (ticket ai-automation/17, migration 0c3b3a73be30).
+    sa.Column("etd", sa.Date, nullable=True),
+    sa.Column("eta", sa.Date, nullable=True),
+    sa.Column("container_number", sa.Text, nullable=True),
 )
 
 # One planned line of a PO case: a SKU and how many (NULL until `create_po`

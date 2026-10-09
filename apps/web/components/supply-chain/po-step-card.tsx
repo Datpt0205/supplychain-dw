@@ -9,6 +9,7 @@ import {
   Flex,
   Input,
   List,
+  Select,
   Tooltip,
   Typography,
 } from "antd";
@@ -27,6 +28,7 @@ import {
   HIDDEN_SUGGESTION,
   OFFLINE_STEP,
   PO_STEP_LABEL,
+  RESULT_OPTION_LABEL,
 } from "./po-step-labels";
 
 /** What code found, in words a person scans: the kind and its tone. */
@@ -49,7 +51,18 @@ const FINDING_LABEL: Record<string, { label: string; tone: StatusTone }> = {
   line_not_on_po: { label: "SKU ngoài PO", tone: "err" },
   line_missing: { label: "Thiếu dòng PO", tone: "warn" },
   line_unmatched: { label: "Dòng không có SKU", tone: "warn" },
+  // Steps 13-15 (ai-automation/17).
+  etd_late: { label: "ETD muộn hơn hạn giao", tone: "warn" },
+  qc_over_aql: { label: "Số lỗi vượt Ac", tone: "err" },
+  qc_stated_differs: { label: "Kết luận khác số lỗi", tone: "err" },
+  qc_numbers_missing: { label: "Không đọc được số lỗi", tone: "warn" },
+  qc_report_fails: { label: "QC không đạt theo số", tone: "err" },
+  container_differs: { label: "Container khác chứng từ", tone: "err" },
+  customs_missing: { label: "Thiếu hồ sơ hải quan", tone: "warn" },
+  customs_optional_missing: { label: "Chưa có C/O", tone: "gray" },
 };
+
+const optionLabel = (value: string) => RESULT_OPTION_LABEL[value] ?? value;
 
 function Suggestion({ result }: { result: POStepResult }) {
   if (result.redacted) {
@@ -61,7 +74,9 @@ function Suggestion({ result }: { result: POStepResult }) {
   return (
     <Tooltip title={result.suggestion.quote || undefined}>
       <Typography.Text>
-        AI đọc được: “{result.suggestion.value}”
+        {result.kind === "choice"
+          ? `AI gợi ý: ${optionLabel(result.suggestion.value)}`
+          : `AI đọc được: “${result.suggestion.value}”`}
       </Typography.Text>
     </Tooltip>
   );
@@ -109,8 +124,15 @@ export function POStepCard({
   }
   if (!proposal.step) return null;
   const words = PO_STEP_LABEL[proposal.step];
+  // The outcome a person chose (QC's verdict), when the step has one: a
+  // result required only for one outcome (a reason for a fail) follows it.
+  const chosen = proposal.results
+    .filter((r) => r.kind === "choice")
+    .map((r) => typed[r.name] ?? "")[0];
   const unfilled = proposal.results.some(
-    (r) => r.required && !(typed[r.name] ?? "").trim(),
+    (r) =>
+      (r.required || (r.required_for !== null && r.required_for === chosen)) &&
+      !(typed[r.name] ?? "").trim(),
   );
   const lock = !online
     ? OFFLINE_STEP
@@ -162,11 +184,17 @@ export function POStepCard({
           )}
           <Typography.Text>
             {proposal.proposed
-              ? "Mọi số tiền, tiền tệ, dòng hàng và tài khoản hệ thống kiểm đều khớp."
+              ? "Mọi điều hệ thống kiểm ở bước này đều khớp."
               : `Còn ${proposal.findings.length} điều cần người kiểm trước khi duyệt.`}
           </Typography.Text>
         </Flex>
-        {proposal.draft_id ? (
+        {proposal.draft_id && proposal.draft_doc_type === "rework_request" ? (
+          <Typography.Text>
+            AI soạn phiếu yêu cầu sửa hàng vì số lỗi vượt giới hạn; xem và sửa ở
+            “Bản nháp chứng từ” bên dưới (phiên bản {proposal.draft_version}).
+            Phiếu chỉ thành chứng từ khi QC chọn “Không đạt”.
+          </Typography.Text>
+        ) : proposal.draft_id ? (
           <Typography.Text>
             Số tiền do hệ thống tính; xem và sửa các ô ở “Bản nháp chứng từ” bên
             dưới (phiên bản {proposal.draft_version}).
@@ -203,21 +231,41 @@ export function POStepCard({
         ) : null}
         {proposal.results.map((result) => (
           <Flex key={result.name} gap="small" align="center" wrap>
-            <Input
-              aria-label={result.label}
-              placeholder={result.kind === "date" ? "YYYY-MM-DD" : result.label}
-              type={result.kind === "date" ? "date" : "text"}
-              inputMode={result.kind === "amount" ? "decimal" : undefined}
-              value={typed[result.name] ?? ""}
-              onChange={(event) =>
-                setTyped((held) => ({
-                  ...held,
-                  [result.name]: event.target.value,
-                }))
-              }
-              style={{ maxWidth: 220 }}
-              disabled={!proposal.can_approve}
-            />
+            {result.kind === "choice" ? (
+              <Select
+                aria-label={result.label}
+                placeholder={result.label}
+                options={result.options.map((value) => ({
+                  value,
+                  label: optionLabel(value),
+                }))}
+                value={typed[result.name] || undefined}
+                onChange={(value: string) =>
+                  setTyped((held) => ({ ...held, [result.name]: value }))
+                }
+                style={{ minWidth: 220 }}
+                disabled={!proposal.can_approve}
+              />
+            ) : (
+              <Input
+                aria-label={result.label}
+                maxLength={result.kind === "text" ? 100 : undefined}
+                placeholder={
+                  result.kind === "date" ? "YYYY-MM-DD" : result.label
+                }
+                type={result.kind === "date" ? "date" : "text"}
+                inputMode={result.kind === "amount" ? "decimal" : undefined}
+                value={typed[result.name] ?? ""}
+                onChange={(event) =>
+                  setTyped((held) => ({
+                    ...held,
+                    [result.name]: event.target.value,
+                  }))
+                }
+                style={{ maxWidth: result.kind === "text" ? 420 : 220 }}
+                disabled={!proposal.can_approve}
+              />
+            )}
             <Suggestion result={result} />
           </Flex>
         ))}

@@ -1,0 +1,31 @@
+{
+  "step": "arrival",
+  "documents": [
+    {
+      "doc_type": "purchase_order",
+      "status": null
+    },
+    {
+      "doc_type": "packing_list",
+      "reading": {
+        "container_number": "MSCU1234567",
+        "lines": [
+          {
+            "sku_code": "EL-00001-01",
+            "quantity": "480"
+          },
+          {
+            "sku_code": "EL-00001-02",
+            "quantity": "1200"
+          }
+        ]
+      }
+    },
+    {
+      "doc_type": "arrival_notice",
+      "reading": {
+        "eta": "2026-12-02"
+      }
+    }
+  ]
+}

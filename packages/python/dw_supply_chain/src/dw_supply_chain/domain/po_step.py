@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from dw_supply_chain.domain.case_document import DocumentType
@@ -39,14 +39,23 @@ class POStepKind(StrEnum):
     # Step 16 (ticket ai-automation/15): the same for the final payment.
     FINAL_PAYMENT_REQUEST = "final_payment_request"
     FINAL_PAYMENT = "final_payment"
+    # Steps 13-15 (ticket ai-automation/17): production read against its
+    # schedule, QC decided by QC with code's suggestion beside it, the arrival
+    # proposed once the carrier's notice is read.
+    PRODUCTION = "production"
+    QC = "qc"
+    ARRIVAL = "arrival"
 
 
 class ResultKind(StrEnum):
     """What a person types for a physical step: an amount (a price field,
-    hidden without the commercial scope), a date."""
+    hidden without the commercial scope), a date, a choice among options
+    (QC's verdict), a text (a container number, a reason)."""
 
     AMOUNT = "amount"
     DATE = "date"
+    CHOICE = "choice"
+    TEXT = "text"
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +64,10 @@ class ResultField:
     kind: ResultKind
     label: str
     required: bool = True
+    options: tuple[str, ...] = ()
+    # Required only when the step's outcome field takes this choice (a
+    # reason for a fail).
+    required_for: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +84,25 @@ class POStepSpec:
     # Approving writes an amount: a payment row, or a paper that prints prices
     # (a request). The decider also needs `supply_chain.commercial.write`.
     writes_prices: bool = False
+    # A step whose draft is drafted only when code's reading calls for it (a
+    # rework request when QC's numbers fail): approved without one otherwise.
+    draft_optional: bool = False
+    # A physical step with more than one outcome: the result field the person
+    # chooses it in, and the step each choice takes. `action` is the one the
+    # step is offered as.
+    outcome_field: str | None = None
+    outcomes: Mapping[str, CaseAction] = field(default_factory=dict)
+
+    def action_for(self, typed: Mapping[str, object]) -> CaseAction:
+        """The step the typed outcome takes; the step's own when it has none."""
+        if self.outcome_field is None:
+            return self.action
+        choice = typed.get(self.outcome_field)
+        return self.outcomes.get(str(choice), self.action)
+
+    @property
+    def actions(self) -> frozenset[CaseAction]:
+        return frozenset(self.outcomes.values()) or frozenset({self.action})
 
 
 _PAID_AMOUNT = ResultField("paid_amount", ResultKind.AMOUNT, "Số tiền đã chi")
@@ -101,7 +133,13 @@ PO_STEPS: Mapping[POStepKind, POStepSpec] = {
             state=CaseState.ARRIVED_PORT,
             action=CaseAction.REQUEST_FINAL_PAYMENT,
             draft=DocumentType.PAYMENT_DOCS,
-            sources=(DocumentType.COMMERCIAL_INVOICE,),
+            # The three-way match: the invoice and (ticket ai-automation/17)
+            # the packing list against the PO, and the QC report's numbers.
+            sources=(
+                DocumentType.COMMERCIAL_INVOICE,
+                DocumentType.PACKING_LIST,
+                DocumentType.QC_REPORT,
+            ),
             writes_prices=True,
         ),
         POStepSpec(
@@ -112,6 +150,51 @@ PO_STEPS: Mapping[POStepKind, POStepSpec] = {
             sources=(DocumentType.BANK_TRANSFER_RECEIPT,),
             results=(_PAID_AMOUNT, _PAID_ON),
             writes_prices=True,
+        ),
+        POStepSpec(
+            kind=POStepKind.PRODUCTION,
+            state=CaseState.PRODUCTION,
+            action=CaseAction.SEND_TO_QC,
+            draft=None,
+            sources=(DocumentType.PRODUCTION_SCHEDULE,),
+            results=(ResultField("etd", ResultKind.DATE, "Ngày xuất hàng (ETD)", required=False),),
+        ),
+        POStepSpec(
+            kind=POStepKind.QC,
+            state=CaseState.QC,
+            action=CaseAction.PASS_QC,
+            draft=DocumentType.REWORK_REQUEST,
+            draft_optional=True,
+            sources=(DocumentType.QC_REPORT, DocumentType.PACKING_LIST),
+            results=(
+                ResultField(
+                    "qc_result", ResultKind.CHOICE, "Kết luận QC", options=("pass", "fail")
+                ),
+                ResultField("container_number", ResultKind.TEXT, "Số container", required=False),
+                ResultField(
+                    "reason",
+                    ResultKind.TEXT,
+                    "Lý do không đạt",
+                    required=False,
+                    required_for="fail",
+                ),
+            ),
+            outcome_field="qc_result",
+            outcomes={"pass": CaseAction.PASS_QC, "fail": CaseAction.FAIL_QC},
+        ),
+        POStepSpec(
+            kind=POStepKind.ARRIVAL,
+            state=CaseState.IN_TRANSIT,
+            action=CaseAction.ARRIVE_AT_PORT,
+            draft=None,
+            sources=(
+                DocumentType.ARRIVAL_NOTICE,
+                DocumentType.BILL_OF_LADING,
+                DocumentType.PACKING_LIST,
+                DocumentType.COMMERCIAL_INVOICE,
+                DocumentType.CERTIFICATE_OF_ORIGIN,
+            ),
+            results=(ResultField("eta", ResultKind.DATE, "Ngày hàng đến cảng"),),
         ),
     )
 }

@@ -78,7 +78,7 @@ def test_each_state_has_at_most_one_step_and_each_step_its_state() -> None:
         is PO_STEPS[POStepKind.DEPOSIT_REQUEST]
     )
     assert step_for_state(CaseState.PO_CREATED, []) is None
-    assert step_for_state(CaseState.QC, list(POStepKind)) is None
+    assert step_for_state(CaseState.COMPLETED, list(POStepKind)) is None
 
 
 def test_the_deposit_is_the_total_times_the_percent_and_the_balance_the_rest() -> None:

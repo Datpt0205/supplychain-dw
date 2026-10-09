@@ -57,6 +57,13 @@ export const DOC_TYPE_LABEL: Record<DocumentType, string> = {
   bank_transfer_receipt: "Ủy nhiệm chi (UNC)",
   colour_revision_request: "Yêu cầu sửa mẫu màu",
   design_revision_request: "Yêu cầu sửa thiết kế bao bì",
+  production_schedule: "Lịch sản xuất của NCC",
+  qc_report: "Báo cáo QC",
+  packing_list: "Packing list",
+  bill_of_lading: "Vận đơn (B/L)",
+  arrival_notice: "Giấy báo hàng đến",
+  certificate_of_origin: "Giấy chứng nhận xuất xứ (C/O)",
+  rework_request: "Phiếu yêu cầu sửa hàng",
 };
 
 const DOC_TYPE_OPTIONS = (Object.keys(DOC_TYPE_LABEL) as DocumentType[]).map(

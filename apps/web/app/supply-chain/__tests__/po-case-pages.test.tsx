@@ -108,7 +108,14 @@ const SKU_RED = "55555555-5555-4555-8555-555555555555";
 const SKU_BLUE = "66666666-6666-4666-8666-666666666666";
 
 function poCaseDetail(overrides: Partial<POCaseDetail> = {}): POCaseDetail {
-  return { ...poCase(), lines: [], ...overrides };
+  return {
+    ...poCase(),
+    lines: [],
+    etd: null,
+    eta: null,
+    container_number: null,
+    ...overrides,
+  };
 }
 
 /** A case ĐẶT HÀNG opened: no PO number yet, the PIC and Category carried,

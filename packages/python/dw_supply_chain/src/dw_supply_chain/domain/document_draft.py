@@ -71,6 +71,8 @@ DRAFT_TEMPLATES: Mapping[DocumentType, tuple[str, str]] = {
     DocumentType.USER_MANUAL: ("supply_chain.user_manual", "1.0.0"),
     DocumentType.COLOUR_REVISION_REQUEST: ("supply_chain.colour_revision_request", "1.0.0"),
     DocumentType.DESIGN_REVISION_REQUEST: ("supply_chain.design_revision_request", "1.0.0"),
+    # Step 14 (ticket ai-automation/17): QC failed by the numbers.
+    DocumentType.REWORK_REQUEST: ("supply_chain.rework_request", "1.0.0"),
 }
 
 _MAX_REASON = 1000

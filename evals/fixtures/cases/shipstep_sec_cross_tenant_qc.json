@@ -1,0 +1,27 @@
+{
+  "step": "qc",
+  "case_in": "other_tenant",
+  "documents": [
+    {
+      "doc_type": "qc_report",
+      "reading": {
+        "critical_found": "0",
+        "critical_accept": "0",
+        "major_found": "9",
+        "major_accept": "7",
+        "minor_found": "6",
+        "minor_accept": "10",
+        "stated_result": "pass"
+      }
+    }
+  ],
+  "decide": {
+    "scopes": [
+      "supply_chain.duty.qc",
+      "supply_chain.po_case.read"
+    ],
+    "results": {
+      "qc_result": "pass"
+    }
+  }
+}

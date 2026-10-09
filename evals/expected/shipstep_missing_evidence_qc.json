@@ -1,0 +1,11 @@
+{
+  "drafts": 0,
+  "proposed": false,
+  "findings": [
+    "source_missing"
+  ],
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "doc_type": "production_schedule",
+  "document_text": "LỊCH SẢN XUẤT - PO-2026-0101\nNgày lập: 01/10/2026\nMua nguyên liệu: 05/10/2026\nĐóng gói: 10/11/2026\n",
+  "model_reading": {
+    "issued_on": {
+      "value": "2026-10-01",
+      "quote": "Ngày lập: 01/10/2026"
+    },
+    "etd": {
+      "value": "2026-11-20",
+      "quote": "ETD: 20/11/2026"
+    },
+    "milestones": [
+      {
+        "name": {
+          "value": "Mua nguyên liệu",
+          "quote": "Mua nguyên liệu: 05/10/2026"
+        },
+        "planned_date": {
+          "value": "2026-10-05",
+          "quote": "Mua nguyên liệu: 05/10/2026"
+        }
+      },
+      {
+        "name": {
+          "value": "Đóng gói",
+          "quote": "Đóng gói: 10/11/2026"
+        },
+        "planned_date": {
+          "value": "2026-11-10",
+          "quote": "Đóng gói: 10/11/2026"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "drafts": 1,
+  "findings": [
+    "line_missing",
+    "qc_report_fails"
+  ],
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

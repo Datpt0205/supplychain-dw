@@ -228,6 +228,104 @@ class PackagingDesignReading(BaseModel):
     warnings: Cited = Cited()
 
 
+class MilestoneReading(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: Cited = Cited()
+    planned_date: Cited = Cited()
+    status: Cited = Cited()
+
+
+class ProductionScheduleReading(BaseModel):
+    """The supplier's production schedule (step 13, ticket ai-automation/17)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    issued_on: Cited = Cited()
+    etd: Cited = Cited()
+    milestones: list[MilestoneReading] = Field(default_factory=list, max_length=50)
+
+
+class QcReportReading(BaseModel):
+    """A QC inspection report (step 14): the lot, the sample, the AQL, the
+    defects found and the acceptance numbers, each as the report writes it.
+    The verdict a person records is QC's; the suggestion is code's, by the
+    numbers (`domain.qc_check`), never by the report's own word."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    inspected_on: Cited = Cited()
+    lot_size: Cited = Cited()
+    sample_size: Cited = Cited()
+    aql_major: Cited = Cited()
+    aql_minor: Cited = Cited()
+    critical_found: Cited = Cited()
+    major_found: Cited = Cited()
+    minor_found: Cited = Cited()
+    critical_accept: Cited = Cited()
+    major_accept: Cited = Cited()
+    minor_accept: Cited = Cited()
+    stated_result: Cited = Cited()
+    defects: list[Cited] = Field(default_factory=list, max_length=50)
+
+
+class PackingLineReading(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    sku_code: Cited = Cited()
+    description: Cited = Cited()
+    quantity: Cited = Cited()
+    cartons: Cited = Cited()
+
+
+class PackingListReading(BaseModel):
+    """The supplier's packing list (steps 14-16)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    invoice_number: Cited = Cited()
+    container_number: Cited = Cited()
+    total_cartons: Cited = Cited()
+    lines: list[PackingLineReading] = Field(default_factory=list, max_length=200)
+
+
+class BillOfLadingReading(BaseModel):
+    """The carrier's bill of lading (step 15)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    bl_number: Cited = Cited()
+    vessel: Cited = Cited()
+    port_of_loading: Cited = Cited()
+    port_of_discharge: Cited = Cited()
+    shipped_on: Cited = Cited()
+    eta: Cited = Cited()
+    container_numbers: list[Cited] = Field(default_factory=list, max_length=20)
+
+
+class ArrivalNoticeReading(BaseModel):
+    """The carrier's arrival notice (step 15)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    bl_number: Cited = Cited()
+    vessel: Cited = Cited()
+    port_of_discharge: Cited = Cited()
+    eta: Cited = Cited()
+    container_numbers: list[Cited] = Field(default_factory=list, max_length=20)
+
+
+class CertificateOfOriginReading(BaseModel):
+    """The certificate of origin (C/O) the customs file carries (step 15)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    certificate_number: Cited = Cited()
+    form: Cited = Cited()
+    issued_on: Cited = Cited()
+    origin_country: Cited = Cited()
+
+
 # ------------------------------------------------------------- specs --------
 
 
@@ -367,6 +465,75 @@ EXTRACTION_SPECS: Mapping[DocumentType, ExtractionSpec] = {
             reading=PackagingDesignReading,
             kinds={},
             reads_barcodes=True,
+        ),
+        ExtractionSpec(
+            doc_type=DocumentType.PRODUCTION_SCHEDULE,
+            prompt_id="supply_chain.extract_production_schedule",
+            prompt_version="1.0.0",
+            reading=ProductionScheduleReading,
+            kinds={
+                "issued_on": FieldKind.DATE,
+                "etd": FieldKind.DATE,
+                "planned_date": FieldKind.DATE,
+            },
+        ),
+        ExtractionSpec(
+            doc_type=DocumentType.QC_REPORT,
+            prompt_id="supply_chain.extract_qc_report",
+            prompt_version="1.0.0",
+            reading=QcReportReading,
+            kinds={
+                "inspected_on": FieldKind.DATE,
+                **dict.fromkeys(
+                    (
+                        "lot_size",
+                        "sample_size",
+                        "aql_major",
+                        "aql_minor",
+                        "critical_found",
+                        "major_found",
+                        "minor_found",
+                        "critical_accept",
+                        "major_accept",
+                        "minor_accept",
+                    ),
+                    FieldKind.NUMBER,
+                ),
+                "stated_result": FieldKind.CHOICE,
+            },
+            options={"stated_result": frozenset({"pass", "fail", "pending"})},
+        ),
+        ExtractionSpec(
+            doc_type=DocumentType.PACKING_LIST,
+            prompt_id="supply_chain.extract_packing_list",
+            prompt_version="1.0.0",
+            reading=PackingListReading,
+            kinds={
+                "total_cartons": FieldKind.NUMBER,
+                "quantity": FieldKind.NUMBER,
+                "cartons": FieldKind.NUMBER,
+            },
+        ),
+        ExtractionSpec(
+            doc_type=DocumentType.BILL_OF_LADING,
+            prompt_id="supply_chain.extract_bill_of_lading",
+            prompt_version="1.0.0",
+            reading=BillOfLadingReading,
+            kinds={"shipped_on": FieldKind.DATE, "eta": FieldKind.DATE},
+        ),
+        ExtractionSpec(
+            doc_type=DocumentType.ARRIVAL_NOTICE,
+            prompt_id="supply_chain.extract_arrival_notice",
+            prompt_version="1.0.0",
+            reading=ArrivalNoticeReading,
+            kinds={"eta": FieldKind.DATE},
+        ),
+        ExtractionSpec(
+            doc_type=DocumentType.CERTIFICATE_OF_ORIGIN,
+            prompt_id="supply_chain.extract_certificate_of_origin",
+            prompt_version="1.0.0",
+            reading=CertificateOfOriginReading,
+            kinds={"issued_on": FieldKind.DATE},
         ),
     )
 }

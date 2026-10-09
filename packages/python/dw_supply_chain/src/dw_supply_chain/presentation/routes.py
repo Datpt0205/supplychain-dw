@@ -13,7 +13,7 @@ import re
 import unicodedata
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal, Protocol, TypeVar
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -238,6 +238,10 @@ class POCaseLineView(BaseModel):
 
 class POCaseDetailView(POCaseView):
     lines: list[POCaseLineView]
+    # Steps 13-15 (ticket ai-automation/17): null until the step that learns it.
+    etd: date | None
+    eta: date | None
+    container_number: str | None
 
 
 def _detail_view(case: POCase) -> POCaseDetailView:
@@ -253,6 +257,9 @@ def _detail_view(case: POCase) -> POCaseDetailView:
                 )
                 for line in case.lines
             ],
+            "etd": case.shipping.etd,
+            "eta": case.shipping.eta,
+            "container_number": case.shipping.container_number,
         }
     )
 

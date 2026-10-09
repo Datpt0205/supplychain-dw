@@ -18,10 +18,11 @@ from typing import Any
 
 from dw_kernel.errors import ConflictError
 from dw_kernel.ids import TenantId, WorkspaceId
+from dw_kernel.pagination import CursorPosition, Page, PageRequest, build_page
 from dw_kernel.ports import FixedClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.domain.audit import AuditEvent
-from dw_supply_chain.application.ports import FollowUpRecord
+from dw_supply_chain.application.ports import FollowUpRecord, POCaseListFilter
 from dw_supply_chain.application.supplier_messages import (
     DraftSupplierMessage,
     DraftSupplierMessages,
@@ -47,11 +48,12 @@ from dw_supply_chain.testing.step_preparation import (
     InMemoryDocuments,
     InMemoryDrafts,
     InMemoryProfiles,
+    InMemoryReadings,
     InMemoryStepCases,
 )
 
 TEMPLATES = load_supply_chain_supplier_messages(
-    REPO_ROOT / "configs" / "policies" / "supply_chain_supplier_messages@1.1.0.yaml"
+    REPO_ROOT / "configs" / "policies" / "supply_chain_supplier_messages@1.2.0.yaml"
 )
 PLATFORM_POLICY = SupplyChainStepPreparation.model_validate(
     {
@@ -85,16 +87,40 @@ class LeakyCases(InMemoryStepCases):
 @dataclass
 class InMemoryPOCases:
     cases: dict[uuid.UUID, POCase] = field(default_factory=dict)
+    # An adapter that forgot RLS: the lane's and the drafter's own checks are
+    # what an eval case grades then.
+    leaky: bool = False
+
+    def _visible(self, context: AccessContext, case: POCase) -> bool:
+        return self.leaky or _sees(context, case.tenant_id.value, case.workspace_id.value)
 
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
         case = self.cases.get(case_id.value)
-        if case is None or not _sees(context, case.tenant_id.value, case.workspace_id.value):
+        if case is None or not self._visible(context, case):
             return None
         return case
 
     async def case_workspace(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
         case = await self.get(context, POCaseId(case_id))
         return None if case is None else case.workspace_id.value
+
+    async def list_page(
+        self, context: AccessContext, request: PageRequest, case_filter: POCaseListFilter
+    ) -> Page[POCase]:
+        found = sorted(
+            (
+                c
+                for c in self.cases.values()
+                if self._visible(context, c)
+                and (case_filter.state is None or c.state is case_filter.state)
+            ),
+            key=lambda c: c.id.value,
+        )
+        return build_page(
+            found[: request.fetch_limit],
+            request=request,
+            position_of=lambda c: CursorPosition(sort_value=NOW, tiebreaker=c.id.value),
+        )
 
 
 @dataclass
@@ -263,6 +289,7 @@ class MessageWorld:
     documents: InMemoryDocuments = field(default_factory=InMemoryDocuments)
     drafts: InMemoryDrafts = field(default_factory=InMemoryDrafts)
     profiles: InMemoryProfiles = field(default_factory=InMemoryProfiles)
+    readings: InMemoryReadings = field(default_factory=InMemoryReadings)
 
     def __post_init__(self) -> None:
         self.plans.plans[self.tenant_id] = "professional"
@@ -310,6 +337,8 @@ class MessageWorld:
             documents=self.documents,
             drafts=self.drafts,
             profiles=self.profiles,
+            po_listing=self.po_cases,
+            readings=self.readings,
         )
 
     def enable(self, *purposes: MessagePurpose) -> None:

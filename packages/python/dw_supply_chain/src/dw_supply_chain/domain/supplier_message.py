@@ -45,6 +45,9 @@ class MessagePurpose(StrEnum):
     # The approved revision request, sent to the supplier (ticket
     # ai-automation/09).
     SAMPLE_REVISION_REQUEST = "sample_revision_request"
+    # The weekly chase of a PO case in production (ticket ai-automation/17),
+    # from the supplier's own schedule.
+    PRODUCTION_PROGRESS = "production_progress"
 
 
 class MessageStatus(StrEnum):

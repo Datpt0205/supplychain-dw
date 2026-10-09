@@ -85,6 +85,12 @@
       "version": "1.1.0"
     },
     {
+      "checksum": "86da484446e6ac945f02c1efda0433026dfe53b95378f32dee92cc0af78a72e7",
+      "doc_type": "rework_request",
+      "template_id": "supply_chain.rework_request",
+      "version": "1.0.0"
+    },
+    {
       "checksum": "476590861c0b78147cd067f2dea0c2b4a4e391315e67318cba9c927b628959c5",
       "doc_type": "sample_evaluation",
       "template_id": "supply_chain.sample_evaluation",
@@ -115,12 +121,12 @@
       "version": "1.9.0"
     },
     {
-      "checksum": "b4b79c8f12cebcb442439d8eafc0a89e8f675fc41af17d5a3d4dabc2f02edf72",
+      "checksum": "8d99b5d0648eb9ce212a7707e9dfbaf3c5179962dd2371a4dccdea53f0a49920",
       "dataset_id": "supply_chain_preparation",
-      "version": "1.11.0"
+      "version": "1.12.0"
     }
   ],
-  "git_sha": "ee19c91da42a4a150698ba2a978416dbffec3dde",
+  "git_sha": "5fe17163767d3fe5c17d4a935f30b9c50c1c5a68",
   "knowledge_index_version": "2026-07-25.structure-1",
   "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
@@ -166,9 +172,9 @@
       "version": "1.0.0"
     },
     {
-      "checksum": "0052815484aee7e30f55d1e2660eb985cd71072476ca98485ebd7633f989bdda",
+      "checksum": "bda0966700b843a2327bd6750c26bad1e4a588d1528da91cd0b153128dbb79b7",
       "policy_id": "supply_chain_model_routes",
-      "version": "1.11.0"
+      "version": "1.12.0"
     },
     {
       "checksum": "fb57e4fe3e35213910345f6e33370f3c47b30bd270bced3e7172baf3567d45a5",
@@ -206,9 +212,9 @@
       "version": "1.0.0"
     },
     {
-      "checksum": "c025da44a16c294f09a12aa9c4fe477b92538a38bd84b0d8e39c4dababb116da",
+      "checksum": "6458812511fc2c91674e533a7f0d94ca9aa7cb4de03f20d0a4221844ff541ef9",
       "policy_id": "supply_chain_supplier_messages",
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "checksum": "6cd61b8265d8ce82fdd5047dbec29a09cf5ce6b705226bb97fc24b7e19bf3be5",
@@ -282,10 +288,42 @@
       "version": "1.1.0"
     },
     {
+      "checksum": "4e551ba9541d2b03b2ded16faa5422dcd1565b29845bdc853521ab7b92c325d3",
+      "prompt_id": "supply_chain.draft_supplier_message",
+      "skills": [
+        "supply_chain.supplier_email_style@^1.1.0"
+      ],
+      "version": "1.2.0"
+    },
+    {
+      "checksum": "0fec0a2f588077058f0157ae96f5a7e631417347c6e073d432f8240e279ad546",
+      "prompt_id": "supply_chain.extract_arrival_notice",
+      "skills": [
+        "supply_chain.customs_file@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
       "checksum": "80f1c2d9ae11c0288a07945fcf6cfe2a2fbadc14c99ed61eb40972fc038bf2d8",
       "prompt_id": "supply_chain.extract_bank_transfer_receipt",
       "skills": [
         "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "44277ac76de24769091c89675ed06b3a202623cb590935dd6ed524c1f11f64d7",
+      "prompt_id": "supply_chain.extract_bill_of_lading",
+      "skills": [
+        "supply_chain.customs_file@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "ce85ee454c7289a4cc04d085fe83d1b14d0199c22e10e7cf56d079dec4e0bec0",
+      "prompt_id": "supply_chain.extract_certificate_of_origin",
+      "skills": [
+        "supply_chain.customs_file@^1.1.0"
       ],
       "version": "1.0.0"
     },
@@ -306,6 +344,14 @@
       "version": "1.0.0"
     },
     {
+      "checksum": "6a802e0098dbe4eaae6ad9b67fe56ea946820a9c960d221c80b96f0c03a6a78a",
+      "prompt_id": "supply_chain.extract_packing_list",
+      "skills": [
+        "supply_chain.customs_file@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
       "checksum": "8257241e226ba44472e76249ce536591822bec26eed2bfbc354b241ff96c26e2",
       "prompt_id": "supply_chain.extract_product_profile_bm04",
       "skills": [],
@@ -320,6 +366,14 @@
       "version": "1.1.0"
     },
     {
+      "checksum": "1869787c36aeeb565c98d557cc0acc181930c25d7785f49bb2de62570d2ec153",
+      "prompt_id": "supply_chain.extract_production_schedule",
+      "skills": [
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
       "checksum": "9f310aa469fa67988c274e8a0a55a941efc5c6d6cdc1e59442425043662cf1ec",
       "prompt_id": "supply_chain.extract_proforma_invoice",
       "skills": [
@@ -332,6 +386,14 @@
       "prompt_id": "supply_chain.extract_proposal_list",
       "skills": [
         "supply_chain.process_part_a@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "ebf374a516ed65a5e74499bbdb4e3b8347a3c0f473579f998e2b0df392c42299",
+      "prompt_id": "supply_chain.extract_qc_report",
+      "skills": [
+        "supply_chain.qc_aql@^1.1.0"
       ],
       "version": "1.0.0"
     },
@@ -437,6 +499,17 @@
       "version": "1.0.0"
     },
     {
+      "applies_to": [
+        "supply_chain.extract_packing_list",
+        "supply_chain.extract_bill_of_lading",
+        "supply_chain.extract_arrival_notice",
+        "supply_chain.extract_certificate_of_origin"
+      ],
+      "checksum": "3b584a7ce861c29f20a068f20fd963a50659f59d60d91ebc507d70ae45135ec5",
+      "skill_id": "supply_chain.customs_file",
+      "version": "1.1.0"
+    },
+    {
       "applies_to": [],
       "checksum": "1564526886c19de2fb4aa56e22b66f47cb149cdbd4ee3ccbf63e2419d2cd8d2f",
       "skill_id": "supply_chain.label_rules",
@@ -488,6 +561,14 @@
     },
     {
       "applies_to": [
+        "supply_chain.extract_qc_report"
+      ],
+      "checksum": "7d102733cf7e42c371bd8566be96ee1241fde7158352d0d8a3cfc9c202983405",
+      "skill_id": "supply_chain.qc_aql",
+      "version": "1.1.0"
+    },
+    {
+      "applies_to": [
         "supply_chain.extract_sample_evaluation"
       ],
       "checksum": "d1fdb3cbfe3de665c06f45cdbd0aab1b8877a1fbf3532a4d3ce37d47dec61398",
@@ -523,6 +604,19 @@
       "checksum": "a7f98237d118469bf5af88674648066406683f7f8427db1abe0b9f305728d3ee",
       "skill_id": "supply_chain.step_documents",
       "version": "1.1.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_supplier_confirmation_email",
+        "supply_chain.extract_supplier_quotation",
+        "supply_chain.extract_proforma_invoice",
+        "supply_chain.extract_commercial_invoice",
+        "supply_chain.extract_bank_transfer_receipt",
+        "supply_chain.extract_production_schedule"
+      ],
+      "checksum": "b25599a180e4862b1b8c4e0a2fb808057de7d356e40cb93455fc36ef57310114",
+      "skill_id": "supply_chain.step_documents",
+      "version": "1.2.0"
     },
     {
       "applies_to": [],

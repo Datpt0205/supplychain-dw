@@ -45,6 +45,13 @@ DOC_WORDS: Mapping[DocumentType, str] = {
     DocumentType.BANK_TRANSFER_RECEIPT: "UNC",
     DocumentType.DEPOSIT_DOCS: "hồ sơ đặt cọc",
     DocumentType.PAYMENT_DOCS: "hồ sơ thanh toán",
+    # Steps 13-15 (ticket ai-automation/17).
+    DocumentType.PRODUCTION_SCHEDULE: "lịch sản xuất",
+    DocumentType.QC_REPORT: "báo cáo QC",
+    DocumentType.PACKING_LIST: "packing list",
+    DocumentType.BILL_OF_LADING: "vận đơn",
+    DocumentType.ARRIVAL_NOTICE: "giấy báo hàng đến",
+    DocumentType.CERTIFICATE_OF_ORIGIN: "C/O",
 }
 
 

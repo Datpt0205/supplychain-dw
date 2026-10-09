@@ -1,0 +1,16 @@
+{
+  "step": "production",
+  "documents": [
+    {
+      "doc_type": "production_schedule",
+      "reading": {
+        "etd": "2026-11-20"
+      }
+    }
+  ],
+  "decide": {
+    "results": {
+      "etd": "2026-11-20"
+    }
+  }
+}

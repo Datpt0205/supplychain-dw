@@ -1,0 +1,12 @@
+{
+  "drafts": 1,
+  "proposed": false,
+  "findings": [
+    "qc_over_aql",
+    "qc_stated_differs"
+  ],
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

@@ -107,7 +107,14 @@ from dw_supply_chain.domain.payment_check import (
     line_findings,
     source_findings,
 )
-from dw_supply_chain.domain.po_case import CaseAction, POCase, POCaseId, apply_action
+from dw_supply_chain.domain.po_case import (
+    CaseAction,
+    POCase,
+    POCaseId,
+    Shipping,
+    apply_action,
+    container_number,
+)
 from dw_supply_chain.domain.po_step import (
     PO_STEPS,
     POStepKind,
@@ -117,6 +124,12 @@ from dw_supply_chain.domain.po_step import (
     step_for_state,
 )
 from dw_supply_chain.domain.purchase_order_draft import decimal_text
+from dw_supply_chain.domain.shipping_check import (
+    container_findings,
+    customs_findings,
+    etd_findings,
+    qc_suggestion,
+)
 from dw_supply_chain.domain.step_proposal import Finding
 from dw_supply_chain.step_preparation_policy import SupplyChainStepPreparation
 
@@ -172,11 +185,14 @@ class POStepOutcomesPort(Protocol):
         draft_id: uuid.UUID | None,
         payment: NewPOPayment | None,
         audits: Sequence[AuditEvent],
+        closed: NewDraftDecision | None,
+        shipping: Shipping | None,
     ) -> None:
         """The draft's confirmation and the document made from it (naming the
-        draft), the step (optimistic on the case's version), the payment, every
-        audit event: all or nothing. A draft already decided, or a case saved
-        meanwhile, is a `ConflictError`."""
+        draft), or the closing of a draft whose outcome was not taken; the
+        step (optimistic on the case's version), the shipping dates and
+        container it learnt, the payment, every audit event: all or nothing. A
+        draft already decided, or a case saved meanwhile, is a `ConflictError`."""
         ...
 
 
@@ -314,9 +330,12 @@ class Suggestion:
 
 
 class POStepRecipe(Protocol):
-    """How one PO step is prepared: its draft's values (none when it drafts no
-    paper), the amounts a draft must state as code computes them, what code
-    finds, and the suggestions beside its results."""
+    """How one PO step is prepared: whether it wants its draft now, its
+    draft's values (none when it drafts no paper), the amounts a draft must
+    state as code computes them, what code finds, and the suggestions beside
+    its results."""
+
+    def wants_draft(self, facts: POStepFacts) -> bool: ...
 
     def draft_values(self, facts: POStepFacts, today: date) -> dict[str, FieldInput]: ...
 
@@ -336,6 +355,17 @@ def _cited(source: SourceRead, name: str) -> FieldInput | None:
     if not isinstance(value, str) or not value.strip():
         return None
     return FieldInput(value=value, document_id=source.document_id, quote=source.quote(name))
+
+
+def _suggest(source: SourceRead, names: Mapping[str, str]) -> dict[str, Suggestion]:
+    """The reading beside each result: result name -> the source's field."""
+    out: dict[str, Suggestion] = {}
+    if source.extracted:
+        for result, name in names.items():
+            value = source.value(name)
+            if isinstance(value, str) and value:
+                out[result] = Suggestion(value, source.quote(name), source.document_id)
+    return out
 
 
 def _put(values: dict[str, FieldInput], name: str, value: str | None) -> None:
@@ -391,6 +421,9 @@ def _no_master(facts: POStepFacts) -> list[Finding]:
 class DepositRequestRecipe:
     """Step 11's request: the deposit is the order total times the PO's %."""
 
+    def wants_draft(self, facts: POStepFacts) -> bool:
+        return True
+
     def draft_values(self, facts: POStepFacts, today: date) -> dict[str, FieldInput]:
         pi = facts.source(DocumentType.PROFORMA_INVOICE)
         values: dict[str, FieldInput] = {
@@ -434,6 +467,9 @@ class FinalPaymentRequestRecipe:
     """Step 16's request: the balance is the order total less the deposit
     recorded as paid; the invoice is matched with the PO line by line."""
 
+    def wants_draft(self, facts: POStepFacts) -> bool:
+        return True
+
     def draft_values(self, facts: POStepFacts, today: date) -> dict[str, FieldInput]:
         invoice = facts.source(DocumentType.COMMERCIAL_INVOICE)
         values: dict[str, FieldInput] = {
@@ -473,6 +509,19 @@ class FinalPaymentRequestRecipe:
         found += currency_findings(invoice, facts.payment.currency)
         found += account_findings(invoice, facts.payment.master_digest)
         found += line_findings(facts.ordered(), invoice)
+        # The three-way match (ticket ai-automation/17): the packing list's
+        # quantities against the PO, and QC's report by its numbers.
+        packing = facts.source(DocumentType.PACKING_LIST)
+        found += source_findings(packing)
+        found += line_findings(facts.ordered(), packing, prices=False)
+        if qc_suggestion(facts.source(DocumentType.QC_REPORT)).verdict == "fail":
+            found.append(
+                Finding(
+                    "qc_report_fails",
+                    DocumentType.QC_REPORT.value,
+                    "Báo cáo QC mới nhất có số lỗi vượt AQL; kiểm trước khi thanh toán",
+                )
+            )
         return found
 
     def suggestions(self, facts: POStepFacts) -> dict[str, Suggestion]:
@@ -487,6 +536,9 @@ class PaymentConfirmationRecipe:
 
     due_words: str
     deposit: bool
+
+    def wants_draft(self, facts: POStepFacts) -> bool:
+        return True
 
     def draft_values(self, facts: POStepFacts, today: date) -> dict[str, FieldInput]:
         return {}
@@ -515,14 +567,117 @@ class PaymentConfirmationRecipe:
         return found
 
     def suggestions(self, facts: POStepFacts) -> dict[str, Suggestion]:
-        receipt = facts.source(DocumentType.BANK_TRANSFER_RECEIPT)
-        out: dict[str, Suggestion] = {}
-        if receipt.extracted:
-            for result, name in (("paid_amount", "amount"), ("paid_on", "transfer_date")):
-                value = receipt.value(name)
-                if isinstance(value, str) and value:
-                    out[result] = Suggestion(value, receipt.quote(name), receipt.document_id)
+        return _suggest(
+            facts.source(DocumentType.BANK_TRANSFER_RECEIPT),
+            {"paid_amount": "amount", "paid_on": "transfer_date"},
+        )
+
+
+@dataclass(frozen=True)
+class ProductionRecipe:
+    """Step 13 (ticket ai-automation/17): the supplier's schedule read, its
+    ETD held to the PO's expected delivery; Cung ứng sends the goods to QC."""
+
+    def wants_draft(self, facts: POStepFacts) -> bool:
+        return False
+
+    def draft_values(self, facts: POStepFacts, today: date) -> dict[str, FieldInput]:
+        return {}
+
+    def expected(self, facts: POStepFacts) -> dict[str, Decimal | None]:
+        return {}
+
+    def findings(self, facts: POStepFacts) -> list[Finding]:
+        schedule = facts.source(DocumentType.PRODUCTION_SCHEDULE)
+        return source_findings(schedule) + etd_findings(
+            schedule, facts.commercial.terms.expected_delivery_date
+        )
+
+    def suggestions(self, facts: POStepFacts) -> dict[str, Suggestion]:
+        return _suggest(facts.source(DocumentType.PRODUCTION_SCHEDULE), {"etd": "etd"})
+
+
+@dataclass(frozen=True)
+class QcRecipe:
+    """Step 14 (ticket ai-automation/17): QC's verdict is QC's; beside the
+    empty field, code's suggestion by the report's numbers, and a rework
+    request drafted when the numbers fail."""
+
+    def wants_draft(self, facts: POStepFacts) -> bool:
+        return qc_suggestion(facts.source(DocumentType.QC_REPORT)).verdict == "fail"
+
+    def draft_values(self, facts: POStepFacts, today: date) -> dict[str, FieldInput]:
+        report = facts.source(DocumentType.QC_REPORT)
+        values: dict[str, FieldInput] = {
+            "requested_on": FieldInput(value=today.isoformat()),
+            "supplier_name": FieldInput(value=facts.case.supplier_name),
+        }
+        _put(values, "po_reference", facts.case.po_reference)
+        summary = [
+            f"{words}: {report.value(found)} (Ac {report.value(accept)})"
+            for found, accept, words in (
+                ("critical_found", "critical_accept", "Lỗi nghiêm trọng"),
+                ("major_found", "major_accept", "Lỗi nặng"),
+                ("minor_found", "minor_accept", "Lỗi nhẹ"),
+            )
+            if report.value(found) is not None and report.value(accept) is not None
+        ]
+        if summary:
+            values["qc_summary"] = FieldInput(value="; ".join(summary))
+        defects = report.fields.get("defects")
+        items = [
+            {"defect": d.get("value"), "requirement": None}
+            for d in (defects if isinstance(defects, list) else [])
+            if isinstance(d, Mapping) and d.get("value")
+        ]
+        values["items"] = FieldInput(value=items)
+        return values
+
+    def expected(self, facts: POStepFacts) -> dict[str, Decimal | None]:
+        return {}
+
+    def findings(self, facts: POStepFacts) -> list[Finding]:
+        report = facts.source(DocumentType.QC_REPORT)
+        return source_findings(report) + list(qc_suggestion(report).findings)
+
+    def suggestions(self, facts: POStepFacts) -> dict[str, Suggestion]:
+        report = facts.source(DocumentType.QC_REPORT)
+        out = _suggest(
+            facts.source(DocumentType.PACKING_LIST), {"container_number": "container_number"}
+        )
+        verdict = qc_suggestion(report).verdict
+        if verdict is not None:
+            out["qc_result"] = Suggestion(verdict, None, report.document_id)
         return out
+
+
+@dataclass(frozen=True)
+class ArrivalRecipe:
+    """Step 15 (ticket ai-automation/17): proposed once the carrier's arrival
+    notice is read; the packing list against the PO by SKU, the containers
+    the papers name, and the customs file's completeness."""
+
+    def wants_draft(self, facts: POStepFacts) -> bool:
+        return False
+
+    def draft_values(self, facts: POStepFacts, today: date) -> dict[str, FieldInput]:
+        return {}
+
+    def expected(self, facts: POStepFacts) -> dict[str, Decimal | None]:
+        return {}
+
+    def findings(self, facts: POStepFacts) -> list[Finding]:
+        notice = facts.source(DocumentType.ARRIVAL_NOTICE)
+        packing = facts.source(DocumentType.PACKING_LIST)
+        found = source_findings(notice)
+        found += line_findings(facts.ordered(), packing, prices=False)
+        found += container_findings(packing, facts.source(DocumentType.BILL_OF_LADING), notice)
+        found += customs_findings(d.doc_type for d in facts.documents)
+        return found
+
+    def suggestions(self, facts: POStepFacts) -> dict[str, Suggestion]:
+        found = _suggest(facts.source(DocumentType.ARRIVAL_NOTICE), {"eta": "eta"})
+        return found or _suggest(facts.source(DocumentType.BILL_OF_LADING), {"eta": "eta"})
 
 
 # One recipe per step: the lane, the page and the approval read the same one.
@@ -531,6 +686,9 @@ RECIPES: Mapping[POStepKind, POStepRecipe] = {
     POStepKind.DEPOSIT_PAYMENT: PaymentConfirmationRecipe("số tiền đã chuyển", deposit=True),
     POStepKind.FINAL_PAYMENT_REQUEST: FinalPaymentRequestRecipe(),
     POStepKind.FINAL_PAYMENT: PaymentConfirmationRecipe("số tiền đã chuyển", deposit=False),
+    POStepKind.PRODUCTION: ProductionRecipe(),
+    POStepKind.QC: QcRecipe(),
+    POStepKind.ARRIVAL: ArrivalRecipe(),
 }
 assert set(RECIPES) == set(POStepKind), "every PO step has a recipe"
 
@@ -577,6 +735,7 @@ async def _po_in_workspace(
 _DRAFTED_TITLE: Mapping[DocumentType, str] = {
     DocumentType.DEPOSIT_DOCS: "AI đã soạn đề nghị đặt cọc",
     DocumentType.PAYMENT_DOCS: "AI đã soạn đề nghị thanh toán",
+    DocumentType.REWORK_REQUEST: "AI đã soạn yêu cầu làm lại (QC không đạt theo số)",
 }
 
 
@@ -654,6 +813,8 @@ class PreparePOSteps:
         if any(d.doc_type is spec.draft for d in existing):
             return 0
         facts = await self.sources.gather(context, case, spec)
+        if not RECIPES[spec.kind].wants_draft(facts):
+            return 0
         values = RECIPES[spec.kind].draft_values(facts, self.clock.now().date())
         draft = await self.prepare_draft.handle(
             context,
@@ -750,7 +911,8 @@ class GetPOStepProposal:
             draft=draft,
             findings=tuple(findings),
             results=results,
-            proposed=not findings and (spec.draft is None or draft is not None),
+            proposed=not findings
+            and (spec.draft is None or spec.draft_optional or draft is not None),
             can_approve=blocked is None,
             blocked=blocked,
             missing_paper=missing_paper,
@@ -766,16 +928,17 @@ class GetPOStepProposal:
         duties = await resolve_action_duties(
             context, self.policy_override_repo, self.platform_default_duties
         )
-        if spec.draft is not None and draft is None:
+        if spec.draft is not None and not spec.draft_optional and draft is None:
             return "Chưa có bản nháp: hệ thống soạn trong ít phút"
-        if draft is not None and draft.status is not DraftStatus.OPEN:
+        if draft is not None and not spec.draft_optional and draft.status is not DraftStatus.OPEN:
             return "Bản nháp này đã được quyết"
         if missing_paper is not None:
             return "Bước này cần chứng từ của công ty trên hồ sơ trước khi duyệt"
-        if not await allows(
-            self.authz, context, duty_scope(duties.duty_for(spec.action)), "po_case"
-        ):
-            return "Duyệt bước này cần duty của bước"
+        for action in spec.actions:
+            if not await allows(
+                self.authz, context, duty_scope(duties.duty_for(action)), "po_case"
+            ):
+                return "Duyệt bước này cần duty của bước"
         if spec.writes_prices and not await allows(
             self.authz, context, COMMERCIAL_WRITE, "po_case"
         ):
@@ -790,9 +953,13 @@ def _result_view(field_: ResultField, suggestion: Suggestion | None, visible: bo
 
 
 async def _missing_paper(
-    papers: POStepPaperGatePort, context: AccessContext, spec: POStepSpec, facts: POStepFacts
+    papers: POStepPaperGatePort,
+    context: AccessContext,
+    spec: POStepSpec,
+    facts: POStepFacts,
+    action: CaseAction | None = None,
 ) -> DocumentType | None:
-    paper = await papers.paper_for(context, spec.action)
+    paper = await papers.paper_for(context, action or spec.action)
     if paper is None or paper is spec.draft:
         return None
     if facts.newest(paper) is not None:
@@ -801,6 +968,25 @@ async def _missing_paper(
 
 
 # --------------------------------------------------------------- approval --
+
+
+def _draft_serves(spec: POStepSpec, action: CaseAction) -> bool:
+    """Whether the step's paper belongs to the outcome taken: a rework request
+    to a fail, every other step's paper to its one action."""
+    if spec.draft is DocumentType.REWORK_REQUEST:
+        return action is CaseAction.FAIL_QC
+    return True
+
+
+def _shipping(typed: Mapping[str, Any]) -> Shipping | None:
+    shipping = Shipping(
+        etd=typed.get("etd"),
+        eta=typed.get("eta"),
+        container_number=typed.get("container_number")
+        if typed.get("qc_result") in (None, "pass")
+        else None,
+    )
+    return None if shipping == Shipping() else shipping
 
 
 def _typed_results(spec: POStepSpec, typed: Mapping[str, str]) -> dict[str, Any]:
@@ -829,6 +1015,31 @@ def _typed_results(spec: POStepSpec, typed: Mapping[str, str]) -> dict[str, Any]
                     out[result.name] = date.fromisoformat(raw)
                 except ValueError as exc:
                     raise DomainError("ngày không hợp lệ", details={"field": result.name}) from exc
+            case ResultKind.CHOICE:
+                if raw not in result.options:
+                    raise DomainError(
+                        f"{result.label.lower()} phải là một trong các lựa chọn của bước",
+                        details={"field": result.name, "choices": list(result.options)},
+                    )
+                out[result.name] = raw
+            case ResultKind.TEXT:
+                if len(raw) > 2000:
+                    raise DomainError("tối đa 2000 ký tự", details={"field": result.name})
+                out[result.name] = raw
+    # A result required only for one outcome (a reason for a fail).
+    if spec.outcome_field is not None:
+        chosen = out.get(spec.outcome_field)
+        for result in spec.results:
+            if (
+                result.required_for is not None
+                and result.required_for == chosen
+                and result.name not in out
+            ):
+                raise DomainError(
+                    f"cần nhập {result.label.lower()}", details={"field": result.name}
+                )
+    if "container_number" in out:
+        out["container_number"] = container_number(out["container_number"])
     return out
 
 
@@ -841,26 +1052,48 @@ _PAYMENT_PAPER: Mapping[PaymentKind, DocumentType] = {
     PaymentKind.DEPOSIT: DocumentType.DEPOSIT_DOCS,
     PaymentKind.FINAL: DocumentType.PAYMENT_DOCS,
 }
-_NEXT_DUTY_NOTICE: Mapping[POStepKind, tuple[CaseDuty, str, str]] = {
-    POStepKind.DEPOSIT_REQUEST: (
+# Who is told once a step is taken, by the step: the next duty, without an
+# amount.
+_NEXT_DUTY_NOTICE: Mapping[CaseAction, tuple[CaseDuty, str, str]] = {
+    CaseAction.REQUEST_DEPOSIT: (
         CaseDuty.FINANCE,
         "Đề nghị đặt cọc chờ Kế toán chi",
         "Cung ứng đã duyệt đề nghị đặt cọc; chi ở ngân hàng, tải UNC lên hồ sơ rồi xác nhận.",
     ),
-    POStepKind.FINAL_PAYMENT_REQUEST: (
+    CaseAction.REQUEST_FINAL_PAYMENT: (
         CaseDuty.FINANCE,
         "Đề nghị thanh toán chờ Kế toán chi",
         "Cung ứng đã duyệt đề nghị thanh toán; chi ở ngân hàng, tải UNC lên hồ sơ rồi xác nhận.",
     ),
-    POStepKind.DEPOSIT_PAYMENT: (
+    CaseAction.CONFIRM_DEPOSIT: (
         CaseDuty.ORDERING,
         "Kế toán đã xác nhận đặt cọc",
         "Đã đặt cọc cho nhà cung cấp; hồ sơ sang bước tiếp theo.",
     ),
-    POStepKind.FINAL_PAYMENT: (
+    CaseAction.CONFIRM_PAYMENT: (
         CaseDuty.ORDERING,
         "Kế toán đã xác nhận thanh toán",
         "Đã thanh toán cho nhà cung cấp; hồ sơ sang nhận hàng vào kho.",
+    ),
+    CaseAction.SEND_TO_QC: (
+        CaseDuty.QC,
+        "Hàng chờ QC kiểm",
+        "Cung ứng đã chuyển hồ sơ sang kiểm hàng; tải báo cáo QC lên hồ sơ rồi kết luận.",
+    ),
+    CaseAction.PASS_QC: (
+        CaseDuty.LOGISTICS,
+        "QC đạt, hàng chờ vận chuyển",
+        "QC đã kết luận đạt; theo dõi vận đơn và giấy báo hàng đến trên hồ sơ PO.",
+    ),
+    CaseAction.FAIL_QC: (
+        CaseDuty.ORDERING,
+        "QC không đạt, cần làm lại",
+        "QC đã kết luận không đạt; yêu cầu làm lại có trên hồ sơ PO để gửi nhà cung cấp.",
+    ),
+    CaseAction.ARRIVE_AT_PORT: (
+        CaseDuty.ORDERING,
+        "Hàng đã về cảng",
+        "Logistics đã xác nhận hàng về cảng; bước tiếp theo là đề nghị thanh toán.",
     ),
 }
 
@@ -895,12 +1128,14 @@ class ApprovePOStep:
         results: Mapping[str, str],
     ) -> POCase:
         spec = PO_STEPS[kind]
+        typed = _typed_results(spec, results)
+        action = spec.action_for(typed)
         duties = await resolve_action_duties(
             context, self.policy_override_repo, self.platform_default_duties
         )
         await self.authz.require(
             context=context,
-            action=duty_scope(duties.duty_for(spec.action)),
+            action=duty_scope(duties.duty_for(action)),
             resource_type="po_case",
             resource_id=str(case_id),
         )
@@ -922,26 +1157,39 @@ class ApprovePOStep:
                 "hồ sơ đã sang bước khác; mở lại để xem bước hiện tại",
                 details={"case_id": str(case_id), "state": case.state.value},
             )
-        typed = _typed_results(spec, results)
         facts = await self.sources.gather(context, case, spec)
         draft = await self._draft(context, spec, case, facts, draft_id, content_sha256)
-        missing = await _missing_paper(self.papers, context, spec, facts)
+        missing = await _missing_paper(self.papers, context, spec, facts, action)
         if missing is not None:
             raise ConflictError(
-                f"{spec.action.value} cần {missing.value} trên hồ sơ này trước",
+                f"{action.value} cần {missing.value} trên hồ sơ này trước",
                 details={"case_id": str(case_id), "missing_document_type": missing.value},
             )
         payment = self._payment(spec, case, facts, typed)
         before = case.state
-        apply_action(case, action=spec.action, reason=None)
-        document, confirmation = await self._document(context, case, draft)
+        apply_action(case, action=action, reason=typed.get("reason"))
+        # The paper of the outcome taken becomes the case's; one drafted for
+        # an outcome not taken (a rework request when QC passed) is closed.
+        taken = draft if draft is not None and _draft_serves(spec, action) else None
+        document, confirmation = await self._document(context, case, taken)
+        closed = (
+            None
+            if draft is None or taken is not None
+            else NewDraftDecision(
+                id=self.ids.new_uuid(),
+                draft_id=draft.id,
+                decision=DraftDecision.REJECTED,
+                reason=f"Không dùng: bước đã đi theo {action.value}",
+            )
+        )
+        shipping = _shipping(typed)
         audits = [
             po_case_audit(
                 context,
                 self.ids,
                 self.clock,
                 case.id,
-                spec.action.value,
+                action.value,
                 {
                     "from_state": before.value,
                     "to_state": case.state.value,
@@ -949,10 +1197,17 @@ class ApprovePOStep:
                     "step": kind.value,
                     "draft_id": None if draft is None else str(draft.id),
                     "document_id": None if document is None else str(document.id),
+                    **({"reason": typed["reason"]} if "reason" in typed else {}),
+                    **(
+                        {"container_number": shipping.container_number}
+                        if shipping is not None and shipping.container_number
+                        else {}
+                    ),
                 },
             )
         ]
-        if draft is not None and document is not None:
+        if taken is not None and document is not None:
+            draft = taken
             audits += [
                 self._event(
                     context,
@@ -992,17 +1247,19 @@ class ApprovePOStep:
             case=case,
             confirmation=confirmation,
             document=document,
-            draft_id=None if draft is None else draft.id,
+            draft_id=None if taken is None else taken.id,
             payment=payment,
             audits=audits,
+            closed=closed,
+            shipping=shipping,
         )
-        duty, title, body = _NEXT_DUTY_NOTICE[kind]
+        duty, title, body = _NEXT_DUTY_NOTICE[action]
         await notify_duty_holders(
             context,
             holders=self.holders,
             notifier=self.notifier,
             duty=duty,
-            source_key=f"supply_chain.po_step:{case.id}:{kind.value}",
+            source_key=f"supply_chain.po_step:{case.id}:{action.value}:{case.version}",
             title=f"{title}: {case.supplier_name}",
             body=body,
             link=po_case_link(case.id.value),
@@ -1021,6 +1278,8 @@ class ApprovePOStep:
         if spec.draft is None:
             if draft_id is not None:
                 raise DomainError("bước này không có bản nháp", details={"draft_id": str(draft_id)})
+            return None
+        if draft_id is None and spec.draft_optional:
             return None
         if draft_id is None or content_sha256 is None:
             raise DomainError("duyệt bước này cần bản nháp đã xem", details={"field": "draft_id"})
@@ -1041,7 +1300,7 @@ class ApprovePOStep:
         missing = [
             name
             for name in ("currency", "amount")
-            if (draft.fields.get(name) or {}).get("value") in (None, "")
+            if spec.writes_prices and (draft.fields.get(name) or {}).get("value") in (None, "")
         ]
         if differ or missing:
             raise DomainError(

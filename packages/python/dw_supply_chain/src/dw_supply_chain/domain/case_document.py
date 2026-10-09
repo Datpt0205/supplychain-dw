@@ -75,6 +75,17 @@ class DocumentType(StrEnum):
     # requests code drafts for Cung ứng to send the supplier.
     COLOUR_REVISION_REQUEST = "colour_revision_request"
     DESIGN_REVISION_REQUEST = "design_revision_request"
+    # Steps 13-15 (ticket ai-automation/17): the supplier's production
+    # schedule, QC report, packing list, bill of lading, the carrier's arrival
+    # notice and the certificate of origin, read by the extraction lane; and
+    # the rework request code drafts when QC fails.
+    PRODUCTION_SCHEDULE = "production_schedule"
+    QC_REPORT = "qc_report"
+    PACKING_LIST = "packing_list"
+    BILL_OF_LADING = "bill_of_lading"
+    ARRIVAL_NOTICE = "arrival_notice"
+    CERTIFICATE_OF_ORIGIN = "certificate_of_origin"
+    REWORK_REQUEST = "rework_request"
 
 
 # MKT's papers (ADR 0028, E17): what `supply_chain.packaging_document.write`

@@ -58,6 +58,10 @@ class POStepResultView(BaseModel):
     kind: ResultKind
     label: str
     required: bool
+    # A choice's options (QC's verdict); empty for any other kind.
+    options: list[str]
+    # Required only when the outcome is this choice (a reason for a fail).
+    required_for: str | None
     # AI's reading beside the empty field; null: none.
     suggestion: POStepSuggestionView | None
     # The suggestion is an amount the caller may not read.
@@ -112,6 +116,8 @@ def _view(found: POStepProposal) -> POStepProposalView:
                 kind=r.field.kind,
                 label=r.field.label,
                 required=r.field.required,
+                options=list(r.field.options),
+                required_for=r.field.required_for,
                 suggestion=None
                 if r.suggestion is None
                 else POStepSuggestionView(

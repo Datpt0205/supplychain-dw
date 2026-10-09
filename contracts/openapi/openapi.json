@@ -2233,7 +2233,14 @@
           "commercial_invoice",
           "bank_transfer_receipt",
           "colour_revision_request",
-          "design_revision_request"
+          "design_revision_request",
+          "production_schedule",
+          "qc_report",
+          "packing_list",
+          "bill_of_lading",
+          "arrival_notice",
+          "certificate_of_origin",
+          "rework_request"
         ],
         "title": "DocumentType",
         "type": "string"
@@ -3983,7 +3990,8 @@
           "sample_request",
           "supplier_reminder",
           "supplier_confirmation",
-          "sample_revision_request"
+          "sample_revision_request",
+          "production_progress"
         ],
         "title": "MessagePurpose",
         "type": "string"
@@ -4492,6 +4500,17 @@
             ],
             "title": "Category"
           },
+          "container_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Number"
+          },
           "created_at": {
             "anyOf": [
               {
@@ -4503,6 +4522,30 @@
               }
             ],
             "title": "Created At"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          },
+          "etd": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etd"
           },
           "id": {
             "format": "uuid",
@@ -4588,7 +4631,10 @@
           "product_dev_case_id",
           "pic_user_id",
           "category",
-          "lines"
+          "lines",
+          "etd",
+          "eta",
+          "container_number"
         ],
         "title": "POCaseDetailView",
         "type": "object"
@@ -4984,7 +5030,10 @@
           "deposit_request",
           "deposit_payment",
           "final_payment_request",
-          "final_payment"
+          "final_payment",
+          "production",
+          "qc",
+          "arrival"
         ],
         "title": "POStepKind",
         "type": "string"
@@ -5140,6 +5189,13 @@
             "title": "Name",
             "type": "string"
           },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          },
           "redacted": {
             "title": "Redacted",
             "type": "boolean"
@@ -5147,6 +5203,17 @@
           "required": {
             "title": "Required",
             "type": "boolean"
+          },
+          "required_for": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required For"
           },
           "suggestion": {
             "anyOf": [
@@ -5164,6 +5231,8 @@
           "kind",
           "label",
           "required",
+          "options",
+          "required_for",
           "suggestion",
           "redacted"
         ],
@@ -7830,10 +7899,12 @@
         "type": "object"
       },
       "ResultKind": {
-        "description": "What a person types for a physical step: an amount (a price field,\nhidden without the commercial scope), a date.",
+        "description": "What a person types for a physical step: an amount (a price field,\nhidden without the commercial scope), a date, a choice among options\n(QC's verdict), a text (a container number, a reason).",
         "enum": [
           "amount",
-          "date"
+          "date",
+          "choice",
+          "text"
         ],
         "title": "ResultKind",
         "type": "string"

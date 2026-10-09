@@ -32,13 +32,21 @@ from typing import Any
 from dw_agent_runtime.ports import ModelOutputInvalidError
 from dw_evals.graders import GraderContext, GradeResult
 from dw_kernel.errors import InfrastructureError
+from dw_supply_chain.application.step_preparation import StoredReading
 from dw_supply_chain.application.supplier_messages import MessageRequest, follow_up_evidence
-from dw_supply_chain.domain.case_document import CaseKind
-from dw_supply_chain.domain.extraction import numbers_in, redact_identifiers
+from dw_supply_chain.domain.case_document import CaseKind, DocumentType
+from dw_supply_chain.domain.extraction import (
+    EXTRACTION_SPECS,
+    ExtractionStatus,
+    numbers_in,
+    redact_identifiers,
+)
 from dw_supply_chain.domain.follow_up import FollowUpKind
+from dw_supply_chain.domain.po_case import CaseState
 from dw_supply_chain.domain.product_development_case import ProductDevState
 from dw_supply_chain.domain.supplier_message import MessagePurpose, SupplierMessageWriting
 from dw_supply_chain.testing.extraction import RecordingGateway, ScriptedGateway
+from dw_supply_chain.testing.po_steps import POStepWorld
 from dw_supply_chain.testing.supplier_messages import MessageWorld
 
 _ERRORS: dict[str, Exception] = {
@@ -69,8 +77,59 @@ def _gateway(ctx: GraderContext, input_data: dict[str, Any], keys: dict[str, str
     return ScriptedGateway(ctx.prompt_registry, answer=answer)
 
 
+async def _run_progress(
+    ctx: GraderContext, input_data: dict[str, Any], world: MessageWorld
+) -> tuple[Any, MessageWorld]:
+    """The weekly chase of a PO case in production (ticket ai-automation/17),
+    run through the REAL lane: it lists the cases in production and cites the
+    newest schedule's reading (`schedule`: the stored fields), as the worker
+    does. `schedule` is cited by the scripted writing as `schedule`."""
+    spec = input_data.get("case", {})
+    lives = spec.get("in", "own")
+    steps = POStepWorld(tenant_id=world.tenant_id, workspace_id=world.workspace_id)
+    case = steps.add_case(
+        CaseState.PRODUCTION,
+        tenant=uuid.uuid4() if lives == "other_tenant" else None,
+        workspace=uuid.uuid4() if lives == "other_workspace" else None,
+    )
+    world.po_cases.cases[case.id.value] = case
+    world.po_cases.leaky = spec.get("leaky", False)
+    contact = input_data.get("contact")
+    if contact is not None:
+        world.add_contact(case.supplier_name, contact["name"], contact.get("email"))
+    keys: dict[str, str] = {}
+    schedule = input_data.get("schedule")
+    if schedule is not None:
+        paper = steps.add_document(case, DocumentType.PRODUCTION_SCHEDULE, status=None)
+        world.documents.rows.append(paper)
+        spec_ = EXTRACTION_SPECS[DocumentType.PRODUCTION_SCHEDULE]
+        world.readings.rows.append(
+            (
+                case.tenant_id.value,
+                case.workspace_id.value,
+                StoredReading(
+                    id=uuid.uuid4(),
+                    document_id=paper.id.value,
+                    sha256=paper.sha256,
+                    prompt_id=spec_.prompt_id,
+                    prompt_version=spec_.prompt_version,
+                    status=ExtractionStatus.EXTRACTED,
+                    fields=schedule,
+                    gaps=[],
+                ),
+            )
+        )
+        keys["schedule"] = f"doc:{paper.id}"
+    world.gateway = _gateway(ctx, input_data, keys)
+    world.enable(MessagePurpose.PRODUCTION_PROGRESS)
+    await world.lane().run()
+    return world.gateway, world
+
+
 async def _run(ctx: GraderContext, input_data: dict[str, Any]) -> tuple[Any, MessageWorld]:
     world = MessageWorld(gateway=None, model_profile=ctx.model_profile)
+    if input_data["purpose"] == MessagePurpose.PRODUCTION_PROGRESS.value:
+        return await _run_progress(ctx, input_data, world)
     spec = input_data.get("case", {})
     lives = spec.get("in", "own")
     supplier = spec.get("supplier_name", "Công ty Gia dụng Minh Phát")

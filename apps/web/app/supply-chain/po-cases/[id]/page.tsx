@@ -66,7 +66,7 @@ import {
 } from "../../../../components/supply-chain/sla-status-badge";
 import { SupplierEventTag } from "../../../../components/supply-chain/supplier-event-badge";
 import { useAuth } from "../../../../lib/auth/auth-context";
-import { formatDateTimeFull } from "../../../../lib/dates";
+import { formatDate, formatDateTimeFull } from "../../../../lib/dates";
 import { memberName, useWorkspaceMembers } from "../../../../lib/directory";
 import { errorMessage } from "../../../../lib/error-message";
 import { useOnline } from "../../../../lib/hooks/use-online";
@@ -632,6 +632,28 @@ function OrderCard({ poCase }: { poCase: POCaseDetail }) {
                 </Link>
               ) : (
                 "Mở trực tiếp, không qua giai đoạn 1"
+              ),
+            },
+            // Written by the step that learns each (ai-automation/17).
+            {
+              key: "etd",
+              label: "ETD",
+              children: formatDate(poCase.etd),
+            },
+            {
+              key: "eta",
+              label: "ETA",
+              children: formatDate(poCase.eta),
+            },
+            {
+              key: "container",
+              label: "Container",
+              children: poCase.container_number ? (
+                <Typography.Text code>
+                  {poCase.container_number}
+                </Typography.Text>
+              ) : (
+                "—"
               ),
             },
           ]}

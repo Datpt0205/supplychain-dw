@@ -1,0 +1,43 @@
+{
+  "step": "arrival",
+  "case_in": "other_tenant",
+  "documents": [
+    {
+      "doc_type": "purchase_order",
+      "status": null
+    },
+    {
+      "doc_type": "commercial_invoice",
+      "reading": {
+        "total": "4250.00"
+      }
+    },
+    {
+      "doc_type": "bill_of_lading",
+      "reading": {
+        "eta": "2026-12-01"
+      }
+    },
+    {
+      "doc_type": "certificate_of_origin",
+      "reading": {
+        "form": "E"
+      }
+    },
+    {
+      "doc_type": "arrival_notice",
+      "reading": {
+        "eta": "2026-12-02"
+      }
+    }
+  ],
+  "decide": {
+    "scopes": [
+      "supply_chain.duty.logistics",
+      "supply_chain.po_case.read"
+    ],
+    "results": {
+      "eta": "2026-12-02"
+    }
+  }
+}

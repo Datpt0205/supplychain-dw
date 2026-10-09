@@ -394,6 +394,30 @@ TEMPLATES: list[dict[str, Any]] = [
             _f("notes", "Ghi chú"),
         ],
     },
+    {
+        # Ticket ai-automation/17: QC failed by the numbers; one item per
+        # defect the report describes, the requirement a person writes.
+        "template_id": "supply_chain.rework_request",
+        "title": "YÊU CẦU LÀM LẠI SAU KIỂM HÀNG",
+        "doc_type": "rework_request",
+        "description": (
+            "Bước 14: QC không đạt; tóm tắt số lỗi so với số chấp nhận (do hệ thống chép từ"
+            " báo cáo QC) và từng lỗi cần nhà cung cấp làm lại."
+        ),
+        "fields": [
+            _f("po_reference", "Số PO", required=True),
+            _f("supplier_name", "Nhà cung cấp", required=True),
+            _f("requested_on", "Ngày yêu cầu", "date", required=True),
+            _f("qc_summary", "Kết quả kiểm (số lỗi / số chấp nhận)"),
+            _table(
+                "items",
+                "Lỗi cần làm lại",
+                [("defect", "Lỗi", "text"), ("requirement", "Yêu cầu", "text")],
+                required=True,
+            ),
+            _f("notes", "Ghi chú"),
+        ],
+    },
 ]
 
 VERSION = "1.0.0"

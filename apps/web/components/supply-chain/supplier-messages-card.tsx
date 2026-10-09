@@ -36,6 +36,7 @@ export const MESSAGE_PURPOSE_LABEL: Record<SupplierMessagePurpose, string> = {
   supplier_reminder: "Nhắc NCC cập nhật",
   supplier_confirmation: "Xác nhận sản phẩm",
   sample_revision_request: "Gửi phiếu yêu cầu chỉnh sửa mẫu",
+  production_progress: "Hỏi tiến độ sản xuất hằng tuần",
 };
 export const MESSAGE_STATUS_LABEL: Record<
   SupplierMessageStatus,

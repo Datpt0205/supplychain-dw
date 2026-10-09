@@ -440,6 +440,9 @@ def build_supplier_messages(
         documents=SqlCaseDocumentRepository(sessions),
         drafts=SqlDocumentDraftRepository(sessions),
         profiles=SqlProductProfileRepository(sessions),
+        # The weekly production chase (ticket ai-automation/17).
+        po_listing=SqlPOCaseRepository(sessions),
+        readings=SqlExtractionReadings(sessions),
     )
 
 

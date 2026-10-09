@@ -58,9 +58,14 @@ export const poCaseLineSchema = z.object({
 });
 export type POCaseLine = z.infer<typeof poCaseLineSchema>;
 
-/** Mirrors `POCaseDetailView`: the case and its planned lines. */
+/** Mirrors `POCaseDetailView`: the case and its planned lines; the ETD, ETA
+ * and container number are null until the step that learns each (steps 13-15,
+ * ai-automation/17). */
 export const poCaseDetailSchema = poCaseSchema.extend({
   lines: z.array(poCaseLineSchema),
+  etd: z.string().nullable(),
+  eta: z.string().nullable(),
+  container_number: z.string().nullable(),
 });
 export type POCaseDetail = z.infer<typeof poCaseDetailSchema>;
 
@@ -510,6 +515,15 @@ export const documentTypeSchema = z.enum([
   // Step 12's revision requests (ai-automation/16).
   "colour_revision_request",
   "design_revision_request",
+  // Steps 13-15's supplier and carrier papers, and the rework request
+  // drafted when QC's numbers fail (ai-automation/17).
+  "production_schedule",
+  "qc_report",
+  "packing_list",
+  "bill_of_lading",
+  "arrival_notice",
+  "certificate_of_origin",
+  "rework_request",
 ]);
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 
@@ -1213,6 +1227,8 @@ export const supplierMessagePurposeSchema = z.enum([
   "supplier_reminder",
   "supplier_confirmation",
   "sample_revision_request",
+  // The weekly chase of a PO case in production (ai-automation/17).
+  "production_progress",
 ]);
 export type SupplierMessagePurpose = z.infer<
   typeof supplierMessagePurposeSchema
@@ -1417,6 +1433,9 @@ export const poStepKindSchema = z.enum([
   "deposit_payment",
   "final_payment_request",
   "final_payment",
+  "production",
+  "qc",
+  "arrival",
 ]);
 export type POStepKind = z.infer<typeof poStepKindSchema>;
 
@@ -1438,9 +1457,13 @@ export const poStepProposalSchema = z.object({
   results: z.array(
     z.object({
       name: z.string(),
-      kind: z.enum(["amount", "date"]),
+      kind: z.enum(["amount", "date", "choice", "text"]),
       label: z.string(),
       required: z.boolean(),
+      // A choice's options (QC's verdict); empty for any other kind.
+      options: z.array(z.string()),
+      // Required only when the outcome is this option (a reason for a fail).
+      required_for: z.string().nullable(),
       suggestion: z
         .object({
           value: z.string().nullable(),

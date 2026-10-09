@@ -52,6 +52,7 @@ from dw_supply_chain.domain.po_case import (
     POCase,
     POCaseId,
     POCaseLine,
+    Shipping,
 )
 from dw_supply_chain.domain.sla_evaluation import SLA_CLOCK_STARTS_IN
 
@@ -78,6 +79,7 @@ def _case_from_row(
         pic_user_id=row.pic_user_id,
         category=row.category,
         lines=lines,
+        shipping=Shipping(etd=row.etd, eta=row.eta, container_number=row.container_number),
     )
 
 
@@ -351,6 +353,27 @@ class SqlPOCaseRepository:
                 .values(quantity=quantity)
             )
         await self._insert_pending_transitions(session, case)
+
+    async def write_shipping_in(
+        self, session: AsyncSession, case_id: POCaseId, shipping: Shipping
+    ) -> None:
+        """Steps 13-15's dates and container, in the caller's transaction (an
+        approved PO step, ticket ai-automation/17): only the ones given."""
+        values = {
+            name: value
+            for name, value in (
+                ("etd", shipping.etd),
+                ("eta", shipping.eta),
+                ("container_number", shipping.container_number),
+            )
+            if value is not None
+        }
+        if values:
+            await session.execute(
+                sa.update(tables.po_cases)
+                .where(tables.po_cases.c.id == case_id.value)
+                .values(**values)
+            )
 
     async def get_sla_clock_started_at(
         self, context: AccessContext, case_id: POCaseId

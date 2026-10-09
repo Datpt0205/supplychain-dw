@@ -22,6 +22,7 @@ from dw_platform.application.ports import PolicyOverridePort
 from dw_supply_chain.domain.supplier_message import MessagePurpose
 
 __all__ = [
+    "PURPOSES_ADDED_AFTER",
     "SUPPLIER_MESSAGES_POLICY_ID",
     "MessageTemplate",
     "SupplyChainSupplierMessages",
@@ -77,14 +78,35 @@ def load_supply_chain_supplier_messages(path: Path) -> SupplyChainSupplierMessag
     )
 
 
+# For each older version a tenant's templates may be stored at, the purposes
+# it could not have worded: such a document takes the platform's template for
+# those, and only those (the duty policies' `from_stored`, the same rule).
+PURPOSES_ADDED_AFTER: dict[str, frozenset[MessagePurpose]] = {
+    "1.0.0": frozenset(
+        {MessagePurpose.SAMPLE_REVISION_REQUEST, MessagePurpose.PRODUCTION_PROGRESS}
+    ),
+    "1.1.0": frozenset({MessagePurpose.PRODUCTION_PROGRESS}),
+}
+
+
 async def resolve_supplier_messages(
     context: AccessContext,
     policy_override_repo: PolicyOverridePort,
     platform_default: SupplyChainSupplierMessages,
 ) -> SupplyChainSupplierMessages:
     """The tenant's own templates if it set them (re-validated whole), the
-    platform's otherwise."""
+    platform's otherwise; a purpose added after the tenant's version is worded
+    by the platform's template."""
     override = await policy_override_repo.get(context, SUPPLIER_MESSAGES_POLICY_ID)
     if override is None:
         return platform_default
+    added = PURPOSES_ADDED_AFTER.get(str(override.get("policy_version")))
+    templates = override.get("templates")
+    if added and isinstance(templates, dict):
+        predated = {
+            p.value: platform_default.templates[p].model_dump(mode="json")
+            for p in added
+            if p.value not in templates
+        }
+        override = {**override, "templates": {**templates, **predated}}
     return SupplyChainSupplierMessages.model_validate(override)

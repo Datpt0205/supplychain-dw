@@ -1915,7 +1915,7 @@ export interface components {
          *     of steps 11 and 16 (ai-automation/15).
          * @enum {string}
          */
-        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report" | "supplier_quotation" | "bod_submission" | "proforma_invoice" | "commercial_invoice" | "bank_transfer_receipt" | "colour_revision_request" | "design_revision_request";
+        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report" | "supplier_quotation" | "bod_submission" | "proforma_invoice" | "commercial_invoice" | "bank_transfer_receipt" | "colour_revision_request" | "design_revision_request" | "production_schedule" | "qc_report" | "packing_list" | "bill_of_lading" | "arrival_notice" | "certificate_of_origin" | "rework_request";
         /** DraftColumnView */
         DraftColumnView: {
             kind: components["schemas"]["TemplateFieldKind"];
@@ -2265,7 +2265,7 @@ export interface components {
          * MessagePurpose
          * @enum {string}
          */
-        MessagePurpose: "sample_request" | "supplier_reminder" | "supplier_confirmation" | "sample_revision_request";
+        MessagePurpose: "sample_request" | "supplier_reminder" | "supplier_confirmation" | "sample_revision_request" | "production_progress";
         /**
          * MessageStatus
          * @enum {string}
@@ -2349,8 +2349,14 @@ export interface components {
         POCaseDetailView: {
             /** Category */
             category: string | null;
+            /** Container Number */
+            container_number: string | null;
             /** Created At */
             created_at: string | null;
+            /** Eta */
+            eta: string | null;
+            /** Etd */
+            etd: string | null;
             /**
              * Id
              * Format: uuid
@@ -2495,7 +2501,7 @@ export interface components {
          * POStepKind
          * @enum {string}
          */
-        POStepKind: "deposit_request" | "deposit_payment" | "final_payment_request" | "final_payment";
+        POStepKind: "deposit_request" | "deposit_payment" | "final_payment_request" | "final_payment" | "production" | "qc" | "arrival";
         /** POStepProposalView */
         POStepProposalView: {
             action: components["schemas"]["CaseAction"] | null;
@@ -2527,10 +2533,14 @@ export interface components {
             label: string;
             /** Name */
             name: string;
+            /** Options */
+            options: string[];
             /** Redacted */
             redacted: boolean;
             /** Required */
             required: boolean;
+            /** Required For */
+            required_for: string | null;
             suggestion: components["schemas"]["POStepSuggestionView"] | null;
         };
         /** POStepSuggestionView */
@@ -3352,10 +3362,11 @@ export interface components {
         /**
          * ResultKind
          * @description What a person types for a physical step: an amount (a price field,
-         *     hidden without the commercial scope), a date.
+         *     hidden without the commercial scope), a date, a choice among options
+         *     (QC's verdict), a text (a container number, a reason).
          * @enum {string}
          */
-        ResultKind: "amount" | "date";
+        ResultKind: "amount" | "date" | "choice" | "text";
         /**
          * ReviewRaise
          * @description What asking for the approval a case waits on (BGĐ's review at step 6,

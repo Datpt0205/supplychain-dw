@@ -11,10 +11,11 @@ later pieces — kept out so this stays reviewable on its own.
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
 from dw_kernel.errors import ConflictError, DomainError
@@ -93,6 +94,32 @@ class OrderKind(StrEnum):
     REORDER = "reorder"
 
 
+_CONTAINER = re.compile(r"^[A-Z]{4}[0-9]{7}$")
+
+
+def container_number(raw: str) -> str:
+    """An ISO 6346 container number (owner code, category, serial, check
+    digit: four letters and seven digits), spaces and dashes dropped, or a 422."""
+    code = re.sub(r"[\s-]", "", raw).upper()
+    if not _CONTAINER.fullmatch(code):
+        raise DomainError(
+            "số container phải là 4 chữ cái và 7 chữ số (ISO 6346)",
+            details={"field": "container_number"},
+        )
+    return code
+
+
+@dataclass(frozen=True, slots=True)
+class Shipping:
+    """Steps 13-15's dates and container (ticket ai-automation/17): the ETD the
+    schedule gave, the arrival at port, the container QC passed. Each written
+    by the step that learns it, a person typing it beside AI's reading."""
+
+    etd: date | None = None
+    eta: date | None = None
+    container_number: str | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class POCaseLine:
     """One planned line of the order: a SKU of the product and how many.
@@ -137,6 +164,8 @@ class POCase:
     category: str | None = None
     # Read back by `get` only; a listed case carries none.
     lines: tuple[POCaseLine, ...] = ()
+    # Steps 13-15's dates and container (ticket ai-automation/17).
+    shipping: Shipping = field(default_factory=Shipping)
     # Accumulates one (from, to, reason) triple per transition this in-memory
     # instance has made since the last drain — `reason` is the value the five
     # REASON_REQUIRED_ACTIONS methods below were already given and validated

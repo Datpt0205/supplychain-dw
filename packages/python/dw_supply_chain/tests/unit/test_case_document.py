@@ -58,6 +58,14 @@ def test_adr_0021_names_fourteen_document_types_step_12_three_and_ai_02_one() ->
         # Step 12's revision requests (ai-automation/16).
         "colour_revision_request",
         "design_revision_request",
+        # Steps 13-15's papers (ai-automation/17).
+        "production_schedule",
+        "qc_report",
+        "packing_list",
+        "bill_of_lading",
+        "arrival_notice",
+        "certificate_of_origin",
+        "rework_request",
     }
 
 

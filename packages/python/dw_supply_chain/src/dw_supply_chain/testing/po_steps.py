@@ -52,7 +52,14 @@ from dw_supply_chain.domain.commercial import (
     account_digest,
 )
 from dw_supply_chain.domain.extraction import ACCOUNTS_FIELD, EXTRACTION_SPECS, ExtractionStatus
-from dw_supply_chain.domain.po_case import CaseState, OrderKind, POCase, POCaseId, POCaseLine
+from dw_supply_chain.domain.po_case import (
+    CaseState,
+    OrderKind,
+    POCase,
+    POCaseId,
+    POCaseLine,
+    Shipping,
+)
 from dw_supply_chain.po_documents_policy import load_supply_chain_po_documents
 from dw_supply_chain.step_preparation_policy import SupplyChainStepPreparation
 from dw_supply_chain.testing.purchase_orders import (
@@ -135,6 +142,8 @@ class InMemoryPOStepOutcomes:
         draft_id: uuid.UUID | None,
         payment: NewPOPayment | None,
         audits: Sequence[AuditEvent],
+        closed: NewDraftDecision | None,
+        shipping: Shipping | None,
     ) -> None:
         stored = self.store.cases[case.id.value]
         if stored.version != case.version - 1:
@@ -143,6 +152,10 @@ class InMemoryPOStepOutcomes:
             if confirmation.draft_id in self.drafts.decisions:
                 raise ConflictError("this draft version already has a decision")
             self.drafts.record_decision(context, confirmation)
+        if closed is not None:
+            if closed.draft_id in self.drafts.decisions:
+                raise ConflictError("this draft version already has a decision")
+            self.drafts.record_decision(context, closed)
         if document is not None:
             version = 1 + sum(
                 1
@@ -169,6 +182,12 @@ class InMemoryPOStepOutcomes:
             )
         case.pop_pending_transitions()
         case.pop_pending_line_quantities()
+        if shipping is not None:
+            case.shipping = Shipping(
+                etd=shipping.etd or case.shipping.etd,
+                eta=shipping.eta or case.shipping.eta,
+                container_number=shipping.container_number or case.shipping.container_number,
+            )
         self.store.cases[case.id.value] = case
         if payment is not None:
             held = self.store.payments.setdefault(case.id.value, [])

@@ -5,6 +5,12 @@ export const OFFLINE_STEP = "Đang mất kết nối: duyệt lại khi có mạ
 export const FILL_RESULTS = "Nhập các ô kết quả rồi duyệt.";
 export const HIDDEN_SUGGESTION = "Gợi ý là số tiền: cần quyền xem giá";
 
+/** The words of a choice a person makes at a step (QC's verdict). */
+export const RESULT_OPTION_LABEL: Record<string, string> = {
+  pass: "Đạt",
+  fail: "Không đạt",
+};
+
 /** Each PO step's title and the words of its approval. */
 export const PO_STEP_LABEL: Record<
   POStepKind,
@@ -33,5 +39,22 @@ export const PO_STEP_LABEL: Record<
     approve: "Xác nhận đã thanh toán",
     confirm:
       "Khoản thanh toán với số tiền đã nhập được ghi vào hồ sơ và hồ sơ sang đã thanh toán.",
+  },
+  production: {
+    title: "Bước 13: sản xuất (AI đọc lịch của NCC)",
+    approve: "Chuyển sang QC",
+    confirm:
+      "Ngày ETD đã nhập được ghi vào hồ sơ và hồ sơ sang kiểm hàng (QC).",
+  },
+  qc: {
+    title: "Bước 14: kết quả QC (AI gợi ý theo số lỗi)",
+    approve: "Ghi kết quả QC",
+    confirm:
+      "Đạt: hồ sơ sang vận chuyển, số container được ghi. Không đạt: phiếu yêu cầu sửa hàng thành chứng từ của hồ sơ và hồ sơ sang sửa hàng.",
+  },
+  arrival: {
+    title: "Bước 15: hàng về cảng (AI kiểm bộ chứng từ)",
+    approve: "Xác nhận hàng đến cảng",
+    confirm: "Ngày ETA đã nhập được ghi vào hồ sơ và hồ sơ sang hàng đến cảng.",
   },
 };

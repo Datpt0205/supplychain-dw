@@ -1,9 +1,11 @@
 """An approved PO step, in one transaction (tickets ai-automation/15-18).
 
-The draft's confirmation, the document made from it (`origin = ai_prepared`,
-its `draft_id`), the step (`SqlPOCaseRepository.save_in`: optimistic on the
-version, the history row), the payment (`insert_payment`, what the commercial
-card writes) and every audit event. A confirmation of a version already
+The draft's confirmation (or, for the outcome not chosen, its closing
+decision), the document made from it (`origin = ai_prepared`, its
+`draft_id`), the step (`SqlPOCaseRepository.save_in`: optimistic on the
+version, the history row), the shipping dates and container it learnt, the
+payment (`insert_payment`, what the commercial card writes) and every audit
+event. A confirmation of a version already
 decided meets the decisions' UNIQUE, a case saved meanwhile its version guard:
 either refuses the whole.
 """
@@ -38,7 +40,7 @@ from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRep
 from dw_supply_chain.application.document_drafts import NewDraftDecision
 from dw_supply_chain.application.ports import NewCaseDocument
 from dw_supply_chain.domain.commercial import NewPOPayment
-from dw_supply_chain.domain.po_case import POCase
+from dw_supply_chain.domain.po_case import POCase, Shipping
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,8 @@ class SqlPOStepOutcomes:
         draft_id: uuid.UUID | None,
         payment: NewPOPayment | None,
         audits: Sequence[AuditEvent],
+        closed: NewDraftDecision | None,
+        shipping: Shipping | None,
     ) -> None:
         cases = SqlPOCaseRepository(self.session_factory)
         try:
@@ -67,7 +71,11 @@ class SqlPOStepOutcomes:
                     await insert_decision(session, context, confirmation)
                 if document is not None:
                     await insert_case_document(session, context, document, draft_id=draft_id)
+                if closed is not None:
+                    await insert_decision(session, context, closed)
                 await cases.save_in(session, case)
+                if shipping is not None:
+                    await cases.write_shipping_in(session, case.id, shipping)
                 if payment is not None:
                     await insert_payment(session, context, payment)
                 audit_log = SqlAuditRepository(session)
