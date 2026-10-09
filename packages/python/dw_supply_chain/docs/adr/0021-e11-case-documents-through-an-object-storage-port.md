@@ -180,3 +180,31 @@ dưới đây; ngoài chúng, nội dung file vẫn không đến mô hình.
    trích, chứng từ vẫn lưu.
 7. **Lưu:** `document_extractions` theo (id chứng từ, sha256), cùng workspace RLS, chỉ thêm;
    đổi phiên bản prompt thì trích lại thành dòng mới.
+
+## Sửa đổi 2026-10-09 (tạm, lát AI-02; cách đọc khác thiết kế ở điểm 2)
+
+Lát AI-02 làm lane trích xuất. Ba chỗ khác điểm 2 và 6 của sửa đổi trên, ghi lại để Đạt
+duyệt:
+
+1. **Văn bản đọc trong tiến trình, không nhờ mô hình chép.** PDF (lớp chữ, `pypdf`), DOCX
+   (`python-docx`), XLSX (`openpyxl`, giá trị đã lưu, không tính công thức) và EML (thân
+   và tệp đính kèm đọc được) do `dw_knowledge.adapters.office_parsers` đọc, không gọi mô
+   hình. Lý do: điểm 5 đòi che số tài khoản **trước** khi gọi; một file đưa nguyên cho
+   mô hình "chép nguyên văn" thì mô hình đã thấy số tài khoản trước khi code kịp che.
+2. **Ảnh, PDF quét (không có lớp chữ) và MSG là `unreadable`** ở lát này, không đoán.
+   Đường `input_image` của `dw_knowledge` gửi file thẳng tới gateway: không che được số
+   tài khoản trong ảnh, và không qua `DailyAllowance` lẫn sổ chi tiêu (điểm 6). Mở lại
+   khi có một route ảnh của `ModelGateway` ghi chi tiêu, và chỉ cho loại chứng từ không
+   mang tài khoản (không phải `deposit_docs`, `payment_docs`, báo giá). MSG cần một
+   parser OLE (`extract-msg`), chưa thêm phụ thuộc.
+3. **Hết lượt không ghi dòng.** Lỗi mô hình (sai schema) ghi `refused`, lỗi nhà cung cấp
+   sau các lần thử của gateway ghi `failed`: mỗi chứng từ một dòng theo phiên bản prompt,
+   không thử lại. Hết lượt trong ngày thì không có lượt gọi nào xảy ra và không ghi gì;
+   tick sau hỏi lại (một lần đọc, không phải một lượt gọi), nên chứng từ được đọc khi có
+   lượt, đúng "hết lượt thì không trích, chứng từ vẫn lưu".
+
+Kèm theo: hàng đợi là hàm definer `supply_chain.documents_awaiting_extraction` (chỉ id);
+mỗi chứng từ đọc dưới RLS của chính tenant và workspace của nó, và lane còn tự so tenant
+và workspace của dòng với hàng đợi (lớp thứ hai). FK ghép của `document_extractions` gồm
+cả `doc_type` và `sha256`, nên một dòng trích xuất không mang được loại hay hash khác
+chứng từ của nó.

@@ -696,3 +696,38 @@ async def test_commercial_tables_are_append_only_and_a_line_price_is_the_one_new
                 assert bool(granted) is held, column
     finally:
         await migrator.dispose()
+
+
+async def test_document_extractions_are_append_only_and_the_queue_is_executable(
+    db_urls: DatabaseUrls,
+) -> None:
+    """Migration e21dc10d13b5: `dw_app` reads and inserts readings and never
+    edits or deletes one; it may execute the definer function that hands the
+    extraction lane document ids, and PUBLIC may not."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+            for verb, held in (
+                ("SELECT", True),
+                ("INSERT", True),
+                ("UPDATE", False),
+                ("DELETE", False),
+                ("TRUNCATE", False),
+            ):
+                granted = await conn.scalar(
+                    sa.text(
+                        "SELECT has_table_privilege('dw_app',"
+                        " 'supply_chain.document_extractions', :v)"
+                    ),
+                    {"v": verb},
+                )
+                assert bool(granted) is held, verb
+            fn = "supply_chain.documents_awaiting_extraction(jsonb, integer)"
+            assert await conn.scalar(
+                sa.text("SELECT has_function_privilege('dw_app', :f, 'EXECUTE')"), {"f": fn}
+            )
+            assert not await conn.scalar(
+                sa.text("SELECT has_function_privilege('public', :f, 'EXECUTE')"), {"f": fn}
+            )
+    finally:
+        await migrator.dispose()

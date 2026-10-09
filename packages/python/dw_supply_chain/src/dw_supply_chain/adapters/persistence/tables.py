@@ -449,3 +449,28 @@ supplier_bank_accounts = sa.Table(
         "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )
+
+# A case document read into cited fields (e21dc10d13b5, ADR 0021 amended
+# 2026-10-09): one row per (document, prompt version), append-only.
+document_extractions = sa.Table(
+    "document_extractions",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("document_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("doc_type", sa.Text, nullable=False),
+    sa.Column("sha256", sa.Text, nullable=False),
+    sa.Column("prompt_id", sa.Text, nullable=False),
+    sa.Column("prompt_version", sa.Text, nullable=False),
+    sa.Column("model_profile", sa.Text, nullable=True),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("text", sa.Text, nullable=False),
+    sa.Column("fields", JSONB, nullable=False),
+    sa.Column("gaps", JSONB, nullable=False),
+    sa.Column("redactions", sa.Integer, nullable=False),
+    sa.Column("error", sa.Text, nullable=True),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)

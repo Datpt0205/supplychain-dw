@@ -50,6 +50,7 @@ export const DOC_TYPE_LABEL: Record<DocumentType, string> = {
   colour_sample: "Mẫu màu",
   packaging_design: "Thiết kế bao bì",
   pre_production_test_report: "Biên bản test trước SX",
+  supplier_quotation: "Báo giá, thông số NCC",
 };
 
 const DOC_TYPE_OPTIONS = (Object.keys(DOC_TYPE_LABEL) as DocumentType[]).map(

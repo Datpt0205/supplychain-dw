@@ -177,6 +177,12 @@ disallow_incomplete_defs = false
 module = ["asyncpg", "asyncpg.*"]
 ignore_missing_imports = true
 
+# openpyxl ships no type information; dw_knowledge's in-process XLSX reader
+# (supply-chain ADR 0021 amended 2026-10-09) is its one importer outside docgen.
+[[tool.mypy.overrides]]
+module = ["openpyxl", "openpyxl.*"]
+ignore_missing_imports = true
+
 # ---------------------------------------------------------------------------
 # pytest
 # ---------------------------------------------------------------------------

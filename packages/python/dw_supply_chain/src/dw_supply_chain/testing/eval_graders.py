@@ -109,6 +109,7 @@ from dw_supply_chain.sla_policy import (
     SupplyChainSLAPolicy,
     load_supply_chain_sla_policy,
 )
+from dw_supply_chain.testing.extraction_eval import grade_document_extraction
 from dw_supply_chain.testing.po_cases import InMemoryPOCases
 from dw_supply_chain.testing.product_cases import (
     InMemoryDirectory,
@@ -1011,4 +1012,5 @@ SUPPLY_CHAIN_GRADERS: dict[str, Grader] = {
     "supply_chain.approval_stamp": grade_approval_stamp,
     "supply_chain.chat_case_answer": grade_chat_case_answer,
     "supply_chain.brief_prompt_containment": grade_brief_prompt_containment,
+    "supply_chain.document_extraction": grade_document_extraction,
 }

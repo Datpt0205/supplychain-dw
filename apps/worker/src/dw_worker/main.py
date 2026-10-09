@@ -86,6 +86,7 @@ from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.channel_access import LinkedUserAccess
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_platform.retention_policy import load_retention_policy
+from dw_supply_chain.application.document_extraction import EXTRACTION_LANE
 from dw_supply_chain.application.follow_up_sweep import FOLLOW_UP_SWEEP_LANE
 from dw_worker.composition import (
     REPO_ROOT,
@@ -112,6 +113,8 @@ from dw_worker.consumers.retention import INTERVAL_SECONDS as RETENTION_INTERVAL
 from dw_worker.consumers.retention import RetentionPrunePort, build_retention_consumer
 from dw_worker.consumers.supply_chain import (
     PRODUCT_STRICT_APPROVAL_PREFIXES,
+    build_document_extraction,
+    build_document_extraction_consumer,
     build_document_orphan_sweep,
     build_follow_up_consumer,
     build_follow_up_retention,
@@ -415,6 +418,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     product_review_reconcile: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's case-document orphan sweep: a database and the bucket.
     document_orphans: RetentionPrunePort | None = None
+    # Supply Chain's document extraction lane: a database, the bucket and a model.
+    document_extraction: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's chat proposal drafts past their 30 minutes: a database.
     proposal_drafts_retention: RetentionPrunePort | None = None
     # Supply Chain's closed follow-ups past their tenant's term: a database.
@@ -581,6 +586,24 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
             document_orphans = build_document_orphan_sweep(
                 sessions, build_case_document_storage(settings), clock=clock
             )
+            # Reads case documents into cited fields (ADR 0021 amended
+            # 2026-10-09), through the same one-call gateway, plan allowance
+            # and spend ledger the chat commands use.
+            document_extraction = build_document_extraction_consumer(
+                build_document_extraction(
+                    sessions,
+                    build_case_document_storage(settings),
+                    gateway=build_one_call_gateway(
+                        build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                        sessions,
+                        allowance=PlanEntitlementService(DEFAULT_PLANS),
+                        clock=clock,
+                    ),
+                    model_profile=settings.model_profile,
+                    ids=ids,
+                    clock=clock,
+                )
+            )
         registry.register(
             "outbox",
             build_outbox_consumer(
@@ -640,6 +663,15 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
             "supply_chain_document_orphans",
             build_retention_consumer(document_orphans),
             interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
+
+    # Case documents read into cited fields (ticket ai-automation/02): ids
+    # from a definer function, each read under its own workspace's RLS.
+    if document_extraction is not None:
+        registry.register(
+            EXTRACTION_LANE,
+            document_extraction,
+            interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
         )
 
     # Chat proposal drafts nobody answered within DRAFT_TTL (zalo-channel

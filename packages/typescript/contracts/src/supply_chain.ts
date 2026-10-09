@@ -499,6 +499,8 @@ export const documentTypeSchema = z.enum([
   "colour_sample",
   "packaging_design",
   "pre_production_test_report",
+  // A supplier's quotation or specification (ai-automation/02).
+  "supplier_quotation",
 ]);
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 

@@ -1,0 +1,18 @@
+{
+  "doc_type": "sample_evaluation",
+  "document_text": "BIÊN BẢN ĐÁNH GIÁ MẪU\nNgày đánh giá: 05/10/2026\nNgười đánh giá: Phòng R&D\nTiêu chí: Độ dày đáy 2,0 mm - Không đạt\nKết luận: Không đạt\n",
+  "model_reading": {
+    "result": {
+      "value": "fail",
+      "quote": "Kết luận: Không đạt"
+    },
+    "evaluated_on": {
+      "value": "2026-10-05",
+      "quote": "Ngày đánh giá: 05/10/2026"
+    },
+    "evaluator": {
+      "value": "Ông Nam",
+      "quote": "Người đánh giá: Ông Nam"
+    }
+  }
+}

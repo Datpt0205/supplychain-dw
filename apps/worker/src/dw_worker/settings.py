@@ -60,6 +60,9 @@ class WorkerSettings(BaseSettings):
     supply_chain_product_review_reconcile_interval_seconds: float = Field(
         default=300.0, ge=10, le=86400
     )
+    # How often Supply Chain's extraction lane reads newly uploaded documents
+    # (ticket ai-automation/02). A minute: a supplier's file is read within it.
+    supply_chain_document_extraction_interval_seconds: float = Field(default=60.0, ge=10, le=86400)
     # How often the `channel_delivery` lane looks for notifications to send
     # through a linked chat (channels Z2). Thirty seconds: a Zalo
     # message trails its in-app notification by at most that.

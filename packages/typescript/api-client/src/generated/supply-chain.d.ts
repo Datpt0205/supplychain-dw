@@ -1287,11 +1287,12 @@ export interface components {
         };
         /**
          * DocumentType
-         * @description ADR 0021's fourteen document types, from process.md section 2, and the
-         *     three papers of step 12's sub-flow (slice PK).
+         * @description ADR 0021's fourteen document types, from process.md section 2, the
+         *     three papers of step 12's sub-flow (slice PK) and the supplier's quotation
+         *     (ai-automation/02).
          * @enum {string}
          */
-        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report";
+        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report" | "supplier_quotation";
         /**
          * FollowUpItemView
          * @description An open follow-up. `mine`: it was handed to the caller (a stamped scope

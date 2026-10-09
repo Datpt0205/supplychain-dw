@@ -1,0 +1,26 @@
+{
+  "doc_type": "supplier_confirmation_email",
+  "document_text": "From: sales@minhphat.example\nSubject: Xác nhận sản phẩm nồi inox 24cm\n\nChúng tôi xác nhận sản xuất nồi inox 24cm, số lượng 1.000 cái, đơn giá 2,50 USD, giao ngày 15/12/2026.\nVui lòng chuyển cọc vào STK 0071 000 123 456 tại Vietcombank.\n",
+  "model_reading": {
+    "confirmed": {
+      "value": "yes",
+      "quote": "Chúng tôi xác nhận sản xuất nồi inox 24cm"
+    },
+    "quantity": {
+      "value": "1.000",
+      "quote": "số lượng 1.000 cái"
+    },
+    "unit_price": {
+      "value": "2,30",
+      "quote": "đơn giá 2,30 USD"
+    },
+    "currency": {
+      "value": "USD",
+      "quote": "đơn giá 2,50 USD"
+    },
+    "delivery_date": {
+      "value": "2026-12-15",
+      "quote": "giao ngày 15/12/2026"
+    }
+  }
+}

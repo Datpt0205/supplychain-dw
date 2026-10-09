@@ -1,0 +1,31 @@
+{
+  "doc_type": "product_profile_bm04",
+  "document_text": "HỒ SƠ SẢN PHẨM BM04\nTên sản phẩm: Nồi inox 3 đáy 24cm\nChất liệu: Inox 304\nĐơn giá: 2,50 USD\nMOQ: 500\nĐiều kiện giao hàng: FOB\n",
+  "model_reading": {
+    "product_name": {
+      "value": "Nồi inox 3 đáy 24cm",
+      "quote": "Tên sản phẩm: Nồi inox 3 đáy 24cm"
+    },
+    "material": {
+      "value": "Inox 304",
+      "quote": "Chất liệu: Inox 304"
+    },
+    "unit_price": {
+      "value": "2,50",
+      "quote": "Đơn giá: 2,50 USD"
+    },
+    "moq": {
+      "value": "500",
+      "quote": "MOQ: 500"
+    },
+    "incoterm": {
+      "value": "FOB",
+      "quote": "Điều kiện giao hàng: FOB"
+    }
+  },
+  "queued_as": {
+    "tenant": "b",
+    "workspace": "w9"
+  },
+  "leaky": true
+}

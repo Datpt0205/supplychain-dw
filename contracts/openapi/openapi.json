@@ -1917,7 +1917,7 @@
         "type": "object"
       },
       "DocumentType": {
-        "description": "ADR 0021's fourteen document types, from process.md section 2, and the\nthree papers of step 12's sub-flow (slice PK).",
+        "description": "ADR 0021's fourteen document types, from process.md section 2, the\nthree papers of step 12's sub-flow (slice PK) and the supplier's quotation\n(ai-automation/02).",
         "enum": [
           "proposal_list",
           "product_image",
@@ -1935,7 +1935,8 @@
           "maquette",
           "colour_sample",
           "packaging_design",
-          "pre_production_test_report"
+          "pre_production_test_report",
+          "supplier_quotation"
         ],
         "title": "DocumentType",
         "type": "string"

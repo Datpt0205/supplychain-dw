@@ -15,8 +15,9 @@ What this module owns:
   bytes are untrusted input: an HTML page declared as a PDF is refused here,
   not discovered by whoever opens it.
 
-The file's content is never read beyond those first bytes and never reaches a
-model in this slice.
+The file's content is never read here beyond those first bytes. It reaches a
+model only through the extraction lane, as untrusted data, redacted first (ADR
+0021 amended 2026-10-09; `domain.extraction`).
 """
 
 from __future__ import annotations
@@ -33,8 +34,9 @@ from dw_kernel.errors import DomainError, UnsupportedMediaTypeError
 
 
 class DocumentType(StrEnum):
-    """ADR 0021's fourteen document types, from process.md section 2, and the
-    three papers of step 12's sub-flow (slice PK)."""
+    """ADR 0021's fourteen document types, from process.md section 2, the
+    three papers of step 12's sub-flow (slice PK) and the supplier's quotation
+    (ai-automation/02)."""
 
     PROPOSAL_LIST = "proposal_list"
     PRODUCT_IMAGE = "product_image"
@@ -55,6 +57,9 @@ class DocumentType(StrEnum):
     COLOUR_SAMPLE = "colour_sample"
     PACKAGING_DESIGN = "packaging_design"
     PRE_PRODUCTION_TEST_REPORT = "pre_production_test_report"
+    # A supplier's quotation or specification (ticket ai-automation/02): read
+    # by the extraction lane into cited fields.
+    SUPPLIER_QUOTATION = "supplier_quotation"
 
 
 class CaseKind(StrEnum):

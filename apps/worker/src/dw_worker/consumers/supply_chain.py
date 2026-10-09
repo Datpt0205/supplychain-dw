@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -56,6 +57,7 @@ from dw_agent_runtime.model.run_policy import load_worker_run_policy
 from dw_agent_runtime.ports import ModelGateway
 from dw_agent_runtime.registry import GraphRegistry, WorkerRegistry
 from dw_kernel.ports import IdGenerator, UtcClock
+from dw_knowledge.adapters.office_parsers import InProcessDocumentParser
 from dw_observability.telemetry import TelemetryPort
 from dw_platform.adapters.persistence.approval_queries import SqlPendingApprovalQuery
 from dw_platform.adapters.persistence.directory import SqlWorkspaceDirectory
@@ -70,6 +72,10 @@ from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_supply_chain.adapters.persistence.case_document_repository import (
     SqlCaseDocumentRepository,
+)
+from dw_supply_chain.adapters.persistence.document_extraction_repository import (
+    SqlDocumentExtractionRepository,
+    SqlExtractionQueue,
 )
 from dw_supply_chain.adapters.persistence.follow_up_repository import (
     SqlFollowUpRepository,
@@ -87,9 +93,14 @@ from dw_supply_chain.adapters.persistence.proposal_draft_repository import (
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
+from dw_supply_chain.adapters.storage.minio_case_documents import MinioCaseDocumentStorage
 from dw_supply_chain.application.approval_subject import ProductCaseApprovalSubject
 from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.daily_report import SendStageOneReport
+from dw_supply_chain.application.document_extraction import (
+    DocumentText,
+    ExtractDocuments,
+)
 from dw_supply_chain.application.document_orphan_sweep import SweepOrphanDocuments
 from dw_supply_chain.application.follow_up_retention import PruneClosedFollowUps
 from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
@@ -168,6 +179,62 @@ def build_stage_one_report_consumer(lane: SendStageOneReport) -> Callable[[], Aw
                 "stage-1 report: sent=%d failed_workspaces=%d",
                 outcome.sent,
                 outcome.failed_workspaces,
+            )
+
+    return consume
+
+
+@dataclass(frozen=True)
+class InProcessDocumentText:
+    """`DocumentTextPort` over `dw_knowledge`'s in-process readers: PDF text
+    layers, DOCX, XLSX, EML. Nothing here calls a model, so a file's
+    identifiers are masked before any model sees its text."""
+
+    parser: InProcessDocumentParser = field(default_factory=InProcessDocumentParser)
+
+    def supports(self, content_type: str) -> bool:
+        return self.parser.supports(content_type, "")
+
+    async def text_of(self, data: bytes, content_type: str, filename: str) -> DocumentText:
+        parsed = await self.parser.parse(data, content_type, filename)
+        return DocumentText(text=parsed.text, warnings=parsed.warnings)
+
+
+def build_document_extraction(
+    sessions: async_sessionmaker[AsyncSession],
+    storage: MinioCaseDocumentStorage,
+    *,
+    gateway: ModelGateway,
+    model_profile: str,
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> ExtractDocuments:
+    """The extraction lane (ticket ai-automation/02). `gateway` is the
+    process's one-call gateway (`ModelStack.one_call`): the plan's daily
+    allowance is checked before each call and the call's spend recorded."""
+    return ExtractDocuments(
+        queue=SqlExtractionQueue(sessions),
+        documents=SqlCaseDocumentRepository(sessions),
+        storage=storage,
+        text=InProcessDocumentText(),
+        gateway=gateway,
+        extractions=SqlDocumentExtractionRepository(sessions),
+        plans=SqlTenantPlans(sessions),
+        ids=ids,
+        clock=clock,
+        model_profile=model_profile,
+    )
+
+
+def build_document_extraction_consumer(lane: ExtractDocuments) -> Callable[[], Awaitable[None]]:
+    async def consume() -> None:
+        outcome = await lane.run_once()
+        if outcome.by_status or outcome.refused_before_reading or outcome.deferred:
+            logger.info(
+                "document extraction: %s refused_before_reading=%d deferred=%d",
+                {status.value: n for status, n in outcome.by_status.items()},
+                outcome.refused_before_reading,
+                outcome.deferred,
             )
 
     return consume
