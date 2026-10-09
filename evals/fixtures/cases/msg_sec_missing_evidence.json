@@ -1,0 +1,20 @@
+{
+  "purpose": "sample_request",
+  "case": {
+    "state": "sample_requested"
+  },
+  "model_writing": {
+    "paragraphs": [
+      {
+        "text": "Theo biên bản lần trước, mẫu đạt.",
+        "cites": [
+          "doc:other-case"
+        ]
+      },
+      {
+        "text": "NCC đã đồng ý giao trong tuần.",
+        "cites": []
+      }
+    ]
+  }
+}

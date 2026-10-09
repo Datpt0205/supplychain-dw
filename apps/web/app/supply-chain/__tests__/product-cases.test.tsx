@@ -92,6 +92,7 @@ vi.mock("../../../lib/session", () => ({
     // are about the rest of the page, so it stays loading.
     getProductProfile: () => new Promise(() => {}),
     listCaseDrafts: () => new Promise(() => {}),
+    listSupplierMessages: () => new Promise(() => {}),
     getStepProposal: () => new Promise(() => {}),
   }),
 }));

@@ -2,7 +2,8 @@
 ticket ai-automation/06).
 
 A task is one model-backed reading (`extract.<doc_type>`, one per
-`EXTRACTION_SPECS` entry). A task not routed runs on the process's own profile
+`EXTRACTION_SPECS` entry) or one model-written draft (`draft.<kind>`,
+`DRAFTING_TASKS`, tickets ai-automation/07-10). A task not routed runs on the process's own profile
 (`luna` for Elmich). A route to a profile in `ungated_profiles` is the
 deployment's choice; a route to any other profile (a Qwen, say) is refused when
 the policy loads unless that profile's LIVE run of the gate dataset passed the
@@ -11,8 +12,8 @@ security case failed and at least `gate.min_pass_rate` of the task's cases
 passed. The threshold has one owner, this policy; the result file holds scores,
 not a verdict.
 
-Platform-wide in 1.0.0 (`configs/policies/supply_chain_model_routes@1.0.0.yaml`),
-read by the worker that runs the extraction lane. A tenant override comes with a
+Platform-wide (`policy_files.MODEL_ROUTES_POLICY_FILE`), read by the worker
+that runs the extraction and drafting lanes. A tenant override comes with a
 tenant that asks for one: the gate is about the model, not the tenant.
 """
 
@@ -30,8 +31,10 @@ from dw_supply_chain.domain.case_document import DocumentType
 from dw_supply_chain.domain.extraction import EXTRACTION_SPECS
 
 __all__ = [
+    "DRAFTING_TASKS",
     "MODEL_ROUTES_POLICY_ID",
     "MODEL_TASKS",
+    "SUPPLIER_MESSAGE_TASK",
     "SupplyChainModelRoutes",
     "extraction_task",
     "load_supply_chain_model_routes",
@@ -44,8 +47,12 @@ def extraction_task(doc_type: DocumentType) -> str:
     return f"extract.{doc_type.value}"
 
 
+# The drafts a model writes, each graded by its own gate cases.
+SUPPLIER_MESSAGE_TASK = "draft.supplier_message"
+DRAFTING_TASKS = frozenset({SUPPLIER_MESSAGE_TASK})
+
 # Every model task of this context, by name: what a route and a gate case name.
-MODEL_TASKS = frozenset(extraction_task(t) for t in EXTRACTION_SPECS)
+MODEL_TASKS = frozenset(extraction_task(t) for t in EXTRACTION_SPECS) | DRAFTING_TASKS
 
 
 class ModelGate(BaseModel):
@@ -92,6 +99,12 @@ class SupplyChainModelRoutes(BaseModel):
                 "a task may run on an ungated profile only after it passed the model gate: "
                 + ", ".join(failing)
             )
+
+    def profile_for(self, task: str) -> str | None:
+        """The profile a drafting task runs on, or None for the process's own."""
+        if task not in DRAFTING_TASKS:
+            raise ValueError(f"{task} is not a drafting task")
+        return self.routes.get(task)
 
     def extraction_routes(self) -> dict[DocumentType, str]:
         """The profile of each extraction task that has a route."""

@@ -559,3 +559,49 @@ step_preparations = sa.Table(
         "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )
+
+# Messages to a supplier AI drafts and a person sends (1dc679326cb5, ADR 0029):
+# one row per trigger, append-only; "Đã gửi" is a row of its own.
+supplier_messages = sa.Table(
+    "supplier_messages",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("po_case_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("purpose", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("source_key", sa.Text, nullable=False),
+    sa.Column("supplier_name", sa.Text, nullable=True),
+    sa.Column("recipient_name", sa.Text, nullable=True),
+    sa.Column("recipient_email", sa.Text, nullable=True),
+    sa.Column("subject", sa.Text, nullable=False),
+    sa.Column("body", sa.Text, nullable=False),
+    sa.Column("attachments", JSONB, nullable=False),
+    sa.Column("citations", JSONB, nullable=False),
+    sa.Column("dropped", sa.Integer, nullable=False),
+    sa.Column("template_version", sa.Text, nullable=False),
+    sa.Column("prompt_id", sa.Text, nullable=False),
+    sa.Column("prompt_version", sa.Text, nullable=False),
+    sa.Column("model_profile", sa.Text, nullable=True),
+    sa.Column("content_sha256", sa.Text, nullable=False),
+    sa.Column("created_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+supplier_message_sends = sa.Table(
+    "supplier_message_sends",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("message_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("content_sha256", sa.Text, nullable=False),
+    sa.Column("sent_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "sent_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)

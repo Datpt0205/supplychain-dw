@@ -117,6 +117,7 @@ from dw_supply_chain.testing.product_cases import (
     InMemoryProductCases,
     Member,
 )
+from dw_supply_chain.testing.supplier_message_eval import grade_supplier_message
 from dw_supply_chain.workflows import advance_product_case_graph as review_graph
 from dw_supply_chain.workflows.brief_summary import PROMPT_ID as BRIEF_PROMPT_ID
 from dw_supply_chain.workflows.brief_summary import PROMPT_VERSION as BRIEF_PROMPT_VERSION
@@ -1015,4 +1016,5 @@ SUPPLY_CHAIN_GRADERS: dict[str, Grader] = {
     "supply_chain.brief_prompt_containment": grade_brief_prompt_containment,
     "supply_chain.document_extraction": grade_document_extraction,
     "supply_chain.step_preparation": grade_step_preparation,
+    "supply_chain.supplier_message": grade_supplier_message,
 }

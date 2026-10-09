@@ -67,12 +67,12 @@
       "version": "1.9.0"
     },
     {
-      "checksum": "fd80b3ba2c0edeba65a5e60abcf38d5e44ac1c8ca3eb09e4af6f0004bee30083",
+      "checksum": "b64ed2218d6691cb53c0ebae68850093d75a9915f8f40232c6120a26a8bb5a6c",
       "dataset_id": "supply_chain_preparation",
-      "version": "1.0.0"
+      "version": "1.1.0"
     }
   ],
-  "git_sha": "31237ccf61ad109cdb5b0862e196634911ebcfd2",
+  "git_sha": "a7a4f58c70df44f0d9bbaebd47c126197568450d",
   "knowledge_index_version": "2026-07-25.structure-1",
   "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
@@ -113,9 +113,9 @@
       "version": "1.2.0"
     },
     {
-      "checksum": "5484554b3b82d59acc4807074bfdb6adba24e65e526ccce4849d6ea09087831e",
+      "checksum": "46990a4ed59b5f0a39a8bd2550d6000d543e08bab1ac11c227a4d98b61ce3957",
       "policy_id": "supply_chain_model_routes",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "checksum": "78b88c0ac6d0a061aee75a4f762746c84ae8dba05565b9e5c1e593ad7b1ba5e0",
@@ -140,6 +140,11 @@
     {
       "checksum": "97560308dfe29f48f2a3d6a0fca7bf25c5844de160ef51d22abd01d01eda068c",
       "policy_id": "supply_chain_step_preparation",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "5932adf909fd0481d2ab60aa1f99b9105bf09a1d5f5d2cc4ee29fc7faa4d2a29",
+      "policy_id": "supply_chain_supplier_messages",
       "version": "1.0.0"
     },
     {
@@ -172,6 +177,14 @@
       "prompt_id": "supply_chain.delay_impact_analysis",
       "skills": [],
       "version": "1.1.0"
+    },
+    {
+      "checksum": "47fd8d44daf3db03598d891b547cb159a8e70c4f2ea4a678b06faf1fdcb435d4",
+      "prompt_id": "supply_chain.draft_supplier_message",
+      "skills": [
+        "supply_chain.supplier_email_style@^1.1.0"
+      ],
+      "version": "1.0.0"
     },
     {
       "checksum": "8257241e226ba44472e76249ce536591822bec26eed2bfbc354b241ff96c26e2",
@@ -304,6 +317,14 @@
       "checksum": "9bc530702c945604112de521bac3104f9ab6ba37eaa6de193ad48770555f027b",
       "skill_id": "supply_chain.supplier_email_style",
       "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.draft_supplier_message"
+      ],
+      "checksum": "f5be0c068e1d169f7a83d9c990d3d32a7e9194cd1453599c932760b1f205a48b",
+      "skill_id": "supply_chain.supplier_email_style",
+      "version": "1.1.0"
     }
   ],
   "tool_specs": [],

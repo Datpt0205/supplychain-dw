@@ -8,15 +8,16 @@ Usage:
 `--mock` grades the code with the dataset's own scripted readings: it shows the
 script and the table work and is NEVER evidence for a route (its result says
 `mode: mock` and goes to `evals/reports/<profile>.gate.json`, which nothing reads). A live run
-calls the profile's `structured_extraction` route through the same gateway the
-hosts build (OPENAI_BASE_URL and OPENAI_API_KEY from the environment, never from
-a committed file) and writes `evals/gates/<profile>.json`, which
+calls the profile's routes (`structured_extraction` for a reading,
+`reasoning` for a draft) through the same gateway the hosts build
+(OPENAI_BASE_URL and OPENAI_API_KEY from the environment, never from a
+committed file) and writes `evals/gates/<profile>.json`, which
 `supply_chain_model_routes` reads when it loads: a task may move to the profile
 only once its row there passes.
 
 The dataset and the threshold come from the routes policy (one owner). Only
-cases tagged with a model task (`task:extract.*`) run: the preparation cases
-grade code and need no model.
+cases tagged with a model task (`task:extract.*`, `task:draft.*`) run: the
+preparation cases grade code and need no model.
 """
 
 from __future__ import annotations

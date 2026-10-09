@@ -107,6 +107,10 @@ from dw_supply_chain.adapters.persistence.step_preparation_repository import (
     SqlPreparationRecords,
     SqlProposalOutcomes,
 )
+from dw_supply_chain.adapters.persistence.supplier_message_repository import (
+    SqlSupplierContactLookup,
+    SqlSupplierMessageRepository,
+)
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
@@ -134,10 +138,14 @@ from dw_supply_chain.application.product_reviews import (
 )
 from dw_supply_chain.application.step_preparation import PrepareStep, PrepareSteps
 from dw_supply_chain.application.step_proposals import ApplyStepProposal, StepProposalSubject
+from dw_supply_chain.application.supplier_messages import (
+    DraftSupplierMessage,
+    DraftSupplierMessages,
+)
 from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.step_proposal import STEP_PROPOSAL_PREFIX
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
-from dw_supply_chain.model_routes import load_supply_chain_model_routes
+from dw_supply_chain.model_routes import SUPPLIER_MESSAGE_TASK, load_supply_chain_model_routes
 from dw_supply_chain.policy_files import (
     ADVANCE_PRODUCT_CASE_WORKER_FILE,
     FOLLOW_UP_POLICY_FILE,
@@ -148,6 +156,7 @@ from dw_supply_chain.policy_files import (
     SLA_POLICY_FILE,
     STEP_PREPARATION_POLICY_FILE,
     STEP_PREPARATION_WORKER_FILE,
+    SUPPLIER_MESSAGES_POLICY_FILE,
 )
 from dw_supply_chain.presentation.zalo_case_query import ZaloCaseQueryCommand
 from dw_supply_chain.presentation.zalo_proposal import ZaloProposalCommand
@@ -155,6 +164,7 @@ from dw_supply_chain.product_action_duties import load_supply_chain_product_acti
 from dw_supply_chain.product_approvals import load_supply_chain_product_approvals
 from dw_supply_chain.sla_policy import load_supply_chain_sla_policy
 from dw_supply_chain.step_preparation_policy import load_supply_chain_step_preparation
+from dw_supply_chain.supplier_message_policy import load_supply_chain_supplier_messages
 from dw_supply_chain.workflows import advance_product_case_graph as product_review_graph
 from dw_supply_chain.workflows import product_signoff_graph, step_preparation_graph
 
@@ -274,6 +284,65 @@ def build_document_extraction_consumer(lane: ExtractDocuments) -> Callable[[], A
                 {status.value: n for status, n in outcome.by_status.items()},
                 outcome.refused_before_reading,
                 outcome.deferred,
+            )
+
+    return consume
+
+
+def build_supplier_messages(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    gateway: ModelGateway,
+    model_profile: str,
+    configs_dir: Path,
+    gates_dir: Path,
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> DraftSupplierMessages:
+    """The lane `supply_chain_supplier_messages` (ticket ai-automation/07).
+    `gateway` is the process's one-call gateway, as the extraction lane's; the
+    task's route comes from `supply_chain_model_routes`, refused at start when
+    it names a profile that has not passed the model gate."""
+    policies = configs_dir / "policies"
+    routes = load_supply_chain_model_routes(policies / MODEL_ROUTES_POLICY_FILE, gates_dir)
+    product_cases = SqlProductCaseRepository(sessions)
+    return DraftSupplierMessages(
+        workspaces=SqlWorkspacesWithCases(sessions),
+        cases=product_cases,
+        follow_ups=SqlFollowUpRepository(sessions),
+        drafter=DraftSupplierMessage(
+            product_cases=product_cases,
+            po_cases=SqlPOCaseRepository(sessions),
+            contacts=SqlSupplierContactLookup(sessions),
+            messages=SqlSupplierMessageRepository(sessions),
+            plans=SqlTenantPlans(sessions),
+            gateway=gateway,
+            policy_override_repo=SqlPolicyOverrideRepository(sessions),
+            platform_default_templates=load_supply_chain_supplier_messages(
+                policies / SUPPLIER_MESSAGES_POLICY_FILE
+            ),
+            notifier=SqlNotificationRepository(sessions),
+            ids=ids,
+            clock=clock,
+            model_profile=routes.profile_for(SUPPLIER_MESSAGE_TASK) or model_profile,
+        ),
+        policy_override_repo=SqlPolicyOverrideRepository(sessions),
+        platform_default_policy=load_supply_chain_step_preparation(
+            policies / STEP_PREPARATION_POLICY_FILE
+        ),
+    )
+
+
+def build_supplier_messages_consumer(
+    lane: DraftSupplierMessages,
+) -> Callable[[], Awaitable[None]]:
+    async def consume() -> None:
+        outcome = await lane.run()
+        if outcome.by_outcome or outcome.failed_workspaces:
+            logger.info(
+                "supplier messages: %s failed_workspaces=%d",
+                {o.value: n for o, n in outcome.by_outcome.items()},
+                outcome.failed_workspaces,
             )
 
     return consume

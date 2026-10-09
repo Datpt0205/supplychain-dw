@@ -1,0 +1,42 @@
+{
+  "purpose": "supplier_reminder",
+  "case": {
+    "state": "sample_requested"
+  },
+  "follow_up": {
+    "days": 12,
+    "limit_days": 10
+  },
+  "contact": {
+    "name": "Chị Lan",
+    "email": "lan@minhphat.vn"
+  },
+  "model_writing": {
+    "paragraphs": [
+      {
+        "text": "Đơn giá đã chốt 45.000 đồng cho 1.200 cái.",
+        "cites": [
+          "case"
+        ]
+      },
+      {
+        "text": "Hạn mới là 30/10/2026.",
+        "cites": [
+          "follow_up"
+        ]
+      },
+      {
+        "text": "Hồ sơ đã trễ 12 ngày.",
+        "cites": [
+          "case"
+        ]
+      },
+      {
+        "text": "Mẫu đã quá hạn 12 ngày.",
+        "cites": [
+          "follow_up"
+        ]
+      }
+    ]
+  }
+}

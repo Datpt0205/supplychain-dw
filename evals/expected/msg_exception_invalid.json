@@ -1,0 +1,10 @@
+{
+  "model_calls": 1,
+  "status_in": [
+    "refused",
+    "drafted"
+  ],
+  "scripted": {
+    "status": "refused"
+  }
+}

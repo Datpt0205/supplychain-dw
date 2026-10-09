@@ -2,8 +2,9 @@
 toward that task (ticket ai-automation/06; upstream candidate).
 
 `model_task_cases` keeps the cases a model is graded on (a task tag naming a
-model task, `task:extract.*` here); `gate_result` turns a report into the
-per-task scores `dw_agent_runtime.model.gates.ModelGateResult` stores;
+model task: `task:extract.*` reads a file, `task:draft.*` writes a draft);
+`gate_result` turns a report into the per-task scores
+`dw_agent_runtime.model.gates.ModelGateResult` stores;
 `gate_table` prints it with the reader's threshold, so the table and the
 loader agree because both ask `ModelGateResult.passed`.
 """
@@ -18,7 +19,8 @@ from dw_evals.dataset import SECURITY_CATEGORIES, EvalCase, EvalDataset
 from dw_evals.runner import EvalReport
 
 TASK_TAG = "task:"
-MODEL_TASK_PREFIX = "extract."
+# A task a model does: reading a file into fields, or writing a draft.
+MODEL_TASK_PREFIXES = ("extract.", "draft.")
 
 
 def task_of(case: EvalCase) -> str | None:
@@ -28,7 +30,7 @@ def task_of(case: EvalCase) -> str | None:
 def model_task_cases(dataset: EvalDataset) -> EvalDataset:
     """The cases a model profile is graded on."""
     kept = tuple(
-        c for c in dataset.cases if (task := task_of(c)) and task.startswith(MODEL_TASK_PREFIX)
+        c for c in dataset.cases if (task := task_of(c)) and task.startswith(MODEL_TASK_PREFIXES)
     )
     return dataset.model_copy(update={"cases": kept})
 

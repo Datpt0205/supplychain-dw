@@ -1,0 +1,7 @@
+{
+  "purpose": "supplier_confirmation",
+  "case": {
+    "state": "supplier_confirmation"
+  },
+  "model_writing": "invalid"
+}

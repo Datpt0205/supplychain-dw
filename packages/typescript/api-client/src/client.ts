@@ -31,6 +31,7 @@ import {
   poPaymentSchema,
   documentDraftSchema,
   stepProposalSchema,
+  supplierMessageSchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -102,6 +103,9 @@ import {
   type DocumentDraft,
   type StepProposal,
   type ProposalResultField,
+  type SupplierMessage,
+  type SupplierMessagePurpose,
+  type SupplierMessageStatus,
   type DraftField,
   type DraftStatus,
   type TemplateFieldKind,
@@ -439,6 +443,18 @@ const _stepProposalMirrorsTheRoute: [
   >,
 ] = [true, true, true];
 void _stepProposalMirrorsTheRoute;
+
+// Ticket ai-automation/07: messages to a supplier.
+const _supplierMessagesMirrorTheRoute: [
+  SameType<SupplierMessage, SupplyChainGenerated["SupplierMessageView"]>,
+  SameType<
+    keyof SupplierMessage,
+    keyof SupplyChainGenerated["SupplierMessageView"]
+  >,
+  SameType<SupplierMessagePurpose, SupplyChainGenerated["MessagePurpose"]>,
+  SameType<SupplierMessageStatus, SupplyChainGenerated["MessageStatus"]>,
+] = [true, true, true, true];
+void _supplierMessagesMirrorTheRoute;
 
 /** `POST /product-cases/{id}/step-proposal/decision`'s body. */
 export type StepDecisionBody =
@@ -1764,6 +1780,33 @@ export class ApiClient {
     );
   }
 
+  /** The case's messages to its supplier, AI-drafted, newest first. */
+  listSupplierMessages(
+    caseKind: "po" | "product",
+    caseId: string,
+  ): Promise<SupplierMessage[]> {
+    const segment = caseKind === "po" ? "po-cases" : "product-cases";
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/${segment}/${encodeURIComponent(caseId)}/supplier-messages`,
+      z.array(supplierMessageSchema),
+    );
+  }
+
+  /** "Đã gửi": the person sent this text (its hash) from their own mailbox. */
+  markSupplierMessageSent(
+    messageId: string,
+    contentSha256: string,
+    idempotencyKey: string,
+  ): Promise<SupplierMessage> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/supplier-messages/${encodeURIComponent(messageId)}/sent`,
+      supplierMessageSchema,
+      { body: { content_sha256: contentSha256 }, idempotencyKey },
+    );
+  }
+
   /** The draft as its template prints it (DOCX), prices hidden per scope. */
   async downloadDraft(draftId: string): Promise<Blob> {
     const response = await this.rawRequest(
@@ -1984,6 +2027,9 @@ export class ApiClient {
 export type {
   DocumentDraft,
   StepProposal,
+  SupplierMessage,
+  SupplierMessagePurpose,
+  SupplierMessageStatus,
   ProposalResultField,
   DraftField,
   DraftStatus,

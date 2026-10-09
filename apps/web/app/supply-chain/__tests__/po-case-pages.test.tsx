@@ -52,6 +52,7 @@ const api = {
   getPackagingDesign: vi.fn(),
   getPOCommercial: vi.fn(),
   listCaseDrafts: vi.fn(),
+  listSupplierMessages: vi.fn(),
 };
 vi.mock("../../../lib/session", () => ({ apiClient: () => api }));
 
@@ -64,6 +65,7 @@ beforeEach(() => {
   // So is the commercial card (ticket ai-automation/01).
   api.getPOCommercial.mockReturnValue(new Promise(() => {}));
   api.listCaseDrafts.mockReturnValue(new Promise(() => {}));
+  api.listSupplierMessages.mockReturnValue(new Promise(() => {}));
 });
 
 afterEach(() => {

@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from dw_supply_chain.domain.product_development_case import ProductAction
 from dw_supply_chain.domain.step_proposal import PREPARABLE_ACTIONS
+from dw_supply_chain.domain.supplier_message import MessagePurpose
 from dw_supply_chain.step_preparation_policy import (
     SupplyChainStepPreparation,
     load_supply_chain_step_preparation,
@@ -57,6 +58,23 @@ def test_elmichs_override_loads_and_prepares_two_steps() -> None:
         ProductAction.CONFIRM_WITH_SUPPLIER,
     ]
     assert policy.steps[0].physical and policy.steps[0].result_fields
+    assert set(policy.supplier_messages) == set(MessagePurpose)
+
+
+def test_the_platform_drafts_no_supplier_message_and_a_purpose_is_listed_once() -> None:
+    platform = load_supply_chain_step_preparation(
+        REPO_ROOT / "configs" / "policies" / "supply_chain_step_preparation@1.0.0.yaml"
+    )
+    assert platform.supplier_messages == ()
+    with pytest.raises(ValidationError, match="listed twice"):
+        SupplyChainStepPreparation.model_validate(
+            {
+                "schema_version": "1.0",
+                "policy_id": "supply_chain_step_preparation",
+                "policy_version": "1.0.0",
+                "supplier_messages": ["sample_request", "sample_request"],
+            }
+        )
 
 
 def test_only_steps_whose_only_input_is_a_document_can_be_proposed() -> None:

@@ -1165,3 +1165,51 @@ export const stepProposalSchema = z.object({
   result_fields: z.array(proposalResultFieldSchema),
 });
 export type StepProposal = z.infer<typeof stepProposalSchema>;
+
+// Ticket ai-automation/07: messages to a supplier, AI drafts, a person sends.
+
+export const supplierMessagePurposeSchema = z.enum([
+  "sample_request",
+  "supplier_reminder",
+  "supplier_confirmation",
+]);
+export type SupplierMessagePurpose = z.infer<
+  typeof supplierMessagePurposeSchema
+>;
+
+/** `drafted`: a body to copy; `refused` / `failed`: AI wrote nothing that
+ * checks out, a person writes this one. */
+export const supplierMessageStatusSchema = z.enum([
+  "drafted",
+  "refused",
+  "failed",
+]);
+export type SupplierMessageStatus = z.infer<typeof supplierMessageStatusSchema>;
+
+/** Mirrors `SupplierMessageView`: one drafted message, and who marked it
+ * sent. Nothing in the app sends it. */
+export const supplierMessageSchema = z.object({
+  id: z.string().uuid(),
+  case_kind: z.enum(["po", "product"]),
+  case_id: z.string().uuid(),
+  purpose: supplierMessagePurposeSchema,
+  status: supplierMessageStatusSchema,
+  supplier_name: z.string().nullable(),
+  recipient_name: z.string().nullable(),
+  recipient_email: z.string().nullable(),
+  subject: z.string(),
+  body: z.string(),
+  attachments: z.array(z.string().uuid()),
+  citations: z.array(
+    z.object({ text: z.string(), cites: z.array(z.string()) }),
+  ),
+  dropped: z.number().int(),
+  template_version: z.string(),
+  prompt_id: z.string(),
+  prompt_version: z.string(),
+  content_sha256: z.string(),
+  created_at: z.string(),
+  sent_by: z.string().uuid().nullable(),
+  sent_at: z.string().nullable(),
+});
+export type SupplierMessage = z.infer<typeof supplierMessageSchema>;

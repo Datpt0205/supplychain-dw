@@ -153,6 +153,9 @@ def test_only_the_platform_lanes_are_wired() -> None:
     TP Cung ứng (stage-1 ticket 08), on the sweep's cadence.
     `supply_chain_follow_ups_retention` is the fifth: closed follow-ups past
     their tenant's term (ticket P3), on the retention cadence.
+    `supply_chain_supplier_messages` is the sixth: messages to a supplier AI
+    drafts and a person sends (ticket ai-automation/07), through the one-call
+    gateway; it drafts nothing for a tenant whose policy lists no purpose.
 
     Naming the whole set is the point: a context's lane arriving in this process
     becomes a visible change rather than a silent one.
@@ -173,6 +176,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "supply_chain_follow_ups",
         "supply_chain_product_review_reconcile",
         "supply_chain_proposal_drafts_retention",
+        "supply_chain_supplier_messages",
         "supply_chain_stage_one_report",
         "supply_chain_follow_ups_retention",
     }

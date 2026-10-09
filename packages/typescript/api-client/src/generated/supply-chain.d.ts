@@ -656,6 +656,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/po-cases/{case_id}/supplier-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Po Case Supplier Messages */
+        get: operations["list_po_case_supplier_messages_api_v1_supply_chain_po_cases__case_id__supplier_messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/po-cases/{case_id}/supplier-updates": {
         parameters: {
             query?: never;
@@ -909,6 +926,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/product-cases/{case_id}/supplier-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Product Case Supplier Messages */
+        get: operations["list_product_case_supplier_messages_api_v1_supply_chain_product_cases__case_id__supplier_messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
         parameters: {
             query?: never;
@@ -993,6 +1027,23 @@ export interface paths {
          */
         put: operations["set_step_preparation_policy_api_v1_supply_chain_step_preparation_policy_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/supplier-messages/{message_id}/sent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Supplier Message Sent */
+        post: operations["mark_supplier_message_sent_api_v1_supply_chain_supplier_messages__message_id__sent_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1730,6 +1781,31 @@ export interface components {
             /** Unit Price */
             unit_price?: number | string | null;
         };
+        /** MarkSentRequest */
+        MarkSentRequest: {
+            /** Content Sha256 */
+            content_sha256: string;
+        };
+        /**
+         * MessageCitationView
+         * @description One paragraph AI wrote and code kept, with the evidence it cites.
+         */
+        MessageCitationView: {
+            /** Cites */
+            cites: string[];
+            /** Text */
+            text: string;
+        };
+        /**
+         * MessagePurpose
+         * @enum {string}
+         */
+        MessagePurpose: "sample_request" | "supplier_reminder" | "supplier_confirmation";
+        /**
+         * MessageStatus
+         * @enum {string}
+         */
+        MessageStatus: "drafted" | "refused" | "failed";
         /**
          * MissingUpdateStatus
          * @enum {string}
@@ -2902,6 +2978,55 @@ export interface components {
          * @enum {string}
          */
         SupplierEventType: "production_delay" | "qc_issue" | "shipment_update" | "deposit_confirmation" | "document_submitted" | "no_official_update" | "other";
+        /** SupplierMessageView */
+        SupplierMessageView: {
+            /** Attachments */
+            attachments: string[];
+            /** Body */
+            body: string;
+            /**
+             * Case Id
+             * Format: uuid
+             */
+            case_id: string;
+            case_kind: components["schemas"]["CaseKind"];
+            /** Citations */
+            citations: components["schemas"]["MessageCitationView"][];
+            /** Content Sha256 */
+            content_sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dropped */
+            dropped: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Prompt Id */
+            prompt_id: string;
+            /** Prompt Version */
+            prompt_version: string;
+            purpose: components["schemas"]["MessagePurpose"];
+            /** Recipient Email */
+            recipient_email: string | null;
+            /** Recipient Name */
+            recipient_name: string | null;
+            /** Sent At */
+            sent_at: string | null;
+            /** Sent By */
+            sent_by: string | null;
+            status: components["schemas"]["MessageStatus"];
+            /** Subject */
+            subject: string;
+            /** Supplier Name */
+            supplier_name: string | null;
+            /** Template Version */
+            template_version: string;
+        };
         /** SupplierSummaryView */
         SupplierSummaryView: {
             /** Case Count */
@@ -3105,6 +3230,11 @@ export interface components {
              * @default []
              */
             steps: components["schemas"]["PreparedStep"][];
+            /**
+             * Supplier Messages
+             * @default []
+             */
+            supplier_messages: components["schemas"]["MessagePurpose"][];
         };
         /** TakePackagingStepRequest */
         TakePackagingStepRequest: {
@@ -4451,6 +4581,39 @@ export interface operations {
             };
         };
     };
+    list_po_case_supplier_messages_api_v1_supply_chain_po_cases__case_id__supplier_messages_get: {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["CaseKind"];
+            };
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierMessageView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_supplier_updates_api_v1_supply_chain_po_cases__case_id__supplier_updates_get: {
         parameters: {
             query?: never;
@@ -5103,6 +5266,39 @@ export interface operations {
             };
         };
     };
+    list_product_case_supplier_messages_api_v1_supply_chain_product_cases__case_id__supplier_messages_get: {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["CaseKind"];
+            };
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierMessageView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_product_case_transitions_api_v1_supply_chain_product_cases__case_id__transitions_get: {
         parameters: {
             query?: {
@@ -5289,6 +5485,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SupplyChainStepPreparation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_supplier_message_sent_api_v1_supply_chain_supplier_messages__message_id__sent_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkSentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierMessageView"];
                 };
             };
             /** @description Validation Error */

@@ -89,6 +89,7 @@ from dw_platform.retention_policy import load_retention_policy
 from dw_supply_chain.application.document_extraction import EXTRACTION_LANE
 from dw_supply_chain.application.follow_up_sweep import FOLLOW_UP_SWEEP_LANE
 from dw_supply_chain.application.step_preparation import PREPARATION_LANE
+from dw_supply_chain.application.supplier_messages import MESSAGES_LANE
 from dw_worker.composition import (
     REPO_ROOT,
     build_case_document_storage,
@@ -129,6 +130,8 @@ from dw_worker.consumers.supply_chain import (
     build_step_preparation,
     build_step_preparation_consumer,
     build_step_preparation_stack,
+    build_supplier_messages,
+    build_supplier_messages_consumer,
     build_zalo_case_query_command,
     build_zalo_proposal_command,
     product_approval_subjects,
@@ -429,6 +432,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     document_extraction: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's step preparation lane: a database and the bucket.
     step_preparation: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's messages to a supplier: a database and a model.
+    supplier_messages: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's chat proposal drafts past their 30 minutes: a database.
     proposal_drafts_retention: RetentionPrunePort | None = None
     # Supply Chain's closed follow-ups past their tenant's term: a database.
@@ -605,6 +610,24 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                 sessions, runner=review_runner, configs_dir=REPO_ROOT / "configs", ids=ids
             )
         )
+        # Messages to a supplier AI drafts and a person sends (ADR 0029): the
+        # same one-call gateway, plan allowance and spend ledger.
+        supplier_messages = build_supplier_messages_consumer(
+            build_supplier_messages(
+                sessions,
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                model_profile=settings.model_profile,
+                configs_dir=REPO_ROOT / "configs",
+                gates_dir=REPO_ROOT / "evals" / "gates",
+                ids=ids,
+                clock=clock,
+            )
+        )
         if settings.s3_endpoint_url:
             offboarding_consumer = build_offboarding_consumer(
                 TenantOffboardingLane(
@@ -718,6 +741,15 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
             PREPARATION_LANE,
             step_preparation,
             interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
+        )
+
+    # Messages to a supplier (ticket ai-automation/07): on the follow-up
+    # cadence, since a reminder answers an open follow-up.
+    if supplier_messages is not None:
+        registry.register(
+            MESSAGES_LANE,
+            supplier_messages,
+            interval_seconds=settings.supply_chain_follow_up_interval_seconds,
         )
 
     # Chat proposal drafts nobody answered within DRAFT_TTL (zalo-channel

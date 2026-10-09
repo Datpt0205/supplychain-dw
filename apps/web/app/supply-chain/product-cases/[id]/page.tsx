@@ -59,6 +59,7 @@ import {
 import { Bm04ProfileCard } from "../../../../components/supply-chain/bm04-profile-card";
 import { supplyChainCrumbs } from "../../../../components/supply-chain/crumbs";
 import { DraftsCard } from "../../../../components/supply-chain/drafts-card";
+import { SupplierMessagesCard } from "../../../../components/supply-chain/supplier-messages-card";
 import { StepProposalCard } from "../../../../components/supply-chain/step-proposal-card";
 import {
   categoryLabel,
@@ -258,6 +259,7 @@ function CaseView({
         <StepProposalCard caseId={detail.id} onDecided={onStep} />
         <Bm04ProfileCard caseId={detail.id} />
         <DraftsCard caseKind="product" caseId={detail.id} />
+        <SupplierMessagesCard caseKind="product" caseId={detail.id} />
         <RoundsCard rounds={detail.rounds} who={who} />
         <HistoryCard caseId={detail.id} tick={historyTick} who={who} />
         <CaseDocumentsCard

@@ -1140,6 +1140,28 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         ),
     )
 
+    # Messages to a supplier (ADR 0029, ticket ai-automation/07): the worker's
+    # lane drafts them; this process lists them and records "Đã gửi". Nothing
+    # here sends anything.
+    from dw_supply_chain.adapters.persistence.supplier_message_repository import (
+        SqlSupplierMessageRepository,
+    )
+    from dw_supply_chain.application import supplier_messages as sc_messages
+    from dw_supply_chain.presentation.supplier_message_routes import SupplierMessageHandlers
+
+    message_repo = SqlSupplierMessageRepository(wiring.seam.session_factory)
+    container.supply_chain_supplier_messages = SupplierMessageHandlers(
+        list_messages=sc_messages.ListSupplierMessages(
+            cases=case_lookups, messages=message_repo, authz=authorization
+        ),
+        mark_sent=sc_messages.MarkSupplierMessageSent(
+            messages=message_repo,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+    )
+
     # Build your context from `container.runtime` (the RuntimeSeam) and attach
     # its handlers, then mount its router in `main.create_app`. Nothing above
     # this line may import a business package. A context offering support

@@ -1,0 +1,13 @@
+{
+  "model_calls": 1,
+  "status": "drafted",
+  "body_must_not_contain": [
+    "45.000",
+    "1.200",
+    "30/10/2026",
+    "Hồ sơ đã trễ 12 ngày"
+  ],
+  "scripted": {
+    "dropped": 3
+  }
+}

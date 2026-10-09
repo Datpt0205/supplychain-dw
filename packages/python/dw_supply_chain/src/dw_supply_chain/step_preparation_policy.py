@@ -40,6 +40,7 @@ from dw_supply_chain.domain.product_development_case import (
     forward_step,
 )
 from dw_supply_chain.domain.step_proposal import PREPARABLE_ACTIONS, DraftRecipe, StepCheck
+from dw_supply_chain.domain.supplier_message import MessagePurpose
 
 __all__ = [
     "STEP_PREPARATION_POLICY_ID",
@@ -126,12 +127,18 @@ class SupplyChainStepPreparation(BaseModel):
     policy_id: str
     policy_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
     steps: tuple[PreparedStep, ...] = Field(default=(), max_length=40)
+    # The messages to a supplier AI drafts for this tenant (ADR 0029; ticket
+    # ai-automation/07), worded by `supply_chain_supplier_messages`; a person
+    # copies and sends each. Empty: none is drafted.
+    supplier_messages: tuple[MessagePurpose, ...] = ()
 
     @model_validator(mode="after")
     def _each_state_once(self) -> SupplyChainStepPreparation:
         keys = [(s.case_kind, s.state) for s in self.steps]
         if len(set(keys)) != len(keys):
             raise ValueError("a (case kind, state) is prepared twice")
+        if len(set(self.supplier_messages)) != len(self.supplier_messages):
+            raise ValueError("a supplier message purpose is listed twice")
         return self
 
     def step_for(self, case_kind: CaseKind, state: ProductDevState) -> PreparedStep | None:

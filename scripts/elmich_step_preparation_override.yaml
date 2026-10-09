@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_step_preparation
-policy_version: "1.0.0"
+policy_version: "1.1.0"
 
 # Override của TENANT ELMICH (không phải platform default): các bước AI chuẩn bị
 # (ADR 0025, ticket ai-automation/05). Ghi bằng
@@ -33,3 +33,8 @@ steps:
     action: confirm_with_supplier
     sources: [supplier_confirmation_email]
     checks: [sources_present, sources_read]
+# Thư gửi NCC (ADR 0029, ticket ai-automation/07): AI soạn, người sao chép, gửi
+# từ hộp thư của mình rồi bấm "Đã gửi". Xin mẫu khi hồ sơ vào bước 2, nhắc NCC
+# khi follow-up phía NCC mở (im lặng, quá hạn mẫu), xác nhận sản phẩm khi hồ sơ
+# vào bước 8. Không giá, không số tài khoản trong thư.
+supplier_messages: [sample_request, supplier_reminder, supplier_confirmation]

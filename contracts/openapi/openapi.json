@@ -3126,6 +3126,21 @@
         "title": "LinePriceRequest",
         "type": "object"
       },
+      "MarkSentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_sha256"
+        ],
+        "title": "MarkSentRequest",
+        "type": "object"
+      },
       "MeResponse": {
         "properties": {
           "clearance": {
@@ -3426,6 +3441,46 @@
         ],
         "title": "MemoryItemView",
         "type": "object"
+      },
+      "MessageCitationView": {
+        "description": "One paragraph AI wrote and code kept, with the evidence it cites.",
+        "properties": {
+          "cites": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cites",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "cites"
+        ],
+        "title": "MessageCitationView",
+        "type": "object"
+      },
+      "MessagePurpose": {
+        "enum": [
+          "sample_request",
+          "supplier_reminder",
+          "supplier_confirmation"
+        ],
+        "title": "MessagePurpose",
+        "type": "string"
+      },
+      "MessageStatus": {
+        "enum": [
+          "drafted",
+          "refused",
+          "failed"
+        ],
+        "title": "MessageStatus",
+        "type": "string"
       },
       "MissingUpdateStatus": {
         "enum": [
@@ -7679,6 +7734,158 @@
         "title": "SupplierEventType",
         "type": "string"
       },
+      "SupplierMessageView": {
+        "properties": {
+          "attachments": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "case_kind": {
+            "$ref": "#/components/schemas/CaseKind"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/MessageCitationView"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dropped": {
+            "title": "Dropped",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "prompt_id": {
+            "title": "Prompt Id",
+            "type": "string"
+          },
+          "prompt_version": {
+            "title": "Prompt Version",
+            "type": "string"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/MessagePurpose"
+          },
+          "recipient_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient Email"
+          },
+          "recipient_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient Name"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "sent_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent By"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MessageStatus"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          },
+          "supplier_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Name"
+          },
+          "template_version": {
+            "title": "Template Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "case_kind",
+          "case_id",
+          "purpose",
+          "status",
+          "supplier_name",
+          "recipient_name",
+          "recipient_email",
+          "subject",
+          "body",
+          "attachments",
+          "citations",
+          "dropped",
+          "template_version",
+          "prompt_id",
+          "prompt_version",
+          "content_sha256",
+          "created_at",
+          "sent_by",
+          "sent_at"
+        ],
+        "title": "SupplierMessageView",
+        "type": "object"
+      },
       "SupplierSummaryView": {
         "properties": {
           "case_count": {
@@ -8205,6 +8412,14 @@
             },
             "maxItems": 40,
             "title": "Steps",
+            "type": "array"
+          },
+          "supplier_messages": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MessagePurpose"
+            },
+            "title": "Supplier Messages",
             "type": "array"
           }
         },
@@ -13985,6 +14200,62 @@
         ]
       }
     },
+    "/api/v1/supply-chain/po-cases/{case_id}/supplier-messages": {
+      "get": {
+        "operationId": "list_po_case_supplier_messages_api_v1_supply_chain_po_cases__case_id__supplier_messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CaseKind",
+              "default": "po"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupplierMessageView"
+                  },
+                  "title": "Response List Po Case Supplier Messages Api V1 Supply Chain Po Cases  Case Id  Supplier Messages Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Po Case Supplier Messages",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/po-cases/{case_id}/supplier-updates": {
       "get": {
         "operationId": "get_supplier_updates_api_v1_supply_chain_po_cases__case_id__supplier_updates_get",
@@ -15150,6 +15421,62 @@
         ]
       }
     },
+    "/api/v1/supply-chain/product-cases/{case_id}/supplier-messages": {
+      "get": {
+        "operationId": "list_product_case_supplier_messages_api_v1_supply_chain_product_cases__case_id__supplier_messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CaseKind",
+              "default": "product"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupplierMessageView"
+                  },
+                  "title": "Response List Product Case Supplier Messages Api V1 Supply Chain Product Cases  Case Id  Supplier Messages Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Product Case Supplier Messages",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/product-cases/{case_id}/transitions": {
       "get": {
         "description": "The case's history, newest first, a page at a time.",
@@ -15437,6 +15764,77 @@
           }
         },
         "summary": "Set Step Preparation Policy",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/supplier-messages/{message_id}/sent": {
+      "post": {
+        "operationId": "mark_supplier_message_sent_api_v1_supply_chain_supplier_messages__message_id__sent_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkSentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierMessageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Supplier Message Sent",
         "tags": [
           "supply_chain"
         ]

@@ -780,3 +780,27 @@ async def test_step_preparations_are_append_only(db_urls: DatabaseUrls) -> None:
                 assert bool(granted) is held, verb
     finally:
         await migrator.dispose()
+
+
+async def test_supplier_messages_are_append_only(db_urls: DatabaseUrls) -> None:
+    """Migration 1dc679326cb5 (ticket ai-automation/07): `dw_app` reads and
+    inserts messages to a supplier and their "Đã gửi" rows, and never edits or
+    deletes one (they leave with their case by cascade)."""
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    try:
+        async with migrator.connect() as conn:
+            for table in ("supply_chain.supplier_messages", "supply_chain.supplier_message_sends"):
+                for verb, held in (
+                    ("SELECT", True),
+                    ("INSERT", True),
+                    ("UPDATE", False),
+                    ("DELETE", False),
+                    ("TRUNCATE", False),
+                ):
+                    granted = await conn.scalar(
+                        sa.text("SELECT has_table_privilege('dw_app', :t, :v)"),
+                        {"t": table, "v": verb},
+                    )
+                    assert bool(granted) is held, (table, verb)
+    finally:
+        await migrator.dispose()

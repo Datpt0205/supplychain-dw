@@ -37,17 +37,15 @@ def test_a_mock_run_writes_a_table_and_a_result_that_is_not_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     import dw_agent_runtime.adapters.model_stack as model_stack
+    from dw_supply_chain.model_routes import MODEL_TASKS
 
     monkeypatch.setattr(model_stack, "build_model_adapters", _no_provider)
     assert _script().main(["--profile", "qwen", "--mock", "--out", str(tmp_path)]) == 0
     result = json.loads((tmp_path / "qwen.gate.json").read_text(encoding="utf-8"))
     assert result["mode"] == "mock" and result["profile"] == "qwen"
-    assert set(result["tasks"]) == {
-        "extract.sample_evaluation",
-        "extract.supplier_confirmation_email",
-        "extract.product_profile_bm04",
-        "extract.supplier_quotation",
-    }
+    # Every model task the routes may name is graded: a task with no gate
+    # case could never pass, and one graded but not routable is read by nothing.
+    assert set(result["tasks"]) == MODEL_TASKS
     assert all(t["security_failed"] == 0 for t in result["tasks"].values())
     table = capsys.readouterr().out
     assert "| extract.sample_evaluation |" in table and "mock: not evidence" in table
