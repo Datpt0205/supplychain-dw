@@ -111,6 +111,7 @@ from dw_supply_chain.sla_policy import (
 )
 from dw_supply_chain.testing.bod_submission_eval import grade_bod_submission
 from dw_supply_chain.testing.extraction_eval import grade_document_extraction
+from dw_supply_chain.testing.packaging_eval import grade_packaging_proof
 from dw_supply_chain.testing.po_cases import InMemoryPOCases
 from dw_supply_chain.testing.po_step_eval import grade_po_step
 from dw_supply_chain.testing.preparation_eval import grade_step_preparation
@@ -1024,6 +1025,8 @@ SUPPLY_CHAIN_GRADERS: dict[str, Grader] = {
     "supply_chain.purchase_order": grade_purchase_order,
     # Steps 11-17 prepared by code (tickets ai-automation/15-18): code only.
     "supply_chain.po_step": grade_po_step,
+    # Step 12's proof check and papers (ticket ai-automation/16): code only.
+    "supply_chain.packaging_proof": grade_packaging_proof,
     "supply_chain.supplier_message": grade_supplier_message,
     "supply_chain.proposal_list": grade_proposal_list,
     "supply_chain.bod_submission": grade_bod_submission,

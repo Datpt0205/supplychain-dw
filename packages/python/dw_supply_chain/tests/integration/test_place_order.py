@@ -109,7 +109,7 @@ _POLICIES = REPO_ROOT / "configs" / "policies"
 _PRODUCT_DUTIES = load_supply_chain_product_action_duties(
     _POLICIES / PRODUCT_ACTION_DUTIES_POLICY_FILE
 )
-_PO_DUTIES = load_supply_chain_action_duties(_POLICIES / "supply_chain_action_duties@1.2.0.yaml")
+_PO_DUTIES = load_supply_chain_action_duties(_POLICIES / "supply_chain_action_duties@1.3.0.yaml")
 _SLA = load_supply_chain_sla_policy(_POLICIES / SLA_POLICY_FILE)
 _MATRIX = load_supply_chain_approval_matrix(_POLICIES / "supply_chain_approval_matrix@1.0.0.yaml")
 _MIGRATION = (

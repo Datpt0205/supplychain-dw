@@ -1,0 +1,27 @@
+schema_version: '1.0'
+template_id: supply_chain.colour_revision_request
+version: 1.0.0
+title: YÊU CẦU SỬA MẪU MÀU
+doc_type: colour_revision_request
+description: 'Bước 12: Cung ứng yêu cầu nhà cung cấp sửa mẫu màu theo BM04.'
+fields:
+- name: po_reference
+  label: Số PO
+  required: true
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: product_name
+  label: Tên sản phẩm
+  required: true
+- name: requested_on
+  label: Ngày yêu cầu
+  kind: date
+  required: true
+- name: expected_colours
+  label: Màu theo BM04
+- name: requirement
+  label: Yêu cầu chỉnh sửa
+  required: true
+- name: notes
+  label: Ghi chú

@@ -30,19 +30,30 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from dw_kernel.errors import DomainError, NotFoundError, PayloadTooLargeError
+from dw_kernel.errors import (
+    DomainError,
+    NotFoundError,
+    PayloadTooLargeError,
+    PermissionDeniedError,
+)
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import AuthorizationPort
 from dw_platform.domain.audit import AuditEvent
-from dw_supply_chain.application.handlers import COMMERCIAL_READ, DOCUMENT_READ, DOCUMENT_WRITE
+from dw_supply_chain.application.handlers import (
+    COMMERCIAL_READ,
+    DOCUMENT_READ,
+    DOCUMENT_WRITE,
+    PACKAGING_DOCUMENT_WRITE,
+)
 from dw_supply_chain.application.ports import (
     CaseDocumentRepositoryPort,
     CaseDocumentStoragePort,
     NewCaseDocument,
 )
 from dw_supply_chain.domain.case_document import (
+    MKT_DOCUMENT_TYPES,
     SNIFF_BYTES,
     CaseDocument,
     CaseDocumentId,
@@ -98,6 +109,29 @@ class UploadCaseDocument:
     # into memory; this is the exact check on the file.
     max_bytes: int
 
+    async def _require_upload(
+        self, context: AccessContext, case_id: uuid.UUID, doc_type: DocumentType
+    ) -> None:
+        """The document write uploads any type; MKT's packaging write uploads
+        only MKT's four papers (ADR 0028). A caller with neither is refused as
+        the document write refuses."""
+        try:
+            await self.authz.require(
+                context=context,
+                action=DOCUMENT_WRITE,
+                resource_type=_RESOURCE,
+                resource_id=str(case_id),
+            )
+        except PermissionDeniedError:
+            if doc_type not in MKT_DOCUMENT_TYPES:
+                raise
+            await self.authz.require(
+                context=context,
+                action=PACKAGING_DOCUMENT_WRITE,
+                resource_type=_RESOURCE,
+                resource_id=str(case_id),
+            )
+
     async def handle(
         self,
         context: AccessContext,
@@ -109,12 +143,7 @@ class UploadCaseDocument:
         declared_content_type: str,
         data: bytes,
     ) -> CaseDocument:
-        await self.authz.require(
-            context=context,
-            action=DOCUMENT_WRITE,
-            resource_type=_RESOURCE,
-            resource_id=str(case_id),
-        )
+        await self._require_upload(context, case_id, doc_type)
         await _require_case_in_workspace(self.cases, context, case_kind, case_id)
         if len(data) > self.max_bytes:
             raise PayloadTooLargeError(

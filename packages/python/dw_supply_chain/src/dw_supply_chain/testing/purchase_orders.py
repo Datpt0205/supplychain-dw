@@ -78,7 +78,7 @@ ELMICH_PREPARATION = load_supply_chain_step_preparation(
     REPO_ROOT / "scripts" / "elmich_step_preparation_override.yaml"
 )
 PLATFORM_DUTIES = load_supply_chain_action_duties(
-    REPO_ROOT / "configs" / "policies" / "supply_chain_action_duties@1.2.0.yaml"
+    REPO_ROOT / "configs" / "policies" / "supply_chain_action_duties@1.3.0.yaml"
 )
 
 

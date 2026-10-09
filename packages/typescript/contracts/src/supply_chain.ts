@@ -507,6 +507,9 @@ export const documentTypeSchema = z.enum([
   "proforma_invoice",
   "commercial_invoice",
   "bank_transfer_receipt",
+  // Step 12's revision requests (ai-automation/16).
+  "colour_revision_request",
+  "design_revision_request",
 ]);
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 
@@ -753,6 +756,8 @@ export const caseDutySchema = z.enum([
   "exceptions",
   "rnd",
   "supply_lead",
+  // MKT at step 12 (ai-automation/16).
+  "mkt",
 ]);
 export type CaseDuty = z.infer<typeof caseDutySchema>;
 
@@ -797,6 +802,9 @@ export const packagingActionSchema = z.enum([
   "receive_pre_production_sample",
   "pass_pre_production_test",
   "fail_pre_production_test",
+  // MKT at step 12 (ai-automation/16).
+  "send_mkt_pack",
+  "submit_packaging_content",
 ]);
 export type PackagingAction = z.infer<typeof packagingActionSchema>;
 
@@ -839,6 +847,8 @@ export const packagingStateSchema = z.object({
   design_status: reviewStatusSchema,
   pre_production_sample_received_at: z.string().nullable(),
   pre_production_test: preProductionTestSchema,
+  mkt_pack_sent_at: z.string().nullable(),
+  packaging_content_submitted_at: z.string().nullable(),
   version: z.number().int(),
 });
 export type PackagingState = z.infer<typeof packagingStateSchema>;
@@ -847,10 +857,28 @@ export type PackagingState = z.infer<typeof packagingStateSchema>;
 export const packagingDesignSchema = packagingStateSchema.extend({
   case_state: caseStateSchema,
   require_pre_production_test: z.boolean(),
+  require_packaging_content: z.boolean(),
+  pack: z.array(
+    z.object({
+      doc_type: documentTypeSchema,
+      document_id: z.string().uuid().nullable(),
+    }),
+  ),
   steps: z.array(packagingStepOptionSchema),
   history: z.array(packagingEventSchema),
 });
 export type PackagingDesign = z.infer<typeof packagingDesignSchema>;
+
+/** Mirrors `PackagingProofView` (ticket ai-automation/16): the newest proof
+ * and what code finds in it. No price. */
+export const packagingProofSchema = z.object({
+  document_id: z.string().uuid().nullable(),
+  status: z.enum(["extracted", "unreadable", "refused", "failed"]).nullable(),
+  findings: z.array(
+    z.object({ code: z.string(), subject: z.string(), message: z.string() }),
+  ),
+});
+export type PackagingProof = z.infer<typeof packagingProofSchema>;
 
 // ---- the tenant's own policies (settings screen) ---------------------------
 
@@ -891,6 +919,9 @@ export const packagingPolicySchema = z.object({
   policy_id: z.string(),
   policy_version: z.string(),
   require_pre_production_test: z.boolean(),
+  // 1.1.0 (ai-automation/16): kept whole on a save, or a toggle of the other
+  // rule would drop it.
+  require_packaging_content: z.boolean(),
 });
 export type PackagingPolicy = z.infer<typeof packagingPolicySchema>;
 

@@ -674,6 +674,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/po-cases/{case_id}/packaging-proof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Packaging Proof */
+        get: operations["get_packaging_proof_api_v1_supply_chain_po_cases__case_id__packaging_proof_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/po-cases/{case_id}/payments": {
         parameters: {
             query?: never;
@@ -1670,7 +1687,7 @@ export interface components {
          * CaseDuty
          * @enum {string}
          */
-        CaseDuty: "ordering" | "finance" | "qc" | "logistics" | "warehouse" | "exceptions" | "rnd" | "supply_lead";
+        CaseDuty: "ordering" | "finance" | "qc" | "logistics" | "warehouse" | "exceptions" | "rnd" | "supply_lead" | "mkt";
         /**
          * CaseKind
          * @description Which kind of case a document belongs to; the key's fourth segment, and
@@ -1898,7 +1915,7 @@ export interface components {
          *     of steps 11 and 16 (ai-automation/15).
          * @enum {string}
          */
-        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report" | "supplier_quotation" | "bod_submission" | "proforma_invoice" | "commercial_invoice" | "bank_transfer_receipt";
+        DocumentType: "proposal_list" | "product_image" | "sample_photo" | "sample_evaluation" | "sample_revision_request" | "product_profile_bm04" | "official_item_code" | "supplier_confirmation_email" | "purchase_order" | "deposit_docs" | "payment_docs" | "packaging_content" | "user_manual" | "maquette" | "colour_sample" | "packaging_design" | "pre_production_test_report" | "supplier_quotation" | "bod_submission" | "proforma_invoice" | "commercial_invoice" | "bank_transfer_receipt" | "colour_revision_request" | "design_revision_request";
         /** DraftColumnView */
         DraftColumnView: {
             kind: components["schemas"]["TemplateFieldKind"];
@@ -2525,11 +2542,17 @@ export interface components {
             /** Value */
             value: string | null;
         };
+        /** PackItemView */
+        PackItemView: {
+            doc_type: components["schemas"]["DocumentType"];
+            /** Document Id */
+            document_id: string | null;
+        };
         /**
          * PackagingAction
          * @enum {string}
          */
-        PackagingAction: "approve_colour" | "request_colour_revision" | "approve_design" | "request_design_revision" | "receive_pre_production_sample" | "pass_pre_production_test" | "fail_pre_production_test";
+        PackagingAction: "approve_colour" | "request_colour_revision" | "approve_design" | "request_design_revision" | "receive_pre_production_sample" | "pass_pre_production_test" | "fail_pre_production_test" | "send_mkt_pack" | "submit_packaging_content";
         /** PackagingDesignView */
         PackagingDesignView: {
             case_state: components["schemas"]["CaseState"];
@@ -2537,6 +2560,12 @@ export interface components {
             design_status: components["schemas"]["ReviewStatus"];
             /** History */
             history: components["schemas"]["PackagingEventView"][];
+            /** Mkt Pack Sent At */
+            mkt_pack_sent_at: string | null;
+            /** Pack */
+            pack: components["schemas"]["PackItemView"][];
+            /** Packaging Content Submitted At */
+            packaging_content_submitted_at: string | null;
             /**
              * Po Case Id
              * Format: uuid
@@ -2545,6 +2574,8 @@ export interface components {
             /** Pre Production Sample Received At */
             pre_production_sample_received_at: string | null;
             pre_production_test: components["schemas"]["PreProductionTest"];
+            /** Require Packaging Content */
+            require_packaging_content: boolean;
             /** Require Pre Production Test */
             require_pre_production_test: boolean;
             /** Steps */
@@ -2572,10 +2603,31 @@ export interface components {
             /** Reason */
             reason: string | null;
         };
+        /** PackagingFindingView */
+        PackagingFindingView: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Subject */
+            subject: string;
+        };
+        /** PackagingProofView */
+        PackagingProofView: {
+            /** Document Id */
+            document_id: string | null;
+            /** Findings */
+            findings: components["schemas"]["PackagingFindingView"][];
+            status: components["schemas"]["ExtractionStatus"] | null;
+        };
         /** PackagingStateView */
         PackagingStateView: {
             colour_status: components["schemas"]["ReviewStatus"];
             design_status: components["schemas"]["ReviewStatus"];
+            /** Mkt Pack Sent At */
+            mkt_pack_sent_at: string | null;
+            /** Packaging Content Submitted At */
+            packaging_content_submitted_at: string | null;
             /**
              * Po Case Id
              * Format: uuid
@@ -3929,6 +3981,11 @@ export interface components {
             policy_id: string;
             /** Policy Version */
             policy_version: string;
+            /**
+             * Require Packaging Content
+             * @default false
+             */
+            require_packaging_content: boolean;
             /** Require Pre Production Test */
             require_pre_production_test: boolean;
             /** Schema Version */
@@ -4015,6 +4072,11 @@ export interface components {
              * @default false
              */
             bod_submission: boolean;
+            /**
+             * Packaging
+             * @default false
+             */
+            packaging: boolean;
             /**
              * Po Steps
              * @default []
@@ -5414,6 +5476,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PackagingStateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_packaging_proof_api_v1_supply_chain_po_cases__case_id__packaging_proof_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackagingProofView"];
                 };
             };
             /** @description Validation Error */

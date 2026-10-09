@@ -38,10 +38,12 @@ from dw_supply_chain.domain.case_document import (
 from dw_supply_chain.domain.commercial import account_digest
 from dw_supply_chain.domain.extraction import (
     ACCOUNTS_FIELD,
+    BARCODES_FIELD,
     REDACTED_IDENTIFIER,
     BankTransferReading,
     Cited,
     ExtractionStatus,
+    PackagingDesignReading,
     SampleEvaluationReading,
 )
 from dw_supply_chain.testing.extraction import (
@@ -327,3 +329,18 @@ async def test_the_lane_refuses_a_foreign_document_even_from_a_port_that_leaks()
     outcome = await world.run(_queued(document, workspace=OTHER_WORKSPACE))
     assert outcome.refused_before_reading == 1
     assert world.gateway.sent == [] and world.extractions.rows == []
+
+
+async def test_a_proofs_barcode_is_read_by_code_and_never_shown_to_the_model() -> None:
+    # Ticket ai-automation/16: a 13-digit EAN is masked like an account.
+    world = World()
+    world.gateway.answer = PackagingDesignReading()
+    document = world.add(
+        "NỒI INOX 24CM\nSản xuất tại Trung Quốc\n8935001800019\n",
+        doc_type=DocumentType.PACKAGING_DESIGN,
+    )
+    await world.run(_queued(document))
+    [sent] = world.gateway.sent
+    assert "8935001800019" not in sent.user
+    [(_, row)] = world.extractions.rows
+    assert row.fields[BARCODES_FIELD] == ["8935001800019"]

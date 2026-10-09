@@ -791,6 +791,7 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         policy_override_repo=policy_override_repo,
         platform_default_duties=platform_default_action_duties,
         platform_default_policy=platform_default_packaging_policy,
+        documents=document_repo,
     )
     container.supply_chain_take_packaging_step = TakePackagingStep(
         po_cases=po_case_repo,
@@ -799,6 +800,8 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         authz=authorization,
         policy_override_repo=policy_override_repo,
         platform_default_duties=platform_default_action_duties,
+        platform_default_policy=platform_default_packaging_policy,
+        holders=SqlScopeHolders(wiring.seam.session_factory),
         notifier=SqlNotificationRepository(wiring.seam.session_factory),
         ids=wiring.seam.ids,
         clock=wiring.seam.clock,
@@ -1260,9 +1263,25 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         SqlSupplierAccountLookup,
     )
     from dw_supply_chain.adapters.persistence.po_step_outcomes import SqlPOStepOutcomes
+
+    # Step 12's proof check (ticket ai-automation/16): the worker reads the
+    # proof and drafts; this process shows what code finds in it.
+    from dw_supply_chain.application import packaging_papers as sc_packaging
     from dw_supply_chain.application import po_papers as sc_po_papers
     from dw_supply_chain.application import po_steps as sc_po_steps
     from dw_supply_chain.presentation.po_step_routes import POStepHandlers
+
+    container.supply_chain_get_packaging_proof = sc_packaging.GetPackagingProof(
+        cases=po_case_repo,
+        sources=sc_packaging.PackagingSources(
+            profiles=profiles,
+            documents=document_repo,
+            readings=SqlExtractionReadings(wiring.seam.session_factory),
+        ),
+        policy_override_repo=policy_override_repo,
+        platform_default_policy=platform_default_step_preparation,
+        authz=authorization,
+    )
 
     po_step_sources = sc_po_steps.POStepSources(
         commercial=po_commercial,

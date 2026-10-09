@@ -24,7 +24,7 @@ pytestmark = pytest.mark.unit
 
 _POLICIES = Path(__file__).resolve().parents[5] / "configs" / "policies"
 _SHIPPED = _POLICIES / PRODUCT_ACTION_DUTIES_POLICY_FILE
-_PO_SHIPPED = _POLICIES / "supply_chain_action_duties@1.2.0.yaml"
+_PO_SHIPPED = _POLICIES / "supply_chain_action_duties@1.3.0.yaml"
 
 
 def _document(mapping: dict[str, str], *, version: str = "1.3.0") -> dict[str, object]:

@@ -71,6 +71,22 @@ class DocumentType(StrEnum):
     PROFORMA_INVOICE = "proforma_invoice"
     COMMERCIAL_INVOICE = "commercial_invoice"
     BANK_TRANSFER_RECEIPT = "bank_transfer_receipt"
+    # Step 12 (ticket ai-automation/16): the colour and design revision
+    # requests code drafts for Cung ứng to send the supplier.
+    COLOUR_REVISION_REQUEST = "colour_revision_request"
+    DESIGN_REVISION_REQUEST = "design_revision_request"
+
+
+# MKT's papers (ADR 0028, E17): what `supply_chain.packaging_document.write`
+# uploads, and nothing else; every other type needs the document write.
+MKT_DOCUMENT_TYPES = frozenset(
+    {
+        DocumentType.PACKAGING_CONTENT,
+        DocumentType.USER_MANUAL,
+        DocumentType.MAQUETTE,
+        DocumentType.PACKAGING_DESIGN,
+    }
+)
 
 
 class CaseKind(StrEnum):

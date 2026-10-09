@@ -55,6 +55,9 @@ def test_adr_0021_names_fourteen_document_types_step_12_three_and_ai_02_one() ->
         "proforma_invoice",
         "commercial_invoice",
         "bank_transfer_receipt",
+        # Step 12's revision requests (ai-automation/16).
+        "colour_revision_request",
+        "design_revision_request",
     }
 
 

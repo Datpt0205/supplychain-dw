@@ -22,6 +22,13 @@ What each command decides, and where:
 - **The packaging policy:** read and set with the step-to-duty scopes (the rule
   decides when a step may be taken, as the duty mapping decides by whom); a
   tenant's override replaces the document whole and is audited.
+- **MKT** (ADR 0028; ticket ai-automation/16): where the tenant's packaging
+  policy requires the packaging content, approving the colour writes no "đã
+  báo TP MKT" line; sending MKT its pack tells the holders of MKT's duty (the
+  duty of `submit_packaging_content` under the tenant's policy), and MKT's
+  submission tells the holders of the design's duty. The page lists the pack:
+  the product's BM04, the user manual and the maquette, each the newest of its
+  type (or missing). Elsewhere MKT's two steps are not offered at all.
 """
 
 from __future__ import annotations
@@ -42,6 +49,7 @@ from dw_supply_chain.application.handlers import (
     PO_CASE_READ,
     _put_policy_override,
     duty_scope,
+    notify_duty_holders,
     po_case_link,
     resolve_action_duties,
 )
@@ -50,12 +58,15 @@ from dw_supply_chain.application.ports import (
     PackagingDesignRepositoryPort,
     POCaseRepositoryPort,
     ReviewNotifierPort,
+    ScopeHoldersPort,
 )
 from dw_supply_chain.application.product_cases import ProductDocumentLookupPort
 from dw_supply_chain.application.production_gate import resolve_packaging_policy
-from dw_supply_chain.domain.case_document import CaseDocumentId
+from dw_supply_chain.application.step_preparation import CaseDocumentListPort
+from dw_supply_chain.domain.case_document import CaseDocumentId, CaseKind, DocumentType
 from dw_supply_chain.domain.packaging_design import (
     ACTION_DOCUMENT_TYPE,
+    MKT_ACTIONS,
     REASON_REQUIRED_ACTIONS,
     PackagingAction,
     PackagingDesign,
@@ -68,6 +79,21 @@ from dw_supply_chain.packaging_policy import PACKAGING_POLICY_ID, SupplyChainPac
 logger = logging.getLogger(__name__)
 
 _PACKAGING_POLICY_RESOURCE = "packaging_policy"
+
+# Who is told when MKT's hand-off moves (ADR 0028): the holders of the duty of
+# the next step, under the tenant's own policy; no price, no content.
+MKT_HAND_OFF: dict[PackagingAction, tuple[PackagingAction, str, str]] = {
+    PackagingAction.SEND_MKT_PACK: (
+        PackagingAction.SUBMIT_PACKAGING_CONTENT,
+        "Gói làm bao bì đã gửi MKT",
+        "Cung ứng đã gửi BM04, HDSD, maquette; MKT nộp nội dung bao bì trên hồ sơ PO.",
+    ),
+    PackagingAction.SUBMIT_PACKAGING_CONTENT: (
+        PackagingAction.APPROVE_DESIGN,
+        "MKT đã nộp nội dung bao bì",
+        "Nội dung bao bì đã có trên hồ sơ PO; Cung ứng kiểm bản in thiết kế rồi duyệt.",
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,12 +109,31 @@ class PackagingStepView:
 
 
 @dataclass(frozen=True, slots=True)
+class PackItem:
+    """One paper of MKT's pack: its type and the newest document of it, if any."""
+
+    doc_type: DocumentType
+    document_id: uuid.UUID | None
+
+
+# What MKT receives (ADR 0028): the BM04 lives on the product case, the user
+# manual and the maquette on the PO case.
+MKT_PACK: tuple[tuple[CaseKind, DocumentType], ...] = (
+    (CaseKind.PRODUCT, DocumentType.PRODUCT_PROFILE_BM04),
+    (CaseKind.PO, DocumentType.USER_MANUAL),
+    (CaseKind.PO, DocumentType.MAQUETTE),
+)
+
+
+@dataclass(frozen=True, slots=True)
 class PackagingDesignDetail:
     design: PackagingDesign
     case_state: CaseState
     require_pre_production_test: bool
     steps: tuple[PackagingStepView, ...]
     history: tuple[PackagingHistoryEntry, ...]
+    require_packaging_content: bool = False
+    pack: tuple[PackItem, ...] = ()
 
 
 async def _case_in_workspace(
@@ -118,6 +163,7 @@ class GetPackagingDesign:
     policy_override_repo: PolicyOverridePort
     platform_default_duties: SupplyChainActionDuties
     platform_default_policy: SupplyChainPackagingPolicy
+    documents: CaseDocumentListPort
 
     async def handle(self, context: AccessContext, po_case_id: POCaseId) -> PackagingDesignDetail:
         await self.authz.require(
@@ -137,6 +183,8 @@ class GetPackagingDesign:
         )
         steps = []
         for action in PackagingAction:
+            if action in MKT_ACTIONS and not policy.require_packaging_content:
+                continue
             duty = duties.duty_for(action)
             steps.append(
                 PackagingStepView(
@@ -153,7 +201,27 @@ class GetPackagingDesign:
             require_pre_production_test=policy.require_pre_production_test,
             steps=tuple(steps),
             history=tuple(history),
+            require_packaging_content=policy.require_packaging_content,
+            pack=await self._pack(context, case) if policy.require_packaging_content else (),
         )
+
+    async def _pack(self, context: AccessContext, case: POCase) -> tuple[PackItem, ...]:
+        cases = {CaseKind.PO: case.id.value, CaseKind.PRODUCT: case.product_dev_case_id}
+        items = []
+        for kind, doc_type in MKT_PACK:
+            case_id = cases[kind]
+            mine = (
+                []
+                if case_id is None
+                else [
+                    d
+                    for d in await self.documents.list_for_case(context, kind, case_id)
+                    if d.doc_type is doc_type and d.case_id == case_id
+                ]
+            )
+            newest = max(mine, key=lambda d: d.version) if mine else None
+            items.append(PackItem(doc_type, None if newest is None else newest.id.value))
+        return tuple(items)
 
     async def _may(self, context: AccessContext, duty: CaseDuty, case: POCase) -> bool:
         # The step's own check, asked rather than re-derived.
@@ -177,6 +245,8 @@ class TakePackagingStep:
     authz: AuthorizationPort
     policy_override_repo: PolicyOverridePort
     platform_default_duties: SupplyChainActionDuties
+    platform_default_policy: SupplyChainPackagingPolicy
+    holders: ScopeHoldersPort
     notifier: ReviewNotifierPort
     ids: IdGenerator
     clock: UtcClock
@@ -206,6 +276,10 @@ class TakePackagingStep:
             if document is None:
                 raise document_refusal(case.id.value, action)
         design = await self.designs.get(context, case.id.value) or _fresh(case)
+        policy = await resolve_packaging_policy(
+            context, self.policy_override_repo, self.platform_default_policy
+        )
+        mkt = policy.require_packaging_content
         now: datetime = self.clock.now()
         design.take(
             action,
@@ -213,6 +287,7 @@ class TakePackagingStep:
             reason=reason,
             document=document,
             now=now,
+            mkt_required=mkt,
         )
         await self.designs.save(
             context,
@@ -233,7 +308,31 @@ class TakePackagingStep:
                 },
             ),
         )
-        if action is PackagingAction.APPROVE_COLOUR and case.pic_user_id is not None:
+        if action in MKT_HAND_OFF:
+            duty_action, title, body = MKT_HAND_OFF[action]
+            await notify_duty_holders(
+                context,
+                holders=self.holders,
+                notifier=self.notifier,
+                duty=duties.duty_for(duty_action),
+                source_key=f"supply_chain.{action.value}:{case.id}:{design.version}",
+                title=f"{title}: {case.supplier_name}",
+                body=body,
+                link=po_case_link(case.id.value),
+            )
+        elif action is PackagingAction.APPROVE_COLOUR and mkt and case.pic_user_id is not None:
+            try:
+                await self.notifier.deliver(
+                    context,
+                    recipients=[case.pic_user_id],
+                    source_key=f"supply_chain.colour_approved:{case.id}",
+                    title="Màu đã được duyệt",
+                    body="Cung ứng đã duyệt mẫu màu; bước tiếp theo là gửi gói cho MKT.",
+                    link=po_case_link(case.id.value),
+                )
+            except Exception:
+                logger.exception("packaging: the PIC was not told of the colour approval")
+        elif action is PackagingAction.APPROVE_COLOUR and case.pic_user_id is not None:
             # Told after the step is saved; a failed notice never undoes it.
             try:
                 await self.notifier.deliver(

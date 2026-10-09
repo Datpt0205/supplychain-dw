@@ -1,0 +1,15 @@
+{
+  "drafted": {
+    "design_revision_request": 0,
+    "packaging_content": 1
+  },
+  "draft_fields": {
+    "packaging_content": {
+      "product_name": null,
+      "material": null
+    }
+  },
+  "findings_absent": [
+    "label_missing"
+  ]
+}

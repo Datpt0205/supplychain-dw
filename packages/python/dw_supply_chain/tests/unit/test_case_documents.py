@@ -35,9 +35,15 @@ from dw_supply_chain.application.case_documents import (
     ListCaseDocuments,
     UploadCaseDocument,
 )
-from dw_supply_chain.application.handlers import COMMERCIAL_READ, DOCUMENT_READ, DOCUMENT_WRITE
+from dw_supply_chain.application.handlers import (
+    COMMERCIAL_READ,
+    DOCUMENT_READ,
+    DOCUMENT_WRITE,
+    PACKAGING_DOCUMENT_WRITE,
+)
 from dw_supply_chain.application.ports import NewCaseDocument
 from dw_supply_chain.domain.case_document import (
+    MKT_DOCUMENT_TYPES,
     CaseDocument,
     CaseDocumentId,
     CaseKind,
@@ -465,3 +471,20 @@ async def test_downloading_another_tenants_or_workspaces_document_is_not_found(
 
     with pytest.raises(NotFoundError):
         await stack.download.handle(_context(tenant=tenant, workspace=workspace), document.id)
+
+
+@pytest.mark.parametrize("doc_type", sorted(MKT_DOCUMENT_TYPES, key=str))
+async def test_mkt_uploads_its_four_papers_and_nothing_else(doc_type: DocumentType) -> None:
+    # ADR 0028 (ticket ai-automation/16): sc_mkt holds the packaging write,
+    # not the document write.
+    case = _case()
+    stack = _stack(case)
+    marketer = _context(scopes=frozenset({PACKAGING_DOCUMENT_WRITE, DOCUMENT_READ}))
+    document = await _upload(stack, case, context=marketer, doc_type=doc_type)
+    assert document.doc_type is doc_type
+    with pytest.raises(PermissionDeniedError):
+        await _upload(stack, case, context=marketer, doc_type=DocumentType.DEPOSIT_DOCS)
+    with pytest.raises(PermissionDeniedError):
+        await _upload(
+            stack, case, context=_context(scopes=frozenset({DOCUMENT_READ})), doc_type=doc_type
+        )

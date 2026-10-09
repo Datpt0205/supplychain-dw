@@ -88,6 +88,7 @@ from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementSe
 from dw_platform.retention_policy import load_retention_policy
 from dw_supply_chain.application.document_extraction import EXTRACTION_LANE
 from dw_supply_chain.application.follow_up_sweep import FOLLOW_UP_SWEEP_LANE
+from dw_supply_chain.application.packaging_papers import PACKAGING_PAPERS_LANE
 from dw_supply_chain.application.po_steps import PO_STEPS_LANE
 from dw_supply_chain.application.proposal_lists import PROPOSAL_LISTS_LANE
 from dw_supply_chain.application.purchase_orders import PURCHASE_ORDER_LANE
@@ -124,6 +125,8 @@ from dw_worker.consumers.supply_chain import (
     build_follow_up_consumer,
     build_follow_up_retention,
     build_follow_up_sweep,
+    build_packaging_papers,
+    build_packaging_papers_consumer,
     build_po_steps,
     build_po_steps_consumer,
     build_product_review_reconcile,
@@ -443,6 +446,7 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     step_preparation: Callable[[], Awaitable[None]] | None = None
     purchase_orders: Callable[[], Awaitable[None]] | None = None
     po_steps: Callable[[], Awaitable[None]] | None = None
+    packaging_papers: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's messages to a supplier: a database and a model.
     supplier_messages: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's proposal lists read into rows: a database and a model.
@@ -559,6 +563,12 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         # Steps 11-17's papers (tickets ai-automation/15-18): code only, no bucket.
         po_steps = build_po_steps_consumer(
             build_po_steps(sessions, configs_dir=REPO_ROOT / "configs", ids=ids, clock=clock)
+        )
+        # Step 12's papers (ticket ai-automation/16): code only, no bucket.
+        packaging_papers = build_packaging_papers_consumer(
+            build_packaging_papers(
+                sessions, configs_dir=REPO_ROOT / "configs", ids=ids, clock=clock
+            )
         )
         if step_stack is not None:
             step_preparation = build_step_preparation_consumer(
@@ -819,6 +829,14 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         registry.register(
             PO_STEPS_LANE,
             po_steps,
+            interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
+        )
+
+    # Step 12's papers (ticket ai-automation/16): the extraction lane's cadence.
+    if packaging_papers is not None:
+        registry.register(
+            PACKAGING_PAPERS_LANE,
+            packaging_papers,
             interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
         )
 

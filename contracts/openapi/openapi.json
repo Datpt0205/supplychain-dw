@@ -1426,7 +1426,8 @@
           "warehouse",
           "exceptions",
           "rnd",
-          "supply_lead"
+          "supply_lead",
+          "mkt"
         ],
         "title": "CaseDuty",
         "type": "string"
@@ -2230,7 +2231,9 @@
           "bod_submission",
           "proforma_invoice",
           "commercial_invoice",
-          "bank_transfer_receipt"
+          "bank_transfer_receipt",
+          "colour_revision_request",
+          "design_revision_request"
         ],
         "title": "DocumentType",
         "type": "string"
@@ -5212,6 +5215,31 @@
         "title": "POStepSuggestionView",
         "type": "object"
       },
+      "PackItemView": {
+        "properties": {
+          "doc_type": {
+            "$ref": "#/components/schemas/DocumentType"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          }
+        },
+        "required": [
+          "doc_type",
+          "document_id"
+        ],
+        "title": "PackItemView",
+        "type": "object"
+      },
       "PackagingAction": {
         "enum": [
           "approve_colour",
@@ -5220,7 +5248,9 @@
           "request_design_revision",
           "receive_pre_production_sample",
           "pass_pre_production_test",
-          "fail_pre_production_test"
+          "fail_pre_production_test",
+          "send_mkt_pack",
+          "submit_packaging_content"
         ],
         "title": "PackagingAction",
         "type": "string"
@@ -5243,6 +5273,37 @@
             "title": "History",
             "type": "array"
           },
+          "mkt_pack_sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mkt Pack Sent At"
+          },
+          "pack": {
+            "items": {
+              "$ref": "#/components/schemas/PackItemView"
+            },
+            "title": "Pack",
+            "type": "array"
+          },
+          "packaging_content_submitted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packaging Content Submitted At"
+          },
           "po_case_id": {
             "format": "uuid",
             "title": "Po Case Id",
@@ -5262,6 +5323,10 @@
           },
           "pre_production_test": {
             "$ref": "#/components/schemas/PreProductionTest"
+          },
+          "require_packaging_content": {
+            "title": "Require Packaging Content",
+            "type": "boolean"
           },
           "require_pre_production_test": {
             "title": "Require Pre Production Test",
@@ -5285,9 +5350,13 @@
           "design_status",
           "pre_production_sample_received_at",
           "pre_production_test",
+          "mkt_pack_sent_at",
+          "packaging_content_submitted_at",
           "version",
           "case_state",
           "require_pre_production_test",
+          "require_packaging_content",
+          "pack",
           "steps",
           "history"
         ],
@@ -5355,6 +5424,69 @@
         "title": "PackagingEventView",
         "type": "object"
       },
+      "PackagingFindingView": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "subject",
+          "message"
+        ],
+        "title": "PackagingFindingView",
+        "type": "object"
+      },
+      "PackagingProofView": {
+        "properties": {
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/PackagingFindingView"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "document_id",
+          "status",
+          "findings"
+        ],
+        "title": "PackagingProofView",
+        "type": "object"
+      },
       "PackagingStateView": {
         "properties": {
           "colour_status": {
@@ -5362,6 +5494,30 @@
           },
           "design_status": {
             "$ref": "#/components/schemas/ReviewStatus"
+          },
+          "mkt_pack_sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mkt Pack Sent At"
+          },
+          "packaging_content_submitted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packaging Content Submitted At"
           },
           "po_case_id": {
             "format": "uuid",
@@ -5394,6 +5550,8 @@
           "design_status",
           "pre_production_sample_received_at",
           "pre_production_test",
+          "mkt_pack_sent_at",
+          "packaging_content_submitted_at",
           "version"
         ],
         "title": "PackagingStateView",
@@ -9801,6 +9959,11 @@
             "title": "Policy Version",
             "type": "string"
           },
+          "require_packaging_content": {
+            "default": false,
+            "title": "Require Packaging Content",
+            "type": "boolean"
+          },
           "require_pre_production_test": {
             "title": "Require Pre Production Test",
             "type": "boolean"
@@ -10011,6 +10174,11 @@
           "bod_submission": {
             "default": false,
             "title": "Bod Submission",
+            "type": "boolean"
+          },
+          "packaging": {
+            "default": false,
+            "title": "Packaging",
             "type": "boolean"
           },
           "po_steps": {
@@ -15833,6 +16001,49 @@
           }
         },
         "summary": "Take Packaging Step",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/packaging-proof": {
+      "get": {
+        "operationId": "get_packaging_proof_api_v1_supply_chain_po_cases__case_id__packaging_proof_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackagingProofView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Packaging Proof",
         "tags": [
           "supply_chain"
         ]

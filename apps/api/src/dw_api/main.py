@@ -284,6 +284,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
         and container.supply_chain_take_packaging_step is not None
         and container.supply_chain_get_packaging_policy is not None
         and container.supply_chain_set_packaging_policy_override is not None
+        and container.supply_chain_get_packaging_proof is not None
     ):
         from dw_api.dependencies.auth import get_access_context
         from dw_api.dependencies.idempotency import get_idempotent_operation
@@ -295,6 +296,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
                 container.supply_chain_take_packaging_step,
                 container.supply_chain_get_packaging_policy,
                 container.supply_chain_set_packaging_policy_override,
+                get_proof=container.supply_chain_get_packaging_proof,
                 resolve_access_context=get_access_context,
                 resolve_idempotency=get_idempotent_operation,
             )

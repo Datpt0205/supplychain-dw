@@ -68,6 +68,12 @@ def _edit(world: POWorld, draft: Any, edit: dict[str, Any]) -> Any:
     return new_id
 
 
+def _words(world: POWorld) -> list[str]:
+    """What a person reads in a notice: its title and body. Recipient ids are
+    random and may spell any number, which made the price check flaky."""
+    return [f"{n.get('title', '')} {n.get('body', '')}" for n in world.notifier.sent]
+
+
 async def _run(input_data: dict[str, Any]) -> dict[str, Any]:
     world = POWorld()
     tenant = uuid.uuid4() if input_data.get("case_in") == "other_tenant" else None
@@ -96,7 +102,7 @@ async def _run(input_data: dict[str, Any]) -> dict[str, Any]:
     drafted = (await world.lane().run()).drafted
     drafts = [d for d in world.drafts.rows if d.doc_type is DocumentType.PURCHASE_ORDER]
     out: dict[str, Any] = {"drafts": drafted, "fields": {}, "findings": [], "texts": []}
-    out["texts"] = [json.dumps(world.notifier.sent, default=str, ensure_ascii=False)]
+    out["texts"] = [json.dumps(_words(world), ensure_ascii=False)]
     if not drafts:
         out["case_state"] = world.store.cases[case.id.value].state.value
         return out
@@ -123,7 +129,7 @@ async def _run(input_data: dict[str, Any]) -> dict[str, Any]:
             out["decision"] = "po_created"
         except (DomainError, ConflictError, PermissionDeniedError):
             out["decision"] = "refused"
-        out["texts"].append(json.dumps(world.notifier.sent, default=str, ensure_ascii=False))
+        out["texts"].append(json.dumps(_words(world), ensure_ascii=False))
     out["case_state"] = world.store.cases[case.id.value].state.value
     return out
 

@@ -159,7 +159,9 @@ def test_invoice_lines_are_matched_by_sku_quantity_and_price() -> None:
 
 
 def _texts(world: POStepWorld, *more: Any) -> str:
-    return json.dumps([world.notifier.sent, *more], default=str, ensure_ascii=False)
+    # The words of each notice; ids are random and may spell any number.
+    words = [f"{n.get('title', '')} {n.get('body', '')}" for n in world.notifier.sent]
+    return json.dumps([words, *more], default=str, ensure_ascii=False)
 
 
 async def _drafted(world: POStepWorld, case: POCase, doc_type: DocumentType) -> DocumentDraft:

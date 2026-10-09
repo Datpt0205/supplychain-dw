@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_action_duties
-policy_version: "1.2.0"
+policy_version: "1.3.0"
 
 # Mỗi bước chuyển trạng thái của PO case thuộc về một nhiệm vụ (duty). Người
 # thực hiện bước đó phải có scope supply_chain.duty.<duty>, do role cấp:
@@ -10,6 +10,7 @@ policy_version: "1.2.0"
 #   logistics  → sc_logistics
 #   warehouse  → sc_warehouse (kho)
 #   exceptions → mọi role vận hành (báo chặn, cần xem xét, chờ bên ngoài, tiếp tục)
+#   mkt        → sc_mkt (MKT, bước 12: nộp nội dung bao bì)
 #
 # Đây là PLATFORM DEFAULT, dựng theo luồng Elmich "Product-to-Stock" và nguyên
 # tắc tách bạch đặt hàng / nhận hàng / thanh toán. Mỗi công ty tự ghi đè toàn bộ
@@ -29,6 +30,11 @@ policy_version: "1.2.0"
 # SX) trên Hồ sơ PO: Cung ứng duyệt màu, duyệt thiết kế, nhận mẫu trước SX
 # (ordering); R&D đạt hoặc không đạt test trước SX (rnd, role sc_rnd). Override
 # công ty lưu trước 1.2.0 được migration dữ liệu thêm đúng bảy dòng này.
+#
+# 1.3.0 (ADR 0028, ticket ai-automation/16) thêm hai bước con của MKT ở bước 12:
+# Cung ứng gửi gói cho MKT (ordering), MKT nộp nội dung bao bì (mkt, role sc_mkt).
+# Override công ty lưu trước 1.3.0 nhận duty nền tảng cho đúng hai bước này khi
+# nạp (SupplyChainActionDuties.from_stored), không cần migration dữ liệu.
 action_duties:
   request_deposit: ordering
   confirm_deposit: finance
@@ -56,3 +62,5 @@ action_duties:
   receive_pre_production_sample: ordering
   pass_pre_production_test: rnd
   fail_pre_production_test: rnd
+  send_mkt_pack: ordering
+  submit_packaging_content: mkt

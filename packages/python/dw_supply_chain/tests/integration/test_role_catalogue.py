@@ -37,7 +37,7 @@ _PO_OPERATING_ROLES = (
     "sc_warehouse",
 )
 _OPERATING_ROLES = (*_PO_OPERATING_ROLES, "sc_rnd", "sc_supply_lead")
-_SC_ROLES = ("sc_viewer", *_OPERATING_ROLES, "sc_bod", "sc_process_admin")
+_SC_ROLES = ("sc_viewer", *_OPERATING_ROLES, "sc_bod", "sc_mkt", "sc_process_admin")
 _APPROVALS = load_supply_chain_product_approvals(
     REPO_ROOT / "configs" / "policies" / PRODUCT_APPROVALS_POLICY_FILE
 )
@@ -51,6 +51,7 @@ _OPERATIONS = {
     "supply_chain.supplier_update.write",
     "supply_chain.delay_impact.write",
     handlers.DOCUMENT_WRITE,
+    handlers.PACKAGING_DOCUMENT_WRITE,
     handlers.COMMERCIAL_WRITE,
     handlers.PRODUCT_CASE_WRITE,
     _APPROVE_BOD,
@@ -196,6 +197,26 @@ async def test_rnd_holds_exactly_the_viewer_its_duty_and_the_document_write(
         handlers.duty_scope(CaseDuty.RND),
         handlers.DOCUMENT_WRITE,
     }
+
+
+async def test_mkt_holds_exactly_the_viewer_its_duty_and_the_packaging_write(
+    engine: AsyncEngine,
+) -> None:
+    """ADR 0028 (ticket ai-automation/16): MKT receives the pack and submits the
+    packaging content: viewer, `duty.mkt`, the packaging write (MKT's four
+    papers only), and nothing else. No price (`commercial.read`), no Cung ứng
+    step (`duty.ordering`), no general document write; nobody else holds the
+    duty, and the process admin cannot."""
+    catalogue = await _catalogue(engine)
+    mkt = handlers.duty_scope(CaseDuty.MKT)
+    assert catalogue["sc_mkt"] == catalogue["sc_viewer"] | {
+        mkt,
+        handlers.PACKAGING_DOCUMENT_WRITE,
+    }
+    assert handlers.COMMERCIAL_READ not in catalogue["sc_mkt"]
+    assert handlers.duty_scope(CaseDuty.ORDERING) not in catalogue["sc_mkt"]
+    assert {key for key, scopes in catalogue.items() if mkt in scopes} == {"sc_mkt"}
+    assert await _violation(engine, "sc_process_admin", "sc_mkt") is not None
 
 
 async def test_the_supply_lead_holds_exactly_the_viewer_its_duty_and_the_document_write(

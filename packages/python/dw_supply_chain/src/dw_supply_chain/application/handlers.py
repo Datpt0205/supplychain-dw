@@ -138,7 +138,7 @@ _SLA_POLICY_ID = "supply_chain_sla"
 ACTION_DUTIES_READ = "supply_chain.action_duties.read"
 ACTION_DUTIES_WRITE = "supply_chain.action_duties.write"
 _ACTION_DUTIES_RESOURCE = "action_duties"
-# Matches configs/policies/supply_chain_action_duties@1.2.0.yaml's policy_id.
+# Matches configs/policies/supply_chain_action_duties@1.3.0.yaml's policy_id.
 _ACTION_DUTIES_POLICY_ID = "supply_chain_action_duties"
 
 
@@ -193,6 +193,8 @@ async def notify_duty_holders(
 # checks.
 DOCUMENT_READ = "supply_chain.document.read"
 DOCUMENT_WRITE = "supply_chain.document.write"
+# MKT's upload (ADR 0028, ticket ai-automation/16): only `MKT_DOCUMENT_TYPES`.
+PACKAGING_DOCUMENT_WRITE = "supply_chain.packaging_document.write"
 
 # Prices, payment terms, payments and a supplier's bank account
 # (`application.commercial`, ADR 0026): read and written only with these, and
@@ -386,14 +388,13 @@ async def resolve_action_duties(
 ) -> SupplyChainActionDuties:
     """The tenant's own PO step-to-duty mapping if it has set one, the
     platform's otherwise: the one reading `AdvancePOCase`, `CreatePO` and
-    ĐẶT HÀNG's notice all authorize or address by."""
-    return await _resolve_policy(
-        context,
-        policy_override_repo,
-        policy_id=_ACTION_DUTIES_POLICY_ID,
-        schema=SupplyChainActionDuties,
-        platform_default=platform_default,
-    )
+    ĐẶT HÀNG's notice all authorize or address by. An override stored before
+    a step was added takes the platform's duty for that step only
+    (`SupplyChainActionDuties.from_stored`)."""
+    override = await policy_override_repo.get(context, _ACTION_DUTIES_POLICY_ID)
+    if override is None:
+        return platform_default
+    return SupplyChainActionDuties.from_stored(override, platform_default)
 
 
 @dataclass(frozen=True)

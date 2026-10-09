@@ -65,8 +65,10 @@ const SLA: SLAPolicy = {
 const PACKAGING: PackagingPolicy = {
   schema_version: "1.0",
   policy_id: "supply_chain_packaging",
-  policy_version: "1.0.0",
+  policy_version: "1.1.0",
   require_pre_production_test: false,
+  // Kept whole on a save of the other rule (ticket ai-automation/16).
+  require_packaging_content: true,
 };
 
 afterEach(() => {

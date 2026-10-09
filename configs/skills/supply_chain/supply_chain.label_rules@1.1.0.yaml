@@ -1,0 +1,16 @@
+schema_version: '1.0'
+skill_id: supply_chain.label_rules
+version: 1.1.0
+title: Nội dung bắt buộc của nhãn hàng hóa (Nghị định 43/2017/NĐ-CP, sửa bởi 111/2021/NĐ-CP)
+applies_to:
+- supply_chain.extract_packaging_design
+body: "Tóm tắt để kiểm bản in bao bì (bước 12); không thay ý kiến pháp lý, đối chiếu văn bản\ngốc khi\
+  \ có nghi ngờ.\n\nNhãn phải có ít nhất:\n1. Tên hàng hóa.\n2. Tên và địa chỉ của tổ chức, cá nhân chịu\
+  \ trách nhiệm về hàng hóa.\n3. Xuất xứ hàng hóa, ghi bằng một trong các cụm \"sản xuất tại\", \"chế\
+  \ tạo tại\", \"nước\n   sản xuất\", \"xuất xứ\", \"sản xuất bởi\" kèm tên nước hoặc vùng lãnh thổ.\n\
+  4. Các nội dung bắt buộc khác theo tính chất của từng nhóm hàng (Phụ lục I của nghị\n   định). Với đồ\
+  \ dùng gia dụng và dụng cụ chứa đựng, tiếp xúc thực phẩm thường gồm:\n   thành phần hoặc chất liệu,\
+  \ thông số kỹ thuật, hướng dẫn sử dụng và bảo quản, thông\n   tin cảnh báo, và với dụng cụ chứa đựng\
+  \ thực phẩm là ngày sản xuất.\n\nHàng nhập khẩu: nhãn gốc bằng tiếng nước ngoài phải có nhãn phụ bằng\
+  \ tiếng Việt thể\nhiện các nội dung bắt buộc. Một nội dung bắt buộc thiếu trên bản in là một phát hiện\n\
+  cho người duyệt, không tự sửa bản in.\n"

@@ -55,11 +55,22 @@ export const DOC_TYPE_LABEL: Record<DocumentType, string> = {
   proforma_invoice: "PI của NCC",
   commercial_invoice: "Hóa đơn thương mại",
   bank_transfer_receipt: "Ủy nhiệm chi (UNC)",
+  colour_revision_request: "Yêu cầu sửa mẫu màu",
+  design_revision_request: "Yêu cầu sửa thiết kế bao bì",
 };
 
 const DOC_TYPE_OPTIONS = (Object.keys(DOC_TYPE_LABEL) as DocumentType[]).map(
   (value) => ({ value, label: DOC_TYPE_LABEL[value] }),
 );
+
+/** MKT's papers (ADR 0028): all `supply_chain.packaging_document.write`
+ * uploads; the server refuses any other type from it. */
+export const MKT_DOCUMENT_TYPES: DocumentType[] = [
+  "packaging_content",
+  "user_manual",
+  "maquette",
+  "packaging_design",
+];
 
 /** The case kinds whose documents this card can show: a PO case and a
  * product-development case (stage 1), each with its own two calls. */
@@ -173,12 +184,15 @@ export function CaseDocumentsCard({
   caseKind,
   caseId,
   canUpload,
+  uploadTypes,
   onUploaded,
   refreshTick = 0,
 }: {
   caseKind: CaseKind;
   caseId: string;
   canUpload: boolean;
+  /** The only types the caller may upload (MKT's four); every type when absent. */
+  uploadTypes?: DocumentType[];
   /** Told after a document is stored, so a page can refresh what reads them. */
   onUploaded?: (document: CaseDocument) => void;
   /** Bumped by the page when a document was stored elsewhere (a step's form). */
@@ -345,7 +359,11 @@ export function CaseDocumentsCard({
             aria-label="Loại chứng từ"
             placeholder="Loại chứng từ"
             className="min-w-56"
-            options={DOC_TYPE_OPTIONS}
+            options={
+              uploadTypes
+                ? DOC_TYPE_OPTIONS.filter((o) => uploadTypes.includes(o.value))
+                : DOC_TYPE_OPTIONS
+            }
             value={docType ?? undefined}
             onChange={(value) => setDocType(value)}
             disabled={lockReason !== null}

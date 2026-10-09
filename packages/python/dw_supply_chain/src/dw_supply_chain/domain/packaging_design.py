@@ -14,6 +14,14 @@ is approved, and an approval is final. A failed test can be taken again (a new
 report); a passed one is final. MKT and Thiết kế are not users yet (Part B):
 "đã báo TP MKT" is a line in this case's history, and the PIC is told.
 
+MKT as a minimal user (ADR 0028, E17; ticket ai-automation/16): when the
+tenant's packaging policy requires it (`require_packaging_content`), two steps
+sit between the colour and the design: Cung ứng sends MKT its pack
+(`send_mkt_pack`: BM04, HDSD, maquette; MKT is told instead of the "đã báo TP
+MKT" line), and MKT submits the packaging content (`submit_packaging_content`,
+with a `packaging_content` uploaded since the pack was sent, as often as it is
+revised until the design is approved). The design is not approved before it.
+
 One `PackagingDesign` per PO case. Every action needs the case in
 `pre_production` (the repository re-checks that in the transaction that saves
 the step, so a case that moved on meanwhile refuses it).
@@ -44,6 +52,9 @@ class PackagingAction(StrEnum):
     RECEIVE_PRE_PRODUCTION_SAMPLE = "receive_pre_production_sample"
     PASS_PRE_PRODUCTION_TEST = "pass_pre_production_test"
     FAIL_PRE_PRODUCTION_TEST = "fail_pre_production_test"
+    # MKT as a minimal user (ADR 0028; ticket ai-automation/16).
+    SEND_MKT_PACK = "send_mkt_pack"
+    SUBMIT_PACKAGING_CONTENT = "submit_packaging_content"
 
 
 class ReviewStatus(StrEnum):
@@ -72,10 +83,17 @@ REASON_REQUIRED_ACTIONS = frozenset(
 ACTION_DOCUMENT_TYPE: dict[PackagingAction, DocumentType] = {
     PackagingAction.PASS_PRE_PRODUCTION_TEST: DocumentType.PRE_PRODUCTION_TEST_REPORT,
     PackagingAction.FAIL_PRE_PRODUCTION_TEST: DocumentType.PRE_PRODUCTION_TEST_REPORT,
+    # MKT's packaging content, uploaded since the pack was sent.
+    PackagingAction.SUBMIT_PACKAGING_CONTENT: DocumentType.PACKAGING_CONTENT,
 }
+# The steps that exist only where the tenant's packaging policy requires the
+# packaging content (`require_packaging_content`).
+MKT_ACTIONS = frozenset({PackagingAction.SEND_MKT_PACK, PackagingAction.SUBMIT_PACKAGING_CONTENT})
 
 # The history line approving the colour writes: MKT is not a user yet (Part B).
 MKT_LEAD_NOTE = "Đã báo TP MKT: màu đạt, chuyển sang làm bao bì"
+# The line sending MKT its pack writes, where MKT is a user (ticket ai-automation/16).
+MKT_PACK_NOTE = "Đã gửi MKT gói BM04, HDSD, maquette"
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,8 +125,13 @@ def document_refusal(case_id: uuid.UUID, action: PackagingAction) -> DWError:
     expected = ACTION_DOCUMENT_TYPE.get(action)
     if expected is None:
         return DomainError("this action takes no document", details={"action": action.value})
+    since = (
+        "từ khi gửi gói cho MKT"
+        if action is PackagingAction.SUBMIT_PACKAGING_CONTENT
+        else "từ khi nhận mẫu trước SX"
+    )
     return ConflictError(
-        f"{action.value} cần {expected.value} của hồ sơ này, tải lên từ khi nhận mẫu trước SX",
+        f"{action.value} cần {expected.value} của hồ sơ này, tải lên {since}",
         details={
             "case_id": str(case_id),
             "action": action.value,
@@ -126,6 +149,9 @@ class PackagingDesign:
     design_status: ReviewStatus = ReviewStatus.PENDING
     pre_production_sample_received_at: datetime | None = None
     pre_production_test: PreProductionTest = PreProductionTest.PENDING
+    # MKT's two steps (ticket ai-automation/16), where the tenant requires them.
+    mkt_pack_sent_at: datetime | None = None
+    packaging_content_submitted_at: datetime | None = None
     # 0 until the first step is saved: the row does not exist yet.
     version: int = 0
     _pending: list[PackagingEvent] = field(default_factory=list, compare=False, repr=False)
@@ -142,8 +168,11 @@ class PackagingDesign:
         reason: str | None,
         document: CaseDocument | None,
         now: datetime,
+        mkt_required: bool,
     ) -> None:
-        """Takes one step, or raises without changing anything."""
+        """Takes one step, or raises without changing anything. `mkt_required`
+        is the tenant's packaging policy: whether MKT's two steps stand between
+        the colour and the design."""
         if not case_in_pre_production:
             raise ConflictError(
                 "thiết kế màu, bao bì và test trước SX chỉ làm khi Hồ sơ PO ở bước 12",
@@ -154,19 +183,33 @@ class PackagingDesign:
             raise DomainError("this action requires a reason", details={"action": action.value})
         if action not in REASON_REQUIRED_ACTIONS:
             reason = None
-        self._expect(action, self._open(action))
+        self._expect(action, self._open(action, mkt_required=mkt_required))
         document_id = self._step_document(action, document)
-        note = self._apply(action, now)
+        note = self._apply(action, now, mkt_required=mkt_required)
         self.version += 1
         self._pending.append(PackagingEvent(action, reason, document_id, note))
 
-    def _open(self, action: PackagingAction) -> bool:
+    def _open(self, action: PackagingAction, *, mkt_required: bool) -> bool:
         """Whether `action` may follow what has been done, in the diagram's order."""
         match action:
             case PackagingAction.APPROVE_COLOUR | PackagingAction.REQUEST_COLOUR_REVISION:
                 return self.colour_status is not ReviewStatus.APPROVED
+            case PackagingAction.SEND_MKT_PACK:
+                return (
+                    mkt_required
+                    and self.colour_status is ReviewStatus.APPROVED
+                    and self.mkt_pack_sent_at is None
+                )
+            case PackagingAction.SUBMIT_PACKAGING_CONTENT:
+                return (
+                    mkt_required
+                    and self.mkt_pack_sent_at is not None
+                    and self.design_status is not ReviewStatus.APPROVED
+                )
             case PackagingAction.APPROVE_DESIGN | PackagingAction.REQUEST_DESIGN_REVISION:
-                return self._design_open()
+                return self._design_open() and (
+                    not mkt_required or self.packaging_content_submitted_at is not None
+                )
             case PackagingAction.RECEIVE_PRE_PRODUCTION_SAMPLE:
                 return (
                     self.design_status is ReviewStatus.APPROVED
@@ -177,11 +220,17 @@ class PackagingDesign:
             ):
                 return self._test_open()
 
-    def _apply(self, action: PackagingAction, now: datetime) -> str | None:
+    def _apply(self, action: PackagingAction, now: datetime, *, mkt_required: bool) -> str | None:
         match action:
             case PackagingAction.APPROVE_COLOUR:
                 self.colour_status = ReviewStatus.APPROVED
-                return MKT_LEAD_NOTE
+                # Where MKT is a user, MKT is told when the pack is sent.
+                return None if mkt_required else MKT_LEAD_NOTE
+            case PackagingAction.SEND_MKT_PACK:
+                self.mkt_pack_sent_at = now
+                return MKT_PACK_NOTE
+            case PackagingAction.SUBMIT_PACKAGING_CONTENT:
+                self.packaging_content_submitted_at = now
             case PackagingAction.REQUEST_COLOUR_REVISION:
                 self.colour_status = ReviewStatus.REVISION_REQUESTED
             case PackagingAction.APPROVE_DESIGN:
@@ -229,7 +278,11 @@ class PackagingDesign:
             if document is not None:
                 raise document_refusal(self.po_case_id, action)
             return None
-        since = self.pre_production_sample_received_at
+        since = (
+            self.mkt_pack_sent_at
+            if action is PackagingAction.SUBMIT_PACKAGING_CONTENT
+            else self.pre_production_sample_received_at
+        )
         belongs = (
             document is not None
             and document.case_kind is CaseKind.PO

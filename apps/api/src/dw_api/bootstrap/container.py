@@ -128,6 +128,7 @@ from dw_supply_chain.application.packaging_designs import (
     SetPackagingPolicyOverride,
     TakePackagingStep,
 )
+from dw_supply_chain.application.packaging_papers import GetPackagingProof
 from dw_supply_chain.application.product_cases import (
     AdvanceProductCase,
     GetProductCase,
@@ -252,6 +253,8 @@ class ApiContainer:
     supply_chain_take_packaging_step: TakePackagingStep | None = None
     supply_chain_get_packaging_policy: GetPackagingPolicy | None = None
     supply_chain_set_packaging_policy_override: SetPackagingPolicyOverride | None = None
+    # Step 12's proof check (ai-automation/16).
+    supply_chain_get_packaging_proof: GetPackagingProof | None = None
     # Commercial data and BM04 as fields (ADR 0026, ticket ai-automation/01):
     # its own router on its own guard, wired with the documents a payment cites.
     supply_chain_commercial: CommercialHandlers | None = None

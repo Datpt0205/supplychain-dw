@@ -153,7 +153,7 @@ _SHIPPED_ACTION_DUTIES = (
     Path(__file__).resolve().parents[5]
     / "configs"
     / "policies"
-    / "supply_chain_action_duties@1.2.0.yaml"
+    / "supply_chain_action_duties@1.3.0.yaml"
 )
 _SHIPPED_PRODUCT_ACTION_DUTIES = (
     Path(__file__).resolve().parents[5] / "configs" / "policies" / PRODUCT_ACTION_DUTIES_POLICY_FILE

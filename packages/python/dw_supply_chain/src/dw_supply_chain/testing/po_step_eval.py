@@ -70,6 +70,12 @@ def _edit(world: POStepWorld, draft: DocumentDraft, edit: dict[str, Any]) -> uui
     return new_id
 
 
+def _words(world: POStepWorld) -> list[str]:
+    """What a person reads in a notice: its title and body (ids are random and
+    may spell any number)."""
+    return [f"{n.get('title', '')} {n.get('body', '')}" for n in world.notifier.sent]
+
+
 async def _run(input_data: dict[str, Any]) -> dict[str, Any]:
     kind = POStepKind(input_data["step"])
     spec = PO_STEPS[kind]
@@ -99,7 +105,7 @@ async def _run(input_data: dict[str, Any]) -> dict[str, Any]:
     for payment in input_data.get("payments", []):
         world.add_payment(case, PaymentKind(payment["kind"]), payment["amount"])
     drafted = (await world.lane().run()).drafted
-    out: dict[str, Any] = {"drafts": drafted, "fields": {}, "texts": [world.notifier.sent]}
+    out: dict[str, Any] = {"drafts": drafted, "fields": {}, "texts": [_words(world)]}
     draft: DocumentDraft | None = None
     if spec.draft is not None:
         mine = [
@@ -136,7 +142,7 @@ async def _run(input_data: dict[str, Any]) -> dict[str, Any]:
             out["decision"] = "applied"
         except (DomainError, ConflictError, PermissionDeniedError, NotFoundError):
             out["decision"] = "refused"
-        out["texts"].append(world.notifier.sent)
+        out["texts"].append(_words(world))
     out["case_state"] = world.store.cases[case.id.value].state.value
     recorded = [
         p for p in world.store.payments.get(case.id.value, []) if p.recorded_by == world.person

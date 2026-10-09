@@ -6,6 +6,9 @@ the tenant's step-13 rule, and the history.
 `POST /po-cases/{id}/packaging-design/steps` — take one step; replayed under
 the same `Idempotency-Key` it returns the first answer.
 `GET|PUT /packaging-policy` — the tenant's step-13 rule.
+`GET /po-cases/{id}/packaging-proof` — the newest packaging design proof and
+what code finds in it against the label rules, the BM04 and the PO's SKUs
+(ticket ai-automation/16). No price.
 
 The request names a step from the closed `PackagingAction` set, a reason and a
 document id; never a case state, a duty, a tenant or a person.
@@ -28,6 +31,9 @@ from dw_supply_chain.application.packaging_designs import (
     SetPackagingPolicyOverride,
     TakePackagingStep,
 )
+from dw_supply_chain.application.packaging_papers import GetPackagingProof
+from dw_supply_chain.domain.case_document import DocumentType
+from dw_supply_chain.domain.extraction import ExtractionStatus
 from dw_supply_chain.domain.packaging_design import (
     PackagingAction,
     PackagingDesign,
@@ -66,15 +72,42 @@ class PackagingStateView(BaseModel):
     design_status: ReviewStatus
     pre_production_sample_received_at: datetime | None
     pre_production_test: PreProductionTest
+    # MKT's two steps (ticket ai-automation/16).
+    mkt_pack_sent_at: datetime | None
+    packaging_content_submitted_at: datetime | None
     version: int
+
+
+class PackItemView(BaseModel):
+    doc_type: DocumentType
+    # null: no document of that type yet.
+    document_id: uuid.UUID | None
 
 
 class PackagingDesignView(PackagingStateView):
     case_state: CaseState
     # The tenant's rule: production waits for a passed test.
     require_pre_production_test: bool
+    # The tenant's rule: MKT's steps stand between the colour and the design.
+    require_packaging_content: bool
+    # What MKT receives (empty where MKT is not a user).
+    pack: list[PackItemView]
     steps: list[PackagingStepOptionView]
     history: list[PackagingEventView]
+
+
+class PackagingFindingView(BaseModel):
+    code: str
+    subject: str
+    message: str
+
+
+class PackagingProofView(BaseModel):
+    # null: no proof on the case, or the tenant does not prepare step 12.
+    document_id: uuid.UUID | None
+    # null: not read yet (or none).
+    status: ExtractionStatus | None
+    findings: list[PackagingFindingView]
 
 
 class TakePackagingStepRequest(BaseModel):
@@ -94,6 +127,8 @@ def _state(design: PackagingDesign) -> dict[str, object]:
         "design_status": design.design_status,
         "pre_production_sample_received_at": design.pre_production_sample_received_at,
         "pre_production_test": design.pre_production_test,
+        "mkt_pack_sent_at": design.mkt_pack_sent_at,
+        "packaging_content_submitted_at": design.packaging_content_submitted_at,
         "version": design.version,
     }
 
@@ -104,6 +139,11 @@ def _detail_view(detail: PackagingDesignDetail) -> PackagingDesignView:
             **_state(detail.design),
             "case_state": detail.case_state,
             "require_pre_production_test": detail.require_pre_production_test,
+            "require_packaging_content": detail.require_packaging_content,
+            "pack": [
+                PackItemView(doc_type=item.doc_type, document_id=item.document_id)
+                for item in detail.pack
+            ],
             "steps": [
                 PackagingStepOptionView(
                     action=s.action,
@@ -135,6 +175,7 @@ def build_packaging_router(
     get_policy: GetPackagingPolicy,
     set_policy: SetPackagingPolicyOverride,
     *,
+    get_proof: GetPackagingProof,
     resolve_access_context: AccessContextResolver,
     resolve_idempotency: IdempotencyResolver,
 ) -> APIRouter:
@@ -163,6 +204,21 @@ def build_packaging_router(
             document_id=body.document_id,
         )
         return await idempotency.record(PackagingStateView.model_validate(_state(design)))
+
+    @router.get("/po-cases/{case_id}/packaging-proof", response_model=PackagingProofView)
+    async def get_packaging_proof(
+        case_id: uuid.UUID, context: require_access_context
+    ) -> PackagingProofView:
+        found = await get_proof.handle(context, POCaseId(case_id))
+        proof = found.proof
+        return PackagingProofView(
+            document_id=None if proof is None else proof.document_id,
+            status=None if proof is None else proof.status,
+            findings=[
+                PackagingFindingView(code=f.code, subject=f.subject, message=f.message)
+                for f in found.findings
+            ],
+        )
 
     @router.get("/packaging-policy", response_model=SupplyChainPackagingPolicy)
     async def get_packaging_policy(context: require_access_context) -> SupplyChainPackagingPolicy:

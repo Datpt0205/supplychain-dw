@@ -1,0 +1,8 @@
+{
+  "findings": [
+    "proof_differs:dimensions"
+  ],
+  "items": [
+    "dimensions"
+  ]
+}

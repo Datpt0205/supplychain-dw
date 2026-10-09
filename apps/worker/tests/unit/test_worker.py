@@ -163,6 +163,8 @@ def test_only_the_platform_lanes_are_wired() -> None:
     (ticket ai-automation/14); no model and no bucket.
     `supply_chain_po_steps` is the ninth: the papers of steps 11-17, by code
     (tickets ai-automation/15-18); no model and no bucket.
+    `supply_chain_packaging_papers` is the tenth: step 12's skeletons and
+    revision requests, by code (ticket ai-automation/16).
 
     Naming the whole set is the point: a context's lane arriving in this process
     becomes a visible change rather than a silent one.
@@ -187,6 +189,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "supply_chain_proposal_lists",
         "supply_chain_purchase_orders",
         "supply_chain_po_steps",
+        "supply_chain_packaging_papers",
         "supply_chain_stage_one_report",
         "supply_chain_follow_ups_retention",
     }

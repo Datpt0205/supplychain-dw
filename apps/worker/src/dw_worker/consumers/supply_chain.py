@@ -101,6 +101,9 @@ from dw_supply_chain.adapters.persistence.follow_up_repository import (
     SqlFollowUpRepository,
     SqlWorkspacesWithCases,
 )
+from dw_supply_chain.adapters.persistence.packaging_design_repository import (
+    SqlPackagingDesignRepository,
+)
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
 from dw_supply_chain.adapters.persistence.product_case_repository import (
     SqlProductCaseRepository,
@@ -153,6 +156,10 @@ from dw_supply_chain.application.follow_up_retention import PruneClosedFollowUps
 from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
 from dw_supply_chain.application.handlers import ListPOCases, ListProductCategories
 from dw_supply_chain.application.item_coding import ItemCodingPreparation
+from dw_supply_chain.application.packaging_papers import (
+    PackagingSources,
+    PreparePackagingPapers,
+)
 from dw_supply_chain.application.po_steps import POStepSources, PreparePOSteps
 from dw_supply_chain.application.ports import CaseDocumentObjectListingPort
 from dw_supply_chain.application.product_cases import ListProductCases, ProposeProductCase
@@ -189,6 +196,7 @@ from dw_supply_chain.model_routes import (
     SUPPLIER_MESSAGE_TASK,
     load_supply_chain_model_routes,
 )
+from dw_supply_chain.packaging_policy import load_supply_chain_packaging_policy
 from dw_supply_chain.policy_files import (
     ACTION_DUTIES_POLICY_FILE,
     ADVANCE_PRODUCT_CASE_WORKER_FILE,
@@ -196,6 +204,7 @@ from dw_supply_chain.policy_files import (
     FOLLOW_UP_POLICY_FILE,
     ITEM_CODE_RULE_POLICY_FILE,
     MODEL_ROUTES_POLICY_FILE,
+    PACKAGING_POLICY_FILE,
     PRODUCT_ACTION_DUTIES_POLICY_FILE,
     PRODUCT_APPROVALS_POLICY_FILE,
     PRODUCT_SIGNOFF_WORKER_FILE,
@@ -922,6 +931,70 @@ def build_po_steps_consumer(lane: PreparePOSteps) -> Callable[[], Awaitable[None
         if outcome.drafted or outcome.failed_workspaces:
             logger.info(
                 "PO steps: drafted=%d failed_workspaces=%d",
+                outcome.drafted,
+                outcome.failed_workspaces,
+            )
+
+    return consume
+
+
+def build_packaging_papers(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    configs_dir: Path,
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> PreparePackagingPapers:
+    """The lane `supply_chain_packaging_papers` (ticket ai-automation/16):
+    step 12's skeletons and revision requests, by code, from the BM04 and the
+    proof the extraction lane read. No model, no bucket."""
+    registry = DocTemplateRegistry(inspector=DocxTemplateInspector())
+    registry.load_directory(configs_dir / "doc_templates")
+    templates = TenantDocTemplates(registry=registry, overrides=SqlDocTemplateOverrides(sessions))
+    drafts = SqlDocumentDraftRepository(sessions)
+    po_cases = SqlPOCaseRepository(sessions)
+    policies = configs_dir / "policies"
+    return PreparePackagingPapers(
+        workspaces=SqlWorkspacesWithCases(sessions),
+        cases=po_cases,
+        designs=SqlPackagingDesignRepository(sessions),
+        sources=PackagingSources(
+            profiles=SqlProductProfileRepository(sessions),
+            documents=SqlCaseDocumentRepository(sessions),
+            readings=SqlExtractionReadings(sessions),
+        ),
+        drafts=drafts,
+        prepare_draft=PrepareDocumentDraft(
+            cases={CaseKind.PO: po_cases, CaseKind.PRODUCT: SqlProductCaseRepository(sessions)},
+            drafts=drafts,
+            templates=templates,
+            ids=ids,
+            clock=clock,
+        ),
+        policy_override_repo=SqlPolicyOverrideRepository(sessions),
+        platform_default_policy=load_supply_chain_step_preparation(
+            policies / STEP_PREPARATION_POLICY_FILE
+        ),
+        platform_default_packaging=load_supply_chain_packaging_policy(
+            policies / PACKAGING_POLICY_FILE
+        ),
+        platform_default_duties=load_supply_chain_action_duties(
+            policies / ACTION_DUTIES_POLICY_FILE
+        ),
+        holders=SqlScopeHolders(sessions),
+        notifier=SqlNotificationRepository(sessions),
+        clock=clock,
+    )
+
+
+def build_packaging_papers_consumer(
+    lane: PreparePackagingPapers,
+) -> Callable[[], Awaitable[None]]:
+    async def consume() -> None:
+        outcome = await lane.run()
+        if outcome.drafted or outcome.failed_workspaces:
+            logger.info(
+                "packaging papers: drafted=%d failed_workspaces=%d",
                 outcome.drafted,
                 outcome.failed_workspaces,
             )

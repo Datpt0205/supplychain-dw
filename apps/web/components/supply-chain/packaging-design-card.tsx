@@ -19,6 +19,7 @@ import {
 } from "antd";
 import { RegionState, StatusTag, type StatusTone } from "@dw/ui";
 import { LoadError } from "../load-error";
+import type { DocumentType } from "@dw/contracts";
 import type {
   CaseDocument,
   PackagingAction,
@@ -46,6 +47,8 @@ export const PACKAGING_ACTION_LABEL: Record<PackagingAction, string> = {
   receive_pre_production_sample: "Nhận mẫu trước SX",
   pass_pre_production_test: "Đạt test trước SX",
   fail_pre_production_test: "Không đạt test trước SX",
+  send_mkt_pack: "Gửi gói cho MKT",
+  submit_packaging_content: "Nộp nội dung bao bì (MKT)",
 };
 
 const REVIEW_LABEL: Record<ReviewStatus, [string, StatusTone]> = {
@@ -62,6 +65,35 @@ const TEST_LABEL: Record<PreProductionTest, [string, StatusTone]> = {
 
 const OFFLINE = "Không có kết nối mạng. Kết nối lại rồi thử lại.";
 const REPORT = "pre_production_test_report" as const;
+const CONTENT = "packaging_content" as const;
+
+/** The paper a step is taken on, and when it must have been uploaded. */
+const STEP_PAPER: Partial<
+  Record<PackagingAction, { type: DocumentType; since: string }>
+> = {
+  pass_pre_production_test: {
+    type: REPORT,
+    since: "sau khi nhận mẫu trước SX",
+  },
+  fail_pre_production_test: {
+    type: REPORT,
+    since: "sau khi nhận mẫu trước SX",
+  },
+  submit_packaging_content: {
+    type: CONTENT,
+    since: "sau khi Cung ứng gửi gói cho MKT",
+  },
+};
+
+/** What the proof check found, in words a person scans (ticket ai-automation/16). */
+export const PROOF_FINDING_LABEL: Record<string, [string, StatusTone]> = {
+  label_missing: ["Thiếu nội dung bắt buộc", "err"],
+  proof_differs: ["Khác BM04", "err"],
+  sku_unknown: ["SKU ngoài PO", "err"],
+  sku_missing: ["Thiếu SKU", "warn"],
+  barcode_invalid: ["Mã vạch sai", "err"],
+  bm04_missing: ["Chưa có BM04", "warn"],
+};
 
 /**
  * Step 12's colour, packaging and pre-production sub-flow on a PO case: the
@@ -146,8 +178,38 @@ export function PackagingDesignCard({
               label: "Test trước SX (R&D)",
               children: <StatusTag tone={testTone}>{test}</StatusTag>,
             },
+            ...(design.require_packaging_content
+              ? [
+                  {
+                    key: "pack",
+                    label: "Gói cho MKT",
+                    children: design.mkt_pack_sent_at
+                      ? `Đã gửi ${formatDateTimeFull(design.mkt_pack_sent_at)}`
+                      : "Chưa gửi",
+                  },
+                  {
+                    key: "content",
+                    label: "Nội dung bao bì (MKT)",
+                    children: design.packaging_content_submitted_at
+                      ? `Đã nộp ${formatDateTimeFull(design.packaging_content_submitted_at)}`
+                      : "Chưa nộp",
+                  },
+                ]
+              : []),
           ]}
         />
+        {design.require_packaging_content && (
+          <Flex vertical gap={2}>
+            <Typography.Text strong>Gói gửi MKT</Typography.Text>
+            {design.pack.map((item) => (
+              <Typography.Text key={item.doc_type}>
+                {DOC_TYPE_LABEL[item.doc_type]}:{" "}
+                {item.document_id ? "đã có trên hồ sơ" : "chưa có"}
+              </Typography.Text>
+            ))}
+          </Flex>
+        )}
+        <ProofCheck caseId={caseId} />
         <Flex wrap gap="small">
           {design.steps.map((option) => {
             const lock = lockOf(option);
@@ -194,6 +256,60 @@ export function PackagingDesignCard({
         />
       )}
     </Card>
+  );
+}
+
+/**
+ * The newest packaging design proof as AI read it and code checked it against
+ * the label rules, the BM04 and the PO's SKUs (ticket ai-automation/16). A
+ * finding guides Cung ứng's decision; approving the design stays a person's
+ * step. Renders nothing for a tenant that does not prepare step 12.
+ */
+function ProofCheck({ caseId }: { caseId: string }) {
+  const resource = useCachedResource(
+    `supply-chain:po-case:${caseId}:packaging-proof`,
+    useCallback(() => apiClient().getPackagingProof(caseId), [caseId]),
+  );
+  const proof = resource.data;
+  if (resource.error != null) {
+    return (
+      <LoadError error={resource.error} onRetry={resource.reload} compact />
+    );
+  }
+  if (!proof || (!proof.document_id && proof.findings.length === 0))
+    return null;
+  return (
+    <Flex vertical gap="small" aria-label="Kiểm bản in thiết kế">
+      <Typography.Text strong>
+        Kiểm bản in (AI đọc, hệ thống so)
+      </Typography.Text>
+      {proof.status === "unreadable" ? (
+        <Typography.Text>
+          Máy không đọc được bản in (ảnh hay bản quét, chưa có OCR); người kiểm
+          bằng mắt.
+        </Typography.Text>
+      ) : proof.status === null ? (
+        <Typography.Text>Máy đang đọc bản in mới nhất.</Typography.Text>
+      ) : proof.findings.length === 0 ? (
+        <Typography.Text>
+          Bản in có đủ nội dung bắt buộc của nhãn và khớp BM04, SKU của PO theo
+          những gì máy đọc được.
+        </Typography.Text>
+      ) : (
+        proof.findings.map((finding) => {
+          const [label, tone] = PROOF_FINDING_LABEL[finding.code] ?? [
+            finding.code,
+            "gray" as StatusTone,
+          ];
+          return (
+            <Flex key={`${finding.code}:${finding.subject}`} gap="small" wrap>
+              <StatusTag tone={tone}>{label}</StatusTag>
+              <Typography.Text>{finding.message}</Typography.Text>
+            </Flex>
+          );
+        })
+      )}
+    </Flex>
   );
 }
 
@@ -251,6 +367,7 @@ function StepModal({
   const [error, setError] = useState<string | null>(null);
   const [reports, setReports] = useState<CaseDocument[] | null>(null);
   const label = PACKAGING_ACTION_LABEL[option.action];
+  const paper = STEP_PAPER[option.action] ?? { type: REPORT, since: "" };
 
   useEffect(() => {
     if (!option.requires_document) return;
@@ -258,7 +375,8 @@ function StepModal({
     apiClient()
       .listCaseDocuments(caseId)
       .then((all) => {
-        if (!cancelled) setReports(all.filter((d) => d.doc_type === REPORT));
+        if (!cancelled)
+          setReports(all.filter((d) => d.doc_type === paper.type));
       })
       .catch((caught: unknown) => {
         if (!cancelled) setError(errorMessage(caught));
@@ -266,7 +384,7 @@ function StepModal({
     return () => {
       cancelled = true;
     };
-  }, [caseId, option.requires_document]);
+  }, [caseId, option.requires_document, paper.type]);
 
   const submit = async (values: StepValues) => {
     const input = {
@@ -318,14 +436,14 @@ function StepModal({
         {option.requires_document && (
           <Form.Item
             name="documentId"
-            label={DOC_TYPE_LABEL[REPORT]}
-            extra={`Tải ${DOC_TYPE_LABEL[REPORT]} lên ở mục Chứng từ của hồ sơ này, sau khi nhận mẫu trước SX.`}
+            label={DOC_TYPE_LABEL[paper.type]}
+            extra={`Tải ${DOC_TYPE_LABEL[paper.type]} lên ở mục Chứng từ của hồ sơ này, ${paper.since}.`}
             rules={[
-              { required: true, message: `Chọn ${DOC_TYPE_LABEL[REPORT]}` },
+              { required: true, message: `Chọn ${DOC_TYPE_LABEL[paper.type]}` },
             ]}
           >
             <Select
-              aria-label={DOC_TYPE_LABEL[REPORT]}
+              aria-label={DOC_TYPE_LABEL[paper.type]}
               loading={reports === null && error === null}
               options={(reports ?? []).map((d) => ({
                 value: d.id,

@@ -31,7 +31,10 @@ import {
   type POCaseDetail,
   type POCaseLine,
 } from "@dw/api-client";
-import { CaseDocumentsCard } from "../../../../components/supply-chain/case-documents-card";
+import {
+  CaseDocumentsCard,
+  MKT_DOCUMENT_TYPES,
+} from "../../../../components/supply-chain/case-documents-card";
 import {
   CASE_STATE_LABEL,
   CASE_STATE_META,
@@ -546,7 +549,15 @@ export default function POCaseWorkspacePage() {
         <CaseDocumentsCard
           caseKind="po"
           caseId={id}
-          canUpload={hasScope("supply_chain.document.write")}
+          canUpload={
+            hasScope("supply_chain.document.write") ||
+            hasScope("supply_chain.packaging_document.write")
+          }
+          uploadTypes={
+            hasScope("supply_chain.document.write")
+              ? undefined
+              : MKT_DOCUMENT_TYPES
+          }
         />
       </Flex>
     </div>

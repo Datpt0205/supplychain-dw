@@ -224,16 +224,14 @@ class POStepSources:
     async def gather(self, context: AccessContext, case: POCase, spec: POStepSpec) -> POStepFacts:
         commercial = await self.commercial.read(context, case.id.value)
         master = await self.accounts.account_for(context, case.supplier_name)
-        documents = [
-            d
-            for d in await self.documents.list_for_case(context, CaseKind.PO, case.id.value)
-            if d.case_id == case.id.value
-            and d.tenant_id == context.tenant_id
-            and d.workspace_id == context.workspace_id
-        ]
+        documents = own_documents(
+            context,
+            await self.documents.list_for_case(context, CaseKind.PO, case.id.value),
+            case.id.value,
+        )
         sources: dict[DocumentType, SourceRead] = {}
         for doc_type in spec.sources:
-            sources[doc_type] = await self._read(context, documents, doc_type)
+            sources[doc_type] = await newest_reading(self.readings, context, documents, doc_type)
         deposit = latest_payments(commercial.payments).get(PaymentKind.DEPOSIT)
         return POStepFacts(
             case=case,
@@ -250,36 +248,57 @@ class POStepSources:
             documents=documents,
         )
 
-    async def _read(
-        self, context: AccessContext, documents: Sequence[CaseDocument], doc_type: DocumentType
-    ) -> SourceRead:
-        mine = [d for d in documents if d.doc_type is doc_type]
-        if not mine:
-            return SourceRead(doc_type)
-        newest = max(mine, key=lambda d: d.version)
-        spec = EXTRACTION_SPECS.get(doc_type)
-        if spec is None:
-            return SourceRead(doc_type, document_id=newest.id.value, sha256=newest.sha256)
-        reading = next(
-            (
-                r
-                for r in await self.readings.readings(context, [newest.id.value])
-                if r.document_id == newest.id.value
-                and r.sha256 == newest.sha256
-                and (r.prompt_id, r.prompt_version) == (spec.prompt_id, spec.prompt_version)
-            ),
-            None,
-        )
-        if reading is None:
-            return SourceRead(doc_type, document_id=newest.id.value, sha256=newest.sha256)
-        return SourceRead(
-            doc_type,
-            document_id=newest.id.value,
-            sha256=newest.sha256,
-            extraction_id=reading.id,
-            status=reading.status,
-            fields=reading.fields if reading.status is ExtractionStatus.EXTRACTED else {},
-        )
+
+async def newest_reading(
+    readings: ExtractionReadingsPort,
+    context: AccessContext,
+    documents: Sequence[CaseDocument],
+    doc_type: DocumentType,
+) -> SourceRead:
+    """The newest document of `doc_type` among `documents` (already the
+    caller's own) and its reading under the current prompt: one function for
+    every step that reads a paper (tickets ai-automation/15-18)."""
+    mine = [d for d in documents if d.doc_type is doc_type]
+    if not mine:
+        return SourceRead(doc_type)
+    newest = max(mine, key=lambda d: d.version)
+    spec = EXTRACTION_SPECS.get(doc_type)
+    if spec is None:
+        return SourceRead(doc_type, document_id=newest.id.value, sha256=newest.sha256)
+    reading = next(
+        (
+            r
+            for r in await readings.readings(context, [newest.id.value])
+            if r.document_id == newest.id.value
+            and r.sha256 == newest.sha256
+            and (r.prompt_id, r.prompt_version) == (spec.prompt_id, spec.prompt_version)
+        ),
+        None,
+    )
+    if reading is None:
+        return SourceRead(doc_type, document_id=newest.id.value, sha256=newest.sha256)
+    return SourceRead(
+        doc_type,
+        document_id=newest.id.value,
+        sha256=newest.sha256,
+        extraction_id=reading.id,
+        status=reading.status,
+        fields=reading.fields if reading.status is ExtractionStatus.EXTRACTED else {},
+    )
+
+
+def own_documents(
+    context: AccessContext, documents: Sequence[CaseDocument], case_id: uuid.UUID
+) -> list[CaseDocument]:
+    """The second layer behind RLS: only this case's documents of the
+    caller's own tenant and workspace."""
+    return [
+        d
+        for d in documents
+        if d.case_id == case_id
+        and d.tenant_id == context.tenant_id
+        and d.workspace_id == context.workspace_id
+    ]
 
 
 # ---------------------------------------------------------------- recipes --
@@ -1127,5 +1146,7 @@ __all__ = [
     "Suggestion",
     "SupplierAccountPort",
     "draft_findings",
+    "newest_reading",
+    "own_documents",
     "po_steps_lane_context",
 ]

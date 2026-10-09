@@ -65,6 +65,12 @@ DRAFT_TEMPLATES: Mapping[DocumentType, tuple[str, str]] = {
     # requests, which become the case's deposit and payment papers.
     DocumentType.DEPOSIT_DOCS: ("supply_chain.deposit_request", "1.0.0"),
     DocumentType.PAYMENT_DOCS: ("supply_chain.payment_request", "1.0.0"),
+    # Step 12 (ticket ai-automation/16): MKT's skeletons from the BM04, and
+    # Cung ứng's revision requests to the supplier.
+    DocumentType.PACKAGING_CONTENT: ("supply_chain.packaging_content", "1.0.0"),
+    DocumentType.USER_MANUAL: ("supply_chain.user_manual", "1.0.0"),
+    DocumentType.COLOUR_REVISION_REQUEST: ("supply_chain.colour_revision_request", "1.0.0"),
+    DocumentType.DESIGN_REVISION_REQUEST: ("supply_chain.design_revision_request", "1.0.0"),
 }
 
 _MAX_REASON = 1000

@@ -56,10 +56,12 @@ from dw_supply_chain.application.ports import TenantPlanPort
 from dw_supply_chain.domain.case_document import CaseDocument, CaseDocumentId, DocumentType
 from dw_supply_chain.domain.extraction import (
     ACCOUNTS_FIELD,
+    BARCODES_FIELD,
     EXTRACTION_SPECS,
     ExtractionSpec,
     ExtractionStatus,
     account_marks,
+    barcodes_in,
     gaps_json,
     ground,
     is_unreadable,
@@ -323,6 +325,10 @@ class ExtractDocuments:
             # digests of the accounts the document names, compared with the
             # supplier's master where a step is prepared (ai-automation/15).
             fields[ACCOUNTS_FIELD] = account_marks(parsed.text)
+        if spec.reads_barcodes:
+            # A barcode is masked before the model as an account would be;
+            # code reads it from the text (ai-automation/16).
+            fields[BARCODES_FIELD] = barcodes_in(parsed.text)
         await self._record(
             context,
             document,

@@ -45,8 +45,8 @@ from dw_supply_chain.testing.extraction import (
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-SHIPPED = REPO_ROOT / "configs" / "policies" / "supply_chain_model_routes@1.10.0.yaml"
-DATASET = "supply_chain_preparation@1.10.0"
+SHIPPED = REPO_ROOT / "configs" / "policies" / "supply_chain_model_routes@1.11.0.yaml"
+DATASET = "supply_chain_preparation@1.11.0"
 TASK = "extract.sample_evaluation"
 NOW = datetime(2026, 10, 9, tzinfo=UTC)
 
@@ -93,6 +93,8 @@ def test_every_extractor_and_every_drafter_is_a_model_task() -> None:
         "extract.proforma_invoice",
         "extract.commercial_invoice",
         "extract.bank_transfer_receipt",
+        # Step 12's proof (ai-automation/16).
+        "extract.packaging_design",
     } | DRAFTING_TASKS == MODEL_TASKS
     assert {
         "draft.supplier_message",

@@ -83,6 +83,7 @@ def take(
     document: CaseDocument | None = None,
     in_pre_production: bool = True,
     now: datetime = T0 + timedelta(hours=1),
+    mkt_required: bool = False,
 ) -> None:
     d.take(
         action,
@@ -90,6 +91,7 @@ def take(
         reason=reason,
         document=document,
         now=now,
+        mkt_required=mkt_required,
     )
 
 
@@ -303,7 +305,7 @@ def test_the_platform_rule_is_off_and_elmichs_override_turns_it_on() -> None:
     the test."""
     root = Path(__file__).resolve().parents[5]
     platform = load_supply_chain_packaging_policy(
-        root / "configs" / "policies" / "supply_chain_packaging@1.0.0.yaml"
+        root / "configs" / "policies" / "supply_chain_packaging@1.1.0.yaml"
     )
     elmich = load_supply_chain_packaging_policy(root / "scripts" / "elmich_packaging_override.yaml")
     assert platform.require_pre_production_test is False

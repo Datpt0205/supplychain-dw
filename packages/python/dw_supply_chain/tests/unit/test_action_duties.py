@@ -22,7 +22,7 @@ _SHIPPED = (
     Path(__file__).resolve().parents[5]
     / "configs"
     / "policies"
-    / "supply_chain_action_duties@1.2.0.yaml"
+    / "supply_chain_action_duties@1.3.0.yaml"
 )
 
 
@@ -95,15 +95,55 @@ def test_step_ten_is_cung_ungs_since_1_1_0() -> None:
     assert policy.duty_for(CaseAction.CREATE_PO) is CaseDuty.ORDERING
 
 
-def test_step_12s_sub_flow_is_cung_ungs_and_its_test_is_rnds_in_1_2_0() -> None:
+def test_step_12s_sub_flow_is_cung_ungs_its_test_rnds_and_its_content_mkts() -> None:
     """Slice PK: Cung ứng approves the colour and the design and receives the
-    sample; R&D passes or fails the pre-production test (QE-03 provisional)."""
+    sample; R&D passes or fails the pre-production test (QE-03 provisional).
+    1.3.0 (ticket ai-automation/16): Cung ứng sends MKT its pack, MKT submits
+    the packaging content."""
     policy = load_supply_chain_action_duties(_SHIPPED)
-    assert policy.policy_version == "1.2.0"
+    assert policy.policy_version == "1.3.0"
     rnd = {PackagingAction.PASS_PRE_PRODUCTION_TEST, PackagingAction.FAIL_PRE_PRODUCTION_TEST}
     for step in PackagingAction:
-        expected = CaseDuty.RND if step in rnd else CaseDuty.ORDERING
+        expected = (
+            CaseDuty.RND
+            if step in rnd
+            else CaseDuty.MKT
+            if step is PackagingAction.SUBMIT_PACKAGING_CONTENT
+            else CaseDuty.ORDERING
+        )
         assert policy.duty_for(step) is expected, step
+
+
+@pytest.mark.parametrize("version", ["1.0.0", "1.1.0", "1.2.0"])
+def test_an_override_stored_before_mkts_steps_takes_the_platforms_duty_for_them_only(
+    version: str,
+) -> None:
+    """Ticket ai-automation/16: a tenant's override written before 1.3.0 never
+    decided MKT's two steps; it still loads, with the platform's duty for
+    those two, and everything it did decide stands."""
+    platform = load_supply_chain_action_duties(_SHIPPED)
+    stored = {
+        k: v
+        for k, v in _shipped_mapping().items()
+        if k not in {"send_mkt_pack", "submit_packaging_content"}
+    } | {"confirm_payment": "ordering"}
+    policy = SupplyChainActionDuties.from_stored(
+        _document(stored) | {"policy_version": version}, platform
+    )
+    assert policy.duty_for(PackagingAction.SUBMIT_PACKAGING_CONTENT) is CaseDuty.MKT
+    assert policy.duty_for(PackagingAction.SEND_MKT_PACK) is CaseDuty.ORDERING
+    assert policy.duty_for(CaseAction.CONFIRM_PAYMENT) is CaseDuty.ORDERING
+    # Only those two: any other gap is still refused, at any version.
+    without = {k: v for k, v in stored.items() if k != "approve_colour"}
+    with pytest.raises(ValidationError, match="approve_colour"):
+        SupplyChainActionDuties.from_stored(
+            _document(without) | {"policy_version": version}, platform
+        )
+    # And one claiming the current version must name them itself.
+    with pytest.raises(ValidationError, match="send_mkt_pack"):
+        SupplyChainActionDuties.from_stored(
+            _document(stored) | {"policy_version": "1.3.0"}, platform
+        )
 
 
 def test_an_override_without_a_packaging_step_is_refused_so_the_migration_must_add_it() -> None:

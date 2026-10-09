@@ -210,6 +210,24 @@ class BankTransferReading(BaseModel):
     payment_content: Cited = Cited()
 
 
+class PackagingDesignReading(BaseModel):
+    """A packaging design proof (bản in thiết kế bao bì) at step 12 (ticket
+    ai-automation/16): what the label prints, each as the proof writes it.
+    Code compares it with the BM04 and the label rules; the model only reads."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    product_name: Cited = Cited()
+    item_code: Cited = Cited()
+    sku_codes: list[Cited] = Field(default_factory=list, max_length=50)
+    dimensions: Cited = Cited()
+    material: Cited = Cited()
+    origin: Cited = Cited()
+    responsible_party: Cited = Cited()
+    usage_instructions: Cited = Cited()
+    warnings: Cited = Cited()
+
+
 # ------------------------------------------------------------- specs --------
 
 
@@ -228,6 +246,10 @@ class ExtractionSpec:
     # from its text BEFORE redaction (ticket ai-automation/15), keeping their
     # digests (`ACCOUNTS_FIELD`); the model is never shown them.
     reads_accounts: bool = False
+    # Whether code reads the barcodes a proof prints from its text BEFORE
+    # redaction (ticket ai-automation/16, `BARCODES_FIELD`): a 13-digit EAN is
+    # masked like an account number, so the model never sees it either.
+    reads_barcodes: bool = False
 
     @property
     def prompt_ref(self) -> str:
@@ -337,6 +359,14 @@ EXTRACTION_SPECS: Mapping[DocumentType, ExtractionSpec] = {
             reading=BankTransferReading,
             kinds={"transfer_date": FieldKind.DATE, "amount": FieldKind.NUMBER},
             reads_accounts=True,
+        ),
+        ExtractionSpec(
+            doc_type=DocumentType.PACKAGING_DESIGN,
+            prompt_id="supply_chain.extract_packaging_design",
+            prompt_version="1.0.0",
+            reading=PackagingDesignReading,
+            kinds={},
+            reads_barcodes=True,
         ),
     )
 }
@@ -670,6 +700,22 @@ def account_marks(text: str) -> list[dict[str, str]]:
     (`account_digest`, what code compares with the supplier's master) and
     nothing a person or a model could read the number back from."""
     return [{"digest": account_digest(number)} for number in account_numbers_in(text)]
+
+
+# The key under which code keeps the barcodes a proof prints (ticket
+# ai-automation/16); like `ACCOUNTS_FIELD`, never a model's.
+BARCODES_FIELD = "barcodes"
+_BARCODE = re.compile(r"(?<![\d.,])(\d{13}|\d{12}|\d{8})(?![\d.,])")
+
+
+def barcodes_in(text: str) -> list[str]:
+    """Every run of 8, 12 or 13 digits standing alone: what an EAN-8, UPC-A or
+    EAN-13 prints under its bars. Whether each is valid is the proof check's."""
+    seen: list[str] = []
+    for match in _BARCODE.finditer(text):
+        if match.group(1) not in seen:
+            seen.append(match.group(1))
+    return seen
 
 
 def is_unreadable(text: str) -> bool:

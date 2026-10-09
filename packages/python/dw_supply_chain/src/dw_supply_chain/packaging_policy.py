@@ -1,7 +1,7 @@
 """Whether a PO case needs a passed pre-production test to enter production,
 per tenant (slice PK, step 12-13).
 
-The platform default (`configs/policies/supply_chain_packaging@1.0.0.yaml`)
+The platform default (`configs/policies/supply_chain_packaging@1.1.0.yaml`)
 says no, so every case and every tenant behaves as before this slice; a tenant
 turns the rule on through the same `PolicyOverridePort` as its other policies
 (Elmich's: `scripts/elmich_packaging_override.yaml`). Read where step 13 is
@@ -36,6 +36,10 @@ class SupplyChainPackagingPolicy(BaseModel):
     policy_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
     # Strict: a document saying "yes" as a string is refused, not read as true.
     require_pre_production_test: bool = Field(strict=True)
+    # 1.1.0 (ADR 0028; ticket ai-automation/16): MKT's two steps stand between
+    # the colour and the design. Absent from an override stored before 1.1.0,
+    # which therefore keeps the flow it chose then.
+    require_packaging_content: bool = Field(default=False, strict=True)
 
 
 def load_supply_chain_packaging_policy(path: Path) -> SupplyChainPackagingPolicy:

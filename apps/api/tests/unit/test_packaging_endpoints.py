@@ -19,6 +19,7 @@ from test_product_case_endpoints import (
     TENANT,
     WORKSPACE,
     FakeDocuments,
+    FakeHolders,
     FakeMembershipLookup,
     FakeNotifier,
     FakePolicies,
@@ -27,7 +28,11 @@ from test_product_case_endpoints import (
 )
 
 from dw_api.bootstrap import ApiContainer
-from dw_api.bootstrap.paths import SUPPLY_CHAIN_ACTION_DUTIES, SUPPLY_CHAIN_PACKAGING_POLICY
+from dw_api.bootstrap.paths import (
+    SUPPLY_CHAIN_ACTION_DUTIES,
+    SUPPLY_CHAIN_PACKAGING_POLICY,
+    SUPPLY_CHAIN_STEP_PREPARATION_POLICY,
+)
 from dw_api.health import CheckState, HealthService
 from dw_api.main import create_app
 from dw_api.settings import ApiSettings
@@ -53,9 +58,25 @@ from dw_supply_chain.application.packaging_designs import (
     SetPackagingPolicyOverride,
     TakePackagingStep,
 )
+from dw_supply_chain.application.packaging_papers import GetPackagingProof, PackagingSources
+from dw_supply_chain.application.step_preparation import StoredReading
+from dw_supply_chain.domain.case_document import (
+    CaseDocument,
+    CaseDocumentId,
+    CaseKind,
+    DocumentType,
+)
+from dw_supply_chain.domain.extraction import EXTRACTION_SPECS, ExtractionStatus
 from dw_supply_chain.domain.packaging_design import PackagingDesign, PackagingHistoryEntry
 from dw_supply_chain.domain.po_case import CaseState, POCase, POCaseId
 from dw_supply_chain.packaging_policy import load_supply_chain_packaging_policy
+from dw_supply_chain.step_preparation_policy import load_supply_chain_step_preparation
+from dw_supply_chain.testing.purchase_orders import ELMICH_PREPARATION
+from dw_supply_chain.testing.step_preparation import (
+    InMemoryDocuments,
+    InMemoryProfiles,
+    InMemoryReadings,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -133,6 +154,10 @@ class World:
     policies: FakePolicies = field(default_factory=FakePolicies)
     notifier: FakeNotifier = field(default_factory=FakeNotifier)
     store: MemoryStore = field(default_factory=MemoryStore)
+    # Step 12's proof check (ticket ai-automation/16).
+    documents: InMemoryDocuments = field(default_factory=InMemoryDocuments)
+    readings: InMemoryReadings = field(default_factory=InMemoryReadings)
+    profiles: InMemoryProfiles = field(default_factory=InMemoryProfiles)
 
     def container(self, scopes: frozenset[str]) -> ApiContainer:
         async def ok_probe() -> CheckState:
@@ -160,6 +185,7 @@ class World:
                 designs=self.designs,
                 platform_default_duties=duties,
                 platform_default_policy=packaging,
+                documents=FakeDocuments(),
                 **common,  # type: ignore[arg-type]
             ),
             supply_chain_take_packaging_step=TakePackagingStep(
@@ -167,6 +193,8 @@ class World:
                 designs=self.designs,
                 documents=FakeDocuments(),
                 platform_default_duties=duties,
+                platform_default_policy=packaging,
+                holders=FakeHolders(),
                 notifier=self.notifier,
                 ids=Uuid4Generator(),
                 clock=SystemClock(),
@@ -179,6 +207,16 @@ class World:
             supply_chain_set_packaging_policy_override=SetPackagingPolicyOverride(
                 ids=Uuid4Generator(),
                 clock=SystemClock(),
+                **common,  # type: ignore[arg-type]
+            ),
+            supply_chain_get_packaging_proof=GetPackagingProof(
+                cases=self.po_cases,  # type: ignore[arg-type]
+                sources=PackagingSources(
+                    profiles=self.profiles, documents=self.documents, readings=self.readings
+                ),
+                platform_default_policy=load_supply_chain_step_preparation(
+                    SUPPLY_CHAIN_STEP_PREPARATION_POLICY
+                ),
                 **common,  # type: ignore[arg-type]
             ),
         )
@@ -319,3 +357,70 @@ async def test_the_packaging_policy_is_set_by_whoever_sets_duties_and_strictly_t
     assert (await _send(admin, "PUT", "/packaging-policy", document)).status_code == 200
     read = await _send(admin, "GET", "/packaging-policy")
     assert read.json()["require_pre_production_test"] is True
+
+
+def _proof(world: World, case: POCase, fields: dict[str, object]) -> None:
+    spec = EXTRACTION_SPECS[DocumentType.PACKAGING_DESIGN]
+    document = CaseDocument(
+        id=CaseDocumentId(uuid.uuid4()),
+        tenant_id=TENANT,
+        workspace_id=WORKSPACE,
+        case_kind=CaseKind.PO,
+        case_id=case.id.value,
+        doc_type=DocumentType.PACKAGING_DESIGN,
+        object_key="k",
+        filename="ban-in.pdf",
+        content_type="application/pdf",
+        size_bytes=1,
+        sha256="0" * 64,
+        version=1,
+        uploaded_by=uuid.uuid4(),
+        uploaded_at=SystemClock().now(),
+    )
+    world.documents.rows.append(document)
+    world.readings.rows.append(
+        (
+            TENANT,
+            WORKSPACE,
+            StoredReading(
+                id=uuid.uuid4(),
+                document_id=document.id.value,
+                sha256=document.sha256,
+                prompt_id=spec.prompt_id,
+                prompt_version=spec.prompt_version,
+                status=ExtractionStatus.EXTRACTED,
+                fields={k: {"value": v, "quote": str(v)} for k, v in fields.items()},
+                gaps=[],
+            ),
+        )
+    )
+
+
+async def test_the_proof_check_names_what_the_label_lacks_and_hides_another_workspaces_case() -> (
+    None
+):
+    """Ticket ai-automation/16: the newest proof, read, against the label rules
+    (and the BM04: none here, so that is named too); a PO case of another
+    workspace is not found."""
+    world = World()
+    world.policies.stored["supply_chain_step_preparation"] = ELMICH_PREPARATION.model_dump(
+        mode="json"
+    )
+    case = _case()
+    world.po_cases.cases.append(case)
+    _proof(world, case, {"product_name": "Nồi inox 24cm", "material": "Inox 304"})
+
+    response = await _send(world.container(ORDERING), "GET", f"/po-cases/{case.id}/packaging-proof")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "extracted"
+    codes = {(f["code"], f["subject"]) for f in body["findings"]}
+    assert ("label_missing", "origin") in codes
+    assert ("label_missing", "warnings") in codes
+    assert ("bm04_missing", "product_profile_bm04") in codes
+
+    other = _case()
+    other.workspace_id = WorkspaceId(uuid.uuid4())
+    world.po_cases.cases.append(other)
+    missing = await _send(world.container(ORDERING), "GET", f"/po-cases/{other.id}/packaging-proof")
+    assert missing.status_code == 404

@@ -22,7 +22,10 @@ SLA_POLICY_FILE = "supply_chain_sla@2.0.0.yaml"
 # Who takes each PO step: the API authorizes steps by it, the worker's PO step
 # lane tells the holders of a step's duty that its paper is drafted
 # (ticket ai-automation/15).
-ACTION_DUTIES_POLICY_FILE = "supply_chain_action_duties@1.2.0.yaml"
+ACTION_DUTIES_POLICY_FILE = "supply_chain_action_duties@1.3.0.yaml"
+# Step 12-13's rules: the API takes the steps by it, the worker's packaging
+# lane drafts MKT's skeletons only where it requires them (ai-automation/16).
+PACKAGING_POLICY_FILE = "supply_chain_packaging@1.1.0.yaml"
 FOLLOW_UP_POLICY_FILE = "supply_chain_follow_ups@1.2.0.yaml"
 PRODUCT_APPROVALS_POLICY_FILE = "supply_chain_product_approvals@1.1.0.yaml"
 ADVANCE_PRODUCT_CASE_WORKER_FILE = "supply_chain_advance_product_case.yaml"
@@ -36,7 +39,7 @@ STEP_PREPARATION_WORKER_FILE = "supply_chain_step_preparation.yaml"
 # Which profile each model task runs on (ticket ai-automation/06): read by
 # the worker's extraction lane, and by scripts/model_gate.py for the gate's
 # dataset and threshold.
-MODEL_ROUTES_POLICY_FILE = "supply_chain_model_routes@1.10.0.yaml"
+MODEL_ROUTES_POLICY_FILE = "supply_chain_model_routes@1.11.0.yaml"
 BM04_SCHEMA_POLICY_FILE = "supply_chain_bm04_schema@1.0.0.yaml"
 # The wording of a message to a supplier (ticket ai-automation/07): read by the
 # worker's message lane.

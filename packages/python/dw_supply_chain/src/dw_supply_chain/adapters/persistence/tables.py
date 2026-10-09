@@ -348,6 +348,9 @@ packaging_designs = sa.Table(
     sa.Column("design_status", sa.Text, nullable=False),
     sa.Column("pre_production_sample_received_at", sa.TIMESTAMP(timezone=True), nullable=True),
     sa.Column("pre_production_test", sa.Text, nullable=False),
+    # MKT's two steps (ticket ai-automation/16, migration 4527f22c2031).
+    sa.Column("mkt_pack_sent_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("packaging_content_submitted_at", sa.TIMESTAMP(timezone=True), nullable=True),
     sa.Column("version", sa.Integer, nullable=False),
     sa.Column(
         "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")

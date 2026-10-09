@@ -213,6 +213,11 @@ class SupplyChainStepPreparation(BaseModel):
     # page (tickets ai-automation/15-18; `domain.po_step`): which of them this
     # tenant turns on. What each one does is code's. Empty: none.
     po_steps: tuple[POStepKind, ...] = ()
+    # Step 12's papers AI prepares (ticket ai-automation/16): MKT's skeletons
+    # from the BM04 once the colour is approved, the proof read against the BM04
+    # and the label rules, and the colour and design revision requests. False:
+    # none (the proof is still read, but nothing is drafted or shown).
+    packaging: bool = False
 
     @model_validator(mode="after")
     def _each_state_once(self) -> SupplyChainStepPreparation:

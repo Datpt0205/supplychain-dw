@@ -44,6 +44,7 @@ from dw_kernel.errors import ConflictError, NotFoundError, PermissionDeniedError
 from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.persistence.policy_overrides import SqlPolicyOverrideRepository
+from dw_platform.adapters.persistence.scope_holders import SqlScopeHolders
 from dw_platform.adapters.persistence.tenant_session import TenantScope, tenant_session
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
@@ -84,8 +85,8 @@ from dw_supply_chain.testing.po_papers import open_paper_gate
 pytestmark = pytest.mark.integration
 
 _POLICIES = REPO_ROOT / "configs" / "policies"
-_DUTIES = load_supply_chain_action_duties(_POLICIES / "supply_chain_action_duties@1.2.0.yaml")
-_PACKAGING = load_supply_chain_packaging_policy(_POLICIES / "supply_chain_packaging@1.0.0.yaml")
+_DUTIES = load_supply_chain_action_duties(_POLICIES / "supply_chain_action_duties@1.3.0.yaml")
+_PACKAGING = load_supply_chain_packaging_policy(_POLICIES / "supply_chain_packaging@1.1.0.yaml")
 _MATRIX = load_supply_chain_approval_matrix(_POLICIES / "supply_chain_approval_matrix@1.0.0.yaml")
 _MIGRATION = (
     REPO_ROOT
@@ -173,6 +174,8 @@ def _take(db: _Db, notices: _Notices | None = None) -> TakePackagingStep:
         authz=ScopeAuthorizationService(),
         policy_override_repo=SqlPolicyOverrideRepository(db.sessions),
         platform_default_duties=_DUTIES,
+        platform_default_policy=_PACKAGING,
+        holders=SqlScopeHolders(db.sessions),
         notifier=notices or _Notices(),
         ids=Uuid4Generator(),
         clock=SystemClock(),
@@ -187,6 +190,7 @@ def _get(db: _Db) -> GetPackagingDesign:
         policy_override_repo=SqlPolicyOverrideRepository(db.sessions),
         platform_default_duties=_DUTIES,
         platform_default_policy=_PACKAGING,
+        documents=SqlCaseDocumentRepository(db.sessions),
     )
 
 
@@ -621,6 +625,7 @@ async def test_a_case_that_left_pre_production_since_it_was_read_refuses_the_sav
         reason=None,
         document=None,
         now=SystemClock().now(),
+        mkt_required=False,
     )
     await _advance(db).handle(
         team.ordering, po_case_id=team.case.id, action=CaseAction.START_PRODUCTION
@@ -638,3 +643,57 @@ async def test_a_case_that_left_pre_production_since_it_was_read_refuses_the_sav
         await SqlPackagingDesignRepository(db.sessions).get(team.ordering, team.case.id.value)
         is None
     )
+
+
+# --- MKT at step 12 (ticket ai-automation/16) ---------------------------------
+
+
+async def test_mkts_steps_are_stored_in_order_and_the_table_refuses_content_before_the_pack(
+    db: _Db,
+) -> None:
+    """Migration 4527f22c2031: the two new columns, the event CHECKs (the
+    content step carries its paper) and the row's order, whatever writes it."""
+    team = await _team(db)
+    mkt = _person(team.ordering.tenant_id, team.ordering.workspace_id, duty_scope(CaseDuty.MKT))
+    async with db.migrator.begin() as conn:
+        await conn.execute(
+            sa.text(
+                "INSERT INTO platform.tenants (id, slug, name) VALUES (:t, :s, 'Tenant MKT')"
+                " ON CONFLICT DO NOTHING"
+            ),
+            {"t": team.ordering.tenant_id, "s": f"mkt-{team.ordering.tenant_id.hex[:8]}"},
+        )
+        await conn.execute(
+            sa.text(
+                "INSERT INTO platform.policy_overrides (id, tenant_id, policy_id, content)"
+                " VALUES (:i, :t, 'supply_chain_packaging', CAST(:c AS jsonb))"
+            ),
+            {
+                "i": uuid.uuid4(),
+                "t": team.ordering.tenant_id,
+                "c": json.dumps(
+                    _PACKAGING.model_dump(mode="json") | {"require_packaging_content": True}
+                ),
+            },
+        )
+    await _take(db).handle(team.ordering, po_case_id=team.case.id, action=A.APPROVE_COLOUR)
+    await _take(db).handle(team.ordering, po_case_id=team.case.id, action=A.SEND_MKT_PACK)
+    content = await _add(db, mkt, team.case, DocumentType.PACKAGING_CONTENT)
+    await _take(db).handle(
+        mkt,
+        po_case_id=team.case.id,
+        action=A.SUBMIT_PACKAGING_CONTENT,
+        document_id=content.id.value,
+    )
+    design = await SqlPackagingDesignRepository(db.sessions).get(team.ordering, team.case.id.value)
+    assert design is not None
+    assert design.mkt_pack_sent_at is not None and design.packaging_content_submitted_at is not None
+    with pytest.raises(IntegrityError, match="ck_packaging_designs_order"):
+        async with tenant_session(db.sessions, TenantScope.from_access_context(mkt)) as s:
+            await s.execute(
+                sa.text(
+                    "UPDATE supply_chain.packaging_designs SET mkt_pack_sent_at = NULL"
+                    " WHERE po_case_id = :c"
+                ),
+                {"c": team.case.id.value},
+            )

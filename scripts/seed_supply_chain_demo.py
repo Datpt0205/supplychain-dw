@@ -182,6 +182,9 @@ PERSONAS = (
         "supply",
         ["member", "sc_supply_lead"],
     ),
+    # MKT at step 12 (ADR 0028, ticket ai-automation/16): receives the pack,
+    # submits the packaging content; no price, no Cung ứng step.
+    ("dev|mai.dang", "mai.dang@alpha.local", "Đặng Thu Mai", "mkt", ["member", "sc_mkt"]),
 )
 # po_reference, supplier, hours since opened, hours in WAITING_DEPOSIT, fresh update
 CASES = (

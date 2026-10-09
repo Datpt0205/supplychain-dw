@@ -65,6 +65,8 @@ class SqlPackagingDesignRepository:
             design_status=ReviewStatus(row.design_status),
             pre_production_sample_received_at=row.pre_production_sample_received_at,
             pre_production_test=PreProductionTest(row.pre_production_test),
+            mkt_pack_sent_at=row.mkt_pack_sent_at,
+            packaging_content_submitted_at=row.packaging_content_submitted_at,
             version=row.version,
         )
 
@@ -109,6 +111,8 @@ class SqlPackagingDesignRepository:
                 "design_status": design.design_status.value,
                 "pre_production_sample_received_at": design.pre_production_sample_received_at,
                 "pre_production_test": design.pre_production_test.value,
+                "mkt_pack_sent_at": design.mkt_pack_sent_at,
+                "packaging_content_submitted_at": design.packaging_content_submitted_at,
                 "version": design.version,
             }
             if design.version == 1:

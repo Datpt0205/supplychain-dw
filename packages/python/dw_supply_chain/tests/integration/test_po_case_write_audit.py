@@ -126,7 +126,7 @@ class _Stack:
                 policy_version="1.0.0",
             ),
             platform_default_action_duties=load_supply_chain_action_duties(
-                POLICIES / "supply_chain_action_duties@1.2.0.yaml"
+                POLICIES / "supply_chain_action_duties@1.3.0.yaml"
             ),
             runner=_NoRunner(),
             production_gate=open_production_gate(),

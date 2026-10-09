@@ -146,6 +146,7 @@ export const CASE_DUTY_LABEL: Record<CaseDuty, string> = {
   exceptions: "xử lý ngoại lệ",
   rnd: "R&D",
   supply_lead: "TP Cung ứng",
+  mkt: "MKT",
 };
 
 // `supply_chain.duty.<duty>`: the scope a role grants for a duty. A second

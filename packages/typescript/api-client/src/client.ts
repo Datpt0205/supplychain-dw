@@ -38,6 +38,7 @@ import {
   importReportSchema,
   purchaseOrderProposalSchema,
   poStepProposalSchema,
+  packagingProofSchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -125,6 +126,7 @@ import {
   type PurchaseOrderProposal,
   type POStepProposal,
   type POStepResult,
+  type PackagingProof,
   type DraftField,
   type DraftStatus,
   type TemplateFieldKind,
@@ -529,6 +531,15 @@ const _poStepMirrorsTheRoute: [
   >,
 ] = [true, true, true];
 void _poStepMirrorsTheRoute;
+
+// Ticket ai-automation/16: step 12's proof check.
+const _packagingProofMirrorsTheRoute: [
+  SameType<
+    keyof PackagingProof,
+    keyof SupplyChainGenerated["PackagingProofView"]
+  >,
+] = [true];
+void _packagingProofMirrorsTheRoute;
 
 /** `POST /po-cases/{id}/step-proposal/approval`'s body. */
 export type ApprovePOStepBody =
@@ -1883,6 +1894,17 @@ export class ApiClient {
     );
   }
 
+  /** The newest packaging design proof of the case and what code finds in
+   * it against the label rules, the BM04 and the PO's SKUs (ticket
+   * ai-automation/16). */
+  getPackagingProof(caseId: string): Promise<PackagingProof> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/packaging-proof`,
+      packagingProofSchema,
+    );
+  }
+
   /** The import template (Excel), for whoever may run the import. */
   async downloadImportTemplate(): Promise<Blob> {
     const response = await this.rawRequest(
@@ -2300,6 +2322,7 @@ export class ApiClient {
 
 export type {
   PurchaseOrderProposal,
+  PackagingProof,
   POStepProposal,
   POStepResult,
   ImportReport,

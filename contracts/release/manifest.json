@@ -31,15 +31,33 @@
       "version": "1.0.0"
     },
     {
+      "checksum": "417f98a8762e28c0a5a7433f5fc03a4085a81e21ac74bac6e38fc55aa45d9c47",
+      "doc_type": "colour_revision_request",
+      "template_id": "supply_chain.colour_revision_request",
+      "version": "1.0.0"
+    },
+    {
       "checksum": "6a78fd9d7a408b76869ef3bf5f5b36dcd344a494459350a7ed3affcc430079ce",
       "doc_type": "deposit_docs",
       "template_id": "supply_chain.deposit_request",
       "version": "1.0.0"
     },
     {
+      "checksum": "7578f1b6dcef50e80924f10f8585e0ef6ea8563d02984bb68f63049993ed9945",
+      "doc_type": "design_revision_request",
+      "template_id": "supply_chain.design_revision_request",
+      "version": "1.0.0"
+    },
+    {
       "checksum": "49ac37dacc33d38d11c66dbf6a0fe8dfacba5b1fa70e63d0d9e5e419bd4836a8",
       "doc_type": "official_item_code",
       "template_id": "supply_chain.official_item_code",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "a6c19e1243f1356baa08c07e2b891aa3024fe6011f6ca29289848e8af948c592",
+      "doc_type": "packaging_content",
+      "template_id": "supply_chain.packaging_content",
       "version": "1.0.0"
     },
     {
@@ -77,6 +95,12 @@
       "doc_type": "sample_revision_request",
       "template_id": "supply_chain.sample_revision_request",
       "version": "1.0.0"
+    },
+    {
+      "checksum": "0a1ca375d3d1024b18d9d9b4c8b763f774dcd81783e87497e02f7d0ccda9dbf2",
+      "doc_type": "user_manual",
+      "template_id": "supply_chain.user_manual",
+      "version": "1.0.0"
     }
   ],
   "eval_datasets": [
@@ -91,12 +115,12 @@
       "version": "1.9.0"
     },
     {
-      "checksum": "1d4ba79c4522250f7c682dd944f0d4855ce71eedabcd3db587a2eb25565cc583",
+      "checksum": "b4b79c8f12cebcb442439d8eafc0a89e8f675fc41af17d5a3d4dabc2f02edf72",
       "dataset_id": "supply_chain_preparation",
-      "version": "1.10.0"
+      "version": "1.11.0"
     }
   ],
-  "git_sha": "35ff9e16719ee05857279608114ed33737423639",
+  "git_sha": "ee19c91da42a4a150698ba2a978416dbffec3dde",
   "knowledge_index_version": "2026-07-25.structure-1",
   "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
@@ -112,9 +136,9 @@
       "version": "1.7.0"
     },
     {
-      "checksum": "8bbb67547294c506104fcba179c7fe9d8ae43a0aadce6749a6461330f551e078",
+      "checksum": "1170a4b986648effca5146a145100ac10f350240d56fa8eb7383821b0c89524c",
       "policy_id": "supply_chain_action_duties",
-      "version": "1.2.0"
+      "version": "1.3.0"
     },
     {
       "checksum": "5e06d55e300e750fc814094358e19668328f4859883b48a7a20d08e5918dd3ff",
@@ -142,14 +166,14 @@
       "version": "1.0.0"
     },
     {
-      "checksum": "1a469b5a42a93b5f940988c321ea6c373bf7990255d5d034909f2104af25c034",
+      "checksum": "0052815484aee7e30f55d1e2660eb985cd71072476ca98485ebd7633f989bdda",
       "policy_id": "supply_chain_model_routes",
-      "version": "1.10.0"
+      "version": "1.11.0"
     },
     {
-      "checksum": "78b88c0ac6d0a061aee75a4f762746c84ae8dba05565b9e5c1e593ad7b1ba5e0",
+      "checksum": "fb57e4fe3e35213910345f6e33370f3c47b30bd270bced3e7172baf3567d45a5",
       "policy_id": "supply_chain_packaging",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "checksum": "317f54cca1e45250747c213778f567bb5f52ca718e3a4aeb4d12d9fc17b2f702",
@@ -270,6 +294,14 @@
       "prompt_id": "supply_chain.extract_commercial_invoice",
       "skills": [
         "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "a0ba7f3dcd537865dbb982fcd39883d3a3ec3906303874371bf51308f7389085",
+      "prompt_id": "supply_chain.extract_packaging_design",
+      "skills": [
+        "supply_chain.label_rules@^1.1.0"
       ],
       "version": "1.0.0"
     },
@@ -409,6 +441,14 @@
       "checksum": "1564526886c19de2fb4aa56e22b66f47cb149cdbd4ee3ccbf63e2419d2cd8d2f",
       "skill_id": "supply_chain.label_rules",
       "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_packaging_design"
+      ],
+      "checksum": "658f2836889b67b05631e8535dffedf4215679760d25dfbbc0a01fdfb67d6c12",
+      "skill_id": "supply_chain.label_rules",
+      "version": "1.1.0"
     },
     {
       "applies_to": [

@@ -306,6 +306,94 @@ TEMPLATES: list[dict[str, Any]] = [
             _f("notes", "Ghi chú"),
         ],
     },
+    {
+        # Ticket ai-automation/16: the packaging content's skeleton MKT
+        # completes, filled by code from the BM04; what the label must carry
+        # and the BM04 does not say is a gap MKT fills.
+        "template_id": "supply_chain.packaging_content",
+        "title": "NỘI DUNG BAO BÌ",
+        "doc_type": "packaging_content",
+        "description": (
+            "Bước 12: khung nội dung bao bì từ BM04 (tên, mã, SKU, chất liệu, thông số, xuất"
+            " xứ); MKT điền nội dung bắt buộc còn thiếu của nhãn."
+        ),
+        "fields": [
+            _f("po_reference", "Số PO"),
+            _f("product_name", "Tên hàng hóa", required=True),
+            _f("sku_codes", "Mã SKU", required=True),
+            _f("material", "Chất liệu", required=True),
+            _f("dimensions", "Thông số kỹ thuật", required=True),
+            _f("origin", "Xuất xứ", required=True),
+            _f("responsible_party", "Tổ chức chịu trách nhiệm (tên, địa chỉ)", required=True),
+            _f("usage_instructions", "Hướng dẫn sử dụng, bảo quản", required=True),
+            _f("warnings", "Thông tin cảnh báo", required=True),
+            _f("barcode", "Mã vạch"),
+            _f("notes", "Ghi chú"),
+        ],
+    },
+    {
+        # Ticket ai-automation/16: the user manual's skeleton from the BM04.
+        "template_id": "supply_chain.user_manual",
+        "title": "HƯỚNG DẪN SỬ DỤNG",
+        "doc_type": "user_manual",
+        "description": (
+            "Bước 12: khung sách HDSD từ BM04 (tên, chất liệu, thông số); MKT viết cách dùng,"
+            " bảo quản và cảnh báo."
+        ),
+        "fields": [
+            _f("product_name", "Tên sản phẩm", required=True),
+            _f("material", "Chất liệu", required=True),
+            _f("dimensions", "Thông số kỹ thuật", required=True),
+            _f("usage_instructions", "Cách sử dụng", required=True),
+            _f("care_instructions", "Bảo quản, vệ sinh", required=True),
+            _f("warnings", "Cảnh báo", required=True),
+            _f("notes", "Ghi chú"),
+        ],
+    },
+    {
+        # Ticket ai-automation/16: Cung ứng's request to the supplier to revise
+        # the colour sample; the colours are the BM04's.
+        "template_id": "supply_chain.colour_revision_request",
+        "title": "YÊU CẦU SỬA MẪU MÀU",
+        "doc_type": "colour_revision_request",
+        "description": "Bước 12: Cung ứng yêu cầu nhà cung cấp sửa mẫu màu theo BM04.",
+        "fields": [
+            _f("po_reference", "Số PO", required=True),
+            _f("supplier_name", "Nhà cung cấp", required=True),
+            _f("product_name", "Tên sản phẩm", required=True),
+            _f("requested_on", "Ngày yêu cầu", "date", required=True),
+            _f("expected_colours", "Màu theo BM04"),
+            _f("requirement", "Yêu cầu chỉnh sửa", required=True),
+            _f("notes", "Ghi chú"),
+        ],
+    },
+    {
+        # Ticket ai-automation/16: one item per finding of the proof check.
+        "template_id": "supply_chain.design_revision_request",
+        "title": "YÊU CẦU SỬA THIẾT KẾ BAO BÌ",
+        "doc_type": "design_revision_request",
+        "description": (
+            "Bước 12: Cung ứng yêu cầu sửa bản in thiết kế; mỗi điều hệ thống tìm thấy khi so"
+            " bản in với BM04 và luật nhãn là một mục."
+        ),
+        "fields": [
+            _f("po_reference", "Số PO", required=True),
+            _f("supplier_name", "Nhà cung cấp", required=True),
+            _f("product_name", "Tên sản phẩm", required=True),
+            _f("requested_on", "Ngày yêu cầu", "date", required=True),
+            _table(
+                "items",
+                "Hạng mục cần sửa",
+                [
+                    ("subject", "Nội dung", "text"),
+                    ("finding", "Hiện trạng", "text"),
+                    ("requirement", "Yêu cầu", "text"),
+                ],
+                required=True,
+            ),
+            _f("notes", "Ghi chú"),
+        ],
+    },
 ]
 
 VERSION = "1.0.0"

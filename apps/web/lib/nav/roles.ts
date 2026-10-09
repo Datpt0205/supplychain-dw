@@ -37,6 +37,7 @@ const ROLE_LABELS: Record<string, string> = {
   sc_logistics: "Vận chuyển (Logistics)",
   sc_warehouse: "Kho",
   sc_rnd: "Nghiên cứu và phát triển (R&D)",
+  sc_mkt: "Marketing (MKT)",
   sc_bod: "Ban Giám đốc",
   sc_process_admin: "Quản trị quy trình cung ứng",
 };
