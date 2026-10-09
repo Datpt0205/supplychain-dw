@@ -25,6 +25,7 @@ describe("barNav: the navbar a person gets", () => {
       "/supply-chain/daily-brief",
       "/supply-chain/follow-ups",
       "/supply-chain/product-cases",
+      "/supply-chain/proposal-lists",
       "/supply-chain/po-cases",
       "/supply-chain/attention-queue",
       "/supply-chain/control-tower",

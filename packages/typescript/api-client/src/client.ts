@@ -32,6 +32,8 @@ import {
   documentDraftSchema,
   stepProposalSchema,
   supplierMessageSchema,
+  proposalListSummarySchema,
+  proposalListDetailSchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -106,6 +108,9 @@ import {
   type SupplierMessage,
   type SupplierMessagePurpose,
   type SupplierMessageStatus,
+  type ProposalListSummary,
+  type ProposalListDetail,
+  type ProposalRow,
   type DraftField,
   type DraftStatus,
   type TemplateFieldKind,
@@ -455,6 +460,24 @@ const _supplierMessagesMirrorTheRoute: [
   SameType<SupplierMessageStatus, SupplyChainGenerated["MessageStatus"]>,
 ] = [true, true, true, true];
 void _supplierMessagesMirrorTheRoute;
+
+// Ticket ai-automation/08: step 1 from a list.
+const _proposalListsMirrorTheRoute: [
+  SameType<
+    ProposalListSummary,
+    SupplyChainGenerated["ProposalListSummaryView"]
+  >,
+  SameType<
+    keyof ProposalListDetail,
+    keyof SupplyChainGenerated["ProposalListDetailView"]
+  >,
+  SameType<keyof ProposalRow, keyof SupplyChainGenerated["ProposalRowView"]>,
+] = [true, true, true];
+void _proposalListsMirrorTheRoute;
+
+/** `POST /proposal-lists/{id}/rows/{index}/proposal`'s body. */
+export type ProposeRowBody =
+  SupplyChainOperations["propose_from_list_api_v1_supply_chain_proposal_lists__list_id__rows__index__proposal_post"]["requestBody"]["content"]["application/json"];
 
 /** `POST /product-cases/{id}/step-proposal/decision`'s body. */
 export type StepDecisionBody =
@@ -1662,13 +1685,23 @@ export class ApiClient {
     path: string,
     input: { docType: DocumentType; file: File; idempotencyKey: string },
   ): Promise<CaseDocument> {
-    const fetchImpl = this.options.fetchImpl ?? fetch;
     const form = new FormData();
     form.append("doc_type", input.docType);
     form.append("file", input.file, input.file.name);
+    return this.postForm(path, form, input.idempotencyKey, caseDocumentSchema);
+  }
+
+  /** A multipart POST with the session's token and an idempotency key. */
+  private async postForm<T>(
+    path: string,
+    form: FormData,
+    idempotencyKey: string,
+    schema: z.ZodType<T>,
+  ): Promise<T> {
+    const fetchImpl = this.options.fetchImpl ?? fetch;
     const headers: Record<string, string> = {
       Accept: "application/json",
-      "Idempotency-Key": input.idempotencyKey,
+      "Idempotency-Key": idempotencyKey,
     };
     const token = await this.options.getAccessToken?.();
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -1691,7 +1724,70 @@ export class ApiClient {
             },
       );
     }
-    return caseDocumentSchema.parse(json);
+    return schema.parse(json);
+  }
+
+  /** Step 1 from a list: the file is stored; AI reads it in the background. */
+  uploadProposalList(
+    file: File,
+    idempotencyKey: string,
+  ): Promise<ProposalListDetail> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return this.postForm(
+      "/api/v1/supply-chain/proposal-lists",
+      form,
+      idempotencyKey,
+      proposalListDetailSchema,
+    );
+  }
+
+  /** The workspace's recent proposal lists, newest first. */
+  listProposalLists(): Promise<ProposalListSummary[]> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/proposal-lists",
+      z.array(proposalListSummarySchema),
+    );
+  }
+
+  /** A list as AI read it: each row's cited fields, suggestions, findings. */
+  getProposalList(listId: string): Promise<ProposalListDetail> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/proposal-lists/${encodeURIComponent(listId)}`,
+      proposalListDetailSchema,
+    );
+  }
+
+  /** The PIC proposes one row with the values they checked. */
+  proposeFromList(
+    listId: string,
+    index: number,
+    body: ProposeRowBody,
+    idempotencyKey: string,
+  ): Promise<ProposalListDetail> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/proposal-lists/${encodeURIComponent(listId)}/rows/${index}/proposal`,
+      proposalListDetailSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** The PIC drops one row, optionally saying why. */
+  dropFromList(
+    listId: string,
+    index: number,
+    reason: string | null,
+    idempotencyKey: string,
+  ): Promise<ProposalListDetail> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/proposal-lists/${encodeURIComponent(listId)}/rows/${index}/dismissal`,
+      proposalListDetailSchema,
+      { body: { reason }, idempotencyKey },
+    );
   }
 
   /** A product-development case's documents, by type and newest version first. */
@@ -2027,6 +2123,9 @@ export class ApiClient {
 export type {
   DocumentDraft,
   StepProposal,
+  ProposalListSummary,
+  ProposalListDetail,
+  ProposalRow,
   SupplierMessage,
   SupplierMessagePurpose,
   SupplierMessageStatus,

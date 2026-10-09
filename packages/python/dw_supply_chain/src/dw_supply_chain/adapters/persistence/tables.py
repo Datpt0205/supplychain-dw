@@ -605,3 +605,58 @@ supplier_message_sends = sa.Table(
         "sent_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )
+
+# A list of proposed products dropped in at step 1, its readings and each row's
+# decision (381374b3cb35, ticket ai-automation/08), all append-only.
+proposal_lists = sa.Table(
+    "proposal_lists",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("filename", sa.Text, nullable=False),
+    sa.Column("content_type", sa.Text, nullable=False),
+    sa.Column("size_bytes", sa.Integer, nullable=False),
+    sa.Column("sha256", sa.Text, nullable=False),
+    sa.Column("content", sa.LargeBinary, nullable=False),
+    sa.Column("uploaded_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+proposal_list_readings = sa.Table(
+    "proposal_list_readings",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("list_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("prompt_id", sa.Text, nullable=False),
+    sa.Column("prompt_version", sa.Text, nullable=False),
+    sa.Column("model_profile", sa.Text, nullable=True),
+    sa.Column("items", JSONB, nullable=False),
+    sa.Column("redactions", sa.Integer, nullable=False),
+    sa.Column("error", sa.Text, nullable=True),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+proposal_list_decisions = sa.Table(
+    "proposal_list_decisions",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("list_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("row_index", sa.Integer, nullable=False),
+    sa.Column("decision", sa.Text, nullable=False),
+    sa.Column("product_dev_case_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("reason", sa.Text, nullable=True),
+    sa.Column("decided_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "decided_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)

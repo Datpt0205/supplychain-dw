@@ -1162,6 +1162,41 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         ),
     )
 
+    # Step 1 from a list (ticket ai-automation/08): the worker's lane reads an
+    # uploaded list; a row becomes a case only through `propose`, as the PIC.
+    from dw_supply_chain.adapters.persistence.proposal_list_repository import SqlProposalLists
+    from dw_supply_chain.application import proposal_lists as sc_lists
+    from dw_supply_chain.presentation.proposal_list_routes import ProposalListHandlers
+
+    list_repo = SqlProposalLists(wiring.seam.session_factory)
+    propose_handler = container.supply_chain_propose_product_case
+    assert propose_handler is not None
+    container.supply_chain_proposal_lists = ProposalListHandlers(
+        upload=sc_lists.UploadProposalList(
+            lists=list_repo,
+            propose=propose_handler,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        list_recent=sc_lists.ListProposalLists(lists=list_repo, authz=authorization),
+        get=sc_lists.GetProposalList(lists=list_repo, authz=authorization),
+        propose=sc_lists.ProposeFromList(
+            lists=list_repo,
+            propose=propose_handler,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+        drop=sc_lists.DropFromList(
+            lists=list_repo,
+            propose=propose_handler,
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+    )
+
     # Build your context from `container.runtime` (the RuntimeSeam) and attach
     # its handlers, then mount its router in `main.create_app`. Nothing above
     # this line may import a business package. A context offering support

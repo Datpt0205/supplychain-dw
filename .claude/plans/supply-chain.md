@@ -94,7 +94,7 @@ means platform code, an upstream candidate (ADR 0011).
 | AI-05 | `ai-automation/issues/05-step-proposals.md` (L)                           | partly  | resolved        | —                                   |
 | AI-06 | `ai-automation/issues/06-preparation-evals-and-qwen-gate.md` (M)          | partly  | resolved        | —                                   |
 | AI-07 | `ai-automation/issues/07-supplier-messages.md` (M)                        | partly  | resolved        | —                                   |
-| AI-08 | `ai-automation/issues/08-step-1-proposal-list.md` (M)                     | no      | ready-for-agent | AI-02, AI-05                        |
+| AI-08 | `ai-automation/issues/08-step-1-proposal-list.md` (M)                     | partly  | resolved        | —                                   |
 | AI-09 | `ai-automation/issues/09-steps-3-5-evaluation-and-revision.md` (L)        | no      | ready-for-agent | AI-04, AI-05                        |
 | AI-10 | `ai-automation/issues/10-step-6-bod-submission.md` (M)                    | no      | ready-for-agent | AI-03, AI-05                        |
 | AI-11 | `ai-automation/issues/11-step-7-bm04-prefill.md` (L)                      | no      | ready-for-agent | AI-01, AI-02, AI-05                 |
@@ -113,11 +113,11 @@ means platform code, an upstream candidate (ADR 0011).
 | UAT-2 | `uat/issues/02-uat-with-elmich.md` (S)                                    | —       | ready-for-human | UAT-1, ON-02, H2, ZL                |
 
 **Next:** the AI layer (Đạt, 2026-10-09: "AI does the work, people only
-approve"; spec `supply-chain/ai-automation/spec.md`): AI-01–AI-07 resolved
+approve"; spec `supply-chain/ai-automation/spec.md`): AI-01–AI-08 resolved
 2026-10-09 with their integration tests owed (written, not run: no Docker on that
 machine; run them first with `make infra-up && make test-integration`), and the
 live model gate (`scripts/model_gate.py --profile luna|qwen`, a person with the
-gateway's key); the per-step tickets (AI-08 onward) are unblocked. H2 (the domain the webhook needs; runbook `docs/deploy/host.md`); Z4p
+gateway's key); the per-step tickets (AI-09 onward) are unblocked. H2 (the domain the webhook needs; runbook `docs/deploy/host.md`); Z4p
 when a real photo update exists; ZL measures the webhook header (Z3).
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).
@@ -184,6 +184,7 @@ against (E18: AI drafts, a person sends).
 | AI-05  | `31237cc` | Step proposals (`1a8527a5b426`, not run): platform `subject_version` (409 on a moved subject) and `required_input` (typed result, web only) in `decide`, `supersede_stale`; policy `supply_chain_step_preparation@1.0.0` (platform empty, Elmich: steps 3–5 physical, step 8); graph + lane `supply_chain_step_preparation` (one stamped approval per step entry, duty scope, drafts reused, `step_preparations` workspace RLS); approval applies drafts as `ai_prepared` documents and the step in one transaction; `StepProposalCard`; ADR 0025 amended; integration owed.                                                                                                                                                                                                                                                                                                     |
 | AI-06  | `6db98eb` | Preparation evals and the model gate: dataset `supply_chain_preparation@1.0.0` (49 cases, 4 extractors + 2 drafters, injection/cross-tenant/cross-workspace/missing evidence/fabricated number/contradiction/unreadable, with and without diacritics), grader `supply_chain.step_preparation`; `model.gates` + `dw_evals.gate` + `scripts/model_gate.py` (live writes `evals/gates/<profile>.json`, mock is never evidence); policy `supply_chain_model_routes@1.0.0` refuses a route to an ungated profile without a live pass, the extraction lane reads routes; placeholder `qwen` profile; live gate owed.                                                                                                                                                                                                                                                                   |
 | AI-07  | `a45d5c7` | Supplier messages (`1dc679326cb5`, not run): `supplier_messages` + `supplier_message_sends` (workspace RLS, append-only, UNIQUE per trigger and per send); lane `supply_chain_supplier_messages` drafts a reminder per open supplier-side follow-up and a sample request / confirmation per step entry for purposes the tenant's step preparation policy lists (Elmich: all three); the model writes cited paragraphs, `domain.grounded_writing` keeps those whose citations and numbers check out, code writes subject, greeting, reply-by and closing from `supply_chain_supplier_messages@1.0.0`; no price, no account number, nothing sent (architecture test); "Đã gửi" records who and which text; `SupplierMessagesCard`; task `draft.supplier_message` in the routes policy 1.1.0 and dataset `supply_chain_preparation@1.1.0` (57); ADR 0029 amended; integration owed. |
+| AI-08  | this      | Step 1 from a list (`381374b3cb35`, not run): `proposal_lists` (file in PostgreSQL, ≤ 10 MiB), `proposal_list_readings`, `proposal_list_decisions` (workspace RLS, append-only, one reading per prompt, one decision per row), definer queue; lane `supply_chain_proposal_lists` reads a list into cited rows, a Category kept only as a tenant key, priority as a suggestion, findings for codes taken / repeated and names seen; each row becomes a case only through `ProposeProductCase` when the PIC presses; pages "Danh sách đề xuất"; task `extract.proposal_list`, routes 1.2.0, dataset 1.2.0 (67); ADR 0025 amended; integration owed.                                                                                                                                                                                                                                |
 
 ## Open — named, not fixed, still true after the port
 

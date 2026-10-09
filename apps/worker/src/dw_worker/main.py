@@ -88,6 +88,7 @@ from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementSe
 from dw_platform.retention_policy import load_retention_policy
 from dw_supply_chain.application.document_extraction import EXTRACTION_LANE
 from dw_supply_chain.application.follow_up_sweep import FOLLOW_UP_SWEEP_LANE
+from dw_supply_chain.application.proposal_lists import PROPOSAL_LISTS_LANE
 from dw_supply_chain.application.step_preparation import PREPARATION_LANE
 from dw_supply_chain.application.supplier_messages import MESSAGES_LANE
 from dw_worker.composition import (
@@ -125,6 +126,8 @@ from dw_worker.consumers.supply_chain import (
     build_product_review_reconcile_consumer,
     build_product_review_runner,
     build_proposal_draft_retention,
+    build_proposal_lists,
+    build_proposal_lists_consumer,
     build_stage_one_report,
     build_stage_one_report_consumer,
     build_step_preparation,
@@ -434,6 +437,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     step_preparation: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's messages to a supplier: a database and a model.
     supplier_messages: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's proposal lists read into rows: a database and a model.
+    proposal_lists: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's chat proposal drafts past their 30 minutes: a database.
     proposal_drafts_retention: RetentionPrunePort | None = None
     # Supply Chain's closed follow-ups past their tenant's term: a database.
@@ -610,6 +615,24 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                 sessions, runner=review_runner, configs_dir=REPO_ROOT / "configs", ids=ids
             )
         )
+        # Lists of proposed products read into rows (ticket ai-automation/08):
+        # stored in PostgreSQL, so a database and a model are all it needs.
+        proposal_lists = build_proposal_lists_consumer(
+            build_proposal_lists(
+                sessions,
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                model_profile=settings.model_profile,
+                configs_dir=REPO_ROOT / "configs",
+                gates_dir=REPO_ROOT / "evals" / "gates",
+                ids=ids,
+                clock=clock,
+            )
+        )
         # Messages to a supplier AI drafts and a person sends (ADR 0029): the
         # same one-call gateway, plan allowance and spend ledger.
         supplier_messages = build_supplier_messages_consumer(
@@ -740,6 +763,14 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         registry.register(
             PREPARATION_LANE,
             step_preparation,
+            interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
+        )
+
+    # Proposal lists (ticket ai-automation/08): the extraction lane's cadence.
+    if proposal_lists is not None:
+        registry.register(
+            PROPOSAL_LISTS_LANE,
+            proposal_lists,
             interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
         )
 

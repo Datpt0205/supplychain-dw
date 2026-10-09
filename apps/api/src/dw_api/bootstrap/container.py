@@ -139,6 +139,7 @@ from dw_supply_chain.application.product_cases import (
 )
 from dw_supply_chain.presentation.commercial_routes import CommercialHandlers
 from dw_supply_chain.presentation.draft_routes import DraftHandlers
+from dw_supply_chain.presentation.proposal_list_routes import ProposalListHandlers
 from dw_supply_chain.presentation.step_proposal_routes import StepProposalHandlers
 from dw_supply_chain.presentation.supplier_message_routes import SupplierMessageHandlers
 
@@ -257,6 +258,8 @@ class ApiContainer:
     supply_chain_step_proposals: StepProposalHandlers | None = None
     # Messages to a supplier AI drafted, a person sends (ticket ai-automation/07).
     supply_chain_supplier_messages: SupplierMessageHandlers | None = None
+    # Step 1 from a list: AI reads it, the PIC proposes each row (ai-automation/08).
+    supply_chain_proposal_lists: ProposalListHandlers | None = None
     # Product-development cases (stage 1): their own router on their own guard,
     # as the documents router is.
     supply_chain_propose_product_case: ProposeProductCase | None = None

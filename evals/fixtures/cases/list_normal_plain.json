@@ -1,0 +1,35 @@
+{
+  "text": "DANH SACH SAN PHAM DE XUAT\n1 | DX-2026-060 | Noi inox 3 day 24cm | Cong ty Minh Phat | noi24.jpg\n2 | DX-2026-061 | Chao chong dinh 28cm | Cong ty Hoa Binh | chao28.jpg\n",
+  "model_reading": {
+    "rows": [
+      {
+        "product_name": {
+          "value": "Noi inox 3 day 24cm",
+          "quote": "Noi inox 3 day 24cm"
+        },
+        "category": {
+          "value": "noi",
+          "reason": "Theo loại sản phẩm"
+        },
+        "proposal_code": {
+          "value": "DX-2026-060",
+          "quote": "DX-2026-060"
+        }
+      },
+      {
+        "product_name": {
+          "value": "Chao chong dinh 28cm",
+          "quote": "Chao chong dinh 28cm"
+        },
+        "category": {
+          "value": "chao",
+          "reason": "Theo loại sản phẩm"
+        },
+        "proposal_code": {
+          "value": "DX-2026-061",
+          "quote": "DX-2026-061"
+        }
+      }
+    ]
+  }
+}

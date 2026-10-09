@@ -92,7 +92,7 @@ Ticket 01–20 `resolved`; UAT-02 chạy với Elmich; `process.md` mục 4 cộ
 | 05  | [Đề xuất bước: chuẩn bị và duyệt để chuyển](issues/05-step-proposals.md)                   | L    | resolved        | 02, 03     |
 | 06  | [Eval chuẩn bị và cổng Qwen](issues/06-preparation-evals-and-qwen-gate.md)                 | M    | resolved        | 02, 03     |
 | 07  | [Tin gửi NCC: AI soạn, người gửi](issues/07-supplier-messages.md)                          | M    | resolved        | 03, 05     |
-| 08  | [Bước 1: đọc danh sách SP đề xuất](issues/08-step-1-proposal-list.md)                      | M    | ready-for-agent | 02, 05     |
+| 08  | [Bước 1: đọc danh sách SP đề xuất](issues/08-step-1-proposal-list.md)                      | M    | resolved        | 02, 05     |
 | 09  | [Bước 3–5: biên bản, phiếu, kiểm vòng](issues/09-steps-3-5-evaluation-and-revision.md)     | L    | ready-for-agent | 04, 05     |
 | 10  | [Bước 6: tờ trình BGĐ](issues/10-step-6-bod-submission.md)                                 | M    | ready-for-agent | 03, 05     |
 | 11  | [Bước 7: BM04 điền sẵn, nêu khoảng trống](issues/11-step-7-bm04-prefill.md)                | L    | ready-for-agent | 01, 02, 05 |

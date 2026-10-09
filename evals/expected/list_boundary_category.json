@@ -1,0 +1,19 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "categories_in": [
+    "noi",
+    "chao",
+    null
+  ],
+  "scripted": {
+    "rows": {
+      "0": {
+        "category": null,
+        "findings": [
+          "category_unknown"
+        ]
+      }
+    }
+  }
+}

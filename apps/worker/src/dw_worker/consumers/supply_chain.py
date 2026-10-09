@@ -103,6 +103,11 @@ from dw_supply_chain.adapters.persistence.proposal_draft_repository import (
     SqlProposalDraftRepository,
     SqlProposalDraftRetention,
 )
+from dw_supply_chain.adapters.persistence.proposal_list_repository import (
+    SqlProposalListQueue,
+    SqlProposalLists,
+    SqlTakenCodes,
+)
 from dw_supply_chain.adapters.persistence.step_preparation_repository import (
     SqlPreparationRecords,
     SqlProposalOutcomes,
@@ -136,6 +141,7 @@ from dw_supply_chain.application.product_reviews import (
     EnsureProductApproval,
     ReconcileProductApprovals,
 )
+from dw_supply_chain.application.proposal_lists import ReadProposalLists, TenantCategories
 from dw_supply_chain.application.step_preparation import PrepareStep, PrepareSteps
 from dw_supply_chain.application.step_proposals import ApplyStepProposal, StepProposalSubject
 from dw_supply_chain.application.supplier_messages import (
@@ -145,7 +151,11 @@ from dw_supply_chain.application.supplier_messages import (
 from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.step_proposal import STEP_PROPOSAL_PREFIX
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
-from dw_supply_chain.model_routes import SUPPLIER_MESSAGE_TASK, load_supply_chain_model_routes
+from dw_supply_chain.model_routes import (
+    PROPOSAL_LIST_TASK,
+    SUPPLIER_MESSAGE_TASK,
+    load_supply_chain_model_routes,
+)
 from dw_supply_chain.policy_files import (
     ADVANCE_PRODUCT_CASE_WORKER_FILE,
     FOLLOW_UP_POLICY_FILE,
@@ -285,6 +295,56 @@ def build_document_extraction_consumer(lane: ExtractDocuments) -> Callable[[], A
                 outcome.refused_before_reading,
                 outcome.deferred,
             )
+
+    return consume
+
+
+def build_proposal_lists(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    gateway: ModelGateway,
+    model_profile: str,
+    configs_dir: Path,
+    gates_dir: Path,
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> ReadProposalLists:
+    """The lane `supply_chain_proposal_lists` (ticket ai-automation/08): the
+    one-call gateway, the Category list `propose` itself accepts, and the
+    task's route from `supply_chain_model_routes`."""
+    policies = configs_dir / "policies"
+    routes = load_supply_chain_model_routes(policies / MODEL_ROUTES_POLICY_FILE, gates_dir)
+    propose = ProposeProductCase(
+        repo=SqlProductCaseRepository(sessions),
+        authz=ScopeAuthorizationService(),
+        policy_override_repo=SqlPolicyOverrideRepository(sessions),
+        platform_default_duties=load_supply_chain_product_action_duties(
+            policies / PRODUCT_ACTION_DUTIES_POLICY_FILE
+        ),
+        platform_default_sla_policy=load_supply_chain_sla_policy(policies / SLA_POLICY_FILE),
+        ids=ids,
+        clock=clock,
+    )
+    return ReadProposalLists(
+        queue=SqlProposalListQueue(sessions),
+        lists=SqlProposalLists(sessions),
+        text=InProcessDocumentText(),
+        gateway=gateway,
+        categories=TenantCategories(propose),
+        taken=SqlTakenCodes(sessions),
+        plans=SqlTenantPlans(sessions),
+        notifier=SqlNotificationRepository(sessions),
+        ids=ids,
+        clock=clock,
+        model_profile=routes.profile_for(PROPOSAL_LIST_TASK) or model_profile,
+    )
+
+
+def build_proposal_lists_consumer(lane: ReadProposalLists) -> Callable[[], Awaitable[None]]:
+    async def consume() -> None:
+        outcome = await lane.run_once()
+        if outcome.by_outcome:
+            logger.info("proposal lists: %s", outcome.by_outcome)
 
     return consume
 

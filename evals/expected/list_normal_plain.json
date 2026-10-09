@@ -1,0 +1,22 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "row_count": 2,
+  "categories_in": [
+    "noi",
+    "chao",
+    null
+  ],
+  "rows": {
+    "0": {
+      "fields": {
+        "proposal_code": "DX-2026-060"
+      }
+    },
+    "1": {
+      "fields": {
+        "proposal_code": "DX-2026-061"
+      }
+    }
+  }
+}

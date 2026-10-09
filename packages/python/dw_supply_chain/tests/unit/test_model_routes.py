@@ -45,8 +45,8 @@ from dw_supply_chain.testing.extraction import (
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-SHIPPED = REPO_ROOT / "configs" / "policies" / "supply_chain_model_routes@1.1.0.yaml"
-DATASET = "supply_chain_preparation@1.1.0"
+SHIPPED = REPO_ROOT / "configs" / "policies" / "supply_chain_model_routes@1.2.0.yaml"
+DATASET = "supply_chain_preparation@1.2.0"
 TASK = "extract.sample_evaluation"
 NOW = datetime(2026, 10, 9, tzinfo=UTC)
 
@@ -88,6 +88,7 @@ def test_every_extractor_and_every_drafter_is_a_model_task() -> None:
         "extract.supplier_confirmation_email",
         "extract.product_profile_bm04",
         "extract.supplier_quotation",
+        "extract.proposal_list",
     } | DRAFTING_TASKS == MODEL_TASKS
     assert "draft.supplier_message" in DRAFTING_TASKS
 
@@ -97,8 +98,9 @@ def test_a_drafting_task_runs_where_its_route_says_or_on_the_process_s_profile()
     assert _policy({"draft.supplier_message": "luna"}).profile_for("draft.supplier_message") == (
         "luna"
     )
-    with pytest.raises(ValueError, match="not a drafting task"):
-        _policy({}).profile_for("extract.sample_evaluation")
+    assert _policy({}).profile_for("extract.proposal_list") is None
+    with pytest.raises(ValueError, match="not a model task"):
+        _policy({}).profile_for("draft.nothing")
 
 
 def test_a_route_to_an_ungated_profile_needs_no_gate() -> None:

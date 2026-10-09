@@ -359,6 +359,26 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # Proposal lists (ticket ai-automation/08): own router.
+    if container.supply_chain_proposal_lists is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import (
+            get_form_idempotent_operation,
+            get_idempotent_operation,
+        )
+        from dw_supply_chain.presentation.proposal_list_routes import (
+            build_proposal_list_router,
+        )
+
+        app.include_router(
+            build_proposal_list_router(
+                container.supply_chain_proposal_lists,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+                resolve_form_idempotency=get_form_idempotent_operation,
+            )
+        )
+
     # Product-development cases (stage 1): their own router on their own guard,
     # as the documents router is.
     if (

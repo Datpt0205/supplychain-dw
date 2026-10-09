@@ -34,6 +34,7 @@ __all__ = [
     "DRAFTING_TASKS",
     "MODEL_ROUTES_POLICY_ID",
     "MODEL_TASKS",
+    "PROPOSAL_LIST_TASK",
     "SUPPLIER_MESSAGE_TASK",
     "SupplyChainModelRoutes",
     "extraction_task",
@@ -47,12 +48,18 @@ def extraction_task(doc_type: DocumentType) -> str:
     return f"extract.{doc_type.value}"
 
 
+# A list of proposed products, read by its own lane (ticket ai-automation/08).
+PROPOSAL_LIST_TASK = extraction_task(DocumentType.PROPOSAL_LIST)
 # The drafts a model writes, each graded by its own gate cases.
 SUPPLIER_MESSAGE_TASK = "draft.supplier_message"
 DRAFTING_TASKS = frozenset({SUPPLIER_MESSAGE_TASK})
 
 # Every model task of this context, by name: what a route and a gate case name.
-MODEL_TASKS = frozenset(extraction_task(t) for t in EXTRACTION_SPECS) | DRAFTING_TASKS
+MODEL_TASKS = (
+    frozenset(extraction_task(t) for t in EXTRACTION_SPECS)
+    | frozenset({PROPOSAL_LIST_TASK})
+    | DRAFTING_TASKS
+)
 
 
 class ModelGate(BaseModel):
@@ -101,9 +108,9 @@ class SupplyChainModelRoutes(BaseModel):
             )
 
     def profile_for(self, task: str) -> str | None:
-        """The profile a drafting task runs on, or None for the process's own."""
-        if task not in DRAFTING_TASKS:
-            raise ValueError(f"{task} is not a drafting task")
+        """The profile a task runs on, or None for the process's own."""
+        if task not in MODEL_TASKS:
+            raise ValueError(f"{task} is not a model task")
         return self.routes.get(task)
 
     def extraction_routes(self) -> dict[DocumentType, str]:

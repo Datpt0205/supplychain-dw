@@ -1,0 +1,35 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "row_count": 2,
+  "categories_in": [
+    "noi",
+    "chao",
+    null
+  ],
+  "rows": {
+    "0": {
+      "fields": {
+        "proposal_code": "DX-2026-050",
+        "product_name": "Nồi inox 3 đáy 24cm"
+      }
+    },
+    "1": {
+      "fields": {
+        "proposal_code": "DX-2026-051",
+        "product_name": "Chảo chống dính 28cm"
+      }
+    }
+  },
+  "scripted": {
+    "rows": {
+      "0": {
+        "category": "noi",
+        "priority": "high"
+      },
+      "1": {
+        "category": "chao"
+      }
+    }
+  }
+}

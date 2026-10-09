@@ -144,3 +144,21 @@ kết quả **live** của dataset cổng (`supply_chain_preparation@1.0.0`) qua
 an ninh nào trượt và tỉ lệ đạt ≥ `min_pass_rate` (1.0). Ngưỡng có một chủ là policy; file
 kết quả chỉ có điểm. Chạy mock chỉ chứng minh script và bảng, không bao giờ là bằng chứng.
 Profile `qwen` là chỗ giữ, chưa đo.
+
+## Sửa đổi 2026-10-09 (tạm, lát AI-07, AI-08; mô hình viết, code giữ)
+
+1. **Bản nháp do mô hình viết** đi qua một chỗ: `domain.grounded_writing`. Mô hình viết
+   câu, mỗi câu dẫn khóa bằng chứng code đã gom (chỉ của hồ sơ này, chỉ thứ người soạn được
+   đọc); code giữ câu mà mọi khóa có trong bằng chứng, mọi con số có trong mục được dẫn,
+   không có gì giống số tài khoản, và loại câu khác (đếm, không sửa). Tác vụ viết có tên
+   `draft.<loại>` trong `supply_chain_model_routes` và có ca trong dataset cổng như tác vụ
+   đọc.
+2. **Bước 1 từ một danh sách** (AI-08) không phải đề xuất bước: chưa có hồ sơ để trình.
+   File danh sách lưu trong PostgreSQL (`proposal_lists`, ≤ 10 MiB, chỉ thêm), không trong
+   bucket, như override mẫu của tenant: nó chưa thuộc hồ sơ nào nên không có khóa đối tượng
+   theo hồ sơ, và sweep mồ côi không phải học tiền tố mới. Lane `supply_chain_proposal_lists`
+   đọc thành từng dòng; mỗi dòng thành hồ sơ chỉ khi PIC bấm, qua đúng `ProposeProductCase`
+   (PIC đóng dấu từ người bấm, nhóm phải là khóa của tenant, mã trùng là lỗi của cơ sở dữ
+   liệu). Việc đề xuất rồi ghi quyết định của dòng là hai giao dịch: dòng đã có quyết định
+   thì bị từ chối trước khi tạo hồ sơ; hai lần bấm cùng lúc với mã khác nhau vẫn có thể tạo
+   hai hồ sơ (cửa sổ nhỏ, ghi lại; khóa idempotency của route chặn bấm đúp cùng giá trị).

@@ -1,6 +1,7 @@
 import {
   ControlOutlined,
   ExperimentOutlined,
+  OrderedListOutlined,
   SettingOutlined,
   FileSearchOutlined,
   ReadOutlined,
@@ -43,6 +44,14 @@ export const supplyChainNav: NavItem[] = [
     label: "Phát triển SP",
     hint: "Hồ sơ phát triển sản phẩm, bước 1–9: đề xuất, lấy mẫu, test mẫu, BGĐ duyệt",
     icon: ExperimentOutlined,
+    scope: "supply_chain.product_case.read",
+    context: SUPPLY_CHAIN,
+  },
+  {
+    href: "/supply-chain/proposal-lists",
+    label: "Danh sách đề xuất",
+    hint: "Bước 1 từ một file: AI tách danh sách SP đề xuất thành từng dòng, bạn đề xuất từng dòng",
+    icon: OrderedListOutlined,
     scope: "supply_chain.product_case.read",
     context: SUPPLY_CHAIN,
   },

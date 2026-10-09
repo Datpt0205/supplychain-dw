@@ -833,6 +833,20 @@
         "title": "Body_upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post",
         "type": "object"
       },
+      "Body_upload_proposal_list_api_v1_supply_chain_proposal_lists_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_proposal_list_api_v1_supply_chain_proposal_lists_post",
+        "type": "object"
+      },
       "BootstrapResponse": {
         "properties": {
           "display_name": {
@@ -1494,6 +1508,24 @@
           "quote"
         ],
         "title": "CitationView",
+        "type": "object"
+      },
+      "CitedValueView": {
+        "properties": {
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "quote"
+        ],
+        "title": "CitedValueView",
         "type": "object"
       },
       "CloseFollowUpRequest": {
@@ -2367,6 +2399,36 @@
         ],
         "title": "DraftView",
         "type": "object"
+      },
+      "DropRowRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "pattern": "^[^\\x00]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "DropRowRequest",
+        "type": "object"
+      },
+      "ExtractionStatus": {
+        "enum": [
+          "extracted",
+          "unreadable",
+          "refused",
+          "failed"
+        ],
+        "title": "ExtractionStatus",
+        "type": "string"
       },
       "FeedbackAttachmentView": {
         "properties": {
@@ -6169,6 +6231,211 @@
         "title": "ProposalDraftView",
         "type": "object"
       },
+      "ProposalListDetailView": {
+        "description": "The list, how AI read it, and its rows.",
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalRowView"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "uploaded_by": {
+            "format": "uuid",
+            "title": "Uploaded By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "uploaded_by",
+          "created_at",
+          "status",
+          "rows"
+        ],
+        "title": "ProposalListDetailView",
+        "type": "object"
+      },
+      "ProposalListSummaryView": {
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "uploaded_by": {
+            "format": "uuid",
+            "title": "Uploaded By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "uploaded_by",
+          "created_at"
+        ],
+        "title": "ProposalListSummaryView",
+        "type": "object"
+      },
+      "ProposalRowView": {
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "category_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Reason"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RowDecisionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fields": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CitedValueView"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/RowFindingView"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "gaps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "priority_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Reason"
+          }
+        },
+        "required": [
+          "index",
+          "fields",
+          "gaps",
+          "category",
+          "category_reason",
+          "priority",
+          "priority_reason",
+          "findings",
+          "decision"
+        ],
+        "title": "ProposalRowView",
+        "type": "object"
+      },
       "ProposalSourceView": {
         "properties": {
           "doc_type": {
@@ -6227,6 +6494,40 @@
           "category"
         ],
         "title": "ProposeProductCaseRequest",
+        "type": "object"
+      },
+      "ProposeRowRequest": {
+        "additionalProperties": false,
+        "description": "The values the PIC checked: what `propose` takes.",
+        "properties": {
+          "category": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Category",
+            "type": "string"
+          },
+          "product_name": {
+            "maxLength": 300,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Product Name",
+            "type": "string"
+          },
+          "proposal_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Proposal Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_code",
+          "product_name",
+          "category"
+        ],
+        "title": "ProposeRowRequest",
         "type": "object"
       },
       "ReadinessResponse": {
@@ -6574,6 +6875,92 @@
           "scopes"
         ],
         "title": "RoleView",
+        "type": "object"
+      },
+      "RowDecision": {
+        "enum": [
+          "proposed",
+          "dropped"
+        ],
+        "title": "RowDecision",
+        "type": "string"
+      },
+      "RowDecisionView": {
+        "properties": {
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decided_by": {
+            "format": "uuid",
+            "title": "Decided By",
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/RowDecision"
+          },
+          "product_dev_case_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Dev Case Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "decision",
+          "product_dev_case_id",
+          "reason",
+          "decided_by",
+          "decided_at"
+        ],
+        "title": "RowDecisionView",
+        "type": "object"
+      },
+      "RowFinding": {
+        "enum": [
+          "proposal_code_taken",
+          "proposal_code_repeated",
+          "item_code_taken",
+          "product_seen",
+          "category_unknown",
+          "no_product_name"
+        ],
+        "title": "RowFinding",
+        "type": "string"
+      },
+      "RowFindingView": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/RowFinding"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "RowFindingView",
         "type": "object"
       },
       "RunView": {
@@ -15641,6 +16028,293 @@
           }
         },
         "summary": "List Product Categories",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/proposal-lists": {
+      "get": {
+        "operationId": "list_proposal_lists_api_v1_supply_chain_proposal_lists_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProposalListSummaryView"
+                  },
+                  "title": "Response List Proposal Lists Api V1 Supply Chain Proposal Lists Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Proposal Lists",
+        "tags": [
+          "supply_chain"
+        ]
+      },
+      "post": {
+        "operationId": "upload_proposal_list_api_v1_supply_chain_proposal_lists_post",
+        "parameters": [
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_proposal_list_api_v1_supply_chain_proposal_lists_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalListDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Proposal List",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/proposal-lists/{list_id}": {
+      "get": {
+        "operationId": "get_proposal_list_api_v1_supply_chain_proposal_lists__list_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "List Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalListDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Proposal List",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/proposal-lists/{list_id}/rows/{index}/dismissal": {
+      "post": {
+        "operationId": "drop_from_list_api_v1_supply_chain_proposal_lists__list_id__rows__index__dismissal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "List Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "title": "Index",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DropRowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalListDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Drop From List",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/proposal-lists/{list_id}/rows/{index}/proposal": {
+      "post": {
+        "operationId": "propose_from_list_api_v1_supply_chain_proposal_lists__list_id__rows__index__proposal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "List Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "title": "Index",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeRowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalListDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose From List",
         "tags": [
           "supply_chain"
         ]

@@ -782,14 +782,22 @@ async def test_step_preparations_are_append_only(db_urls: DatabaseUrls) -> None:
         await migrator.dispose()
 
 
-async def test_supplier_messages_are_append_only(db_urls: DatabaseUrls) -> None:
-    """Migration 1dc679326cb5 (ticket ai-automation/07): `dw_app` reads and
-    inserts messages to a supplier and their "Đã gửi" rows, and never edits or
-    deletes one (they leave with their case by cascade)."""
+async def test_ai_drafting_tables_are_append_only(db_urls: DatabaseUrls) -> None:
+    """Migrations 1dc679326cb5 and 381374b3cb35 (tickets ai-automation/07, 08):
+    `dw_app` reads and inserts messages to a supplier, their "Đã gửi" rows,
+    proposal lists, their readings and row decisions, and never edits or
+    deletes one (they leave with their case or workspace by cascade)."""
     migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
     try:
         async with migrator.connect() as conn:
-            for table in ("supply_chain.supplier_messages", "supply_chain.supplier_message_sends"):
+            for table in (
+                "supply_chain.supplier_messages",
+                "supply_chain.supplier_message_sends",
+                # Migration 381374b3cb35 (ticket ai-automation/08).
+                "supply_chain.proposal_lists",
+                "supply_chain.proposal_list_readings",
+                "supply_chain.proposal_list_decisions",
+            ):
                 for verb, held in (
                     ("SELECT", True),
                     ("INSERT", True),

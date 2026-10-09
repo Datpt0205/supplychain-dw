@@ -1,0 +1,52 @@
+{
+  "text": "PNG",
+  "content_type": "image/png",
+  "model_reading": {
+    "rows": [
+      {
+        "product_name": {
+          "value": "Nồi inox 3 đáy 24cm",
+          "quote": "Nồi inox 3 đáy 24cm"
+        },
+        "category": {
+          "value": "noi",
+          "reason": "Theo loại sản phẩm"
+        },
+        "proposal_code": {
+          "value": "DX-2026-050",
+          "quote": "DX-2026-050"
+        },
+        "supplier_name": {
+          "value": "Công ty Minh Phát",
+          "quote": "Công ty Minh Phát"
+        },
+        "image_ref": {
+          "value": "noi24.jpg",
+          "quote": "noi24.jpg"
+        },
+        "priority": {
+          "value": "high",
+          "reason": "Ghi chú: Gấp, khách đặt trước"
+        }
+      },
+      {
+        "product_name": {
+          "value": "Chảo chống dính 28cm",
+          "quote": "Chảo chống dính 28cm"
+        },
+        "category": {
+          "value": "chao",
+          "reason": "Theo loại sản phẩm"
+        },
+        "proposal_code": {
+          "value": "DX-2026-051",
+          "quote": "DX-2026-051"
+        },
+        "supplier_name": {
+          "value": "Công ty Hòa Bình",
+          "quote": "Công ty Hòa Bình"
+        }
+      }
+    ]
+  }
+}

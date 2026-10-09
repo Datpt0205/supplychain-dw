@@ -1,0 +1,27 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "categories_in": [
+    "noi",
+    "chao",
+    null
+  ],
+  "rows": {
+    "0": {
+      "fields": {
+        "item_code": null
+      }
+    }
+  },
+  "scripted": {
+    "rows": {
+      "0": {
+        "priority": "high",
+        "priority_reason": null,
+        "gaps": [
+          "item_code"
+        ]
+      }
+    }
+  }
+}

@@ -984,6 +984,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/proposal-lists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Proposal Lists */
+        get: operations["list_proposal_lists_api_v1_supply_chain_proposal_lists_get"];
+        put?: never;
+        /** Upload Proposal List */
+        post: operations["upload_proposal_list_api_v1_supply_chain_proposal_lists_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/proposal-lists/{list_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Proposal List */
+        get: operations["get_proposal_list_api_v1_supply_chain_proposal_lists__list_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/proposal-lists/{list_id}/rows/{index}/dismissal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Drop From List */
+        post: operations["drop_from_list_api_v1_supply_chain_proposal_lists__list_id__rows__index__dismissal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/proposal-lists/{list_id}/rows/{index}/proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Propose From List */
+        post: operations["propose_from_list_api_v1_supply_chain_proposal_lists__list_id__rows__index__proposal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/sla-policy": {
         parameters: {
             query?: never;
@@ -1207,6 +1276,11 @@ export interface components {
         /** Body_upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post */
         Body_upload_product_case_document_api_v1_supply_chain_product_cases__case_id__documents_post: {
             doc_type: components["schemas"]["DocumentType"];
+            /** File */
+            file: string;
+        };
+        /** Body_upload_proposal_list_api_v1_supply_chain_proposal_lists_post */
+        Body_upload_proposal_list_api_v1_supply_chain_proposal_lists_post: {
             /** File */
             file: string;
         };
@@ -1435,6 +1509,13 @@ export interface components {
             field: components["schemas"]["GroundedField"];
             /** Quote */
             quote: string;
+        };
+        /** CitedValueView */
+        CitedValueView: {
+            /** Quote */
+            quote: string;
+            /** Value */
+            value: string;
         };
         /** CloseFollowUpRequest */
         CloseFollowUpRequest: {
@@ -1677,6 +1758,16 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** DropRowRequest */
+        DropRowRequest: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * ExtractionStatus
+         * @enum {string}
+         */
+        ExtractionStatus: "extracted" | "unreadable" | "refused" | "failed";
         /** FindingView */
         FindingView: {
             /** Code */
@@ -2585,6 +2676,82 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * ProposalListDetailView
+         * @description The list, how AI read it, and its rows.
+         */
+        ProposalListDetailView: {
+            /** Content Type */
+            content_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Filename */
+            filename: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Rows */
+            rows: components["schemas"]["ProposalRowView"][];
+            /** Size Bytes */
+            size_bytes: number;
+            status: components["schemas"]["ExtractionStatus"] | null;
+            /**
+             * Uploaded By
+             * Format: uuid
+             */
+            uploaded_by: string;
+        };
+        /** ProposalListSummaryView */
+        ProposalListSummaryView: {
+            /** Content Type */
+            content_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Filename */
+            filename: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /**
+             * Uploaded By
+             * Format: uuid
+             */
+            uploaded_by: string;
+        };
+        /** ProposalRowView */
+        ProposalRowView: {
+            /** Category */
+            category: string | null;
+            /** Category Reason */
+            category_reason: string | null;
+            decision: components["schemas"]["RowDecisionView"] | null;
+            /** Fields */
+            fields: {
+                [key: string]: components["schemas"]["CitedValueView"] | null;
+            };
+            /** Findings */
+            findings: components["schemas"]["RowFindingView"][];
+            /** Gaps */
+            gaps: string[];
+            /** Index */
+            index: number;
+            /** Priority */
+            priority: string | null;
+            /** Priority Reason */
+            priority_reason: string | null;
+        };
         /** ProposalSourceView */
         ProposalSourceView: {
             /** Doc Type */
@@ -2600,6 +2767,18 @@ export interface components {
          *     other.
          */
         ProposeProductCaseRequest: {
+            /** Category */
+            category: string;
+            /** Product Name */
+            product_name: string;
+            /** Proposal Code */
+            proposal_code: string;
+        };
+        /**
+         * ProposeRowRequest
+         * @description The values the PIC checked: what `propose` takes.
+         */
+        ProposeRowRequest: {
             /** Category */
             category: string;
             /** Product Name */
@@ -2682,6 +2861,40 @@ export interface components {
             values: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * RowDecision
+         * @enum {string}
+         */
+        RowDecision: "proposed" | "dropped";
+        /** RowDecisionView */
+        RowDecisionView: {
+            /**
+             * Decided At
+             * Format: date-time
+             */
+            decided_at: string;
+            /**
+             * Decided By
+             * Format: uuid
+             */
+            decided_by: string;
+            decision: components["schemas"]["RowDecision"];
+            /** Product Dev Case Id */
+            product_dev_case_id: string | null;
+            /** Reason */
+            reason: string | null;
+        };
+        /**
+         * RowFinding
+         * @enum {string}
+         */
+        RowFinding: "proposal_code_taken" | "proposal_code_repeated" | "item_code_taken" | "product_seen" | "category_unknown" | "no_product_name";
+        /** RowFindingView */
+        RowFindingView: {
+            code: components["schemas"]["RowFinding"];
+            /** Message */
+            message: string;
         };
         /**
          * SLAConfirmationStatus
@@ -5388,6 +5601,171 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductCategoryView"][];
+                };
+            };
+        };
+    };
+    list_proposal_lists_api_v1_supply_chain_proposal_lists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalListSummaryView"][];
+                };
+            };
+        };
+    };
+    upload_proposal_list_api_v1_supply_chain_proposal_lists_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_proposal_list_api_v1_supply_chain_proposal_lists_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalListDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_proposal_list_api_v1_supply_chain_proposal_lists__list_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalListDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drop_from_list_api_v1_supply_chain_proposal_lists__list_id__rows__index__dismissal_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                list_id: string;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DropRowRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalListDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_from_list_api_v1_supply_chain_proposal_lists__list_id__rows__index__proposal_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                list_id: string;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposeRowRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalListDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

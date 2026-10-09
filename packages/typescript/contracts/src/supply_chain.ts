@@ -1213,3 +1213,66 @@ export const supplierMessageSchema = z.object({
   sent_at: z.string().nullable(),
 });
 export type SupplierMessage = z.infer<typeof supplierMessageSchema>;
+
+// Ticket ai-automation/08: step 1 from a list.
+
+/** Mirrors `ProposalListSummaryView`. */
+export const proposalListSummarySchema = z.object({
+  id: z.string().uuid(),
+  filename: z.string(),
+  content_type: z.string(),
+  size_bytes: z.number().int(),
+  uploaded_by: z.string().uuid(),
+  created_at: z.string(),
+});
+export type ProposalListSummary = z.infer<typeof proposalListSummarySchema>;
+
+export const proposalRowFindingCodeSchema = z.enum([
+  "proposal_code_taken",
+  "proposal_code_repeated",
+  "item_code_taken",
+  "product_seen",
+  "category_unknown",
+  "no_product_name",
+]);
+export type ProposalRowFindingCode = z.infer<
+  typeof proposalRowFindingCodeSchema
+>;
+
+export const citedValueSchema = z.object({
+  value: z.string(),
+  quote: z.string(),
+});
+export type CitedValue = z.infer<typeof citedValueSchema>;
+
+export const proposalRowDecisionSchema = z.object({
+  decision: z.enum(["proposed", "dropped"]),
+  product_dev_case_id: z.string().uuid().nullable(),
+  reason: z.string().nullable(),
+  decided_by: z.string().uuid(),
+  decided_at: z.string(),
+});
+export type ProposalRowDecision = z.infer<typeof proposalRowDecisionSchema>;
+
+/** Mirrors `ProposalRowView`: one product AI read from the list. */
+export const proposalRowSchema = z.object({
+  index: z.number().int(),
+  fields: z.record(z.string(), citedValueSchema.nullable()),
+  gaps: z.array(z.string()),
+  category: z.string().nullable(),
+  category_reason: z.string().nullable(),
+  priority: z.string().nullable(),
+  priority_reason: z.string().nullable(),
+  findings: z.array(
+    z.object({ code: proposalRowFindingCodeSchema, message: z.string() }),
+  ),
+  decision: proposalRowDecisionSchema.nullable(),
+});
+export type ProposalRow = z.infer<typeof proposalRowSchema>;
+
+/** Mirrors `ProposalListDetailView`. `status` null: AI has not read it yet. */
+export const proposalListDetailSchema = proposalListSummarySchema.extend({
+  status: z.enum(["extracted", "unreadable", "refused", "failed"]).nullable(),
+  rows: z.array(proposalRowSchema),
+});
+export type ProposalListDetail = z.infer<typeof proposalListDetailSchema>;

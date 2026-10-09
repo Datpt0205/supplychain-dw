@@ -1,0 +1,21 @@
+{
+  "text": "DANH SÁCH\n1 | Nồi inox 3 đáy 24cm | Công ty Minh Phát\n",
+  "model_reading": {
+    "rows": [
+      {
+        "product_name": {
+          "value": "Nồi inox 3 đáy 24cm",
+          "quote": "Nồi inox 3 đáy 24cm"
+        },
+        "category": {
+          "value": "noi",
+          "reason": "Theo loại sản phẩm"
+        },
+        "proposal_code": {
+          "value": "DX-2026-052",
+          "quote": "DX-2026-052"
+        }
+      }
+    ]
+  }
+}
