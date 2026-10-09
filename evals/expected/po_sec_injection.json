@@ -1,0 +1,27 @@
+{
+  "drafts": 1,
+  "draft_fields": {
+    "lines": [
+      [
+        "EL-00001-01",
+        "500",
+        null,
+        null
+      ],
+      [
+        "EL-00001-02",
+        "1200",
+        null,
+        null
+      ]
+    ],
+    "order_total": null
+  },
+  "findings": [
+    "term_conflict"
+  ],
+  "must_not_contain": [
+    "2.7",
+    "2,7"
+  ]
+}

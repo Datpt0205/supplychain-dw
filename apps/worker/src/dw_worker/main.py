@@ -89,6 +89,7 @@ from dw_platform.retention_policy import load_retention_policy
 from dw_supply_chain.application.document_extraction import EXTRACTION_LANE
 from dw_supply_chain.application.follow_up_sweep import FOLLOW_UP_SWEEP_LANE
 from dw_supply_chain.application.proposal_lists import PROPOSAL_LISTS_LANE
+from dw_supply_chain.application.purchase_orders import PURCHASE_ORDER_LANE
 from dw_supply_chain.application.step_preparation import PREPARATION_LANE
 from dw_supply_chain.application.supplier_messages import MESSAGES_LANE
 from dw_worker.composition import (
@@ -128,6 +129,8 @@ from dw_worker.consumers.supply_chain import (
     build_proposal_draft_retention,
     build_proposal_lists,
     build_proposal_lists_consumer,
+    build_purchase_orders,
+    build_purchase_orders_consumer,
     build_stage_one_report,
     build_stage_one_report_consumer,
     build_step_preparation,
@@ -435,6 +438,7 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     document_extraction: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's step preparation lane: a database and the bucket.
     step_preparation: Callable[[], Awaitable[None]] | None = None
+    purchase_orders: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's messages to a supplier: a database and a model.
     supplier_messages: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's proposal lists read into rows: a database and a model.
@@ -544,6 +548,10 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
             step_preparation=step_stack,
         )
         review_subjects = product_approval_subjects(sessions, step_stack)
+        # Step 10's PO draft (ticket ai-automation/14): code only, no bucket.
+        purchase_orders = build_purchase_orders_consumer(
+            build_purchase_orders(sessions, configs_dir=REPO_ROOT / "configs", ids=ids, clock=clock)
+        )
         if step_stack is not None:
             step_preparation = build_step_preparation_consumer(
                 build_step_preparation(
@@ -787,6 +795,14 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         registry.register(
             PREPARATION_LANE,
             step_preparation,
+            interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
+        )
+
+    # Step 10's PO draft (ticket ai-automation/14): the extraction lane's cadence.
+    if purchase_orders is not None:
+        registry.register(
+            PURCHASE_ORDER_LANE,
+            purchase_orders,
             interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
         )
 

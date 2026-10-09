@@ -21,6 +21,8 @@ would do nothing (a step no proposal can carry, a step whose paper nobody
 prepares, a recipe or check nobody implements) is refused by name rather than
 read by nothing (failure-modes #1). PO cases (steps 10-17) come with their own
 tickets (AI-14 to AI-18); 1.0.0 refuses them rather than accept and ignore them.
+Step 10 (AI-14) is not a step entry: `purchase_order` turns on its draft, which
+Cung ứng approves through `create_po` itself (ADR 0025, amendment AI-14).
 """
 
 from __future__ import annotations
@@ -201,6 +203,10 @@ class SupplyChainStepPreparation(BaseModel):
     # The tờ trình BGĐ AI drafts before BGĐ's review is raised (ticket
     # ai-automation/10). False: the review is raised without one.
     bod_submission: bool = False
+    # Step 10's purchase order drafted by code for each PO case awaiting its
+    # PO (ticket ai-automation/14), approved by Cung ứng on the PO case page.
+    # False: no PO is drafted.
+    purchase_order: bool = False
 
     @model_validator(mode="after")
     def _each_state_once(self) -> SupplyChainStepPreparation:

@@ -49,6 +49,12 @@
       "version": "1.0.0"
     },
     {
+      "checksum": "aafa6b71cc6cc6c3bf6b6c3ca166dbe2e970f6be5d7f1c73a220b1220041d0d2",
+      "doc_type": "purchase_order",
+      "template_id": "supply_chain.purchase_order",
+      "version": "1.1.0"
+    },
+    {
       "checksum": "476590861c0b78147cd067f2dea0c2b4a4e391315e67318cba9c927b628959c5",
       "doc_type": "sample_evaluation",
       "template_id": "supply_chain.sample_evaluation",
@@ -73,12 +79,12 @@
       "version": "1.9.0"
     },
     {
-      "checksum": "a442e584c071d3d3479844298e832689905ec48d82d0a9e8762461f46af9a901",
+      "checksum": "dd960e51dd3217146fb2ba4bd180ec75e6a997bb203dddfd265075aab6f9999c",
       "dataset_id": "supply_chain_preparation",
-      "version": "1.8.0"
+      "version": "1.9.0"
     }
   ],
-  "git_sha": "7df2f3984594bfbc26496a58d7bc0025c2525936",
+  "git_sha": "6ff1ec4adf2d6fa029850dac7881f66788ba89a6",
   "knowledge_index_version": "2026-07-25.structure-1",
   "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
@@ -124,9 +130,9 @@
       "version": "1.0.0"
     },
     {
-      "checksum": "dd0fd252a3653fe4812b8d7b0f7b106a7efb21e40bf14e9eff87de6f84cf09c3",
+      "checksum": "be2e002b9e34c28368c86301ccdcdf83fdf5d965bf6ffbf1164686b9dd2fe37f",
       "policy_id": "supply_chain_model_routes",
-      "version": "1.8.0"
+      "version": "1.9.0"
     },
     {
       "checksum": "78b88c0ac6d0a061aee75a4f762746c84ae8dba05565b9e5c1e593ad7b1ba5e0",

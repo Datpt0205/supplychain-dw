@@ -268,6 +268,39 @@ async def _read_commercial(
     )
 
 
+async def write_terms(
+    session: AsyncSession,
+    context: AccessContext,
+    case_id: uuid.UUID,
+    terms: CommercialTerms,
+    line_prices: Mapping[uuid.UUID, Decimal | None],
+) -> None:
+    """A PO case's terms and its lines' unit prices, in the caller's
+    transaction: the commercial card's save and an approved PO draft (ticket
+    ai-automation/14) write them alike."""
+    await session.execute(
+        sa.update(_pc)
+        .where(*_mine(_pc, context), _pc.c.id == case_id)
+        .values(
+            currency=terms.currency,
+            incoterm=None if terms.incoterm is None else terms.incoterm.value,
+            payment_terms=terms.payment_terms,
+            deposit_percent=terms.deposit_percent,
+            expected_delivery_date=terms.expected_delivery_date,
+        )
+    )
+    for sku_id, unit_price in line_prices.items():
+        await session.execute(
+            sa.update(_lines)
+            .where(
+                *_mine(_lines, context),
+                _lines.c.po_case_id == case_id,
+                _lines.c.sku_id == sku_id,
+            )
+            .values(unit_price=unit_price)
+        )
+
+
 @dataclass(frozen=True)
 class SqlPOCommercialRepository:
     """Implements `POCommercialRepositoryPort`."""
@@ -288,27 +321,7 @@ class SqlPOCommercialRepository:
         audit: AuditEvent,
     ) -> POCommercial:
         async with tenant_session(self.session_factory, _scope(context)) as session:
-            await session.execute(
-                sa.update(_pc)
-                .where(*_mine(_pc, context), _pc.c.id == case_id)
-                .values(
-                    currency=terms.currency,
-                    incoterm=None if terms.incoterm is None else terms.incoterm.value,
-                    payment_terms=terms.payment_terms,
-                    deposit_percent=terms.deposit_percent,
-                    expected_delivery_date=terms.expected_delivery_date,
-                )
-            )
-            for sku_id, unit_price in line_prices.items():
-                await session.execute(
-                    sa.update(_lines)
-                    .where(
-                        *_mine(_lines, context),
-                        _lines.c.po_case_id == case_id,
-                        _lines.c.sku_id == sku_id,
-                    )
-                    .values(unit_price=unit_price)
-                )
+            await write_terms(session, context, case_id, terms, line_prices)
             await SqlAuditRepository(session).append(audit)
             return await _read_commercial(session, context, case_id)
 

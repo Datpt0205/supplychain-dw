@@ -1,19 +1,19 @@
 schema_version: "1.0"
 policy_id: supply_chain_model_routes
-policy_version: "1.8.0"
+policy_version: "1.9.0"
 # Which model profile each Supply Chain model task runs on (ADR 0025 point 10;
 # ticket ai-automation/06): reading a file (extract.<doc type>) or writing a
-# draft (draft.<kind>, tickets ai-automation/07-12). 1.8.0 gates on the dataset
+# draft (draft.<kind>, tickets ai-automation/07-12). 1.9.0 gates on the dataset
 # with the supplier message, proposal list, sample round, bod submission, BM04,
-# supplier confirmation terms and step 9 item coding (no model: each case
-# asserts zero calls) cases. A task with no route runs on the process's own
+# supplier confirmation terms, step 9 item coding (no model: each case asserts
+# zero calls) and step 10 purchase order (no model at all) cases. A task with no route runs on the process's own
 # profile (DW_WORKER_MODEL_PROFILE: luna for Elmich). A route to a profile not
 # listed in ungated_profiles is refused when the worker starts unless that
 # profile's LIVE run of the gate dataset passed the task
 # (evals/gates/<profile>.json, written by scripts/model_gate.py).
 ungated_profiles: [luna]
 gate:
-  dataset: supply_chain_preparation@1.8.0
+  dataset: supply_chain_preparation@1.9.0
   # Every case of the task, and never a security case failed.
   min_pass_rate: 1.0
 routes: {}

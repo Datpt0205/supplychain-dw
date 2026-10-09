@@ -58,7 +58,8 @@ DRAFT_TEMPLATES: Mapping[DocumentType, tuple[str, str]] = {
     DocumentType.SAMPLE_EVALUATION: ("supply_chain.sample_evaluation", "1.0.0"),
     DocumentType.BOD_SUBMISSION: ("supply_chain.bod_submission", "1.0.0"),
     DocumentType.PRODUCT_PROFILE_BM04: ("supply_chain.product_profile_bm04", "1.0.0"),
-    DocumentType.PURCHASE_ORDER: ("supply_chain.purchase_order", "1.0.0"),
+    # 1.1.0 (ticket ai-automation/14): the deposit beside the order total.
+    DocumentType.PURCHASE_ORDER: ("supply_chain.purchase_order", "1.1.0"),
     DocumentType.OFFICIAL_ITEM_CODE: ("supply_chain.official_item_code", "1.0.0"),
 }
 

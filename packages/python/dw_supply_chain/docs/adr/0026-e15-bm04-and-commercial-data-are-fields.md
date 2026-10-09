@@ -96,3 +96,15 @@ giao; đặt cọc và thanh toán không có số tiền. Không có gì có c�
    nào, nên không bao giờ làm một điều khoản thành khớp.
 3. Payload của đề xuất có bảng so; dòng giá không có giá trị, số giá bị che trong mọi dòng khác
    (một tiền tệ trích từ dòng giá mang theo giá). Thư chốt gửi NCC không có giá; BM04 đính kèm.
+
+## Sửa đổi 2026-10-10 (tạm, lát AI-14; PO nháp và file PO)
+
+1. Điểm 7 của sửa đổi AI-05 ở ADR 0025 được quyết lại cho PO: file `purchase_order` do code dựng
+   từ bản nháp in giá, nên đọc file cần thêm `supply_chain.commercial.read` (`PRICED_DOCUMENT_TYPES`
+   trong `domain.commercial`, một chủ; kiểm ở `DownloadCaseDocument`). Danh sách chứng từ vẫn hiện
+   dòng (tên, loại, ngày), không hiện nội dung. Báo giá, chứng từ cọc và thanh toán do người tải lên
+   chưa bị chặn thêm: mục mở cho AI-15.
+2. `deposit_amount` (tiền cọc do code tính) vào `PRICE_FIELDS`; mẫu `supply_chain.purchase_order@1.1.0`
+   thêm % cọc và tiền cọc (1.0.0 giữ cho bản nháp đã ghim).
+3. Duyệt PO nháp ghi điều khoản và đơn giá vào Hồ sơ PO qua cùng hàm `write_terms` thẻ thương mại
+   dùng; người duyệt phải có `commercial.write`.

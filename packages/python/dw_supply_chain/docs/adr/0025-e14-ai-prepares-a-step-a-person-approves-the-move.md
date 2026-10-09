@@ -224,3 +224,27 @@ Profile `qwen` là chỗ giữ, chưa đo.
    dựng hay lưu gì. Lane đối soát vẫn trình phần ký như trước.
 3. **Chủ thể** của đề xuất bước 9 thêm phiên bản BM04 mà SKU lấy từ đó và câu trả lời "mã nào
    đã bị chiếm" cho các mã trong payload (`coding`: chỉ mã, không giá).
+
+## Sửa đổi 2026-10-10 (tạm, lát AI-14; bước 10 duyệt bằng chính `create_po`)
+
+1. **PO nháp không qua approval của nền tảng.** `create_po` là lệnh có ô người nhập (số PO), là
+   bước của Hồ sơ PO (không phải hồ sơ phát triển mà graph chuẩn bị bước, `step_preparations`
+   và payload `product_dev_case_id` phục vụ), và Zalo không mang được số PO. Nên bước 10 là: lane
+   `supply_chain_purchase_orders` soạn MỘT bản nháp `purchase_order` cho mỗi Hồ sơ PO chờ tạo PO
+   (bật bằng `purchase_order: true` của policy chuẩn bị bước; nền tảng tắt), báo Cung ứng (duty
+   của `create_po`) và Kế toán (`finance`) một lần, không kèm giá; Cung ứng nhập số PO và bấm
+   "Duyệt PO" trên trang Hồ sơ PO. Duyệt cần đúng scope duty của `create_po` (đọc từ policy duty
+   PO, như tạo tay) VÀ `supply_chain.commercial.write` (duyệt ghi giá); bản nháp phải là phiên
+   bản mở mới nhất người đó thấy (`content_sha256`). Nút tạo PO tay vẫn còn (điểm 7).
+2. **Không mô hình nào được hỏi.** Mọi ô do code điền: NCC, dòng hàng, số lượng từ Hồ sơ PO; điều
+   khoản và đơn giá người đã nhập trên hồ sơ trước; rồi BM04 mới nhất (đơn giá, tiền tệ,
+   Incoterm) trừ khi thư chốt NCC đọc ở bước 8 ghi khác (mâu thuẫn, ô trống, phát hiện); ô chỉ thư
+   nêu thì lấy từ thư. Điều khoản thanh toán, % cọc, ngày giao không bao giờ đoán.
+3. **Tổng của code.** Thành tiền, tổng, tiền cọc tính bởi `domain.purchase_order_draft`; tổng nào
+   trong bản nháp (người sửa hay bất kỳ ai ghi) khác số code tính là phát hiện trên trang và bị từ
+   chối khi duyệt. Dòng thiếu số lượng hay đơn giá, hoặc thiếu tiền tệ: không duyệt được; điều
+   khoản khác thiếu thì vẫn duyệt được (Kế toán thấy chỗ trống).
+4. **Một giao dịch:** phiên bản bản nháp mang số PO và quyết định xác nhận, chứng từ
+   `purchase_order` dựng từ đó (`origin = ai_prepared`), bước `create_po` (số PO, trạng thái, số
+   lượng, lịch sử), điều khoản và đơn giá của Hồ sơ PO, mọi audit; số PO đã có trong công ty hay
+   bản nháp đã quyết thì không gì được ghi. Kế toán được báo sau khi ghi, không kèm giá.

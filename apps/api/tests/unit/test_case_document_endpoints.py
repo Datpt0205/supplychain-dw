@@ -44,7 +44,7 @@ from dw_supply_chain.application.case_documents import (
     ListCaseDocuments,
     UploadCaseDocument,
 )
-from dw_supply_chain.application.handlers import DOCUMENT_READ, DOCUMENT_WRITE
+from dw_supply_chain.application.handlers import COMMERCIAL_READ, DOCUMENT_READ, DOCUMENT_WRITE
 from dw_supply_chain.application.ports import NewCaseDocument
 from dw_supply_chain.domain.case_document import (
     CaseDocument,
@@ -612,7 +612,10 @@ async def test_listing_another_tenants_or_workspaces_case_is_404(
 async def test_a_download_is_an_attachment_of_the_stored_type_never_sniffed() -> None:
     case = _case()
     world = World(FakeCases(case))
-    (uploaded,) = await _send(world.container(), [_upload(case, filename='Biên "bản" 1.pdf')])
+    (uploaded,) = await _send(
+        world.container(),
+        [_upload(case, doc_type="deposit_docs", filename='Biên "bản" 1.pdf')],
+    )
     document_id = uploaded.json()["id"]
 
     (response,) = await _send(
@@ -627,6 +630,22 @@ async def test_a_download_is_an_attachment_of_the_stored_type_never_sniffed() ->
     assert disposition.startswith("attachment;")
     assert 'filename="Bien ban 1.pdf"' in disposition
     assert "filename*=UTF-8''Bi%C3%AAn%20%22b%E1%BA%A3n%22%201.pdf" in disposition
+
+
+async def test_a_po_file_is_read_only_with_the_price_scope() -> None:
+    """A PO prints prices (ticket ai-automation/14): its file is refused (403)
+    to a caller with the document scope alone, and read with the price scope
+    too. Enforced in the handler, so no route reaches it another way."""
+    case = _case()
+    world = World(FakeCases(case))
+    (uploaded,) = await _send(world.container(), [_upload(case)])
+    path = f"/api/v1/supply-chain/documents/{uploaded.json()['id']}/content"
+
+    (refused,) = await _send(world.container(), [_get(path)])
+    (read,) = await _send(world.container(BOTH | {COMMERCIAL_READ}), [_get(path)])
+
+    assert refused.status_code == 403 and refused.content != PDF
+    assert read.status_code == 200 and read.content == PDF
 
 
 @pytest.mark.parametrize("owner", [(OTHER_TENANT, WORKSPACE), (TENANT, OTHER_WORKSPACE)])
@@ -688,7 +707,7 @@ async def test_a_storage_failure_on_download_keeps_the_object_key_on_the_server(
 ) -> None:
     case = _case()
     world = World(FakeCases(case))
-    (uploaded,) = await _send(world.container(), [_upload(case)])
+    (uploaded,) = await _send(world.container(), [_upload(case, doc_type="deposit_docs")])
     container = world.container()
     assert container.supply_chain_download_case_document is not None
     container.supply_chain_download_case_document = DownloadCaseDocument(

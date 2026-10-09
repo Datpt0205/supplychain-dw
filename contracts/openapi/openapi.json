@@ -432,6 +432,35 @@
         "title": "ApprovalViewOutcome",
         "type": "object"
       },
+      "ApprovePurchaseOrderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "draft_id": {
+            "format": "uuid",
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "po_reference": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Po Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft_id",
+          "content_sha256",
+          "po_reference"
+        ],
+        "title": "ApprovePurchaseOrderRequest",
+        "type": "object"
+      },
       "AssignOrgAdminRequest": {
         "properties": {
           "email": {
@@ -6920,6 +6949,110 @@
         "title": "ProposeRowRequest",
         "type": "object"
       },
+      "PurchaseOrderFindingView": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "subject",
+          "message"
+        ],
+        "title": "PurchaseOrderFindingView",
+        "type": "object"
+      },
+      "PurchaseOrderProposalView": {
+        "properties": {
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "can_approve": {
+            "title": "Can Approve",
+            "type": "boolean"
+          },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
+          "draft_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          },
+          "draft_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Version"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/PurchaseOrderFindingView"
+            },
+            "title": "Findings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "draft_id",
+          "draft_version",
+          "draft_status",
+          "content_sha256",
+          "findings",
+          "can_approve",
+          "blocked_reason"
+        ],
+        "title": "PurchaseOrderProposalView",
+        "type": "object"
+      },
       "ReadinessResponse": {
         "properties": {
           "checks": {
@@ -9533,6 +9666,11 @@
             "pattern": "^\\d+\\.\\d+\\.\\d+$",
             "title": "Policy Version",
             "type": "string"
+          },
+          "purchase_order": {
+            "default": false,
+            "title": "Purchase Order",
+            "type": "boolean"
           },
           "schema_version": {
             "pattern": "^1\\.0$",
@@ -15475,6 +15613,120 @@
           }
         },
         "summary": "Reassign Po Case Pic",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/purchase-order": {
+      "get": {
+        "operationId": "get_purchase_order_proposal_api_v1_supply_chain_po_cases__case_id__purchase_order_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseOrderProposalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Purchase Order Proposal",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/po-cases/{case_id}/purchase-order/approval": {
+      "post": {
+        "operationId": "approve_purchase_order_api_v1_supply_chain_po_cases__case_id__purchase_order_approval_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovePurchaseOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseOrderProposalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Purchase Order",
         "tags": [
           "supply_chain"
         ]

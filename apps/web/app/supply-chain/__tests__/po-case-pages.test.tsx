@@ -53,6 +53,7 @@ const api = {
   getPOCommercial: vi.fn(),
   listCaseDrafts: vi.fn(),
   listSupplierMessages: vi.fn(),
+  getPurchaseOrderProposal: vi.fn(),
 };
 vi.mock("../../../lib/session", () => ({ apiClient: () => api }));
 
@@ -66,6 +67,8 @@ beforeEach(() => {
   api.getPOCommercial.mockReturnValue(new Promise(() => {}));
   api.listCaseDrafts.mockReturnValue(new Promise(() => {}));
   api.listSupplierMessages.mockReturnValue(new Promise(() => {}));
+  // And the PO draft card (ticket ai-automation/14).
+  api.getPurchaseOrderProposal.mockReturnValue(new Promise(() => {}));
 });
 
 afterEach(() => {

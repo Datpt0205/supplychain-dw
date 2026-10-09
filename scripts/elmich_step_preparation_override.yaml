@@ -1,6 +1,6 @@
 schema_version: "1.0"
 policy_id: supply_chain_step_preparation
-policy_version: "1.6.0"
+policy_version: "1.7.0"
 
 # Override của TENANT ELMICH (không phải platform default): các bước AI chuẩn bị
 # (ADR 0025, ticket ai-automation/05). Ghi bằng
@@ -92,3 +92,9 @@ supplier_messages:
 # ro, đề xuất có dẫn chứng; mã, tên, kết quả đánh giá, giá do code điền) trước
 # khi trình BGĐ duyệt; người không có quyền xem giá thấy giá bị ẩn.
 bod_submission: true
+# 1.7.0 (ticket ai-automation/14): bước 10, mỗi Hồ sơ PO chờ tạo PO có một PO
+# nháp do code soạn từ BM04 mới nhất, điều khoản NCC đã chốt ở bước 8, SKU và số
+# lượng; thành tiền, tổng, tiền cọc do code tính; ô thiếu là khoảng trống; giá
+# chỉ người có quyền xem giá thấy. Cung ứng nhập số PO và duyệt trên trang Hồ sơ
+# PO: PO thành chứng từ, điều khoản và đơn giá ghi vào hồ sơ, báo Kế toán.
+purchase_order: true

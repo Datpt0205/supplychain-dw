@@ -51,6 +51,7 @@ import {
 import { OriginTag } from "../../../../components/supply-chain/origin-tag";
 import { PackagingDesignCard } from "../../../../components/supply-chain/packaging-design-card";
 import { DraftsCard } from "../../../../components/supply-chain/drafts-card";
+import { PurchaseOrderCard } from "../../../../components/supply-chain/purchase-order-card";
 import { SupplierMessagesCard } from "../../../../components/supply-chain/supplier-messages-card";
 import { POCommercialCard } from "../../../../components/supply-chain/po-commercial-card";
 import { poReferenceLabel } from "../../../../components/supply-chain/po-reference";
@@ -239,6 +240,16 @@ export default function POCaseWorkspacePage() {
               </Typography.Text>
             )}
           </Flex>
+        )}
+
+        {poCase.state === "order_requested" && (
+          <PurchaseOrderCard
+            caseId={poCase.id}
+            onApproved={() => {
+              caseResource.reload();
+              transitionsResource.reload();
+            }}
+          />
         )}
 
         {poCase.state === "order_requested" && (

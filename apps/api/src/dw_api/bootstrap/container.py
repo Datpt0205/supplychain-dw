@@ -141,6 +141,7 @@ from dw_supply_chain.presentation.commercial_routes import CommercialHandlers
 from dw_supply_chain.presentation.draft_routes import DraftHandlers
 from dw_supply_chain.presentation.import_routes import ImportHandlers
 from dw_supply_chain.presentation.proposal_list_routes import ProposalListHandlers
+from dw_supply_chain.presentation.purchase_order_routes import PurchaseOrderHandlers
 from dw_supply_chain.presentation.sample_checklist_routes import SampleChecklistHandlers
 from dw_supply_chain.presentation.step_proposal_routes import StepProposalHandlers
 from dw_supply_chain.presentation.supplier_message_routes import SupplierMessageHandlers
@@ -266,6 +267,8 @@ class ApiContainer:
     supply_chain_sample_checklist: SampleChecklistHandlers | None = None
     # The one-time import of a tenant's existing data (onboarding/01).
     supply_chain_import: ImportHandlers | None = None
+    # Step 10's PO draft and its approval (ai-automation/14).
+    supply_chain_purchase_orders: PurchaseOrderHandlers | None = None
     # Product-development cases (stage 1): their own router on their own guard,
     # as the documents router is.
     supply_chain_propose_product_case: ProposeProductCase | None = None

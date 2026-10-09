@@ -1355,3 +1355,21 @@ export const importReportSchema = z.object({
   rows: z.array(importRowSchema),
 });
 export type ImportReport = z.infer<typeof importReportSchema>;
+
+// Ticket ai-automation/14: step 10's PO draft.
+
+/** Mirrors `PurchaseOrderProposalView`: the case's latest PO draft (its
+ * fields are read through the drafts API, prices hidden per scope) and what
+ * code finds in it now. No price anywhere here. */
+export const purchaseOrderProposalSchema = z.object({
+  draft_id: z.string().uuid().nullable(),
+  draft_version: z.number().int().nullable(),
+  draft_status: draftStatusSchema.nullable(),
+  content_sha256: z.string().nullable(),
+  findings: z.array(
+    z.object({ code: z.string(), subject: z.string(), message: z.string() }),
+  ),
+  can_approve: z.boolean(),
+  blocked_reason: z.string().nullable(),
+});
+export type PurchaseOrderProposal = z.infer<typeof purchaseOrderProposalSchema>;

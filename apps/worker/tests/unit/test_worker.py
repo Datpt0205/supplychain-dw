@@ -159,6 +159,8 @@ def test_only_the_platform_lanes_are_wired() -> None:
     `supply_chain_proposal_lists` is the seventh: lists of proposed products a
     PIC uploaded, read into rows (ticket ai-automation/08); the files are in
     PostgreSQL, so no bucket is needed.
+    `supply_chain_purchase_orders` is the eighth: step 10's PO draft, by code
+    (ticket ai-automation/14); no model and no bucket.
 
     Naming the whole set is the point: a context's lane arriving in this process
     becomes a visible change rather than a silent one.
@@ -181,6 +183,7 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "supply_chain_proposal_drafts_retention",
         "supply_chain_supplier_messages",
         "supply_chain_proposal_lists",
+        "supply_chain_purchase_orders",
         "supply_chain_stage_one_report",
         "supply_chain_follow_ups_retention",
     }

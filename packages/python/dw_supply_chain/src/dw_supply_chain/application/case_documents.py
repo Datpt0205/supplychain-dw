@@ -36,7 +36,7 @@ from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import AuthorizationPort
 from dw_platform.domain.audit import AuditEvent
-from dw_supply_chain.application.handlers import DOCUMENT_READ, DOCUMENT_WRITE
+from dw_supply_chain.application.handlers import COMMERCIAL_READ, DOCUMENT_READ, DOCUMENT_WRITE
 from dw_supply_chain.application.ports import (
     CaseDocumentRepositoryPort,
     CaseDocumentStoragePort,
@@ -52,6 +52,7 @@ from dw_supply_chain.domain.case_document import (
     accepted_content_type,
     clean_filename,
 )
+from dw_supply_chain.domain.commercial import PRICED_DOCUMENT_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -222,4 +223,13 @@ class DownloadCaseDocument:
         document = await self.documents.get(context, document_id)
         if document is None:
             raise NotFoundError("document not found", details={"document_id": str(document_id)})
+        if document.doc_type in PRICED_DOCUMENT_TYPES:
+            # A file code printed prices into (the approved PO, ticket
+            # ai-automation/14) is read with the price scope too.
+            await self.authz.require(
+                context=context,
+                action=COMMERCIAL_READ,
+                resource_type=_RESOURCE,
+                resource_id=str(document_id),
+            )
         return document, await self.storage.get(document.object_key)

@@ -302,41 +302,9 @@ class SqlPOCaseRepository:
         paper over a genuine conflict.
         """
         scope = TenantScope.from_access_context(context)
-        quantities = case.pop_pending_line_quantities()
         try:
             async with tenant_session(self.session_factory, scope) as session:
-                result = await session.execute(
-                    sa.update(tables.po_cases)
-                    .where(
-                        tables.po_cases.c.id == case.id.value,
-                        tables.po_cases.c.version == case.version - 1,
-                    )
-                    .values(
-                        # The supplier is set when the case is created and
-                        # never changed by a step, so a save does not write it.
-                        po_reference=case.po_reference,
-                        state=case.state.value,
-                        interrupted_state=(
-                            case.interrupted_state.value if case.interrupted_state else None
-                        ),
-                        version=case.version,
-                        order_kind=case.order_kind.value,
-                        pic_user_id=case.pic_user_id,
-                    )
-                )
-                assert isinstance(result, CursorResult)
-                if result.rowcount != 1:
-                    raise ConflictError(
-                        "PO case was modified concurrently",
-                        details={"case_id": str(case.id)},
-                    )
-                for sku_id, quantity in quantities.items():
-                    await session.execute(
-                        sa.update(_lines)
-                        .where(_lines.c.po_case_id == case.id.value, _lines.c.sku_id == sku_id)
-                        .values(quantity=quantity)
-                    )
-                await self._insert_pending_transitions(session, case)
+                await self.save_in(session, case)
                 if audit is not None:
                     await SqlAuditRepository(session).append(audit)
         except IntegrityError as exc:
@@ -344,6 +312,45 @@ class SqlPOCaseRepository:
             if refusal is None:
                 raise
             raise refusal from exc
+
+    async def save_in(self, session: AsyncSession, case: POCase) -> None:
+        """`save`'s writes in the caller's transaction (an approved PO draft
+        writes its document and terms in the same one, ticket
+        ai-automation/14): the optimistic UPDATE, the line quantities the
+        step set and the history rows."""
+        quantities = case.pop_pending_line_quantities()
+        result = await session.execute(
+            sa.update(tables.po_cases)
+            .where(
+                tables.po_cases.c.id == case.id.value,
+                tables.po_cases.c.version == case.version - 1,
+            )
+            .values(
+                # The supplier is set when the case is created and
+                # never changed by a step, so a save does not write it.
+                po_reference=case.po_reference,
+                state=case.state.value,
+                interrupted_state=(
+                    case.interrupted_state.value if case.interrupted_state else None
+                ),
+                version=case.version,
+                order_kind=case.order_kind.value,
+                pic_user_id=case.pic_user_id,
+            )
+        )
+        assert isinstance(result, CursorResult)
+        if result.rowcount != 1:
+            raise ConflictError(
+                "PO case was modified concurrently",
+                details={"case_id": str(case.id)},
+            )
+        for sku_id, quantity in quantities.items():
+            await session.execute(
+                sa.update(_lines)
+                .where(_lines.c.po_case_id == case.id.value, _lines.c.sku_id == sku_id)
+                .values(quantity=quantity)
+            )
+        await self._insert_pending_transitions(session, case)
 
     async def get_sla_clock_started_at(
         self, context: AccessContext, case_id: POCaseId

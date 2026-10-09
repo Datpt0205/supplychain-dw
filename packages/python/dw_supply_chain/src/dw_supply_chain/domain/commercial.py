@@ -31,6 +31,7 @@ from enum import StrEnum
 from typing import Any
 
 from dw_kernel.errors import DomainError
+from dw_supply_chain.domain.case_document import DocumentType
 
 # ISO 4217 currencies a price can be quoted in (list as of 2025, with XCG
 # replacing ANG and SLE, VES, ZWG the current forms). Fund codes (BOV, CHE,
@@ -231,6 +232,7 @@ PRICE_FIELDS: frozenset[str] = frozenset(
         "amount",
         "order_total",
         "line_total",
+        "deposit_amount",
         "deposit_percent",
         "payment_terms",
         "account_number",
@@ -238,6 +240,11 @@ PRICE_FIELDS: frozenset[str] = frozenset(
         "bank_name",
     }
 )
+
+# The case documents whose file prints prices because code wrote them from a
+# draft's price fields (ticket ai-automation/14: the approved PO). Reading
+# one's file needs `supply_chain.commercial.read` besides the document scope.
+PRICED_DOCUMENT_TYPES: frozenset[DocumentType] = frozenset({DocumentType.PURCHASE_ORDER})
 
 # The fields of a bank account record. Never a prompt variable: a test walks
 # every registered prompt against this set.

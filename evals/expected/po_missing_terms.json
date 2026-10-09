@@ -1,0 +1,27 @@
+{
+  "drafts": 1,
+  "draft_fields": {
+    "currency": null,
+    "lines": [
+      [
+        "EL-00001-01",
+        "500",
+        null,
+        null
+      ],
+      [
+        "EL-00001-02",
+        "1200",
+        null,
+        null
+      ]
+    ],
+    "order_total": null
+  },
+  "findings": [
+    "bm04_missing",
+    "term_missing"
+  ],
+  "decision": "refused",
+  "case_state": "order_requested"
+}

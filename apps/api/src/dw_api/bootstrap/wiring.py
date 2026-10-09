@@ -1195,6 +1195,47 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         ),
     )
 
+    # Step 10 (ticket ai-automation/14): the worker's lane drafts the PO;
+    # this process shows what code finds in it and takes Cung ứng's approval
+    # (create_po with the draft, its terms and prices, one transaction).
+    from dw_supply_chain.adapters.persistence.purchase_order_outcomes import (
+        SqlPurchaseOrderOutcomes,
+    )
+    from dw_supply_chain.application import purchase_orders as sc_purchase_orders
+    from dw_supply_chain.presentation.purchase_order_routes import PurchaseOrderHandlers
+
+    container.supply_chain_purchase_orders = PurchaseOrderHandlers(
+        get=sc_purchase_orders.GetPurchaseOrderProposal(
+            cases=po_case_repo,
+            commercial=po_commercial,
+            sources=sc_purchase_orders.PurchaseOrderSources(
+                profiles=profiles,
+                documents=document_repo,
+                readings=SqlExtractionReadings(wiring.seam.session_factory),
+            ),
+            drafts=draft_repo,
+            policy_override_repo=policy_override_repo,
+            platform_default_duties=platform_default_action_duties,
+            authz=authorization,
+            clock=wiring.seam.clock,
+        ),
+        approve=sc_purchase_orders.ApprovePurchaseOrder(
+            cases=po_case_repo,
+            drafts=draft_repo,
+            templates=tenant_templates,
+            renderer=DocxRenderer(),
+            storage=document_storage,
+            outcomes=SqlPurchaseOrderOutcomes(wiring.seam.session_factory),
+            policy_override_repo=policy_override_repo,
+            platform_default_duties=platform_default_action_duties,
+            holders=SqlScopeHolders(wiring.seam.session_factory),
+            notifier=SqlNotificationRepository(wiring.seam.session_factory),
+            authz=authorization,
+            ids=wiring.seam.ids,
+            clock=wiring.seam.clock,
+        ),
+    )
+
     # Messages to a supplier (ADR 0029, ticket ai-automation/07): the worker's
     # lane drafts them; this process lists them and records "Đã gửi". Nothing
     # here sends anything.

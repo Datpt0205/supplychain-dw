@@ -139,3 +139,11 @@ ordering` và migration dữ liệu thêm khóa này vào mọi override đã l�
    theo workspace của họ.
 5. **Downgrade** đưa bốn policy, các FK và index về dạng chỉ theo tenant, thêm lại hai
    UNIQUE; không mất dòng nào.
+
+## Sửa đổi 2026-10-10 (lát AI-14)
+
+`create_po` có hai đường, cùng quyền và cùng bước của aggregate (`POCase.create_po`): tạo tay (như
+trên) và duyệt PO nháp do code soạn (ADR 0025 sửa đổi AI-14), đường sau ghi thêm chứng từ
+`purchase_order`, điều khoản và đơn giá trong cùng giao dịch. Repository Hồ sơ PO có `save_in`
+để giao dịch đó dùng đúng câu cập nhật có điều kiện của `save`. Thông báo Kế toán của hai đường
+giống nhau (một `source_key` mỗi hồ sơ), không kèm giá.

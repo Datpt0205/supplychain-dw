@@ -35,7 +35,7 @@ from dw_supply_chain.application.case_documents import (
     ListCaseDocuments,
     UploadCaseDocument,
 )
-from dw_supply_chain.application.handlers import DOCUMENT_READ, DOCUMENT_WRITE
+from dw_supply_chain.application.handlers import COMMERCIAL_READ, DOCUMENT_READ, DOCUMENT_WRITE
 from dw_supply_chain.application.ports import NewCaseDocument
 from dw_supply_chain.domain.case_document import (
     CaseDocument,
@@ -407,8 +407,12 @@ async def test_a_download_returns_the_record_and_its_bytes() -> None:
     stack = _stack(case)
     document = await _upload(stack, case)
 
+    # A PO prints prices: its file needs the price scope too (ticket
+    # ai-automation/14, `PRICED_DOCUMENT_TYPES`).
+    with pytest.raises(PermissionDeniedError):
+        await stack.download.handle(_context(scopes=frozenset({DOCUMENT_READ})), document.id)
     record, data = await stack.download.handle(
-        _context(scopes=frozenset({DOCUMENT_READ})), document.id
+        _context(scopes=frozenset({DOCUMENT_READ, COMMERCIAL_READ})), document.id
     )
 
     assert record == document

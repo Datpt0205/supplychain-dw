@@ -1,0 +1,17 @@
+{
+  "profile": {
+    "unit_price": null,
+    "currency": null,
+    "incoterm": null
+  },
+  "confirmation": {
+    "unit_price": {
+      "value": "2.40",
+      "quote": "Đơn giá: 2,40 USD"
+    },
+    "currency": {
+      "value": "USD",
+      "quote": "Đơn giá: 2,40 USD"
+    }
+  }
+}

@@ -711,6 +711,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/po-cases/{case_id}/purchase-order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Purchase Order Proposal */
+        get: operations["get_purchase_order_proposal_api_v1_supply_chain_po_cases__case_id__purchase_order_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/po-cases/{case_id}/purchase-order/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Purchase Order */
+        post: operations["approve_purchase_order_api_v1_supply_chain_po_cases__case_id__purchase_order_approval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/po-cases/{case_id}/sla-evaluation": {
         parameters: {
             query?: never;
@@ -1353,6 +1387,18 @@ export interface components {
             sku_id?: string | null;
             /** Supplier Name */
             supplier_name?: string | null;
+        };
+        /** ApprovePurchaseOrderRequest */
+        ApprovePurchaseOrderRequest: {
+            /** Content Sha256 */
+            content_sha256: string;
+            /**
+             * Draft Id
+             * Format: uuid
+             */
+            draft_id: string;
+            /** Po Reference */
+            po_reference: string;
         };
         /** AttentionItemView */
         AttentionItemView: {
@@ -3038,6 +3084,31 @@ export interface components {
             /** Proposal Code */
             proposal_code: string;
         };
+        /** PurchaseOrderFindingView */
+        PurchaseOrderFindingView: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Subject */
+            subject: string;
+        };
+        /** PurchaseOrderProposalView */
+        PurchaseOrderProposalView: {
+            /** Blocked Reason */
+            blocked_reason: string | null;
+            /** Can Approve */
+            can_approve: boolean;
+            /** Content Sha256 */
+            content_sha256: string | null;
+            /** Draft Id */
+            draft_id: string | null;
+            draft_status: components["schemas"]["DraftStatus"] | null;
+            /** Draft Version */
+            draft_version: number | null;
+            /** Findings */
+            findings: components["schemas"]["PurchaseOrderFindingView"][];
+        };
         /**
          * ReassignPicRequest
          * @description Hands a case to another PIC (ticket 06): who, and why. The new PIC
@@ -3803,6 +3874,11 @@ export interface components {
             policy_id: string;
             /** Policy Version */
             policy_version: string;
+            /**
+             * Purchase Order
+             * @default false
+             */
+            purchase_order: boolean;
             /** Schema Version */
             schema_version: string;
             /**
@@ -5264,6 +5340,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["POCaseView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_purchase_order_proposal_api_v1_supply_chain_po_cases__case_id__purchase_order_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOrderProposalView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_purchase_order_api_v1_supply_chain_po_cases__case_id__purchase_order_approval_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovePurchaseOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOrderProposalView"];
                 };
             };
             /** @description Validation Error */

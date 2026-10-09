@@ -82,7 +82,10 @@ from dw_supply_chain.adapters.persistence.case_document_repository import (
     SqlCaseDocumentRepository,
 )
 from dw_supply_chain.adapters.persistence.code_registry import SqlCodeRegistry
-from dw_supply_chain.adapters.persistence.commercial_repository import SqlProductProfileRepository
+from dw_supply_chain.adapters.persistence.commercial_repository import (
+    SqlPOCommercialRepository,
+    SqlProductProfileRepository,
+)
 from dw_supply_chain.adapters.persistence.document_draft_repository import (
     SqlDocTemplateOverrides,
     SqlDocumentDraftRepository,
@@ -155,6 +158,10 @@ from dw_supply_chain.application.product_reviews import (
     ReconcileProductApprovals,
 )
 from dw_supply_chain.application.proposal_lists import ReadProposalLists, TenantCategories
+from dw_supply_chain.application.purchase_orders import (
+    PreparePurchaseOrders,
+    PurchaseOrderSources,
+)
 from dw_supply_chain.application.step_preparation import (
     EvaluationWriter,
     PrepareStep,
@@ -798,6 +805,61 @@ def build_step_preparation_consumer(lane: PrepareSteps) -> Callable[[], Awaitabl
                 outcome.started,
                 outcome.superseded,
                 outcome.not_started,
+                outcome.failed_workspaces,
+            )
+
+    return consume
+
+
+def build_purchase_orders(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    configs_dir: Path,
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> PreparePurchaseOrders:
+    """The lane `supply_chain_purchase_orders` (ticket ai-automation/14): one
+    PO draft, by code, for each PO case awaiting its PO in a tenant whose
+    step preparation policy says `purchase_order`. No model, no bucket."""
+    registry = DocTemplateRegistry(inspector=DocxTemplateInspector())
+    registry.load_directory(configs_dir / "doc_templates")
+    templates = TenantDocTemplates(registry=registry, overrides=SqlDocTemplateOverrides(sessions))
+    drafts = SqlDocumentDraftRepository(sessions)
+    po_cases = SqlPOCaseRepository(sessions)
+    return PreparePurchaseOrders(
+        workspaces=SqlWorkspacesWithCases(sessions),
+        cases=po_cases,
+        commercial=SqlPOCommercialRepository(sessions),
+        sources=PurchaseOrderSources(
+            profiles=SqlProductProfileRepository(sessions),
+            documents=SqlCaseDocumentRepository(sessions),
+            readings=SqlExtractionReadings(sessions),
+        ),
+        drafts=drafts,
+        prepare_draft=PrepareDocumentDraft(
+            cases={CaseKind.PO: po_cases, CaseKind.PRODUCT: SqlProductCaseRepository(sessions)},
+            drafts=drafts,
+            templates=templates,
+            ids=ids,
+            clock=clock,
+        ),
+        policy_override_repo=SqlPolicyOverrideRepository(sessions),
+        platform_default_policy=load_supply_chain_step_preparation(
+            configs_dir / "policies" / STEP_PREPARATION_POLICY_FILE
+        ),
+        holders=SqlScopeHolders(sessions),
+        notifier=SqlNotificationRepository(sessions),
+        clock=clock,
+    )
+
+
+def build_purchase_orders_consumer(lane: PreparePurchaseOrders) -> Callable[[], Awaitable[None]]:
+    async def consume() -> None:
+        outcome = await lane.run()
+        if outcome.drafted or outcome.failed_workspaces:
+            logger.info(
+                "purchase orders: drafted=%d failed_workspaces=%d",
+                outcome.drafted,
                 outcome.failed_workspaces,
             )
 

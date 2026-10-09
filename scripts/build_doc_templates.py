@@ -219,6 +219,43 @@ TEMPLATES: list[dict[str, Any]] = [
             _f("notes", "Ghi chú"),
         ],
     },
+    {
+        # Step 10 (ticket ai-automation/14): the deposit beside the order
+        # total, both computed by code; 1.0.0 stays for drafts pinned to it.
+        "template_id": "supply_chain.purchase_order",
+        "version": "1.1.0",
+        "title": "ĐƠN ĐẶT HÀNG",
+        "doc_type": "purchase_order",
+        "description": (
+            "Bước 10: đơn đặt hàng gửi nhà cung cấp; thành tiền, tổng và tiền cọc do hệ thống tính."
+        ),
+        "fields": [
+            _f("po_reference", "Số PO", required=True),
+            _f("po_date", "Ngày đặt hàng", "date", required=True),
+            _f("supplier_name", "Nhà cung cấp", required=True),
+            _f("supplier_contact", "Người liên hệ"),
+            _f("currency", "Tiền tệ", required=True),
+            _f("incoterm", "Incoterm"),
+            _f("payment_terms", "Điều khoản thanh toán"),
+            _f("deposit_percent", "% đặt cọc", "number"),
+            _f("delivery_date", "Ngày giao dự kiến", "date"),
+            _table(
+                "lines",
+                "Dòng hàng",
+                [
+                    ("sku_code", "SKU", "text"),
+                    ("description", "Mô tả", "text"),
+                    ("quantity", "Số lượng", "number"),
+                    ("unit_price", "Đơn giá", "number"),
+                    ("line_total", "Thành tiền", "number"),
+                ],
+                required=True,
+            ),
+            _f("order_total", "Tổng cộng", "number"),
+            _f("deposit_amount", "Tiền đặt cọc", "number"),
+            _f("notes", "Ghi chú"),
+        ],
+    },
 ]
 
 VERSION = "1.0.0"

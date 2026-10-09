@@ -36,6 +36,7 @@ import {
   proposalListDetailSchema,
   sampleChecklistSchema,
   importReportSchema,
+  purchaseOrderProposalSchema,
   attentionItemSchema,
   followUpSchema,
   caseDocumentSchema,
@@ -120,6 +121,7 @@ import {
   type ImportRow,
   type ImportRowStatus,
   type ImportSheet,
+  type PurchaseOrderProposal,
   type DraftField,
   type DraftStatus,
   type TemplateFieldKind,
@@ -497,6 +499,19 @@ const _sampleChecklistMirrorsTheRoute: [
   SameType<SampleVerdict, SupplyChainGenerated["Verdict"]>,
 ] = [true, true, true];
 void _sampleChecklistMirrorsTheRoute;
+
+// Ticket ai-automation/14: step 10's PO draft.
+const _purchaseOrderMirrorsTheRoute: [
+  SameType<
+    keyof PurchaseOrderProposal,
+    keyof SupplyChainGenerated["PurchaseOrderProposalView"]
+  >,
+] = [true];
+void _purchaseOrderMirrorsTheRoute;
+
+/** `POST /po-cases/{id}/purchase-order/approval`'s body. */
+export type ApprovePurchaseOrderBody =
+  SupplyChainOperations["approve_purchase_order_api_v1_supply_chain_po_cases__case_id__purchase_order_approval_post"]["requestBody"]["content"]["application/json"];
 
 // Ticket onboarding/01: the one-time import.
 const _importMirrorsTheRoute: [
@@ -1797,6 +1812,31 @@ export class ApiClient {
     );
   }
 
+  /** The PO case's latest PO draft and what code finds in it now (ticket
+   * ai-automation/14). */
+  getPurchaseOrderProposal(caseId: string): Promise<PurchaseOrderProposal> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/purchase-order`,
+      purchaseOrderProposalSchema,
+    );
+  }
+
+  /** Cung ứng approves the PO draft it saw, with the PO number: the PO is
+   * created, the draft becomes its document, terms and prices are set. */
+  approvePurchaseOrder(
+    caseId: string,
+    body: ApprovePurchaseOrderBody,
+    idempotencyKey: string,
+  ): Promise<PurchaseOrderProposal> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/purchase-order/approval`,
+      purchaseOrderProposalSchema,
+      { body, idempotencyKey },
+    );
+  }
+
   /** The import template (Excel), for whoever may run the import. */
   async downloadImportTemplate(): Promise<Blob> {
     const response = await this.rawRequest(
@@ -2213,6 +2253,7 @@ export class ApiClient {
 }
 
 export type {
+  PurchaseOrderProposal,
   ImportReport,
   ImportRow,
   ImportRowStatus,
