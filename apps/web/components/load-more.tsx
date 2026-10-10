@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@dw/ui";
+import { Button, Flex, Typography } from "antd";
 
 interface LoadMoreProps {
   hasMore: boolean;
@@ -8,7 +8,7 @@ interface LoadMoreProps {
   onLoadMore: () => void;
   /** How many rows are on screen, so the footer can say where the list stands. */
   shown: number;
-  /** Plural noun for those rows: "events", "documents", "approvals". */
+  /** The noun for those rows: "sự kiện", "tài liệu", "yêu cầu". */
   noun: string;
   /**
    * Set when the screen filters the loaded rows in the browser. The filter then
@@ -24,8 +24,7 @@ interface LoadMoreProps {
  *
  * Rendered even when the list is complete. A footer that appears only when
  * there is a next page leaves the user unable to tell a finished list from one
- * whose button they have not scrolled to yet — which is the same ambiguity the
- * old `limit: 200` had, just further down the page.
+ * whose button they have not scrolled to yet.
  */
 export function LoadMore({
   hasMore,
@@ -36,16 +35,16 @@ export function LoadMore({
   filtered = false,
 }: LoadMoreProps) {
   return (
-    <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
-      <span>
-        {hasMore ? `${shown} ${noun} so far` : `${shown} ${noun}`}
-        {hasMore && filtered && " — the search covers these only"}
-      </span>
+    <Flex justify="space-between" align="center" gap="middle" wrap>
+      <Typography.Text type="secondary">
+        {hasMore ? `Đã tải ${shown} ${noun}` : `${shown} ${noun}`}
+        {hasMore && filtered && " — ô tìm chỉ tìm trong số đã tải"}
+      </Typography.Text>
       {hasMore && (
-        <Button variant="outline" onClick={onLoadMore} disabled={loading}>
-          {loading ? "Loading…" : "Load more"}
+        <Button onClick={onLoadMore} loading={loading}>
+          Tải thêm
         </Button>
       )}
-    </div>
+    </Flex>
   );
 }

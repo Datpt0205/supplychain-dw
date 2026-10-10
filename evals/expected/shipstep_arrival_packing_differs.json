@@ -1,0 +1,12 @@
+{
+  "proposed": false,
+  "findings": [
+    "line_quantity_differs",
+    "customs_missing",
+    "customs_optional_missing"
+  ],
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

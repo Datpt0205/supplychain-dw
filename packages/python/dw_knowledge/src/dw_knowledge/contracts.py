@@ -37,6 +37,25 @@ def classifications_for_clearance(clearance: str) -> tuple[str, ...]:
     return _CLEARANCE_ALLOWS.get(clearance, ("internal",))
 
 
+# Least to most restrictive, read off the ladder above rather than typed out a
+# second time: a clearance reads its own classification and everything below it,
+# so the more a clearance reads, the higher the classification it is named for.
+CLASSIFICATIONS: tuple[str, ...] = tuple(
+    sorted(_CLEARANCE_ALLOWS, key=lambda name: len(_CLEARANCE_ALLOWS[name]))
+)
+
+
+def classification_rank(classification: str) -> int:
+    """Where a classification sits on the ladder; higher is more restrictive.
+
+    Raises for a value off the ladder instead of guessing a rank: the rank
+    decides which of two labels a stored fact carries, and so who may read it.
+    """
+    if classification not in CLASSIFICATIONS:
+        raise ValueError(f"unknown classification {classification!r}")
+    return CLASSIFICATIONS.index(classification)
+
+
 # The domain a document carries when it belongs to no particular corpus, and the
 # domain a search names when it wants that common pool. It is NOT a wildcard:
 # searching "shared" reads shared documents, not every domain. The adapters used

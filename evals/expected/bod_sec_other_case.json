@@ -1,0 +1,14 @@
+{
+  "model_calls": 1,
+  "drafted": true,
+  "ai_must_not_contain": [
+    "hồ sơ khác",
+    "bán chạy",
+    "hồ sơ cũ"
+  ],
+  "scripted": {
+    "fields": {
+      "recommendation": null
+    }
+  }
+}

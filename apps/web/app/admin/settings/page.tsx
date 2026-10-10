@@ -1,39 +1,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Loader2, Settings } from "lucide-react";
-import type { AdminTenant, AutonomyLevel } from "@dw/contracts";
 import {
-  Badge,
+  Alert,
+  App,
   Button,
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  Flex,
   Input,
-} from "@dw/ui";
-import { ApiError } from "@dw/api-client";
+  Select,
+  Tag,
+  Typography,
+} from "antd";
+import { SaveOutlined, SettingOutlined } from "@ant-design/icons";
+import type { AdminTenant, AutonomyLevel } from "@dw/contracts";
+import { PageHeader, RegionState } from "@dw/ui";
 import { apiClient } from "../../../lib/session";
 import { useAuth } from "../../../lib/auth/auth-context";
-import { PageHeading } from "../../../components/page-heading";
-import { EmptyState } from "../../../components/empty-state";
-
-function errorText(error: unknown): string {
-  return error instanceof ApiError
-    ? error.body.message
-    : "Something went wrong";
-}
+import { errorMessage as errorText } from "../../../lib/error-message";
+import { tenantStatus } from "../../../lib/tenant-status";
 
 export default function SettingsPage() {
   const { hasScope } = useAuth();
 
   if (!hasScope("platform.tenant.settings.write")) {
     return (
-      <EmptyState
-        icon={Settings}
-        title="No access"
-        description="You need the tenant-settings permission to view this page."
+      <RegionState
+        kind="forbidden"
+        description="Cần quyền sửa thiết lập công ty để xem trang này."
       />
     );
   }
@@ -49,22 +43,20 @@ const AUTONOMY_OPTIONS: ReadonlyArray<{ level: AutonomyLevel; label: string }> =
   [
     {
       level: "A0",
-      label: "A0 — Shadow: proposes everything, does nothing unasked",
+      label: "A0 — Chạy bóng: đề xuất mọi thứ, không tự làm gì",
     },
-    { level: "A1", label: "A1 — May read on its own; asks before any change" },
+    { level: "A1", label: "A1 — Tự đọc; hỏi trước mọi thay đổi" },
     {
       level: "A2",
-      label:
-        "A2 — May change data inside this system; asks before reaching outside",
+      label: "A2 — Tự sửa dữ liệu trong hệ thống; hỏi trước khi ra ngoài",
     },
     {
       level: "A3",
-      label: "A3 — May also reach outside, when the action is safe to repeat",
+      label: "A3 — Ra ngoài được, khi thao tác chạy lại an toàn",
     },
     {
       level: "A4",
-      label:
-        "A4 — No tenant limit: each worker runs at the level it was built for",
+      label: "A4 — Không giới hạn theo công ty: worker chạy ở mức nó được dựng",
     },
   ];
 
@@ -78,6 +70,7 @@ function TenantSettingsForm() {
   const [autonomy, setAutonomy] = useState<AutonomyLevel>("A0");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { message } = App.useApp();
 
   const apply = (t: AdminTenant) => {
     setTenant(t);
@@ -110,6 +103,7 @@ function TenantSettingsForm() {
         max_autonomy_level: autonomy,
       });
       apply(updated);
+      message.success("Đã lưu thiết lập.");
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -118,118 +112,136 @@ function TenantSettingsForm() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <PageHeading
-        icon={Settings}
-        title="Tenant settings"
-        description="Tenant name, timezone and language."
+    <div className="mx-auto max-w-2xl">
+      <PageHeader
+        icon={<SettingOutlined />}
+        title="Thiết lập công ty"
+        subtitle="Tên công ty, múi giờ, ngôn ngữ và giới hạn tự chủ của worker."
       />
-
-      {error && (
-        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      )}
-
-      {tenant === null ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading…
-        </div>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between gap-3 text-base">
-              {tenant.slug}
-              <Badge variant="secondary">{tenant.status}</Badge>
-            </CardTitle>
-            <CardDescription>
-              Slug and status are fixed; only the name, timezone and language
-              can be changed.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <label className="block text-sm">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                Name
-              </span>
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                Timezone
-              </span>
-              <Input
-                value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
-                placeholder="Asia/Ho_Chi_Minh"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                Language
-              </span>
-              <Input
-                value={locale}
-                onChange={(e) => setLocale(e.target.value)}
-                placeholder="en-US"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                Record visibility
-              </span>
-              <select
-                value={recordVisibility}
-                onChange={(e) =>
-                  setRecordVisibility(e.target.value as RecordVisibility)
+      <Flex vertical gap="middle">
+        {error && <Alert type="error" showIcon title={error} />}
+        {tenant === null ? (
+          error ? null : (
+            <RegionState kind="loading" />
+          )
+        ) : (
+          <Card
+            title={tenant.slug}
+            extra={
+              <Tag color={tenantStatus(tenant.status).color}>
+                {tenantStatus(tenant.status).label}
+              </Tag>
+            }
+          >
+            <Flex vertical gap="middle">
+              <Typography.Text type="secondary">
+                Mã và trạng thái cố định; chỉ đổi được tên, múi giờ, ngôn ngữ và
+                các giới hạn dưới đây.
+              </Typography.Text>
+              <Field id="tenant-name" label="Tên">
+                <Input
+                  id="tenant-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </Field>
+              <Field id="tenant-timezone" label="Múi giờ">
+                <Input
+                  id="tenant-timezone"
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                  placeholder="Asia/Ho_Chi_Minh"
+                />
+              </Field>
+              <Field id="tenant-locale" label="Ngôn ngữ">
+                <Input
+                  id="tenant-locale"
+                  value={locale}
+                  onChange={(e) => setLocale(e.target.value)}
+                  placeholder="vi-VN"
+                />
+              </Field>
+              <Field
+                id="tenant-visibility"
+                label="Phạm vi xem bản ghi"
+                help={
+                  recordVisibility === "restricted"
+                    ? "Bảng số liệu theo tuyến báo cáo: mỗi quản lý chỉ thấy số của mình và người báo cáo cho mình (lãnh đạo vẫn thấy hết)."
+                    : "Mọi thành viên của workspace thấy hết dữ liệu, không giới hạn theo tuyến báo cáo."
                 }
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
               >
-                <option value="open">
-                  Open — everyone in the workspace sees all
-                </option>
-                <option value="restricted">
-                  Restricted — a manager sees only their team
-                </option>
-              </select>
-              <span className="mt-1 block text-xs text-muted-foreground">
-                {recordVisibility === "restricted"
-                  ? "The dashboard is scoped to the reporting line: each manager sees only their own and their reports' numbers (leadership still sees everything)."
-                  : "Every member of the workspace sees all data, with no scoping by reporting line."}
-              </span>
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                Worker autonomy ceiling
-              </span>
-              <select
-                value={autonomy}
-                onChange={(e) => setAutonomy(e.target.value as AutonomyLevel)}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                <Select
+                  id="tenant-visibility"
+                  value={recordVisibility}
+                  onChange={setRecordVisibility}
+                  options={[
+                    {
+                      value: "open",
+                      label: "Mở — ai trong workspace cũng thấy hết",
+                    },
+                    {
+                      value: "restricted",
+                      label: "Hạn chế — quản lý chỉ thấy nhóm của mình",
+                    },
+                  ]}
+                />
+              </Field>
+              <Field
+                id="tenant-autonomy"
+                label="Giới hạn tự chủ của worker"
+                help="Mức cao nhất mà worker của công ty được làm mà không hỏi. Nó chỉ giữ worker dưới mức được dựng, không bao giờ nâng lên. Thao tác nghiêm trọng luôn chờ người quyết."
               >
-                {AUTONOMY_OPTIONS.map((option) => (
-                  <option key={option.level} value={option.level}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <span className="mt-1 block text-xs text-muted-foreground">
-                The most any worker in this tenant may do without asking. It can
-                only hold a worker below the level it was built for, never lift
-                it above. Critical actions always wait for a person.
-              </span>
-            </label>
-            <Button onClick={() => void save()} disabled={busy || !name.trim()}>
-              {busy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Check className="size-4" />
-              )}
-              Save
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+                <Select
+                  id="tenant-autonomy"
+                  value={autonomy}
+                  onChange={setAutonomy}
+                  options={AUTONOMY_OPTIONS.map((option) => ({
+                    value: option.level,
+                    label: option.label,
+                  }))}
+                />
+              </Field>
+              <div>
+                <Button
+                  type="primary"
+                  icon={<SaveOutlined aria-hidden />}
+                  loading={busy}
+                  disabled={!name.trim()}
+                  onClick={() => void save()}
+                >
+                  Lưu
+                </Button>
+              </div>
+            </Flex>
+          </Card>
+        )}
+      </Flex>
     </div>
+  );
+}
+
+function Field({
+  id,
+  label,
+  help,
+  children,
+}: {
+  id: string;
+  label: string;
+  help?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Flex vertical gap={4}>
+      <label htmlFor={id}>
+        <Typography.Text strong>{label}</Typography.Text>
+      </label>
+      {children}
+      {help && (
+        <Typography.Text type="secondary" className="text-xs">
+          {help}
+        </Typography.Text>
+      )}
+    </Flex>
   );
 }

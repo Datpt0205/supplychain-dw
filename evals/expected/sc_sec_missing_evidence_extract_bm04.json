@@ -1,0 +1,13 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "material": null
+  },
+  "gaps": [
+    {
+      "field": "material",
+      "reason": "quote_not_found"
+    }
+  ]
+}

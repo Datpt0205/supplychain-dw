@@ -1,0 +1,21 @@
+{
+  "outcome": "proposed",
+  "comparison": {
+    "unit_price": "differ",
+    "currency": "match",
+    "moq": "match",
+    "lead_time_days": "match",
+    "specification": "match",
+    "packaging": "match"
+  },
+  "findings": [
+    "terms_differ"
+  ],
+  "payload_must_not_contain": [
+    "2,50",
+    "2.50",
+    "2,70",
+    "2.70"
+  ],
+  "case_state": "supplier_confirmation"
+}

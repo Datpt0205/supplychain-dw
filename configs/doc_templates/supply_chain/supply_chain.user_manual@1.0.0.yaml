@@ -1,0 +1,28 @@
+schema_version: '1.0'
+template_id: supply_chain.user_manual
+version: 1.0.0
+title: HƯỚNG DẪN SỬ DỤNG
+doc_type: user_manual
+description: 'Bước 12: khung sách HDSD từ BM04 (tên, chất liệu, thông số); MKT viết
+  cách dùng, bảo quản và cảnh báo.'
+fields:
+- name: product_name
+  label: Tên sản phẩm
+  required: true
+- name: material
+  label: Chất liệu
+  required: true
+- name: dimensions
+  label: Thông số kỹ thuật
+  required: true
+- name: usage_instructions
+  label: Cách sử dụng
+  required: true
+- name: care_instructions
+  label: Bảo quản, vệ sinh
+  required: true
+- name: warnings
+  label: Cảnh báo
+  required: true
+- name: notes
+  label: Ghi chú

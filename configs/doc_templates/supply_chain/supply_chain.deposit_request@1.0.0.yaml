@@ -1,0 +1,43 @@
+schema_version: '1.0'
+template_id: supply_chain.deposit_request
+version: 1.0.0
+title: ĐỀ NGHỊ ĐẶT CỌC
+doc_type: deposit_docs
+description: 'Bước 11: Cung ứng đề nghị Kế toán đặt cọc cho nhà cung cấp; tổng PO
+  và tiền cọc do hệ thống tính, tài khoản thụ hưởng lấy từ danh mục NCC.'
+fields:
+- name: po_reference
+  label: Số PO
+  required: true
+- name: request_date
+  label: Ngày đề nghị
+  kind: date
+  required: true
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: proforma_reference
+  label: Số PI của NCC
+- name: currency
+  label: Tiền tệ
+  required: true
+- name: order_total
+  label: Tổng giá trị PO
+  kind: number
+  required: true
+- name: deposit_percent
+  label: '% đặt cọc'
+  kind: number
+  required: true
+- name: amount
+  label: Số tiền đề nghị đặt cọc
+  kind: number
+  required: true
+- name: bank_name
+  label: Ngân hàng thụ hưởng
+- name: account_holder
+  label: Chủ tài khoản
+- name: account_number
+  label: Số tài khoản
+- name: notes
+  label: Ghi chú

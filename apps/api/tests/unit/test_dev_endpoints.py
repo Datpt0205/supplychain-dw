@@ -31,7 +31,8 @@ def deployed_settings(profile: str = "production", task_connector: str = "none")
 
     Every field here is one of the deployed profile's requirements: a real
     identity provider, a real model provider, a durable vector store, meaningful
-    embeddings, and CORS origins listed rather than inferred.
+    embeddings, CORS origins listed rather than inferred, and every URL a
+    browser or Zalo reaches over TLS.
     """
     return ApiSettings(
         profile=profile,  # type: ignore[arg-type]
@@ -43,6 +44,7 @@ def deployed_settings(profile: str = "production", task_connector: str = "none")
         embedding_provider="openai_compatible",
         qdrant_url="https://qdrant.example:6333",
         cors_origins=["https://app.example.com"],
+        public_base_url="https://api.example.com",
         task_connector=task_connector,
         database_url="postgresql+asyncpg://u:p@db/dw",
         rate_limit_per_minute=0,
@@ -126,3 +128,38 @@ async def test_the_schema_stays_available_off_production() -> None:
     # Developers keep Swagger in local/test; only production hides it (the app
     # passes docs_url/openapi_url=None to FastAPI when profile == production).
     assert (await _get(make_app(auth_mode="oidc"), "/api/openapi.json")).status_code == 200
+
+
+@pytest.mark.parametrize("profile", ["uat", "production"])
+@pytest.mark.parametrize(
+    ("field", "value", "named"),
+    [
+        ("oidc_issuer_url", "http://idp.example/realms/dw", "DW_API_OIDC_ISSUER_URL"),
+        ("public_base_url", "http://api.example.com", "DW_API_PUBLIC_BASE_URL"),
+        ("public_base_url", "", "DW_API_PUBLIC_BASE_URL"),
+        ("cors_origins", ["http://app.example.com"], "DW_API_CORS_ORIGINS"),
+        # One plain origin among https ones is still a plain origin.
+        (
+            "cors_origins",
+            ["https://app.example.com", "http://app.example.com"],
+            "DW_API_CORS_ORIGINS",
+        ),
+    ],
+)
+def test_a_deployed_profile_refuses_a_url_that_is_not_https(
+    profile: str, field: str, value: object, named: str
+) -> None:
+    """ADR 0009: a deployment people sign into is reached over TLS only."""
+    settings = deployed_settings(profile=profile).model_copy(update={field: value})
+    with pytest.raises(RuntimeError, match=named):
+        settings.validate_for_profile()
+
+
+def test_local_does_not_ask_for_https() -> None:
+    ApiSettings(
+        profile="local",
+        auth_mode="oidc",
+        oidc_issuer_url="http://localhost:28686/realms/dw",
+        cors_origins=["http://localhost:3200"],
+        public_base_url="",
+    ).validate_for_profile()

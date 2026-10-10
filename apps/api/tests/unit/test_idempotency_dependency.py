@@ -7,17 +7,26 @@ handler, a reused key with a different body is refused, and a handler that blew
 up leaves the key spendable.
 """
 
+import hashlib
 import uuid
+from typing import Annotated
 
 import httpx
 import pytest
 from asgi_lifespan import LifespanManager
+from fastapi import Depends, FastAPI, File, Form, UploadFile
+from pydantic import BaseModel
 
 from dw_api.bootstrap import ApiContainer
+from dw_api.dependencies.idempotency import (
+    IdempotentOperation,
+    ReplayedResponse,
+    get_form_idempotent_operation,
+)
 from dw_api.health import CheckState, HealthService
 from dw_api.main import create_app
 from dw_api.settings import ApiSettings
-from dw_kernel.errors import InfrastructureError
+from dw_kernel.errors import IdempotencyConflictError, InfrastructureError
 from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.identity.dev_token import DevTokenVerifier
 from dw_platform.application.access_context import AccessContext
@@ -295,3 +304,108 @@ async def test_an_over_long_key_is_refused_rather_than_truncated() -> None:
 
     assert response.status_code == 422
     assert repo.grants == 0
+
+
+async def test_an_operation_that_never_claimed_the_key_never_releases_it() -> None:
+    """A form route claims its key itself, after parsing. One that failed
+    before claiming must not free the reservation another in-flight request
+    holds under the same key, nor store an answer into it."""
+    store = MemoryStore()
+    idempotency = HttpIdempotency(store=store, clock=SystemClock())
+    context = AccessContext(
+        tenant_id=TENANT,
+        workspace_id=WORKSPACE,
+        principal_id=PRINCIPAL,
+        roles=frozenset(),
+        plan_id="professional",
+    )
+    holder = IdempotentOperation(idempotency, context, "shared", method="POST", target="/x")
+    await holder.claim_fields({"a": "1"})
+    bystander = IdempotentOperation(idempotency, context, "shared", method="POST", target="/x")
+
+    await bystander.abandon_unless_recorded()
+    assert (TENANT, "shared") in store.rows, "the holder's reservation must survive"
+
+    await bystander.record_no_content()
+    assert store.rows[(TENANT, "shared")].response is None, "nothing stored by a non-holder"
+
+
+async def test_claim_fields_fingerprints_the_fields_not_their_order() -> None:
+    store = MemoryStore()
+    idempotency = HttpIdempotency(store=store, clock=SystemClock())
+    context = AccessContext(
+        tenant_id=TENANT,
+        workspace_id=WORKSPACE,
+        principal_id=PRINCIPAL,
+        roles=frozenset(),
+        plan_id="professional",
+    )
+    first = IdempotentOperation(idempotency, context, "k", method="POST", target="/x")
+    await first.claim_fields({"a": "1", "b": "2"})
+    await first.record_no_content()
+
+    again = IdempotentOperation(idempotency, context, "k", method="POST", target="/x")
+    with pytest.raises(ReplayedResponse):
+        await again.claim_fields({"b": "2", "a": "1"})
+    other = IdempotentOperation(idempotency, context, "k", method="POST", target="/x")
+    with pytest.raises(IdempotencyConflictError):
+        await other.claim_fields({"a": "1", "b": "3"})
+
+
+class UploadView(BaseModel):
+    title: str
+    size: int
+
+
+def with_upload_route(app: FastAPI, calls: list[str]) -> FastAPI:
+    """A multipart route of the shape the form dependency is for: the key is
+    claimed from the parsed fields, the file as its hash. The platform ships
+    no such route yet; this one stands in for the first context's."""
+    form_idempotency = Annotated[IdempotentOperation, Depends(get_form_idempotent_operation)]
+
+    @app.post("/api/v1/probe/uploads", status_code=201)
+    async def upload(
+        idempotency: form_idempotency,
+        title: Annotated[str, Form()],
+        file: Annotated[UploadFile, File()],
+    ) -> UploadView:
+        content = await file.read()
+        await idempotency.claim_fields(
+            {"title": title, "sha256": hashlib.sha256(content).hexdigest()}
+        )
+        calls.append(title)
+        return await idempotency.record(UploadView(title=title, size=len(content)), status_code=201)
+
+    return app
+
+
+async def test_a_multipart_retry_replays_and_another_file_under_the_key_conflicts() -> None:
+    """Each send of a form gets a fresh boundary, so its raw bytes never match
+    the first attempt's; and reading them in a dependency would consume the
+    stream the form parser needs. Claimed from the parsed fields instead, a
+    retry of the same file replays, and a different file under the same key is
+    a conflict, not a second upload."""
+    calls: list[str] = []
+    app = with_upload_route(create_app(make_container(CountingRepo(), MemoryStore())), calls)
+    async with LifespanManager(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+
+            async def send(content: bytes) -> httpx.Response:
+                return await client.post(
+                    "/api/v1/probe/uploads",
+                    data={"title": "report"},
+                    files={"file": ("report.pdf", content, "application/pdf")},
+                    headers=headers("upload-1"),
+                )
+
+            first = await send(b"%PDF-1 first")
+            retry = await send(b"%PDF-1 first")
+            other = await send(b"%PDF-1 another file")
+
+    assert first.status_code == 201, first.text
+    assert retry.status_code == 201
+    assert retry.json() == first.json()
+    assert other.status_code == 409
+    assert other.json()["code"] == "idempotency_conflict"
+    assert calls == ["report"], "the upload ran exactly once"

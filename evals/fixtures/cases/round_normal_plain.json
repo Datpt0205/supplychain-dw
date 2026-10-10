@@ -1,0 +1,32 @@
+{
+  "step": "sample_round",
+  "product_name": "Noi inox 3 day 24cm",
+  "measurements": [
+    {
+      "criterion": "base_thickness",
+      "value": "3.2"
+    },
+    {
+      "criterion": "wall_thickness",
+      "value": "0.6"
+    },
+    {
+      "criterion": "induction",
+      "value": "pass"
+    },
+    {
+      "criterion": "appearance",
+      "value": "pass"
+    }
+  ],
+  "writing": {
+    "notes": [
+      {
+        "text": "Do day day 3.2 mm, dat chuan.",
+        "cites": [
+          "criterion:base_thickness"
+        ]
+      }
+    ]
+  }
+}

@@ -92,6 +92,38 @@ class DocumentParserPort(Protocol):
 
 
 @dataclass(frozen=True)
+class OcrLine:
+    """One line the OCR engine recognised, with the engine's own confidence
+    (0..1). Every recognised line is reported, the doubtful ones included: a
+    reader that dropped them would hide exactly what a caller must see."""
+
+    text: str
+    confidence: float
+
+
+@dataclass(frozen=True)
+class OcrReading:
+    """What OCR read from an image or a scan: the text in reading order (the
+    pipeline's assembly of lines into paragraphs and table rows) and every
+    line it recognised, each with its confidence."""
+
+    text: str
+    lines: tuple[OcrLine, ...]
+    page_count: int
+
+
+class OcrPort(Protocol):
+    """Images and scanned pages to text, in process, without a model.
+
+    Raises on a file it will not read (too many pages, out of time, not an
+    image): a caller records that as unreadable, never as an empty text."""
+
+    def supports(self, content_type: str) -> bool: ...
+
+    async def read(self, data: bytes, content_type: str) -> OcrReading: ...
+
+
+@dataclass(frozen=True)
 class RerankCandidate:
     id: str
     text: str
@@ -104,7 +136,7 @@ class RerankResult:
 
 
 class RerankPort(Protocol):
-    """Cross-encoder reranker seam (Phase B: BGE-reranker via TEI). No-op default."""
+    """Cross-encoder reranker seam: a hosted rerank API, or none (vector order)."""
 
     async def rerank(
         self, query: str, candidates: Sequence[RerankCandidate], top_k: int
@@ -150,11 +182,16 @@ class VectorIndexPort(Protocol):
         trusted_filter: TrustedSearchFilter,
         top_k: int,
         extra_filters: Sequence[tuple[str, str]] = (),
+        document_ids: Sequence[UUID] = (),
     ) -> list[VectorHit]:
-        """``extra_filters`` narrow further; they never relax ``trusted_filter``.
+        """``extra_filters`` and ``document_ids`` narrow further; they never
+        relax ``trusted_filter``.
 
-        Adapters must apply both as conjunctions. A key here has already been
-        whitelisted by ``SearchQuery``, so it can never name a security field.
+        Adapters must apply all of them as conjunctions, and before ``top_k``:
+        a document narrowing applied to the top-k a wider search returned
+        loses every chunk of that document that ranked below it. A key in
+        ``extra_filters`` has already been whitelisted by ``SearchQuery``, so
+        it can never name a security field.
         """
         ...
 

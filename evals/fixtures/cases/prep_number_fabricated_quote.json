@@ -1,0 +1,22 @@
+{
+  "doc_type": "supplier_quotation",
+  "document_text": "BÁO GIÁ\nNhà cung cấp: Công ty Gia dụng Minh Phát\nNgày báo giá: 01/10/2026\nMOQ: 500\nThời gian sản xuất (ngày): 45\n",
+  "model_reading": {
+    "supplier_name": {
+      "value": "Công ty Gia dụng Minh Phát",
+      "quote": "Nhà cung cấp: Công ty Gia dụng Minh Phát"
+    },
+    "quotation_date": {
+      "value": "2026-10-01",
+      "quote": "Ngày báo giá: 01/10/2026"
+    },
+    "moq": {
+      "value": "500",
+      "quote": "MOQ: 500"
+    },
+    "lead_time_days": {
+      "value": "30",
+      "quote": "Thời gian sản xuất (ngày): 45"
+    }
+  }
+}

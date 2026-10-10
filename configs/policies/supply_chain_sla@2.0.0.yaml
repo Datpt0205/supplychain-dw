@@ -1,0 +1,113 @@
+schema_version: "2.0"
+policy_id: supply_chain_sla
+policy_version: "2.0.0"
+
+# Các mốc SLA của Hồ sơ phát triển (giai đoạn 1) và Hồ sơ PO. File này là
+# PLATFORM DEFAULT (tenant_id=None), không phải số của riêng khách hàng nào: mỗi
+# tenant ghi đè TOÀN BỘ document qua PUT /api/v1/supply-chain/sla-policy, và mọi
+# chỗ đánh giá SLA đọc bản của tenant trước, chỉ rơi về file này khi tenant chưa
+# đặt số.
+#
+# 2.0.0 (2026-10-07, ADR 0019, ticket S6):
+# - `categories`: danh sách Category của tenant (khóa, nhãn). Đề xuất sản phẩm
+#   (bước 1) và Hồ sơ PO mở tay chỉ nhận một khóa có trong danh sách; khóa được
+#   đóng dấu lên hồ sơ. Hai Category dưới đây là SỐ THỬ như các thời hạn, không
+#   phải danh mục của khách nào (QE-13).
+# - `default` (trước là `sla`): số dùng chung mọi Category.
+# - `by_category`: số riêng của một Category cho một mốc; Category không có mốc
+#   đó thì dùng `default`. Mốc riêng thắng nguyên khối, kể cả trạng thái: mốc
+#   riêng còn `pending_business_confirmation` thì không đánh giá.
+# - Mốc mới gắn trạng thái của Hồ sơ phát triển (domain/sla_evaluation.py):
+#   sample_collection, sample_testing, bod_review, bm04 (trước chỉ nằm trong file,
+#   không ai đọc), supplier_confirmation (như bm04), item_coding, signoff.
+# - Override 1.x đã lưu được migration nâng lên 2.0 giữ nguyên mọi số (`sla` đổi
+#   tên thành `default`, thêm `categories` bằng danh sách dưới đây).
+#
+# 1.1.0 (2026-09-28): số NHỎ để test nhanh, do Đạt giao chọn ("chọn để dễ test,
+# đừng thực tế quá"). Đơn vị nhỏ nhất là ngày, nên 1d là mức ngắn nhất có nghĩa.
+# Mọi mốc là `confirmed` để việc đánh giá SLA thật sự chạy.
+#
+# Số của Elmich (BM04 4, chốt SP 5, đặt cọc 10, về cảng 21, thanh toán 10, nhập
+# kho 5 ngày; CHƯA được Elmich xác nhận, QE-04, QE-05) là override của tenant
+# Elmich, ghi bằng `scripts/seed_supply_chain_demo.py elmich-sla`, không nằm ở đây.
+#
+# Đồng hồ (QE-14, tạm): tính từ lần chuyển gần nhất vào trạng thái của mốc; hồ sơ
+# đang tạm dừng (chờ bên ngoài, bị chặn, xem xét tay) không có mốc nào
+# (not_applicable), và tiếp tục thì đồng hồ tính lại từ lúc tiếp tục, như Hồ sơ PO
+# đã làm từ trước.
+categories:
+  - key: noi
+    label: Nồi
+  - key: chao
+    label: Chảo
+
+default:
+  sample_collection:
+    duration: 2d
+    status: confirmed
+    description: Hồ sơ phát triển sample_requested → sample_testing (bước 2, lấy mẫu)
+
+  sample_testing:
+    duration: 2d
+    status: confirmed
+    description: Hồ sơ phát triển sample_testing → kết quả test mẫu (bước 3)
+
+  bod_review:
+    duration: 1d
+    status: confirmed
+    description: Hồ sơ phát triển pending_bod_review → BGĐ quyết (bước 6, QE-01)
+
+  bm04:
+    duration: 2d
+    status: confirmed
+    description: Hồ sơ phát triển profile_in_progress → hoàn tất BM04 (bước 7)
+
+  supplier_confirmation:
+    duration: 2d
+    status: confirmed
+    description: Hồ sơ phát triển supplier_confirmation → chốt sản phẩm với NCC (bước 8)
+
+  item_coding:
+    duration: 1d
+    status: confirmed
+    description: Hồ sơ phát triển item_coding → trình ký (bước 9; Elmich nêu 0,5 ngày, QE-05)
+
+  signoff:
+    duration: 1d
+    status: confirmed
+    description: Hồ sơ phát triển pending_signoff → ký xong (bước 9, QE-01)
+
+  deposit:
+    duration: 1d
+    status: confirmed
+    description: POCase WAITING_DEPOSIT → DEPOSIT_CONFIRMED
+
+  port_arrival:
+    duration: 2d
+    status: confirmed
+    description: POCase IN_TRANSIT → ARRIVED_PORT
+
+  payment:
+    duration: 1d
+    status: confirmed
+    description: POCase WAITING_PAYMENT → PAYMENT_COMPLETED
+
+  warehouse_receipt:
+    duration: 1d
+    status: confirmed
+    description: POCase PAYMENT_COMPLETED → WAREHOUSE_RECEIVING (nhập kho)
+
+# Một Category có số riêng: Chảo test mẫu nhanh hơn (số thử, để thấy một Category
+# đổi được một mốc mà không chép cả document).
+by_category:
+  chao:
+    sample_testing:
+      duration: 1d
+      status: confirmed
+      description: Test mẫu Chảo
+
+# NCC im lặng bao lâu thì nhắc, bao lâu thì leo thang (tính từ cập nhật gần
+# nhất, hoặc từ lúc tạo case nếu chưa có cập nhật nào).
+supplier_update:
+  reminder_after: 1d
+  escalation_after: 2d

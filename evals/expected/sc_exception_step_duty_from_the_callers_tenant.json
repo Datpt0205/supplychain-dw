@@ -1,0 +1,8 @@
+{
+  "outcome": "forbidden",
+  "asked_scopes": [
+    "supply_chain.duty.supply_lead"
+  ],
+  "case_read": false,
+  "written": false
+}

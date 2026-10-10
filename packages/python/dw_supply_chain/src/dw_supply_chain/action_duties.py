@@ -10,10 +10,16 @@ receiving and paying) out of one membership.
 
 Which department owns which step differs per company, so the mapping is a
 policy. The platform default ships in
-`configs/policies/supply_chain_action_duties@1.0.0.yaml`, and a tenant
+`configs/policies/supply_chain_action_duties@1.3.0.yaml`, and a tenant
 replaces it through the same `PolicyOverridePort` as the SLA policy and the
 approval matrix. The set of duties is fixed here, because roles are granted
 in duty terms.
+
+The steps of step 12's colour, packaging and pre-production sub-flow
+(`PackagingAction`, slice PK) are PO-case steps too, so they are keys of the
+same mapping (1.2.0): one answer to "who may take this step on a PO case".
+1.3.0 adds MKT's two (ticket ai-automation/16); an override stored before it
+takes the platform's duty for them (`from_stored`, `STEPS_ADDED_AFTER`).
 
 Placed at the package's top level, like `approval_matrix.py`: a versioned
 artifact's schema and parser, touching the filesystem.
@@ -21,15 +27,40 @@ artifact's schema and parser, touching the filesystem.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
+from typing import Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from dw_supply_chain.domain.packaging_design import PackagingAction
 from dw_supply_chain.domain.po_case import CaseAction
 
-__all__ = ["CaseDuty", "SupplyChainActionDuties", "load_supply_chain_action_duties"]
+__all__ = [
+    "STEPS_ADDED_AFTER",
+    "CaseDuty",
+    "POStep",
+    "SupplyChainActionDuties",
+    "load_supply_chain_action_duties",
+]
+
+# Every step a person takes on a PO case: its transitions and step 12's sub-flow.
+POStep = CaseAction | PackagingAction
+
+
+# For each older version a tenant override may be stored at, the PO steps it
+# could not have decided. Steps added before 1.2.0 (create_po, step 12's
+# sub-flow) were written into stored overrides by their own migrations
+# (84d1c1946b44, 85659fd91943), so an override at any version lacks only MKT's
+# two steps (1.3.0, ticket ai-automation/16).
+_MKT_STEPS = frozenset({PackagingAction.SEND_MKT_PACK, PackagingAction.SUBMIT_PACKAGING_CONTENT})
+STEPS_ADDED_AFTER: Mapping[str, frozenset[PackagingAction]] = {
+    "1.0.0": _MKT_STEPS,
+    "1.1.0": _MKT_STEPS,
+    "1.2.0": _MKT_STEPS,
+}
 
 
 class CaseDuty(StrEnum):
@@ -46,6 +77,16 @@ class CaseDuty(StrEnum):
     # Raising and clearing an exception: blocked, manual review, waiting on
     # an outside party.
     EXCEPTIONS = "exceptions"
+    # R&D: receiving and testing samples, asking for revisions (stage 1,
+    # `product_action_duties`). No PO step needs it; the PO policy requires
+    # every PO step a duty, not every duty a step, so PO overrides are untouched.
+    RND = "rnd"
+    # TP Cung ứng: confirming the product with the supplier (step 8, S3).
+    # Like `rnd`, no PO step needs it.
+    SUPPLY_LEAD = "supply_lead"
+    # MKT: submitting the packaging content at step 12 (ADR 0028, E17;
+    # ticket ai-automation/16).
+    MKT = "mkt"
 
 
 class SupplyChainActionDuties(BaseModel):
@@ -54,21 +95,39 @@ class SupplyChainActionDuties(BaseModel):
     schema_version: str = Field(pattern=r"^1\.0$")
     policy_id: str
     policy_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
-    action_duties: dict[CaseAction, CaseDuty]
+    action_duties: dict[POStep, CaseDuty]
 
     @model_validator(mode="after")
     def _every_action_has_a_duty(self) -> SupplyChainActionDuties:
         # An action with no duty would be one nobody could take, or, read
         # permissively, one anybody could. Neither is a policy; refuse it.
-        missing = sorted(action.value for action in CaseAction if action not in self.action_duties)
+        steps: list[POStep] = [*CaseAction, *PackagingAction]
+        missing = sorted(step.value for step in steps if step not in self.action_duties)
         if missing:
             raise ValueError(
                 f"action_duties must give every case action a duty (missing: {missing})"
             )
         return self
 
-    def duty_for(self, action: CaseAction) -> CaseDuty:
+    def duty_for(self, action: POStep) -> CaseDuty:
         return self.action_duties[action]
+
+    @classmethod
+    def from_stored(cls, stored: Mapping[str, object], platform_default: Self) -> Self:
+        """A tenant's stored override, validated whole. One stored at an older
+        version that leaves out a step added after it takes the platform's duty
+        for that step, and only that; any other gap is refused, as always
+        (the product policy's `from_stored`, the same rule)."""
+        duties = stored.get("action_duties")
+        added = STEPS_ADDED_AFTER.get(str(stored.get("policy_version")))
+        if added is None or not isinstance(duties, Mapping):
+            return cls.model_validate(stored)
+        predated = {
+            step.value: platform_default.duty_for(step).value
+            for step in added
+            if step.value not in duties
+        }
+        return cls.model_validate({**stored, "action_duties": {**duties, **predated}})
 
 
 def load_supply_chain_action_duties(path: Path) -> SupplyChainActionDuties:

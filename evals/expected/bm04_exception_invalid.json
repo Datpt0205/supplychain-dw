@@ -1,0 +1,12 @@
+{
+  "outcome": "proposed",
+  "draft_fields": {
+    "unit_price": "2.50",
+    "moq": "500"
+  },
+  "scripted": {
+    "draft_fields": {
+      "material": null
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "kind": "po",
+  "in": "other_tenant",
+  "scopes": [
+    "supply_chain.product_case.read",
+    "supply_chain.po_case.read",
+    "supply_chain.document.read"
+  ],
+  "question": "PO này ETD khi nào?",
+  "model_writing": {
+    "sentences": [
+      {
+        "text": "BM04 ghi MOQ là 500 cái.",
+        "cites": [
+          "bm04"
+        ]
+      }
+    ]
+  }
+}

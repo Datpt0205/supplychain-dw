@@ -1,0 +1,20 @@
+schema_version: "1.0"
+worker_id: supply_chain_product_signoff
+worker_version: "1.0.0"
+domain: supply_chain
+graph_version: "1.0.0"
+# The sign-off of a coded product (step 9; workflows/product_signoff_graph.py):
+# one approval per sign-off step, in the order supply_chain_product_approvals
+# gives when the case is submitted. No model, prompt or tool call in this graph:
+# these three version fields are nominal, as in supply_chain_advance_product_case.yaml,
+# kept for provenance uniformity across every worker_runs row. toolset_version
+# is omitted: the graph offers no tool.
+prompt_bundle_version: "1.0.0"
+policy_version: "1.0.0"
+memory_policy_version: "1.0.0"
+default_model_profile: balanced
+# web: started by submit_for_signoff; worker: started by the reconcile lane
+# (supply_chain_product_review_reconcile) for a case waiting in pending_signoff
+# without a sign-off.
+supported_channels: [web, worker]
+autonomy_level: A2

@@ -1,0 +1,50 @@
+{
+  "step": "bm04",
+  "product_name": "Noi inox 3 day 24cm",
+  "documents": [
+    {
+      "doc_type": "supplier_quotation",
+      "text": "BÁO GIÁ\nTiền tệ: USD\nMOQ: 500\nThời gian sản xuất (ngày): 45\nIncoterm: FOB Ningbo\n| Noi inox 3 day 24cm, chat lieu inox 304, mau bac | 1.000 | 2,50 USD | 2.500,00 USD |\n",
+      "reading": {
+        "currency": {
+          "value": "USD",
+          "quote": "Tiền tệ: USD"
+        },
+        "moq": {
+          "value": "500",
+          "quote": "MOQ: 500"
+        },
+        "lead_time_days": {
+          "value": "45",
+          "quote": "Thời gian sản xuất (ngày): 45"
+        },
+        "incoterm": {
+          "value": "FOB",
+          "quote": "Incoterm: FOB Ningbo"
+        },
+        "lines": [
+          {
+            "description": {
+              "value": "Noi inox 3 day 24cm, chat lieu inox 304, mau bac",
+              "quote": "| Noi inox 3 day 24cm, chat lieu inox 304, mau bac | 1.000 | 2,50 USD | 2.500,00 USD |"
+            },
+            "unit_price": {
+              "value": "2.50",
+              "quote": "| Noi inox 3 day 24cm, chat lieu inox 304, mau bac | 1.000 | 2,50 USD | 2.500,00 USD |"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "writing": {
+    "fields": [
+      {
+        "field": "material",
+        "value": "inox 304",
+        "quote": "chat lieu inox 304",
+        "cite": "doc:supplier_quotation"
+      }
+    ]
+  }
+}

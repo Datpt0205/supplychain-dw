@@ -27,6 +27,7 @@ from dw_agent_runtime.adapters.langchain_usage import LangchainUsageMeter
 from dw_agent_runtime.adapters.langgraph_runner import LangGraphWorkflowRunner
 from dw_agent_runtime.adapters.run_events import RunStateListener
 from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
+from dw_agent_runtime.approval_codes import ApprovalViewService
 from dw_agent_runtime.approval_flow import ApproveAndResumeService
 from dw_agent_runtime.contracts import RunContext
 from dw_agent_runtime.executor import ToolExecutor
@@ -42,6 +43,7 @@ from dw_agent_runtime.toolsets import ToolsetRegistry
 from dw_api.health import HealthService
 from dw_api.settings import ApiSettings
 from dw_connectors.adapters.zalo_link import ZaloLinking
+from dw_connectors.inbound import InboundUpdateInboxPort
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_knowledge.gateway import KnowledgeGateway
 from dw_knowledge.ingest_jobs import IngestJobStore
@@ -52,6 +54,7 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.application.admin_console import AdminConsoleService
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.cache import CachePort
+from dw_platform.application.channel_access import ChannelPreferencesPort
 from dw_platform.application.entitlement import PlanEntitlementService
 from dw_platform.application.hierarchy import HierarchyService
 from dw_platform.application.idempotency import HttpIdempotency
@@ -70,11 +73,26 @@ from dw_platform.application.ports import (
 )
 from dw_platform.application.provisioning import ProvisioningService
 from dw_platform.application.separation_of_duties import SeparationOfDutiesService
+from dw_platform.application.support_access import (
+    StaffGrantsListPort,
+    SupportAccessAuditPort,
+    SupportAccessContextFactory,
+    SupportGrantService,
+    SupportScopeCatalog,
+)
+from dw_platform.application.tenant_members import TenantMembersService
+from dw_supply_chain.application.case_assistant import AskAboutCase
+from dw_supply_chain.application.case_documents import (
+    DownloadCaseDocument,
+    ListCaseDocuments,
+    UploadCaseDocument,
+)
+from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.handlers import (
     AdvancePOCase,
     AnalyzeDelayImpact,
-    AnswerCaseQuery,
     CloseFollowUp,
+    CreatePO,
     CreatePOCase,
     GetActionDuties,
     GetApprovalMatrix,
@@ -85,21 +103,56 @@ from dw_supply_chain.application.handlers import (
     GetMissingUpdateStatus,
     GetPOCase,
     GetPortfolioSummary,
+    GetProductActionDuties,
     GetSLAEvaluation,
     GetSLAPolicy,
     ListCaseTransitions,
     ListDelayImpactAnalyses,
     ListFollowUps,
+    ListPOCaseApprovals,
     ListPOCases,
+    ListProductCategories,
     ListSupplierUpdates,
+    ReassignPOCasePic,
     SetActionDutiesOverride,
     SetApprovalMatrixOverride,
     SetBriefPolicyOverride,
     SetFollowUpPolicyOverride,
+    SetProductActionDutiesOverride,
     SetSLAPolicyOverride,
     SubmitSupplierUpdate,
     SummarizeDailyBrief,
 )
+from dw_supply_chain.application.packaging_designs import (
+    GetPackagingDesign,
+    GetPackagingPolicy,
+    SetPackagingPolicyOverride,
+    TakePackagingStep,
+)
+from dw_supply_chain.application.packaging_papers import GetPackagingProof
+from dw_supply_chain.application.pre_production_test import (
+    GetPreProductionChecklist,
+    RecordPreProductionMeasurement,
+)
+from dw_supply_chain.application.product_cases import (
+    AdvanceProductCase,
+    GetProductCase,
+    ListProductCases,
+    ListProductCaseTransitions,
+    PlaceOrder,
+    ProposeProductCase,
+    ReassignProductCasePic,
+)
+from dw_supply_chain.presentation.commercial_routes import CommercialHandlers
+from dw_supply_chain.presentation.draft_routes import DraftHandlers
+from dw_supply_chain.presentation.import_routes import ImportHandlers
+from dw_supply_chain.presentation.po_step_routes import POStepHandlers
+from dw_supply_chain.presentation.proposal_list_routes import ProposalListHandlers
+from dw_supply_chain.presentation.purchase_order_routes import PurchaseOrderHandlers
+from dw_supply_chain.presentation.report_routes import ReportHandlers
+from dw_supply_chain.presentation.sample_checklist_routes import SampleChecklistHandlers
+from dw_supply_chain.presentation.step_proposal_routes import StepProposalHandlers
+from dw_supply_chain.presentation.supplier_message_routes import SupplierMessageHandlers
 
 
 @dataclass(frozen=True)
@@ -161,6 +214,10 @@ class ApiContainer:
     # so there is no boundary left for `object` to guard — only a cast at
     # every use site that a real type makes unnecessary.
     supply_chain_create_po_case: CreatePOCase | None = None
+    # Step 10 on a case ĐẶT HÀNG opened (ticket 05).
+    supply_chain_create_po: CreatePO | None = None
+    # Handing a case to another PIC (stage-1 ticket 06).
+    supply_chain_reassign_po_case_pic: ReassignPOCasePic | None = None
     supply_chain_get_po_case: GetPOCase | None = None
     supply_chain_list_po_cases: ListPOCases | None = None
     supply_chain_submit_supplier_update: SubmitSupplierUpdate | None = None
@@ -170,6 +227,7 @@ class ApiContainer:
     supply_chain_get_missing_update_status: GetMissingUpdateStatus | None = None
     supply_chain_advance_po_case: AdvancePOCase | None = None
     supply_chain_list_case_transitions: ListCaseTransitions | None = None
+    supply_chain_list_case_approvals: ListPOCaseApprovals | None = None
     supply_chain_get_sla_evaluation: GetSLAEvaluation | None = None
     supply_chain_get_sla_policy: GetSLAPolicy | None = None
     supply_chain_set_sla_policy_override: SetSLAPolicyOverride | None = None
@@ -178,6 +236,10 @@ class ApiContainer:
     supply_chain_get_attention_queue: GetAttentionQueue | None = None
     supply_chain_get_portfolio_summary: GetPortfolioSummary | None = None
     supply_chain_answer_case_query: AnswerCaseQuery | None = None
+    # The read-only case assistant (ticket ai-automation/19).
+    supply_chain_ask_about_case: AskAboutCase | None = None
+    # Reports and AI acceptance (ticket ai-automation/20).
+    supply_chain_reports: ReportHandlers | None = None
     supply_chain_get_daily_brief: GetDailyBrief | None = None
     supply_chain_get_brief_policy: GetBriefPolicy | None = None
     supply_chain_set_brief_policy_override: SetBriefPolicyOverride | None = None
@@ -188,11 +250,64 @@ class ApiContainer:
     supply_chain_close_follow_up: CloseFollowUp | None = None
     supply_chain_get_follow_up_policy: GetFollowUpPolicy | None = None
     supply_chain_set_follow_up_policy_override: SetFollowUpPolicyOverride | None = None
+    # Case documents: their own router, mounted on its own guard rather than
+    # added to the chain above. Wired only where object storage exists, as is
+    # all of Supply Chain (it is built from the runtime, which needs it too).
+    supply_chain_upload_case_document: UploadCaseDocument | None = None
+    supply_chain_list_case_documents: ListCaseDocuments | None = None
+    supply_chain_download_case_document: DownloadCaseDocument | None = None
+    # Step 12's colour, packaging and pre-production sub-flow (slice PK): its
+    # own router on its own guard; wired with the documents, whose reports the
+    # test steps are taken on.
+    supply_chain_get_packaging_design: GetPackagingDesign | None = None
+    supply_chain_take_packaging_step: TakePackagingStep | None = None
+    supply_chain_get_packaging_policy: GetPackagingPolicy | None = None
+    supply_chain_set_packaging_policy_override: SetPackagingPolicyOverride | None = None
+    # Step 12's proof check (ai-automation/16).
+    supply_chain_get_packaging_proof: GetPackagingProof | None = None
+    # Step 12's pre-production test values (ai-automation/17, item 2).
+    supply_chain_get_pre_production: GetPreProductionChecklist | None = None
+    supply_chain_record_pre_production: RecordPreProductionMeasurement | None = None
+    # Commercial data and BM04 as fields (ADR 0026, ticket ai-automation/01):
+    # its own router on its own guard, wired with the documents a payment cites.
+    supply_chain_commercial: CommercialHandlers | None = None
+    # Document drafts and the tenant's templates (ticket ai-automation/03).
+    supply_chain_drafts: DraftHandlers | None = None
+    # Step proposals: AI prepares a step, a person approves the move
+    # (ticket ai-automation/05).
+    supply_chain_step_proposals: StepProposalHandlers | None = None
+    # Messages to a supplier AI drafted, a person sends (ticket ai-automation/07).
+    supply_chain_supplier_messages: SupplierMessageHandlers | None = None
+    # Step 1 from a list: AI reads it, the PIC proposes each row (ai-automation/08).
+    supply_chain_proposal_lists: ProposalListHandlers | None = None
+    # A sample round's checklist and the tenant's criteria (ai-automation/09).
+    supply_chain_sample_checklist: SampleChecklistHandlers | None = None
+    # The one-time import of a tenant's existing data (onboarding/01).
+    supply_chain_import: ImportHandlers | None = None
+    # Step 10's PO draft and its approval (ai-automation/14).
+    supply_chain_purchase_orders: PurchaseOrderHandlers | None = None
+    # Steps 11-17 prepared by code, approved on the PO case page (ai-automation/15-18).
+    supply_chain_po_steps: POStepHandlers | None = None
+    # Product-development cases (stage 1): their own router on their own guard,
+    # as the documents router is.
+    supply_chain_propose_product_case: ProposeProductCase | None = None
+    supply_chain_get_product_case: GetProductCase | None = None
+    supply_chain_list_product_cases: ListProductCases | None = None
+    supply_chain_advance_product_case: AdvanceProductCase | None = None
+    supply_chain_place_order: PlaceOrder | None = None
+    supply_chain_reassign_product_case_pic: ReassignProductCasePic | None = None
+    supply_chain_list_product_categories: ListProductCategories | None = None
+    supply_chain_list_product_case_transitions: ListProductCaseTransitions | None = None
+    supply_chain_get_product_action_duties: GetProductActionDuties | None = None
+    supply_chain_set_product_action_duties_override: SetProductActionDutiesOverride | None = None
     # Holds one LISTEN connection for the process; started and stopped by the
     # app's lifespan, never by a request.
     run_events: RunStateListener | None = None
     runner: LangGraphWorkflowRunner | None = None
     approval_flow: ApproveAndResumeService | None = None
+    # Opening an approval: the view receipt and, when asked, the code a
+    # decision on Zalo needs (ADR 0007). Wired with `approval_flow`.
+    approval_views: ApprovalViewService | None = None
 
     knowledge_gateway: KnowledgeGateway | None = None
     ingest_job_store: IngestJobStore | None = None
@@ -204,13 +319,33 @@ class ApiContainer:
     workspace_directory: WorkspaceDirectoryPort | None = None
     grant_membership: GrantMembershipHandler | None = None
     revoke_membership: RevokeMembershipHandler | None = None
+    tenant_members: TenantMembersService | None = None
     admin_console: AdminConsoleService | None = None
     hierarchy: HierarchyService | None = None
     separation_of_duties: SeparationOfDutiesService | None = None
     notifications: NotificationService | None = None
+    # Customer-granted support access (ADR 0024). A context registers its
+    # grantable scope sets and resource describers on the catalog at the seam
+    # in `wiring.py`; `build_container` freezes it once wiring is done.
+    support_catalog: SupportScopeCatalog = field(default_factory=SupportScopeCatalog)
+    support_grants: SupportGrantService | None = None
+    # The staff side (ticket 02): the support context built from a grant, its
+    # `support.access` trail, and "my grants".
+    support_access: SupportAccessContextFactory | None = None
+    support_access_audit: SupportAccessAuditPort | None = None
+    staff_grants: StaffGrantsListPort | None = None
+    # (method, path template) a support context may reach; `wiring.py`'s
+    # SUPPORT_ALLOWED_ROUTES. Empty refuses every support request.
+    support_allowed_routes: frozenset[tuple[str, str]] = frozenset()
     # The signed-in user's own Zalo link. ``None`` unless the bot token and the
     # link secret are both set, and then /api/v1/zalo/* is not mounted.
     zalo_linking: ZaloLinking | None = None
+    # The workspace the signed-in user's Zalo commands act in. Wired with
+    # ``zalo_linking`` and ``None`` without it, like the routes that read it.
+    channel_preferences: ChannelPreferencesPort | None = None
+    # Where the Zalo webhook queues an accepted update for the worker. ``None``
+    # unless ``settings.zalo_webhook_enabled``, and then the route is not mounted.
+    zalo_webhook_inbox: InboundUpdateInboxPort | None = None
     cache: CachePort | None = None
     # Dedicated to the readiness probe — the runtime's own retrieval/memory
     # clients are built (and disposed) deeper inside `build_runtime`, only

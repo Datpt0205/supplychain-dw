@@ -4,9 +4,14 @@ import pytest
 
 from dw_kernel.errors import ConflictError
 from dw_kernel.ids import TenantId, WorkspaceId
+from dw_supply_chain.domain.packaging_design import PreProductionTest, ProductionGate
 from dw_supply_chain.domain.po_case import CaseState, POCase, POCaseId
 
 pytestmark = pytest.mark.unit
+
+
+# No packaging rule (the platform default): the gate is open (slice PK).
+OPEN_GATE = ProductionGate(required=False, test=PreProductionTest.PENDING)
 
 
 def make_case(**overrides: object) -> POCase:
@@ -57,7 +62,7 @@ def test_full_happy_path_reaches_completed_and_versions_every_step() -> None:
     assert_state(case, CaseState.DEPOSIT_CONFIRMED)
     case.start_pre_production()
     assert_state(case, CaseState.PRE_PRODUCTION)
-    case.start_production()
+    case.start_production(OPEN_GATE)
     assert_state(case, CaseState.PRODUCTION)
     case.send_to_qc()
     assert_state(case, CaseState.QC)
@@ -99,7 +104,7 @@ def test_every_happy_path_method_refuses_when_called_out_of_order(method_name: s
     case = make_case()
     method = getattr(case, method_name)
     with pytest.raises(ConflictError):
-        method()
+        method(OPEN_GATE) if method_name == "start_production" else method()
     # And the refusal must not have mutated state or bumped the version.
     assert_state(case, CaseState.PO_CREATED)
     assert case.version == 1
@@ -110,7 +115,7 @@ def test_qc_failure_moves_to_rework_and_resume_returns_to_production() -> None:
     case.request_deposit()
     case.confirm_deposit()
     case.start_pre_production()
-    case.start_production()
+    case.start_production(OPEN_GATE)
     case.send_to_qc()
 
     case.fail_qc("solder joints out of spec")
@@ -128,7 +133,7 @@ def test_fail_qc_requires_a_non_blank_reason() -> None:
     case.request_deposit()
     case.confirm_deposit()
     case.start_pre_production()
-    case.start_production()
+    case.start_production(OPEN_GATE)
     case.send_to_qc()
 
     with pytest.raises(ValueError, match="reason"):
@@ -166,7 +171,7 @@ def test_generic_interrupt_pauses_and_resume_returns_to_the_exact_state(
     assert_state(case, CaseState.PRE_PRODUCTION)
     assert_interrupted_state(case, None)
     # and the happy path continues normally after resuming
-    case.start_production()
+    case.start_production(OPEN_GATE)
     assert_state(case, CaseState.PRODUCTION)
 
 
@@ -197,7 +202,7 @@ def test_cannot_interrupt_from_rework() -> None:
     case.request_deposit()
     case.confirm_deposit()
     case.start_pre_production()
-    case.start_production()
+    case.start_production(OPEN_GATE)
     case.send_to_qc()
     case.fail_qc("failed dimensional check")
     with pytest.raises(ConflictError):
@@ -230,7 +235,7 @@ def test_cannot_cancel_a_completed_case() -> None:
     case.request_deposit()
     case.confirm_deposit()
     case.start_pre_production()
-    case.start_production()
+    case.start_production(OPEN_GATE)
     case.send_to_qc()
     case.pass_qc()
     case.arrive_at_port()

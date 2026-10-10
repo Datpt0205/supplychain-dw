@@ -1,0 +1,45 @@
+schema_version: '1.0'
+template_id: supply_chain.official_item_code
+version: 1.0.0
+title: PHIẾU MÃ HÀNG CHÍNH THỨC (TRÌNH KÝ)
+doc_type: official_item_code
+description: 'Bước 9: mã hàng và SKU trình ký; mã do hệ thống đề xuất theo quy tắc
+  mã của công ty.'
+fields:
+- name: proposal_code
+  label: Mã đề xuất
+  required: true
+- name: product_name
+  label: Tên sản phẩm
+  required: true
+- name: category
+  label: Nhóm sản phẩm (Category)
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: item_code
+  label: Mã hàng chính thức
+  required: true
+- name: skus
+  label: SKU
+  kind: table
+  columns:
+  - name: sku_code
+    label: Mã SKU
+  - name: variant_label
+    label: Biến thể
+  - name: planned_quantity
+    label: Số lượng dự kiến
+    kind: number
+  required: true
+- name: material
+  label: Chất liệu
+- name: dimensions
+  label: Kích thước
+- name: submitted_by
+  label: Người trình
+- name: submitted_on
+  label: Ngày trình
+  kind: date
+- name: notes
+  label: Ghi chú

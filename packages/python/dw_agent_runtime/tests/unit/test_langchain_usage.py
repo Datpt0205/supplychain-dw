@@ -25,6 +25,10 @@ from dw_platform.application.access_context import AccessContext
 
 pytestmark = pytest.mark.unit
 
+# Every tracked invocation names the prompt it ran; these tests are about the
+# tally, so one pin serves them all.
+_LOOP = {"prompt_id": "sales_chat.assistant", "prompt_version": "1.0.0"}
+
 _ROUTE = ModelRoute(
     provider="openai_responses",
     model="gpt-5.6-luna",
@@ -110,7 +114,7 @@ async def test_usage_survives_the_block_raising() -> None:
     run_context = usage_run_context(_context(), worker_id="person_research")
 
     with pytest.raises(RuntimeError):
-        async with meter.track(run_context, profile_id="gateway", task="t") as callbacks:
+        async with meter.track(run_context, profile_id="gateway", task="t", **_LOOP) as callbacks:
             await model.ainvoke(
                 [{"role": "user", "content": "hi"}],
                 config=RunnableConfig(callbacks=list(callbacks)),
@@ -149,8 +153,10 @@ async def test_an_inner_tracker_keeps_its_label_and_the_outer_stops_double_billi
     model = MockChatModel(responses=[AIMessage(content="x" * 400)], mock_reply="ok")
     run_context = usage_run_context(_context(), worker_id="sales_research")
 
-    async with meter.track(run_context, profile_id="gateway", task="agent_loop") as outer:
-        async with meter.track(run_context, profile_id="gateway", task="lane_financials") as inner:
+    async with meter.track(run_context, profile_id="gateway", task="agent_loop", **_LOOP) as outer:
+        async with meter.track(
+            run_context, profile_id="gateway", task="lane_financials", **_LOOP
+        ) as inner:
             await model.ainvoke(
                 [{"role": "user", "content": "y" * 400}],
                 config={"callbacks": [*outer, *inner]},
@@ -173,8 +179,10 @@ async def test_the_outer_still_bills_the_calls_no_inner_tracker_claimed() -> Non
     loose_model = MockChatModel(responses=[AIMessage(content="x" * 800)], mock_reply="ok")
     run_context = usage_run_context(_context(), worker_id="sales_signals")
 
-    async with meter.track(run_context, profile_id="gateway", task="agent_loop") as outer:
-        async with meter.track(run_context, profile_id="gateway", task="news_agent") as inner:
+    async with meter.track(run_context, profile_id="gateway", task="agent_loop", **_LOOP) as outer:
+        async with meter.track(
+            run_context, profile_id="gateway", task="news_agent", **_LOOP
+        ) as inner:
             await lane_model.ainvoke(
                 [{"role": "user", "content": "y" * 400}], config={"callbacks": [*outer, *inner]}
             )
@@ -204,7 +212,9 @@ async def test_a_lone_tracker_is_untouched() -> None:
 
     for _ in range(2):
         run_context = usage_run_context(_context(), worker_id="person_research")
-        async with meter.track(run_context, profile_id="gateway", task="person_research") as cb:
+        async with meter.track(
+            run_context, profile_id="gateway", task="person_research", **_LOOP
+        ) as cb:
             await model.ainvoke(
                 [{"role": "user", "content": "y" * 400}],
                 config=RunnableConfig(callbacks=list(cb)),

@@ -1,0 +1,18 @@
+{
+  "doc_type": "sample_evaluation",
+  "document_text": "BIEN BAN DANH GIA MAU\nVong mau: 2\nNgay danh gia: 05/10/2026\nNguoi danh gia: Phong R&D\nKet luan: Dat\n",
+  "model_reading": {
+    "result": {
+      "value": "pass",
+      "quote": "Ket luan: Dat"
+    },
+    "evaluated_on": {
+      "value": "2026-10-05",
+      "quote": "Ngay danh gia: 05/10/2026"
+    },
+    "sample_round": {
+      "value": "2",
+      "quote": "Vong mau: 2"
+    }
+  }
+}

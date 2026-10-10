@@ -1,0 +1,31 @@
+schema_version: '1.0'
+template_id: supply_chain.rework_request
+version: 1.0.0
+title: YÊU CẦU LÀM LẠI SAU KIỂM HÀNG
+doc_type: rework_request
+description: 'Bước 14: QC không đạt; tóm tắt số lỗi so với số chấp nhận (do hệ thống
+  chép từ báo cáo QC) và từng lỗi cần nhà cung cấp làm lại.'
+fields:
+- name: po_reference
+  label: Số PO
+  required: true
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: requested_on
+  label: Ngày yêu cầu
+  kind: date
+  required: true
+- name: qc_summary
+  label: Kết quả kiểm (số lỗi / số chấp nhận)
+- name: items
+  label: Lỗi cần làm lại
+  kind: table
+  columns:
+  - name: defect
+    label: Lỗi
+  - name: requirement
+    label: Yêu cầu
+  required: true
+- name: notes
+  label: Ghi chú

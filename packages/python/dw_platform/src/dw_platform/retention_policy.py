@@ -16,10 +16,11 @@ explained. Retention answers a different question: "we are no longer allowed to
 hold this." The two must not share a mechanism, because the second one is what
 goes in a contract.
 
-**A class with no `days` never expires.** `legal_hold` is that, deliberately: an
-obligation to keep can outlive the ordinary schedule, and the safe way to express
-it is a class the sweep cannot touch rather than a flag the sweep must remember
-to honour.
+**A class with no `days` never expires.** A legal hold is that shape, deliberately:
+an obligation to keep can outlive the ordinary schedule, and the safe way to
+express it is a class the sweep cannot touch rather than a flag the sweep must
+remember to honour. (`legal_hold` left the policy in 1.5.0 because nothing could
+assign it; it returns with the route that sets one.)
 
 **An unknown class is kept, not guessed.** A row naming a class this build does
 not have is more likely a newer config than a mistake, and deleting on that
@@ -33,10 +34,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "AuditRetention",
+    "ChannelDeliveryRetention",
+    "CheckpointRetention",
     "KnowledgeRetention",
     "RetentionClass",
     "RetentionPolicy",
@@ -109,6 +112,54 @@ class AuditRetention(BaseModel):
         return now - timedelta(days=found.days)
 
 
+class CheckpointRetention(BaseModel):
+    """How long a finished thread's run checkpoints are kept.
+
+    Every checkpoint holds the thread's whole message list, so each superseded
+    one is an older verbatim copy of the conversation — including what context
+    compaction removed from the live state. Two terms, because two different
+    things stop being needed:
+
+    `superseded_days`: a checkpoint that is not its thread's newest. Only the
+    newest is needed to continue the thread; the older ones are history.
+
+    `idle_thread_days`: the whole thread, newest included, once nothing has been
+    written to it for this long.
+
+    Only threads whose runs have all finished are touched, whatever the terms
+    say — a run waiting for a person resumes from these rows.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    superseded_days: int = Field(ge=1)
+    idle_thread_days: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _idle_is_the_longer_term(self) -> CheckpointRetention:
+        # The sweep reads candidates by the shorter term and decides by the
+        # longer one; the other way round, a thread would be emptied sooner than
+        # its own superseded checkpoints expire.
+        if self.idle_thread_days < self.superseded_days:
+            raise ValueError("idle_thread_days must be at least superseded_days")
+        return self
+
+
+class ChannelDeliveryRetention(BaseModel):
+    """How long a queued chat delivery may stay `pending` before it is failed.
+
+    Not a legal term like the rest of this file: a liveness bound. A delivery is
+    queued whether or not any host sends, so with the channel unconfigured a row
+    would wait forever. A sending lane settles a row within hours, so a row
+    pending this long was never going to be sent; it is failed as
+    `channel_unconfigured`, on the audit log.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    pending_expiry_days: int = Field(ge=1)
+
+
 class RetentionPolicy(BaseModel):
     """The versioned answer to "how long do you keep our data"."""
 
@@ -120,6 +171,8 @@ class RetentionPolicy(BaseModel):
     classes: dict[str, RetentionClass]
     knowledge: KnowledgeRetention
     audit: AuditRetention
+    checkpoints: CheckpointRetention
+    channel_deliveries: ChannelDeliveryRetention
     batch_limit: int = Field(gt=0, le=10_000)
 
     def cutoff_for(self, name: str, *, now: datetime) -> datetime | None:

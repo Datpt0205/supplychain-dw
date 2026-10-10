@@ -1,0 +1,21 @@
+schema_version: "1.0"
+policy_id: supply_chain_packaging
+policy_version: "1.1.0"
+
+# Bước 12–13 (lát PK): Hồ sơ PO có cần R&D đạt test trước sản xuất mới được vào
+# "Sản xuất" (start_production) hay không.
+#
+# Đây là PLATFORM DEFAULT: false, để mọi Hồ sơ PO có sẵn và mọi tenant khác giữ
+# đúng hành vi trước lát này. Tenant bật luật qua PUT
+# /api/v1/supply-chain/packaging-policy (platform.policy_overrides, cùng cơ chế với
+# supply_chain_sla). Override của Elmich đặt true
+# (scripts/elmich_packaging_override.yaml, ghi bằng
+# `uv run python scripts/seed_supply_chain_demo.py elmich-packaging`).
+require_pre_production_test: false
+
+# 1.1.0 (ADR 0028, E17; ticket ai-automation/16): MKT là người dùng tối thiểu ở
+# bước 12. true: giữa duyệt màu và duyệt thiết kế, Cung ứng gửi MKT gói (BM04,
+# HDSD, maquette) và MKT nộp nội dung bao bì; thiết kế chưa duyệt được trước đó.
+# PLATFORM DEFAULT false: mọi tenant khác giữ luồng cũ ("đã báo TP MKT" là một
+# dòng lịch sử). Override lưu trước 1.1.0 không có trường này đọc là false.
+require_packaging_content: false

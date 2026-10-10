@@ -1,0 +1,7 @@
+{
+  "question": "mở hồ sơ",
+  "model_answer": {
+    "kind": "open_case",
+    "po_reference_mention": "PO-1"
+  }
+}

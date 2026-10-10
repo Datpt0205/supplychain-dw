@@ -1,0 +1,46 @@
+{
+  "brief": {
+    "active_case_count": 0,
+    "groups": [
+      {
+        "signal": "product_awaiting_bod",
+        "qualifier": null,
+        "total": 1,
+        "product_entries": [
+          {
+            "proposal_code": "SP-002",
+            "product_name": "Chảo 28",
+            "days": 4
+          }
+        ]
+      },
+      {
+        "signal": "sample_evaluated_today",
+        "qualifier": "passed",
+        "total": 1,
+        "product_entries": [
+          {
+            "proposal_code": "SP-007",
+            "product_name": "Nồi gang đáy từ"
+          }
+        ]
+      }
+    ]
+  },
+  "model_answer": {
+    "sentences": [
+      {
+        "text": "Mẫu SP-007 đã đạt, chờ BGĐ.",
+        "group_keys": [
+          "product_awaiting_bod"
+        ]
+      },
+      {
+        "text": "Mẫu Nồi gang đáy từ đã đạt, chờ BGĐ duyệt.",
+        "group_keys": [
+          "product_awaiting_bod"
+        ]
+      }
+    ]
+  }
+}

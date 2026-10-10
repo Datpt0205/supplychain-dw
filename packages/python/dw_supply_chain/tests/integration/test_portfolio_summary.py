@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from supply_chain_harness import DatabaseUrls
@@ -27,6 +28,7 @@ from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRep
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
+from dw_supply_chain.application import handlers
 from dw_supply_chain.application.handlers import GetPortfolioSummary
 from dw_supply_chain.domain.po_case import CaseState, POCase, POCaseId
 from dw_supply_chain.domain.supplier_update import (
@@ -36,6 +38,7 @@ from dw_supply_chain.domain.supplier_update import (
     SupplierUpdateId,
 )
 from dw_supply_chain.sla_policy import (
+    ProductCategory,
     SLAConfirmationStatus,
     SLAMilestone,
     SupplierUpdateCadence,
@@ -49,6 +52,24 @@ pytestmark = pytest.mark.integration
 async def sessions(db_urls: DatabaseUrls) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     engine = create_async_engine(db_urls.app, poolclass=NullPool)
     yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    await engine.dispose()
+
+
+@pytest.fixture
+async def counted(
+    db_urls: DatabaseUrls,
+) -> AsyncIterator[tuple[async_sessionmaker[AsyncSession], list[int]]]:
+    """Sessions whose every statement's bound-parameter count is recorded."""
+    engine = create_async_engine(db_urls.app, poolclass=NullPool)
+    bound: list[int] = []
+
+    @event.listens_for(engine.sync_engine, "before_cursor_execute")
+    def _count(
+        conn: object, cursor: object, statement: str, parameters: object, *args: object
+    ) -> None:
+        bound.append(len(parameters) if isinstance(parameters, tuple | list | dict) else 0)
+
+    yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False), bound
     await engine.dispose()
 
 
@@ -115,10 +136,13 @@ def _handler(sessions: async_sessionmaker[AsyncSession], *, now: datetime) -> Ge
         supplier_update_repo=SqlSupplierUpdateRepository(sessions),
         policy_override_repo=_NoOverrides(),
         platform_default_policy=SupplyChainSLAPolicy(
-            schema_version="1.0",
+            schema_version="2.0",
             policy_id="supply_chain_sla",
-            policy_version="1.0.0",
-            sla={"deposit": SLAMilestone(duration="2d", status=SLAConfirmationStatus.CONFIRMED)},
+            policy_version="2.0.0",
+            categories=(ProductCategory(key="noi", label="Nồi"),),
+            default={
+                "deposit": SLAMilestone(duration="2d", status=SLAConfirmationStatus.CONFIRMED)
+            },
             supplier_update=SupplierUpdateCadence(reminder_after="5d", escalation_after="10d"),
         ),
         authz=ScopeAuthorizationService(),
@@ -164,3 +188,34 @@ async def test_portfolio_summary_counts_only_the_callers_tenant(
     theirs_summary = await _handler(sessions, now=now).handle(other)
     assert theirs_summary.active_case_count == 1
     assert [row.supplier_name for row in theirs_summary.by_supplier] == ["Theirs Co."]
+
+
+async def test_the_active_cases_are_read_a_page_at_a_time_inside_the_callers_workspace(
+    counted: tuple[async_sessionmaker[AsyncSession], list[int]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """More active cases than a page: every one of the caller's workspace is
+    counted once, none of another workspace or tenant, and no statement binds
+    more parameters than a page of ids (plus the few every query carries) —
+    the old read bound one per active case, which asyncpg refuses past
+    32 767."""
+    sessions, bound = counted
+    page = 2
+    monkeypatch.setattr(handlers, "ACTIVE_CASES_PAGE", page)
+    tenant = uuid.uuid4()
+    mine = _context(tenant, uuid.uuid4())
+    neighbour = _context(tenant, uuid.uuid4())
+    stranger = _context(uuid.uuid4(), uuid.uuid4())
+    cases = SqlPOCaseRepository(sessions)
+    for context, count in ((mine, 12), (neighbour, 3), (stranger, 2)):
+        for _ in range(count):
+            await cases.add(context, _case(context, "Paged Co."))
+    bound.clear()
+
+    summary = await _handler(sessions, now=datetime.now(UTC)).handle(mine)
+
+    assert summary.active_case_count == 12
+    assert [(row.supplier_name, row.case_count) for row in summary.by_supplier] == [
+        ("Paged Co.", 12)
+    ]
+    assert max(bound) <= page + 6, bound

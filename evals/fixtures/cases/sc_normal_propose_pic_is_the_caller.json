@@ -1,0 +1,18 @@
+{
+  "command": "propose",
+  "caller": {
+    "tenant": "A",
+    "workspace": "W1",
+    "scopes": [
+      "supply_chain.product_case.read",
+      "supply_chain.product_case.write",
+      "supply_chain.duty.ordering",
+      "supply_chain.duty.exceptions"
+    ]
+  },
+  "request": {
+    "proposal_code": "SP-101",
+    "product_name": "Chảo chống dính 28cm",
+    "category": "chao"
+  }
+}

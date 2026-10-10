@@ -1,6 +1,6 @@
 # 01 — Người dùng toàn tenant, sửa vai theo workspace, lời mời
 
-Status: ready-for-agent
+Status: resolved (2026-10-08, nhánh `feat/platform-tickets`)
 Blocked by: .claude/plans/platform-runtime/support-access/issues/01-support-grants-lifecycle.md
 Area: platform-runtime
 
@@ -53,22 +53,22 @@ collname LIKE 'vi%'`; đo, ghi vào Comments), không thì theo `display_name` m
 
 Integration (`dw_platform/tests/integration`, `apps/api/tests`):
 
-- [ ] TM2: `GET /admin/members` của `org_admin` tenant A không chứa người chỉ thuộc tenant B;
+- [x] TM2: `GET /admin/members` của `org_admin` tenant A không chứa người chỉ thuộc tenant B;
       người không có `platform.members.read` → 403. `PUT …/memberships` với `user_id` hay
       `workspace_id` của tenant B → 404, không membership nào được tạo hay đổi.
-- [ ] TM1: người giữ `org_admin` và một vai thường ở ws1; `PUT` chỉ đổi vai thường →
+- [x] TM1: người giữ `org_admin` và một vai thường ở ws1; `PUT` chỉ đổi vai thường →
       `org_admin` còn. `PUT` có `org_admin` do `org_admin` gọi → 403 và không membership nào
       đổi (cả giao dịch lùi). Gỡ phần giữ vai quản trị → test đầu đỏ.
-- [ ] `PUT` bỏ ws2 khỏi body → membership ws2 bị gỡ, có audit `.revoke`; cache của ws2 bị xóa
+- [x] `PUT` bỏ ws2 khỏi body → membership ws2 bị gỡ, có audit `.revoke`; cache của ws2 bị xóa
       (cache giả trung thực).
-- [ ] Lời mời: email mới → user tạo, `status=invited`, membership đúng; đăng nhập lần đầu bằng
+- [x] Lời mời: email mới → user tạo, `status=invited`, membership đúng; đăng nhập lần đầu bằng
       token dev có cùng email → bootstrap thấy workspace đó, `status=active`. Email đã là
       thành viên → 409.
-- [ ] TM3: email nhân viên hỗ trợ → 409 ở `POST /admin/invitations` và `PUT …/memberships`.
+- [x] TM3: email nhân viên hỗ trợ → 409 ở `POST /admin/invitations` và `PUT …/memberships`.
       Gỡ kiểm → test tương ứng đỏ.
-- [ ] TM4: hai lời mời đồng thời cùng email → một 201, một 409.
-- [ ] `Idempotency-Key` gửi lại cùng body → cùng kết quả, không audit thứ hai.
-- [ ] `make ci` xanh.
+- [x] TM4: hai lời mời đồng thời cùng email → một 201, một 409.
+- [x] `Idempotency-Key` gửi lại cùng body → cùng kết quả, không audit thứ hai.
+- [x] `make ci` xanh.
 
 ## Nguồn
 
@@ -79,3 +79,59 @@ Integration (`dw_platform/tests/integration`, `apps/api/tests`):
 - `spec.md` của lát này: Kiểm soát TM1–TM4, câu hỏi còn mở 1.
 
 ## Comments
+
+- 2026-10-08 (agent, Đạt giao quyết các điểm mở; quyết tạm):
+    - **Collation tiếng Việt, đo:** image `postgres:16-alpine` (PostgreSQL 16.14, musl) có
+      `vi-VN-x-icu` và `vi-x-icu` (`SELECT collname FROM pg_collation WHERE collname LIKE 'vi%'`).
+      Với `An, Ánh, Ân, Bình, Dũng, Đạt, E, Ê, Zoe`: ICU xếp đúng `An | Ánh | Ân | Bình | Dũng | Đạt
+| E | Ê | Zoe`; collation mặc định của database xếp mọi tên có dấu sau `Z` (`An | Bình | Dũng
+| E | Zoe | Ánh | Ân | Ê | Đạt`). Dùng `COLLATE "vi-VN-x-icu"`, không có nhánh dự phòng: image
+      khác thiếu collation thì truy vấn lỗi to thay vì xếp sai lặng lẽ, và
+      `test_names_sort_the_vietnamese_way` đỏ.
+    - **Index:** cột sắp (`users.display_name`) ở mặt phẳng danh tính, không có `tenant_id`, nên
+      không có index nào "đứng đầu là `tenant_id`" mang được thứ tự đó. Danh sách không phân trang
+      (một tenant), đọc qua `ix_memberships_tenant_user (tenant_id, user_id)` rồi sắp trong bộ
+      nhớ của PostgreSQL; quy tắc index cho ORDER BY của `CLAUDE.md` nói về endpoint phân trang.
+      Không thêm index.
+    - **Trạng thái một chủ:** `member_status()` (`adapters/persistence/directory.py`), biểu thức
+      SQL dùng chung cho `GET /directory/members` và `GET /admin/members`; `active` khi có một
+      `external_identities` không phải liên kết chat (`CHANNEL_LINK_PROVIDERS`), không thì
+      `invited`.
+    - **Vai quản trị** = vai có scope `platform.*` (`is_administrative`, cùng chủ với
+      `forbid_escalation`, tách khỏi `GrantMembershipHandler`). `PUT` tính vai cuối bằng
+      `plan_memberships` (hàm thuần): vai xin + vai quản trị đang giữ; workspace không có trong
+      body giữ vai quản trị, không còn gì thì gỡ. Platform Admin được thêm vai quản trị (giữ như
+      `_forbid_escalation`).
+    - **PUT trả** `{user_id, memberships}` (membership sau khi đổi; rỗng khi không còn), vì
+      `Idempotency-Key` lưu một model.
+    - **Lời mời:** `users.subject = 'invite:<uuid>'` (cột NOT NULL, UNIQUE), email chữ thường,
+      không `external_identities`. Audit một `platform.member.invited` mỗi workspace (`details`:
+      `user_id`, `roles`; không email). TM4 nhờ `INSERT ... ON CONFLICT (email) DO NOTHING`: lời
+      mời thua chờ lời thắng commit rồi trả 409 `member_email_exists_in_tenant`.
+    - **TM3** dùng trigger `platform.refuse_support_staff_membership()` của `support-access` 01
+      (một kiểm cho mọi đường), dịch thành 409 `support_staff_not_member`. Thứ tự: email đã là
+      thành viên tenant thì 409 `member_email_exists_in_tenant` trước.
+    - Mã lỗi ở `details.reason_code` như `support-access` 01.
+- Route: `GET /admin/members` → `[{user_id, display_name, email, status, memberships:
+[{workspace_id, workspace_name, role_keys}]}]`; `PUT /admin/members/{user_id}/memberships` body
+  `{memberships: [{workspace_id, role_keys}]}` → `{user_id, memberships}`; `POST
+/admin/invitations` body `{display_name, email, memberships}` → 201 `{user_id, email,
+display_name}`; `GET /directory/members` thêm `status`. Có trong contracts.
+- Test: integration `test_tenant_members.py` (11, `dw_app`), API unit
+  `test_tenant_members_endpoint.py` (3: xóa cache ws bị gỡ với cache giả trung thực, gửi lại
+  `Idempotency-Key` cùng kết quả và một audit, trường lạ 422).
+- Mutation (đều đỏ, đã khôi phục): bỏ giữ vai quản trị → TM1 đỏ; `forbid_escalation` không từ
+  chối → TM1 đỏ; bỏ kiểm workspace ngoài tenant → TM2 đỏ; bỏ 404 người ngoài tenant → TM2 đỏ; bỏ
+  dịch lỗi nhân viên hỗ trợ → TM3 đỏ; bỏ `ON CONFLICT` → TM4 đỏ; trạng thái luôn `active` → ca
+  lời mời đỏ; bỏ collation → ca thứ tự đỏ; bỏ xóa cache ở `PUT` → ca cache đỏ.
+- `reviewing-feature-security`: (1) tenant: mọi đọc ghi qua `tenant_session` và lọc lại
+  `tenant_id`; `users` chỉ đọc qua membership của tenant, trừ tra email của lời mời, chỉ trả lời
+  "đã là thành viên ở đây" (409); test âm TM2. Cache: xóa theo `membership_cache_pattern` từng
+  workspace đổi. (2) authz: scope ở service; leo thang chặn ở service, SoD và nhân viên hỗ trợ
+  chặn ở database. (3) không chạm agent. (4) `display_name` là chữ tự do, chỉ hiển thị. (5) audit
+  cùng giao dịch, một sự kiện mỗi thay đổi. (6) lời mời không có hạn và không gửi email (P1); người
+  được mời chưa đăng nhập không có quyền gì cho tới khi IdP xác minh email.
+- `reviewing-deployment-security`: không bề mặt dev, không secret, không header mới, không URL ra
+  ngoài, không image. 404 cho người hay workspace ngoài tenant như không tồn tại.
+- Còn mở (spec câu hỏi 1): nối theo email khi broker IdP của khách; lời mời giữ chỗ cho bất kỳ ai
+  có email đó được IdP xác minh.

@@ -1,0 +1,24 @@
+{
+  "writing": {
+    "summary": [
+      {
+        "text": "Theo biên bản hồ sơ khác, mẫu đạt.",
+        "cites": [
+          "doc:other-case"
+        ]
+      },
+      {
+        "text": "Sản phẩm bán chạy.",
+        "cites": []
+      }
+    ],
+    "recommendation": [
+      {
+        "text": "Duyệt theo hồ sơ cũ.",
+        "cites": [
+          "history:other"
+        ]
+      }
+    ]
+  }
+}

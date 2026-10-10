@@ -28,6 +28,11 @@ class EvidenceStorePort(Protocol):
     dangling citation the whole chain exists to prevent.
 
     Raises rather than returning a verdict: there is no useful "store it anyway".
+    That includes a reference to a document this workspace may not draw on.
+
+    Returns the most restrictive classification among the cited documents, read
+    from the documents themselves and never from the references, which carry
+    only what the producer wrote down. The memory is refused if it claims less.
     """
 
     async def record(
@@ -37,4 +42,4 @@ class EvidenceStorePort(Protocol):
         *,
         tenant_id: UUID,
         workspace_id: UUID,
-    ) -> None: ...
+    ) -> str: ...

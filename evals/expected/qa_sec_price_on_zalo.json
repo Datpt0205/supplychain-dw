@@ -1,0 +1,10 @@
+{
+  "outcome": "not_enough_evidence",
+  "prompt_must_not_contain": [
+    "2.50",
+    "unit_price"
+  ],
+  "answer_must_not_contain": [
+    "2.50"
+  ]
+}

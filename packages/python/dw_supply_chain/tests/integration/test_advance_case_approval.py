@@ -25,6 +25,7 @@ import uuid
 from decimal import Decimal
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from supply_chain_harness import REPO_ROOT, DatabaseUrls
@@ -43,13 +44,15 @@ from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.adapters.persistence.policy_overrides import SqlPolicyOverrideRepository
 from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
 from dw_platform.application.access_context import AccessContext
-from dw_platform.application.authorization import ScopeAuthorizationService
+from dw_platform.application.authorization import ApprovalAudience, ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalStatus
 from dw_supply_chain.action_duties import load_supply_chain_action_duties
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
 from dw_supply_chain.application.handlers import AdvancePOCase, CaseActionPendingApproval
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.domain.po_case import CaseAction, CaseState, POCase, POCaseId
+from dw_supply_chain.testing.po_papers import open_paper_gate
+from dw_supply_chain.testing.production_gate import open_production_gate
 from dw_supply_chain.workflows.advance_case_graph import (
     APPROVAL_TYPE_PREFIX,
     GRAPH_VERSION,
@@ -61,7 +64,7 @@ pytestmark = pytest.mark.integration
 
 STALE_AFTER_SECONDS_LOCAL = 3600
 _WORKER_CONFIG = REPO_ROOT / "configs" / "workers" / "supply_chain_advance_case.yaml"
-_ACTION_DUTIES = REPO_ROOT / "configs" / "policies" / "supply_chain_action_duties@1.0.0.yaml"
+_ACTION_DUTIES = REPO_ROOT / "configs" / "policies" / "supply_chain_action_duties@1.3.0.yaml"
 
 
 class _UnmeteredPlan:
@@ -124,7 +127,15 @@ class RunnerStack:
 
         graphs = GraphRegistry()
         graphs.register(
-            WORKER_ID, GRAPH_VERSION, lambda: build_advance_case_graph(self.po_case_repo)
+            WORKER_ID,
+            GRAPH_VERSION,
+            lambda: build_advance_case_graph(
+                self.po_case_repo,
+                Uuid4Generator(),
+                SystemClock(),
+                open_production_gate(),
+                open_paper_gate(),
+            ),
         )
         workers = WorkerRegistry(graph_registry=graphs)
         workers.load_file(_WORKER_CONFIG)
@@ -162,17 +173,21 @@ class RunnerStack:
             platform_default_approval_matrix=matrix,
             platform_default_action_duties=load_supply_chain_action_duties(_ACTION_DUTIES),
             runner=self.runner,
+            production_gate=open_production_gate(),
+            papers=open_paper_gate(),
             ids=Uuid4Generator(),
+            clock=SystemClock(),
         )
 
-    def run_context_for_read(self, tenant_id: uuid.UUID) -> RunContext:
-        # `run_store.get()` only reads `run_context.tenant_id` to scope the
-        # query — the rest is unused for a read, same as `ApproveAndResume
-        # Service._run_context_for`'s own lookup context.
+    def run_context_for_read(self, tenant_id: uuid.UUID, workspace_id: uuid.UUID) -> RunContext:
+        # `run_store.get()` reads `run_context.tenant_id` and `workspace_id` to
+        # scope the query (RLS the tenant, the store the workspace) — the rest
+        # is unused for a read, same as `ApproveAndResumeService._run_context_for`'s
+        # own lookup context.
         return RunContext(
             run_id=uuid.uuid4(),
             tenant_id=tenant_id,
-            workspace_id=uuid.uuid4(),
+            workspace_id=workspace_id,
             actor_id=uuid.uuid4(),
             worker_id="unknown",
             worker_version="0.0.0",
@@ -210,12 +225,16 @@ async def test_pause_survives_restart_then_approval_applies_the_transition(
     assert isinstance(result, CaseActionPendingApproval)
     run_id = result.run_id
 
-    record = await stack1.run_store.get(stack1.run_context_for_read(tenant), run_id)
+    record = await stack1.run_store.get(stack1.run_context_for_read(tenant, workspace), run_id)
     assert record.status is RunStatus.WAITING_APPROVAL
     assert record.approval_request_id is not None
 
     async with stack1.uow_factory(requester_context) as uow:
-        approval = await uow.approvals.get(record.approval_request_id)
+        approval = await uow.approvals.get(
+            record.approval_request_id,
+            workspace_id=requester_context.workspace_id,
+            audience=ApprovalAudience.of(requester_context, ScopeAuthorizationService()),
+        )
         assert approval is not None
         assert approval.approval_type == f"{APPROVAL_TYPE_PREFIX}request_deposit"
         assert approval.run_id == run_id
@@ -244,7 +263,7 @@ async def test_pause_survives_restart_then_approval_applies_the_transition(
     )
     assert approved.status is ApprovalStatus.APPROVED
 
-    final = await stack2.run_store.get(stack2.run_context_for_read(tenant), run_id)
+    final = await stack2.run_store.get(stack2.run_context_for_read(tenant, workspace), run_id)
     assert final.status is RunStatus.COMPLETED
 
     applied = await stack2.po_case_repo.get(requester_context, case.id)
@@ -252,6 +271,22 @@ async def test_pause_survives_restart_then_approval_applies_the_transition(
     assert applied.state is CaseState.WAITING_DEPOSIT
     assert applied.version == 2
     await stack2.dispose()
+    # Ticket P2: the step taken on resume is audited once, under the
+    # requester, tied to the run the decision resumed.
+    migrator = create_async_engine(db_urls.migrator, poolclass=NullPool)
+    async with migrator.connect() as conn:
+        rows = (
+            await conn.execute(
+                sa.text(
+                    "SELECT tenant_id, actor_id, details->>'run_id' FROM platform.audit_events"
+                    " WHERE action = 'supply_chain.po_case.request_deposit'"
+                    " AND resource_id = :c"
+                ),
+                {"c": str(case.id)},
+            )
+        ).all()
+    await migrator.dispose()
+    assert [tuple(r) for r in rows] == [(tenant, requester, str(run_id))]
 
 
 async def test_rejecting_applies_nothing(db_urls: DatabaseUrls) -> None:
@@ -271,7 +306,7 @@ async def test_rejecting_applies_nothing(db_urls: DatabaseUrls) -> None:
         requester_context, po_case_id=case.id, action=CaseAction.REQUEST_DEPOSIT
     )
     assert isinstance(result, CaseActionPendingApproval)
-    record = await stack.run_store.get(stack.run_context_for_read(tenant), result.run_id)
+    record = await stack.run_store.get(stack.run_context_for_read(tenant, workspace), result.run_id)
     assert record.approval_request_id is not None
 
     approver_context = _context(
@@ -288,7 +323,7 @@ async def test_rejecting_applies_nothing(db_urls: DatabaseUrls) -> None:
         authorization=stack.authz,
     )
 
-    final = await stack.run_store.get(stack.run_context_for_read(tenant), result.run_id)
+    final = await stack.run_store.get(stack.run_context_for_read(tenant, workspace), result.run_id)
     assert final.status is RunStatus.COMPLETED
 
     untouched = await stack.po_case_repo.get(requester_context, case.id)
@@ -316,7 +351,7 @@ async def test_strict_prefix_refuses_self_approval(db_urls: DatabaseUrls) -> Non
         requester_context, po_case_id=case.id, action=CaseAction.REQUEST_DEPOSIT
     )
     assert isinstance(result, CaseActionPendingApproval)
-    record = await stack.run_store.get(stack.run_context_for_read(tenant), result.run_id)
+    record = await stack.run_store.get(stack.run_context_for_read(tenant, workspace), result.run_id)
     assert record.approval_request_id is not None
 
     with pytest.raises(ConflictError, match="separation of duties"):
@@ -347,7 +382,7 @@ async def test_strict_prefix_refuses_a_blank_comment(db_urls: DatabaseUrls) -> N
         requester_context, po_case_id=case.id, action=CaseAction.REQUEST_DEPOSIT
     )
     assert isinstance(result, CaseActionPendingApproval)
-    record = await stack.run_store.get(stack.run_context_for_read(tenant), result.run_id)
+    record = await stack.run_store.get(stack.run_context_for_read(tenant, workspace), result.run_id)
     assert record.approval_request_id is not None
 
     approver_context = _context(

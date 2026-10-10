@@ -1,0 +1,13 @@
+{
+  "findings": [
+    "line_not_on_po"
+  ],
+  "proposed": false,
+  "decision": "refused",
+  "case_state": "warehouse_receiving",
+  "receipts": 0,
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "step": "qc",
+  "documents": [
+    {
+      "doc_type": "qc_report",
+      "reading": {
+        "critical_found": "0",
+        "critical_accept": "0",
+        "major_found": "9",
+        "major_accept": "7",
+        "minor_found": "6",
+        "minor_accept": "10",
+        "stated_result": "pass",
+        "defects": null
+      }
+    }
+  ]
+}

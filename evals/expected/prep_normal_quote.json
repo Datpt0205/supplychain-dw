@@ -1,0 +1,9 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "quotation_date": "2026-10-01",
+    "moq": "500",
+    "lead_time_days": "45"
+  }
+}

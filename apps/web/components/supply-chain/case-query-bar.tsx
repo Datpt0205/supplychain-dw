@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Sparkles } from "lucide-react";
+import { Alert, Button, Card, Flex, Input } from "antd";
+import { RobotOutlined } from "@ant-design/icons";
 import type { AIWorkResponse } from "@dw/contracts";
-import { Button, Card, CardContent, Input } from "@dw/ui";
 import { useAuth } from "../../lib/auth/auth-context";
 import { errorMessage } from "../../lib/error-message";
 import { apiClient } from "../../lib/session";
 import { CaseQueryAnswer } from "./case-query-answer";
 
 /**
- * The command bar: ask about PO cases in words, get
+ * The command bar: ask about PO cases and product-development cases in words, get
  * the answer as structured work rendered by `CaseQueryAnswer`.
  *
  * Asks on submit only, never per keystroke — every question is a model
@@ -59,18 +59,23 @@ export function CaseQueryBar() {
   };
 
   return (
-    <Card>
-      <CardContent className="space-y-4 pt-5">
+    <Card size="small">
+      <Flex vertical gap="middle">
         <form onSubmit={submit} className="flex gap-2" role="search">
           <Input
-            aria-label="Hỏi về PO case"
-            placeholder="Ví dụ: PO của NCC Sunhouse đang chờ đặt cọc"
+            aria-label="Hỏi về PO case hoặc hồ sơ phát triển"
+            placeholder="Ví dụ: PO của NCC Sunhouse đang chờ đặt cọc; hồ sơ SP-028 tới đâu rồi"
             value={question}
             maxLength={500}
             onChange={(event) => setQuestion(event.target.value)}
           />
-          <Button type="submit" disabled={pending || !question.trim()}>
-            <Sparkles />
+          <Button
+            type="primary"
+            htmlType="submit"
+            icon={<RobotOutlined aria-hidden />}
+            loading={pending}
+            disabled={!question.trim()}
+          >
             {pending ? "Đang hỏi…" : "Hỏi"}
           </Button>
         </form>
@@ -80,11 +85,9 @@ export function CaseQueryBar() {
           {answer && <CaseQueryAnswer answer={answer} />}
         </div>
         {error != null && (
-          <p role="alert" className="text-sm text-destructive">
-            {errorMessage(error)}
-          </p>
+          <Alert type="error" showIcon title={errorMessage(error)} />
         )}
-      </CardContent>
+      </Flex>
     </Card>
   );
 }

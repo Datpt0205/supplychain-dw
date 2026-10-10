@@ -15,6 +15,7 @@ a customer's auditor asks about directly.
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -22,9 +23,13 @@ import sqlalchemy as sa
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.ports import UtcClock
 from dw_knowledge import tables as knowledge_tables
 from dw_memory import tables
+from dw_memory.ranking import MemoryVectorPurgePort
+from dw_platform.adapters.persistence.lane_audit import append_across_tenants
+from dw_platform.domain.audit import lane_audit_event
 from dw_platform.retention_policy import RetentionPolicy
 
 logger = logging.getLogger("dw_memory.retention")
@@ -36,6 +41,10 @@ __all__ = ["SqlMemoryRetention"]
 # would need a list of tenants, which is itself a cross-tenant read.
 _SET_DRAIN = text("SELECT set_config('app.worker_drain', 'on', true)")
 
+# The worker registry name this sweep runs under: its actor on the audit log.
+LANE = "retention"
+EXPIRED_ACTION = "memory.item.expired"
+
 
 @dataclass(frozen=True)
 class SqlMemoryRetention:
@@ -44,6 +53,11 @@ class SqlMemoryRetention:
     session_factory: async_sessionmaker[AsyncSession]
     policy: RetentionPolicy
     clock: UtcClock
+    # The ranker's vectors of the rows this deletes. No default: the composition
+    # root has to say "no vector store" out loud, because a forgotten argument
+    # here is an embedding of expired content kept for good. Called after the
+    # rows commit; see `_purge_vectors` for what a failure costs.
+    vector_index: MemoryVectorPurgePort | None
 
     async def prune(self) -> None:
         """One pass: for each class that expires, delete a bounded batch.
@@ -67,10 +81,11 @@ class SqlMemoryRetention:
                     "retention removed expired memories",
                     extra={
                         "retention_class": name,
-                        "deleted": deleted,
+                        "deleted": len(deleted),
                         "policy_version": self.policy.policy_version,
                     },
                 )
+                await self._purge_vectors(deleted)
         orphaned = await self._delete_orphan_evidence(now)
         if orphaned:
             logger.info(
@@ -81,7 +96,30 @@ class SqlMemoryRetention:
                 },
             )
 
-    async def _delete_batch(self, name: str, cutoff: datetime) -> int:
+    async def _purge_vectors(self, memory_ids: list[uuid.UUID]) -> None:
+        """Delete the vectors of rows that are already gone.
+
+        After the commit, and a failure does not restore the rows: the term is
+        the commitment, and an outage of the ranker's store must not keep a
+        memory past it. The cost is real and stated: the next pass selects by
+        row, so it never sees these ids again, and their points stay until the
+        tenant is offboarded — which deletes by tenant and is the net for this.
+        """
+        if self.vector_index is None:
+            return
+        try:
+            await self.vector_index.delete(memory_ids)
+        except Exception:
+            logger.warning(
+                "retention could not delete expired memory vectors; offboarding is the net",
+                extra={
+                    "vectors_left": len(memory_ids),
+                    "memory_ids": [str(memory_id) for memory_id in memory_ids],
+                },
+                exc_info=True,
+            )
+
+    async def _delete_batch(self, name: str, cutoff: datetime) -> list[uuid.UUID]:
         async with self.session_factory() as session, session.begin():
             await session.execute(_SET_DRAIN)
             doomed = (
@@ -93,15 +131,41 @@ class SqlMemoryRetention:
                 .limit(self.policy.batch_limit)
                 .scalar_subquery()
             )
-            # RETURNING rather than rowcount: a CursorResult exposes rowcount,
-            # the generic Result the async facade is typed as does not, and
-            # counting the rows it hands back says the same thing without a cast.
-            removed = await session.execute(
-                sa.delete(tables.items)
-                .where(tables.items.c.memory_id.in_(doomed))
-                .returning(tables.items.c.memory_id)
+            # RETURNING: the ids are what the ranker's store is told to forget,
+            # and each one is an audit row in its own tenant, in this transaction.
+            removed = (
+                await session.execute(
+                    sa.delete(tables.items)
+                    .where(tables.items.c.memory_id.in_(doomed))
+                    .returning(
+                        tables.items.c.memory_id,
+                        tables.items.c.tenant_id,
+                        tables.items.c.workspace_id,
+                    )
+                )
+            ).all()
+            now = self.clock.now()
+            await append_across_tenants(
+                session,
+                (
+                    lane_audit_event(
+                        lane=LANE,
+                        event_id=uuid.uuid4(),
+                        tenant_id=TenantId(row.tenant_id),
+                        workspace_id=WorkspaceId(row.workspace_id),
+                        action=EXPIRED_ACTION,
+                        resource_type="memory_item",
+                        resource_id=str(row.memory_id),
+                        occurred_at=now,
+                        details={
+                            "retention_class": name,
+                            "policy_version": self.policy.policy_version,
+                        },
+                    )
+                    for row in removed
+                ),
             )
-            return len(removed.all())
+            return [row.memory_id for row in removed]
 
     async def _delete_orphan_evidence(self, now: datetime) -> int:
         """Delete evidence rows that no memory cites any more.

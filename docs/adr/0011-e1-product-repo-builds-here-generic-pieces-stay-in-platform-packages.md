@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../../CLAUDE.md # Adding a bounded context; Non-negotiable architecture

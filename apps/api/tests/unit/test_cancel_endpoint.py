@@ -57,14 +57,17 @@ class _Lookup:
 
 
 class _RunStore:
-    """Answers ownership the way RLS does: another tenant's thread is invisible."""
+    """Answers ownership the way the SQL store does: another tenant's thread is
+    invisible by RLS, another workspace's by the store's own filter."""
 
     def __init__(self) -> None:
-        self.asked: list[tuple[uuid.UUID, uuid.UUID]] = []
+        self.asked: list[tuple[uuid.UUID, uuid.UUID, uuid.UUID]] = []
 
-    async def thread_belongs_to(self, tenant_id: uuid.UUID, thread_id: uuid.UUID) -> bool:
-        self.asked.append((tenant_id, thread_id))
-        return tenant_id == TENANT and thread_id == MINE
+    async def thread_belongs_to(
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, thread_id: uuid.UUID
+    ) -> bool:
+        self.asked.append((tenant_id, workspace_id, thread_id))
+        return tenant_id == TENANT and workspace_id == WORKSPACE and thread_id == MINE
 
 
 class _Runner:
@@ -146,13 +149,14 @@ async def test_a_thread_that_is_not_yours_looks_the_same_as_one_that_never_exist
     assert unknown.status_code == other.status_code == 404
 
 
-async def test_ownership_is_asked_under_the_callers_own_tenant() -> None:
-    """Not under a tenant from the request. The check is only worth anything if
-    it runs as the caller."""
+async def test_ownership_is_asked_under_the_callers_own_tenant_and_workspace() -> None:
+    """Not under a tenant or workspace from the request body. The check is only
+    worth anything if it runs as the caller: RLS on worker_runs narrows by
+    tenant only, so the workspace has to reach the store too."""
     store = _RunStore()
     await _cancel(_container(store, _Runner()), MINE)
 
-    assert store.asked == [(TENANT, MINE)]
+    assert store.asked == [(TENANT, WORKSPACE, MINE)]
 
 
 async def test_the_scope_is_required() -> None:

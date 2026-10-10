@@ -30,6 +30,10 @@ const NOT_FOUND: AIWorkResponse = {
     supplier_name: null,
     active_only: false,
     po_reference: null,
+    product_state: null,
+    category: null,
+    pic_user_id: null,
+    proposal_code: null,
   },
   citations: [{ field: "supplier", quote: "Toshiba" }],
   ignored_fields: [],
@@ -46,9 +50,14 @@ afterEach(() => {
 });
 
 function ask(question: string): void {
-  fireEvent.change(screen.getByRole("textbox", { name: "Hỏi về PO case" }), {
-    target: { value: question },
-  });
+  fireEvent.change(
+    screen.getByRole("textbox", {
+      name: "Hỏi về PO case hoặc hồ sơ phát triển",
+    }),
+    {
+      target: { value: question },
+    },
+  );
   fireEvent.submit(screen.getByRole("search"));
 }
 

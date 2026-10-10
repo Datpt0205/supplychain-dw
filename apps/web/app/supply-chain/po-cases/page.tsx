@@ -1,32 +1,40 @@
 "use client";
 
-import { Suspense, useCallback } from "react";
+import { Suspense, useCallback, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { PackageSearch, X } from "lucide-react";
-import { caseStateSchema } from "@dw/contracts";
 import {
-  Badge,
+  Alert,
   Button,
-  Label,
+  Empty,
+  Flex,
+  Input,
+  Segmented,
   Select,
   Skeleton,
-  Switch,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@dw/ui";
-import { EmptyState } from "../../../components/empty-state";
-import { LoadMore } from "../../../components/load-more";
-import { PageHeading } from "../../../components/page-heading";
+  Tag,
+  Typography,
+  type TableColumnsType,
+} from "antd";
+import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
+import { caseStateSchema, type CaseState, type POCase } from "@dw/contracts";
+import { PageHeader } from "@dw/ui";
+import { LoadError } from "../../../components/load-error";
 import {
   CASE_STATE_LABEL,
-  CaseStateBadge,
+  CASE_STATE_META,
+  CaseStateTag,
+  stepLabel,
 } from "../../../components/supply-chain/case-state-badge";
-import { formatDateTime } from "../../../lib/dates";
+import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
+import {
+  PoReferenceText,
+  poReferenceLabel,
+} from "../../../components/supply-chain/po-reference";
+import { formatDateTime, VN_TIME } from "../../../lib/dates";
+import { errorMessage } from "../../../lib/error-message";
+import { matches } from "../../../lib/search";
 import { apiClient } from "../../../lib/session";
 import {
   poCasesHref,
@@ -43,17 +51,20 @@ import { useCachedPages } from "../../../lib/use-cached-pages";
 export default function POCasesPage() {
   // `useSearchParams` has no value during a static prerender, so the
   // boundary sits ABOVE the component that calls it — in the same
-  // component it would not help. A green `next build` does not prove this
-  // placement: AppFrame renders a loader until auth resolves, so the body
-  // is never prerendered today either way.
+  // component it would not help.
   return (
-    <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+    <Suspense fallback={<Skeleton active paragraph={{ rows: 6 }} />}>
       <POCasesView />
     </Suspense>
   );
 }
 
 const STATE_SELECT_ID = "po-cases-state";
+
+const STATE_OPTIONS = caseStateSchema.options.map((value) => ({
+  value,
+  label: CASE_STATE_LABEL[value],
+}));
 
 function POCasesView() {
   const searchParams = useSearchParams();
@@ -66,88 +77,125 @@ function POCasesView() {
   /** Writes the filter back to the URL — its only home, so back/forward
    * and a shared link land on the same view. `history.replaceState`, not
    * `router.replace`: Next syncs `useSearchParams` from it without a server
-   * round trip, where `router.replace` fetched the page segment again and
-   * the select snapped back to its old value until that returned. */
+   * round trip. */
   const apply = (next: ListFilter) => {
     window.history.replaceState(null, "", poCasesHref(next));
   };
   /** Focus back on the state picker when the control that had it is about
-   * to unmount (the chip's X, the empty state's clear button) — otherwise
-   * keyboard focus falls to <body>. */
+   * to unmount (a chip's remove, the clear buttons) — otherwise keyboard
+   * focus falls to <body>. */
   const refocus = () => document.getElementById(STATE_SELECT_ID)?.focus();
+  const clearAll = () => {
+    apply({ activeOnly: false });
+    refocus();
+  };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <PageHeading
-        icon={PackageSearch}
-        title="PO cases"
-        description="Purchase order theo trạng thái, SLA và cập nhật từ nhà cung cấp."
+    <div className="mx-auto max-w-6xl">
+      <PageHeader
+        breadcrumb={supplyChainCrumbs("Hồ sơ PO")}
+        title="Hồ sơ PO"
+        subtitle="Đơn đặt hàng với NCC, từ Tạo PO (bước 10) tới Nhập kho (bước 17). Mới nhất trước."
       />
-      <div className="flex flex-wrap items-center gap-4">
-        <Select
-          id={STATE_SELECT_ID}
-          aria-label="Lọc theo trạng thái"
-          className="w-60"
-          value={filter.state ?? ""}
-          onChange={(event) =>
-            apply({
-              ...filter,
-              state: caseStateSchema.safeParse(event.target.value).data,
-            })
-          }
-        >
-          <option value="">Tất cả trạng thái</option>
-          {caseStateSchema.options.map((option) => (
-            <option key={option} value={option}>
-              {CASE_STATE_LABEL[option]}
-            </option>
-          ))}
-        </Select>
-        <div className="flex items-center gap-2">
-          <Switch
-            id="po-cases-active-only"
-            checked={filter.activeOnly}
-            onChange={(event) =>
-              apply({ ...filter, activeOnly: event.target.checked })
+      <Flex vertical gap="middle">
+        <Flex wrap gap="middle" align="center">
+          <Segmented<"active" | "all">
+            aria-label="Phạm vi hồ sơ"
+            value={filter.activeOnly ? "active" : "all"}
+            options={[
+              { value: "all", label: "Tất cả" },
+              { value: "active", label: "Đang chạy" },
+            ]}
+            onChange={(value) =>
+              apply({ ...filter, activeOnly: value === "active" })
             }
           />
-          <Label htmlFor="po-cases-active-only">Chỉ case đang chạy</Label>
-        </div>
-        {filter.supplierName !== undefined && (
-          <Badge variant="secondary" className="gap-1.5">
-            Nhà cung cấp: {filter.supplierName}
-            <button
-              type="button"
-              aria-label={`Bỏ lọc nhà cung cấp ${filter.supplierName}`}
-              className="rounded-sm hover:text-foreground"
-              onClick={() => {
-                apply({ ...filter, supplierName: undefined });
-                refocus();
-              }}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </Badge>
+          <Select<CaseState | "">
+            id={STATE_SELECT_ID}
+            aria-label="Lọc theo trạng thái"
+            className="min-w-60"
+            value={filter.state ?? ""}
+            options={[{ value: "", label: "Mọi trạng thái" }, ...STATE_OPTIONS]}
+            onChange={(value) =>
+              apply({ ...filter, state: value === "" ? undefined : value })
+            }
+            virtual={false}
+          />
+        </Flex>
+        {filtered && (
+          <Flex wrap gap="small" align="center">
+            <Typography.Text>Đang lọc:</Typography.Text>
+            {filter.activeOnly && (
+              <FilterChip
+                label="Đang chạy"
+                onRemove={() => {
+                  apply({ ...filter, activeOnly: false });
+                  refocus();
+                }}
+              />
+            )}
+            {filter.state && (
+              <FilterChip
+                label={`Trạng thái: ${CASE_STATE_LABEL[filter.state]}`}
+                onRemove={() => {
+                  apply({ ...filter, state: undefined });
+                  refocus();
+                }}
+              />
+            )}
+            {filter.supplierName !== undefined && (
+              <FilterChip
+                label={`NCC: ${filter.supplierName}`}
+                removeLabel={`Bỏ lọc nhà cung cấp ${filter.supplierName}`}
+                onRemove={() => {
+                  apply({ ...filter, supplierName: undefined });
+                  refocus();
+                }}
+              />
+            )}
+            <Button type="link" size="small" onClick={clearAll}>
+              Xóa tất cả
+            </Button>
+          </Flex>
         )}
-      </div>
-      {/* Keyed on the filter: a filter change is a fresh list, never the
-          new first page spliced onto the old filter's page two, which the
-          shared hooks would otherwise show for a frame (their state
-          outlives a key change until the next effect runs). */}
-      <POCaseResults
-        key={JSON.stringify([
-          filter.state,
-          filter.supplierName,
-          filter.activeOnly,
-        ])}
-        filter={filter}
-        filtered={filtered}
-        onClearFilters={() => {
-          apply({ activeOnly: false });
-          refocus();
-        }}
-      />
+        {/* Keyed on the filter: a filter change is a fresh list, never the
+            new first page spliced onto the old filter's page two. */}
+        <POCaseResults
+          key={JSON.stringify([
+            filter.state,
+            filter.supplierName,
+            filter.activeOnly,
+          ])}
+          filter={filter}
+          filtered={filtered}
+          onClearFilters={clearAll}
+        />
+      </Flex>
     </div>
+  );
+}
+
+/** An active filter as a chip, removed by its own button. */
+function FilterChip({
+  label,
+  removeLabel,
+  onRemove,
+}: {
+  label: string;
+  removeLabel?: string;
+  onRemove: () => void;
+}) {
+  return (
+    <Tag className="me-0">
+      {label}
+      <Button
+        type="text"
+        size="small"
+        icon={<CloseOutlined aria-hidden />}
+        aria-label={removeLabel ?? `Bỏ lọc ${label}`}
+        onClick={onRemove}
+      />
+    </Tag>
   );
 }
 
@@ -161,7 +209,8 @@ function POCaseResults({
   onClearFilters: () => void;
 }) {
   const { state, supplierName, activeOnly } = filter;
-  const { items, loading, error, hasMore, loadingMore, loadMore } =
+  const [query, setQuery] = useState("");
+  const { items, loading, error, hasMore, loadingMore, loadMore, reload } =
     useCachedPages(
       // Every input the fetch depends on is in the key, so one filter's
       // cached first page is never served for another.
@@ -173,84 +222,111 @@ function POCaseResults({
       ),
     );
 
-  if (loading) return <Skeleton className="h-64 w-full" />;
+  // A failed load is never shown as "no cases": that would contradict the
+  // Control Tower row that linked here.
   if (error != null && items.length === 0) {
-    // A failed load is never shown as "no cases": that would contradict
-    // the Control Tower row that linked here.
-    return (
-      <p className="text-sm text-destructive">
-        Không tải được danh sách PO case:{" "}
-        {error instanceof Error ? error.message : "lỗi không xác định"}
-      </p>
-    );
+    return <LoadError error={error} onRetry={reload} />;
   }
-  if (items.length === 0) {
-    return filtered ? (
-      <EmptyState
-        icon={PackageSearch}
-        title="Không có case nào khớp bộ lọc"
-        description="Bỏ bớt điều kiện lọc để xem thêm case."
-        action={
-          <Button variant="outline" size="sm" onClick={onClearFilters}>
-            Xoá bộ lọc
-          </Button>
-        }
-      />
-    ) : (
-      <EmptyState
-        icon={PackageSearch}
-        title="Chưa có PO case nào"
-        description="PO case được tạo qua API sẽ hiện ở đây."
-      />
-    );
-  }
+
+  const shown = items.filter((item) =>
+    matches(query, [poReferenceLabel(item.po_reference), item.supplier_name]),
+  );
+
+  const columns: TableColumnsType<POCase> = [
+    {
+      title: "Hồ sơ PO",
+      key: "case",
+      render: (_: unknown, row) => (
+        <Flex vertical>
+          <Link href={`/supply-chain/po-cases/${row.id}`}>
+            <PoReferenceText reference={row.po_reference} />
+          </Link>
+          <Typography.Text type="secondary">
+            {row.supplier_name}
+          </Typography.Text>
+        </Flex>
+      ),
+    },
+    {
+      title: "Trạng thái",
+      key: "state",
+      render: (_: unknown, row) => (
+        <Flex vertical gap={2} align="start">
+          <CaseStateTag state={row.state} />
+          <Typography.Text type="secondary">
+            {row.interrupted_state
+              ? `Tạm dừng tại ${CASE_STATE_LABEL[row.interrupted_state]}`
+              : stepLabel(CASE_STATE_META[row.state].step)}
+          </Typography.Text>
+        </Flex>
+      ),
+    },
+    {
+      title: `Tạo lúc (${VN_TIME})`,
+      dataIndex: "created_at",
+      responsive: ["md"],
+      render: (value: string | null) => formatDateTime(value),
+    },
+  ];
+
   return (
-    <>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>PO reference</TableHead>
-            <TableHead>Nhà cung cấp</TableHead>
-            <TableHead>Trạng thái</TableHead>
-            <TableHead>Tạo lúc</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {items.map((item) => (
-            <TableRow key={item.id}>
-              <TableCell className="font-medium">
-                <Link
-                  href={`/supply-chain/po-cases/${item.id}`}
-                  className="hover:underline"
-                >
-                  {item.po_reference}
-                </Link>
-              </TableCell>
-              <TableCell>{item.supplier_name}</TableCell>
-              <TableCell>
-                <div className="flex flex-wrap gap-1.5">
-                  <CaseStateBadge state={item.state} />
-                  {item.interrupted_state && (
-                    <Badge variant="outline">
-                      tạm dừng tại {item.interrupted_state}
-                    </Badge>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                {formatDateTime(item.created_at)}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      <LoadMore
-        hasMore={hasMore}
-        loading={loadingMore}
-        onLoadMore={loadMore}
-        shown={items.length}
-        noun="case"
+    <Flex vertical gap="small">
+      {/* Not Input.Search: the list filters as you type, so its button did
+          nothing, and it was named "search" in English. */}
+      <Input
+        type="search"
+        allowClear
+        prefix={<SearchOutlined aria-hidden />}
+        aria-label="Tìm theo số PO hoặc NCC"
+        placeholder="Ví dụ: PO-2026-007 hoặc tên NCC"
+        className="max-w-md"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
       />
-    </>
+      <Table<POCase>
+        rowKey="id"
+        size="middle"
+        pagination={false}
+        sticky
+        scroll={{ x: "max-content" }}
+        loading={loading}
+        columns={columns}
+        dataSource={shown}
+        locale={{
+          emptyText: loading ? (
+            " "
+          ) : items.length > 0 ? (
+            <Empty
+              description={`Không hồ sơ nào trong ${items.length} hồ sơ đã tải khớp "${query}".`}
+            >
+              <Button onClick={() => setQuery("")}>Xóa ô tìm</Button>
+            </Empty>
+          ) : filtered ? (
+            <Empty description="Không có Hồ sơ PO nào khớp bộ lọc.">
+              <Button onClick={onClearFilters}>Xóa bộ lọc</Button>
+            </Empty>
+          ) : (
+            <Empty description="Chưa có Hồ sơ PO nào. Hồ sơ PO mở ở bước 10 (Tạo PO)." />
+          ),
+        }}
+      />
+      {!loading && items.length > 0 && (
+        <Flex justify="space-between" align="center" wrap gap="small">
+          <Typography.Text role="status">
+            {hasMore
+              ? `Đã tải ${items.length} hồ sơ; còn nữa. Ô tìm chỉ tìm trong hồ sơ đã tải.`
+              : `Đã tải tất cả ${items.length} hồ sơ.`}
+          </Typography.Text>
+          {hasMore && (
+            <Button loading={loadingMore} onClick={loadMore}>
+              Tải thêm
+            </Button>
+          )}
+        </Flex>
+      )}
+      {error != null && items.length > 0 && (
+        <Alert type="error" showIcon title={errorMessage(error)} />
+      )}
+    </Flex>
   );
 }

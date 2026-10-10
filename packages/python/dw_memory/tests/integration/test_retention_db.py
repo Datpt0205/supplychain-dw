@@ -11,7 +11,7 @@ that GUC actually opens the rows is a question only the policy engine answers.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -22,7 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from dw_memory import tables
-from dw_memory.retention import SqlMemoryRetention
+from dw_memory.adapters.qdrant_ranker import QdrantMemoryRanker
+from dw_memory.retention import EXPIRED_ACTION, LANE, SqlMemoryRetention
+from dw_platform.domain.audit import system_actor, system_actor_label
 from dw_platform.retention_policy import (
     AuditRetention,
     KnowledgeRetention,
@@ -56,6 +58,8 @@ def _policy(**overrides: object) -> RetentionPolicy:
         },
         "knowledge": KnowledgeRetention(deleted_grace_days=30, orphan_evidence_grace_days=7),
         "audit": AuditRetention(months_ahead=1, enforced=False, tables={}),
+        "checkpoints": {"superseded_days": 7, "idle_thread_days": 730},
+        "channel_deliveries": {"pending_expiry_days": 7},
         "batch_limit": 1000,
     }
     fields.update(overrides)
@@ -69,7 +73,7 @@ async def sweep(
     engine = create_async_engine(urls.app, poolclass=NullPool)
     sessions = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     try:
-        yield SqlMemoryRetention(sessions, _policy(), _Clock()), sessions
+        yield SqlMemoryRetention(sessions, _policy(), _Clock(), vector_index=None), sessions
     finally:
         await engine.dispose()
 
@@ -218,6 +222,7 @@ async def test_the_batch_ceiling_bounds_one_pass(
             async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False),
             _policy(batch_limit=2),
             _Clock(),
+            vector_index=None,
         )
         await small.prune()
     finally:
@@ -345,3 +350,103 @@ async def test_expiring_a_memory_frees_the_evidence_it_cited(
 
     assert not await _alive(sessions, expiring)
     assert not await _evidence_alive(sessions, freed)
+
+
+# ---------------------------------------------------------------- vectors --
+#
+# A memory's point in the ranker's collection is an embedding of its content.
+# Deleting the row and keeping the point keeps the content in the one store
+# nobody sweeps.
+
+
+async def _has_point(ranker: QdrantMemoryRanker, memory_id: uuid.UUID) -> bool:
+    found = await ranker.client.retrieve(ranker.collection, ids=[str(memory_id)])
+    return bool(found)
+
+
+async def test_an_expired_memory_loses_its_vector_and_a_live_one_keeps_it(
+    sweep: tuple[SqlMemoryRetention, async_sessionmaker[AsyncSession]],
+    ranker: QdrantMemoryRanker,
+    indexed: Callable[..., Awaitable[uuid.UUID]],
+) -> None:
+    _pruner, sessions = sweep
+    expired = await _memory(sessions, retention="ephemeral", age_days=40)
+    live = await _memory(sessions, retention="ephemeral", age_days=10)
+    # Waits until each point is visible: `index` upserts with wait=False, and a
+    # point not yet applied would let "the expired one has no point" pass with
+    # the purge removed.
+    for memory_id in (expired, live):
+        await indexed("Ký ngày 10/10.", tenant=TENANT, workspace=WORKSPACE, memory_id=memory_id)
+    pruner = SqlMemoryRetention(sessions, _policy(), _Clock(), vector_index=ranker)
+
+    await pruner.prune()
+
+    assert not await _alive(sessions, expired)
+    assert not await _has_point(ranker, expired), "the row went; its embedding must too"
+    assert await _has_point(ranker, live)
+
+
+async def test_a_vector_store_that_is_down_does_not_keep_an_expired_row(
+    sweep: tuple[SqlMemoryRetention, async_sessionmaker[AsyncSession]],
+) -> None:
+    """The term is the commitment. A Qdrant outage costs a stray point, which
+    offboarding still removes; it must not keep a row past its term."""
+    _pruner, sessions = sweep
+    expired = await _memory(sessions, retention="ephemeral", age_days=40)
+
+    @dataclass
+    class _Down:
+        async def delete(self, memory_ids: object) -> None:
+            raise RuntimeError("qdrant xuống")
+
+        async def delete_by_tenant(self, tenant_id: uuid.UUID) -> None:
+            raise RuntimeError("qdrant xuống")
+
+    await SqlMemoryRetention(sessions, _policy(), _Clock(), vector_index=_Down()).prune()
+
+    assert not await _alive(sessions, expired)
+
+
+async def _audit_rows(
+    sessions: async_sessionmaker[AsyncSession], tenant: uuid.UUID, resource_id: str
+) -> list[sa.Row[tuple[object, ...]]]:
+    async with sessions() as session, session.begin():
+        await session.execute(
+            sa.text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant)}
+        )
+        return list(
+            (
+                await session.execute(
+                    sa.text(
+                        "SELECT action, actor_id, workspace_id, details"
+                        " FROM platform.audit_events WHERE resource_id = :r"
+                    ),
+                    {"r": resource_id},
+                )
+            ).all()
+        )
+
+
+async def test_an_expired_memory_is_on_its_tenants_audit_log_as_the_lane(
+    sweep: tuple[SqlMemoryRetention, async_sessionmaker[AsyncSession]],
+) -> None:
+    pruner, sessions = sweep
+    mine = await _memory(sessions, retention="ephemeral", age_days=40)
+    theirs = await _memory(sessions, retention="ephemeral", age_days=40, tenant=OTHER_TENANT)
+    kept = await _memory(sessions, retention="ephemeral", age_days=1)
+
+    await pruner.prune()
+
+    [(action, actor_id, workspace_id, details)] = await _audit_rows(sessions, TENANT, str(mine))
+    assert action == EXPIRED_ACTION
+    assert actor_id == system_actor(LANE).value
+    assert workspace_id == WORKSPACE
+    assert details == {
+        "retention_class": "ephemeral",
+        "policy_version": "1.0.0",
+        "actor": system_actor_label(LANE),
+    }
+    # Each row in its own tenant: not visible from the other, and present there.
+    assert await _audit_rows(sessions, TENANT, str(theirs)) == []
+    assert len(await _audit_rows(sessions, OTHER_TENANT, str(theirs))) == 1
+    assert await _audit_rows(sessions, TENANT, str(kept)) == []

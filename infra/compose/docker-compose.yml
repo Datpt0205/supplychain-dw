@@ -35,7 +35,6 @@ volumes:
   s3-data:
   keycloak-data:
   clickhouse-data:
-  tei-models:
   # Rendered from alertmanager.yml.template by the alertmanager-config
   # service below — Alertmanager's own YAML has no env-var substitution.
   alertmanager-config:
@@ -156,6 +155,7 @@ services:
         rclone mkdir s3:$${S3_BUCKET_ARTIFACTS} &&
         rclone mkdir s3:$${S3_BUCKET_EXPORTS} &&
         rclone mkdir s3:$${S3_BUCKET_PG_BACKUPS} &&
+        rclone mkdir s3:$${CASE_DOCUMENTS_BUCKET} &&
         rclone mkdir s3:langfuse
     environment:
       RCLONE_CONFIG_S3_TYPE: s3
@@ -166,6 +166,9 @@ services:
       S3_BUCKET_ARTIFACTS: ${S3_BUCKET_ARTIFACTS:-dw-artifacts}
       S3_BUCKET_EXPORTS: ${S3_BUCKET_EXPORTS:-dw-exports}
       S3_BUCKET_PG_BACKUPS: ${S3_BUCKET_PG_BACKUPS:-dw-pg-backups}
+      # Made here, not only on the first upload: offboarding lists this bucket
+      # for every tenant, and listing a bucket that does not exist fails.
+      CASE_DOCUMENTS_BUCKET: ${CASE_DOCUMENTS_BUCKET:-case-documents}
     networks: [dw-internal]
     restart: "no"
 
@@ -226,99 +229,6 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  # ------------------------------------------------- model inference (RAG) --
-  # BGE-M3 dense embeddings. TEI GPU images need compute cap >= 7.5 (Turing+),
-  # so the default is the CPU image, which runs everywhere (CI included — no
-  # nvidia device reservation here; it would fail on GPU-less hosts). On a
-  # Turing+ GPU (e.g. GTX 1650) set in .env:
-  #   DW_TEI_EMBED_IMAGE=ghcr.io/huggingface/text-embeddings-inference:turing-1.6
-  #   DW_TEI_EMBED_DTYPE=float16
-  # and run with the GPU override:
-  #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml ...
-  tei-embed:
-    image: ${DW_TEI_EMBED_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.6}
-    # Opt-in only (ADR / model-gateway-findings): embeddings default to the
-    # gateway now, so TEI is NOT part of `full`. Add `--profile models` to run it.
-    profiles: ["models"]
-    command:
-      [
-        "--model-id",
-        "BAAI/bge-m3",
-        "--dtype",
-        "${DW_TEI_EMBED_DTYPE:-float32}",
-        # TEI warms up by running one batch of this size and the allocator keeps
-        # the arena, so the default 16384 costs GBs of resident memory forever.
-        # Chunks are capped at 1200 chars (~600 tokens), so 4096 still fills a
-        # batch and TEI splits a 32-input client request across batches itself.
-        "--max-batch-tokens",
-        "${DW_TEI_MAX_BATCH_TOKENS:-4096}",
-        "--tokenization-workers",
-        "2",
-        "--port",
-        "80",
-      ]
-    environment:
-      HF_HOME: /data
-      # One compute thread per core on a 12-core laptop gives glibc up to 8
-      # 64MB malloc arenas per thread; two of these servers then outweigh the
-      # model weights. Neither number changes results, only footprint.
-      OMP_NUM_THREADS: "4"
-      RAYON_NUM_THREADS: "4"
-      MALLOC_ARENA_MAX: "2"
-    # Hard ceiling: without it a regression here is a dead `docker-up` (the web
-    # build OOMs), instead of a dead embedding server that says so.
-    mem_limit: ${DW_TEI_EMBED_MEM_LIMIT:-3g}
-    volumes:
-      - tei-models:/data
-    ports:
-      - "127.0.0.1:${DW_TEI_EMBED_HOST_PORT:-8085}:80"
-    networks: [dw-internal, dw-edge]
-    healthcheck:
-      test: ["CMD", "bash", "-lc", "exec 3<>/dev/tcp/127.0.0.1/80"]
-      interval: 15s
-      timeout: 5s
-      retries: 20
-      start_period: 180s
-    restart: unless-stopped
-
-  # BGE-reranker-v2-m3 cross-encoder on CPU (leaves the 4GB GPU for embeddings).
-  tei-rerank:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
-    # Opt-in only (ADR / model-gateway-findings): embeddings default to the
-    # gateway now, so TEI is NOT part of `full`. Add `--profile models` to run it.
-    profiles: ["models"]
-    command:
-      [
-        "--model-id",
-        "BAAI/bge-reranker-v2-m3",
-        # See tei-embed: same warmup arena, and a cross-encoder pays it per
-        # query/document pair, which is why this one was the larger of the two.
-        "--max-batch-tokens",
-        "${DW_TEI_MAX_BATCH_TOKENS:-4096}",
-        "--tokenization-workers",
-        "2",
-        "--port",
-        "80",
-      ]
-    environment:
-      HF_HOME: /data
-      OMP_NUM_THREADS: "4"
-      RAYON_NUM_THREADS: "4"
-      MALLOC_ARENA_MAX: "2"
-    mem_limit: ${DW_TEI_RERANK_MEM_LIMIT:-3g}
-    volumes:
-      - tei-models:/data
-    ports:
-      - "127.0.0.1:${DW_TEI_RERANK_HOST_PORT:-8086}:80"
-    networks: [dw-internal, dw-edge]
-    healthcheck:
-      test: ["CMD", "bash", "-lc", "exec 3<>/dev/tcp/127.0.0.1/80"]
-      interval: 15s
-      timeout: 5s
-      retries: 20
-      start_period: 180s
-    restart: unless-stopped
-
   # ------------------------------------------------------------ migrations --
   migrate:
     build:
@@ -364,11 +274,16 @@ services:
       # set it to the web hostname. An empty string would not parse as a list.
       DW_API_CORS_ORIGINS: ${DW_API_CORS_ORIGINS:-[]}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      # Zalo self-link (zalo-channel ticket 01): /api/v1/zalo/* is mounted
-      # only when both the bot token and the link secret are set.
+      # Zalo self-link (channels Z1): /api/v1/zalo/* is mounted
+      # only when both the bot token and the link secret are set. The webhook
+      # (channels Z3) only with ZALO_UPDATES_MODE=webhook and the secret set;
+      # the worker reads the same mode, so one bot has one reader.
       ZALO_BOT_TOKEN: ${ZALO_BOT_TOKEN:-}
       ZALO_WEBHOOK_SECRET: ${ZALO_WEBHOOK_SECRET:-}
+      ZALO_UPDATES_MODE: ${ZALO_UPDATES_MODE:-poll}
+      DW_API_PUBLIC_BASE_URL: ${DW_API_PUBLIC_BASE_URL:-}
       ZALO_LINK_SECRET: ${ZALO_LINK_SECRET:-}
+      DW_APPROVAL_CODE_SECRET: ${DW_APPROVAL_CODE_SECRET:-}
       ZALO_BOT_LINK: ${ZALO_BOT_LINK:-}
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-dw_knowledge}
@@ -376,6 +291,8 @@ services:
       S3_ENDPOINT_URL: http://s3:8333
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+      # The one name s3-setup creates, the API writes and the worker offboards.
+      CASE_DOCUMENTS_BUCKET: ${CASE_DOCUMENTS_BUCKET:-case-documents}
       # OIDC: the token issuer is the browser-facing Keycloak URL, but the API
       # (inside the network) fetches JWKS via the internal service name.
       DW_API_AUTH_MODE: ${DW_API_AUTH_MODE:-oidc}
@@ -383,11 +300,15 @@ services:
       DW_API_OIDC_JWKS_URL: ${DW_API_OIDC_JWKS_URL:-http://keycloak:8080/realms/dw/protocol/openid-connect/certs}
       # RAG embeddings. Default `hash` (offline, no extra service). Set
       # `openai_compatible` to embed via the gateway (the `embedding` route of
-      # DW_API_MODEL_PROFILE), or `tei` + `--profile models` for self-hosted TEI.
+      # DW_API_MODEL_PROFILE).
       DW_API_EMBEDDING_PROVIDER: ${DW_API_EMBEDDING_PROVIDER:-hash}
-      DW_API_EMBED_URL: ${DW_API_EMBED_URL:-http://tei-embed:80}
-      DW_API_RERANK_URL: ${DW_API_RERANK_URL:-http://tei-rerank:80}
-      DW_API_EMBED_DIMENSION: ${DW_API_EMBED_DIMENSION:-1024}
+      # Reranking through a hosted API. Default `none` keeps the vector order;
+      # `cohere_compatible` needs the base URL and key, both from .env only.
+      DW_API_RERANK_PROVIDER: ${DW_API_RERANK_PROVIDER:-none}
+      DW_API_RERANK_BASE_URL: ${DW_API_RERANK_BASE_URL:-}
+      DW_API_RERANK_API_KEY: ${DW_API_RERANK_API_KEY:-}
+      DW_API_RERANK_MODEL: ${DW_API_RERANK_MODEL:-bge-reranker-v2-m3}
+      DW_API_RERANK_TIMEOUT_SECONDS: ${DW_API_RERANK_TIMEOUT_SECONDS:-10}
       DW_APPROVAL_REMINDER_SECONDS: ${DW_APPROVAL_REMINDER_SECONDS:-5}
       # Observability → Langfuse (OTLP). Empty = NullTelemetry (no export).
       LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-}
@@ -526,10 +447,15 @@ services:
       S3_ENDPOINT_URL: http://s3:8333
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
-      # Knowledge ingest consumer: embed with the same self-hosted BGE-M3 as the
-      # API so uploaded docs land in the same 1024-dim Qdrant collection.
+      # The one name s3-setup creates, the API writes and the worker offboards.
+      CASE_DOCUMENTS_BUCKET: ${CASE_DOCUMENTS_BUCKET:-case-documents}
+      # Knowledge ingest consumer: embed with the same provider as the API so
+      # uploaded docs land in the same Qdrant collection at the same width.
       DW_WORKER_EMBEDDING_PROVIDER: ${DW_API_EMBEDDING_PROVIDER:-hash}
       DW_WORKER_MODEL_PROFILE: ${DW_API_MODEL_PROFILE:-balanced}
+      # The model a chat command reads a message with: the API's provider.
+      DW_WORKER_MODEL_PROVIDER: ${DW_MODEL_PROVIDER:-mock}
+      DW_WORKER_OPENAI_STRUCTURED_MODE: ${DW_API_OPENAI_STRUCTURED_MODE:-json_schema}
       # Observability -> Langfuse (OTLP). Empty = no export.
       LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-}
       LANGFUSE_HOST: ${LANGFUSE_HOST:-}
@@ -538,17 +464,19 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
-      DW_WORKER_EMBED_URL: ${DW_API_EMBED_URL:-http://tei-embed:80}
-      DW_WORKER_EMBED_DIMENSION: ${DW_API_EMBED_DIMENSION:-1024}
       DW_PUBLIC_WEB_URL: ${DW_PUBLIC_WEB_URL:-http://localhost:3000}
       # Zalo self-link: the `zalo_link_poll` lane runs only with the token,
-      # the link secret (the api's value) and ZALO_UPDATES_MODE=poll.
+      # the link secret (the api's value) and ZALO_UPDATES_MODE=poll; the
+      # `zalo_webhook_drain` lane with the same two and =webhook. The webhook
+      # secret is the api's alone: nothing here reads it.
       ZALO_BOT_TOKEN: ${ZALO_BOT_TOKEN:-}
-      ZALO_WEBHOOK_SECRET: ${ZALO_WEBHOOK_SECRET:-}
       ZALO_LINK_SECRET: ${ZALO_LINK_SECRET:-}
+      DW_APPROVAL_CODE_SECRET: ${DW_APPROVAL_CODE_SECRET:-}
       ZALO_BOT_LINK: ${ZALO_BOT_LINK:-}
       ZALO_UPDATES_MODE: ${ZALO_UPDATES_MODE:-poll}
       DW_PRODUCT_NAME: ${DW_PRODUCT_NAME:-Digital Worker}
+      # The `channel_delivery` lane: notifications to linked Zalo chats.
+      DW_WORKER_CHANNEL_DELIVERY_INTERVAL_SECONDS: ${DW_WORKER_CHANNEL_DELIVERY_INTERVAL_SECONDS:-30}
     networks: [dw-internal, dw-edge]
     depends_on:
       migrate:
@@ -573,13 +501,10 @@ services:
         NEXT_PUBLIC_KEYCLOAK_URL: ${NEXT_PUBLIC_KEYCLOAK_URL:-http://localhost:8686}
         NEXT_PUBLIC_KEYCLOAK_REALM: ${NEXT_PUBLIC_KEYCLOAK_REALM:-dw}
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${NEXT_PUBLIC_KEYCLOAK_CLIENT_ID:-dw-web}
-        NEXT_PUBLIC_CHAT_BASE_URL: ${NEXT_PUBLIC_CHAT_BASE_URL:-http://localhost:8100}
     image: dw-web:local
     profiles: ["full"]
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
-      NEXT_PUBLIC_CHAT_BASE_URL: ${NEXT_PUBLIC_CHAT_BASE_URL:-http://localhost:8100}
-      API_INTERNAL_BASE_URL: http://api:8000
     ports:
       # Overridable for the same reason as postgres: a `next dev` from `make dev`
       # (or a second checkout, or another session running e2e) already owns 3000,

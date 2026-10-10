@@ -1,158 +1,108 @@
 "use client";
 
-import { Check, ShieldCheck } from "lucide-react";
-import {
-  Badge,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@dw/ui";
-import { PageHeading } from "../../components/page-heading";
+import { useEffect, useState } from "react";
+import { Card, Flex, Tag, Typography } from "antd";
+import { CheckCircleFilled, SafetyOutlined } from "@ant-design/icons";
+import type { AdminRole } from "@dw/contracts";
+import { PageHeader, RegionState } from "@dw/ui";
+import { LoadError } from "../../components/load-error";
 import { MembersManager } from "../../components/admin/members-manager";
 import { useAuth } from "../../lib/auth/auth-context";
+import { roleLabel } from "../../lib/nav/roles";
+import { apiClient } from "../../lib/session";
 
 /**
- * Access reference page. Identity is managed by Keycloak; business permissions
- * (roles → scopes) live in the platform database. New accounts join the demo
- * workspace as `member`; an admin adjusts roles from here in a later milestone.
+ * Who holds which role in this workspace, and what each role grants. The role
+ * catalog is read from the API (`platform.roles` owns it); this page restates
+ * none of it, only how a role key reads to a person (`lib/nav/roles.ts`).
  */
-
-const ROLE_CATALOG: {
-  key: string;
-  label: string;
-  summary: string;
-  scopes: string[];
-}[] = [
-  {
-    key: "member",
-    label: "Staff",
-    summary:
-      "Creates and tracks business records. Cannot make approval decisions.",
-    scopes: ["approvals.read", "knowledge.read", "memory.read"],
-  },
-  {
-    key: "approver",
-    label: "Manager",
-    summary:
-      "Everything staff can do, plus approval decisions. No admin rights.",
-    scopes: [
-      "approvals.read",
-      "approvals.decide",
-      "knowledge.read",
-      "knowledge.write",
-      "memory.read",
-    ],
-  },
-  {
-    key: "platform_admin",
-    label: "Tenant admin",
-    summary: "Manages members, roles and every function in the workspace.",
-    scopes: ["platform.admin", "(bypasses every scope)"],
-  },
-];
-
-const SCOPE_LABELS: Record<string, string> = {
-  "approvals.read": "View approval requests",
-  "approvals.decide": "Decide approvals",
-  "knowledge.read": "View the document library",
-  "memory.read": "View processing history",
-  "platform.admin": "Administer the whole platform",
-  "(bypasses every scope)": "Full access",
-};
-
-function scopeLabel(scope: string) {
-  return SCOPE_LABELS[scope] ?? scope;
-}
-
-function roleLabel(role: string) {
-  return ROLE_CATALOG.find((item) => item.key === role)?.label ?? role;
-}
-
 export default function AdminPage() {
   const { displayName, active, roles, scopes, hasScope } = useAuth();
   const canManageMembers = hasScope("platform.members.write");
+  const canReadCatalog = hasScope("platform.roles.read");
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <PageHeading
-        icon={ShieldCheck}
-        title="Roles & permissions"
-        description="Access is granted by each member's role in the workspace."
+    <div className="mx-auto max-w-4xl">
+      <PageHeader
+        icon={<SafetyOutlined />}
+        title="Vai trò và quyền"
+        subtitle="Quyền trong workspace được cấp theo vai của từng thành viên."
       />
+      <Flex vertical gap="middle">
+        {canManageMembers && <MembersManager />}
 
-      {canManageMembers && <MembersManager />}
+        <Card
+          title="Quyền của bạn"
+          extra={
+            <Typography.Text type="secondary">
+              {displayName}
+              {active ? ` · ${active.workspaceName}` : ""}
+            </Typography.Text>
+          }
+        >
+          <Flex vertical gap="small">
+            <Flex wrap gap={6} align="center">
+              <Typography.Text type="secondary">Vai:</Typography.Text>
+              {roles.length > 0
+                ? roles.map((r) => <Tag key={r}>{roleLabel(r)}</Tag>)
+                : "—"}
+            </Flex>
+            <Flex wrap gap={6} align="center">
+              <Typography.Text type="secondary">
+                Quyền được cấp:
+              </Typography.Text>
+              {scopes.length > 0
+                ? scopes.map((s) => (
+                    <Tag key={s} className="font-mono">
+                      {s}
+                    </Tag>
+                  ))
+                : "—"}
+            </Flex>
+          </Flex>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="size-4 text-success" /> Your access
-          </CardTitle>
-          <CardDescription>
-            {displayName}
-            {active ? ` · ${active.workspaceName}` : ""}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-muted-foreground">Roles:</span>
-            {roles.length > 0 ? (
-              roles.map((r) => (
-                <Badge key={r} variant="secondary">
-                  {roleLabel(r)}
-                </Badge>
-              ))
-            ) : (
-              <span className="text-muted-foreground">—</span>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-muted-foreground">Granted scopes:</span>
-            {scopes.length > 0 ? (
-              scopes.map((s) => (
-                <span key={s} className="rounded bg-muted px-2 py-1 text-xs">
-                  {scopeLabel(s)}
-                </span>
-              ))
-            ) : (
-              <span className="text-muted-foreground">Full admin access</span>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+        {canReadCatalog && <RoleCatalog mine={roles} />}
+      </Flex>
+    </div>
+  );
+}
 
-      <div className="grid gap-4 md:grid-cols-3">
-        {ROLE_CATALOG.map((role) => {
-          const mine = roles.includes(role.key);
-          return (
-            <Card key={role.key} className={mine ? "border-primary" : ""}>
-              <CardHeader>
-                <CardTitle className="flex items-start justify-between gap-3 text-sm">
-                  {role.label}
-                  {mine && <Check className="size-4 text-primary" />}
-                </CardTitle>
-                <CardDescription>{role.summary}</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-1">
-                {role.scopes.map((s) => (
-                  <span
-                    key={s}
-                    className="rounded bg-muted px-2 py-1 text-[11px]"
-                  >
-                    {scopeLabel(s)}
-                  </span>
-                ))}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+function RoleCatalog({ mine }: { mine: string[] }) {
+  const [catalog, setCatalog] = useState<AdminRole[] | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
-      <p className="text-xs text-muted-foreground">
-        Newly registered accounts automatically join the demo workspace as{" "}
-        <strong>Staff</strong>. An administrator changes roles as needed.
-      </p>
+  useEffect(() => {
+    apiClient()
+      .listAdminRoles()
+      .then(setCatalog)
+      .catch((e: unknown) => setError(e));
+  }, []);
+
+  if (error != null) return <LoadError error={error} />;
+  if (catalog === null) return <RegionState kind="loading" compact />;
+  return (
+    <div className="grid gap-4 md:grid-cols-3">
+      {catalog.map((role) => (
+        <Card
+          key={role.key}
+          size="small"
+          title={roleLabel(role.key, role.name)}
+          extra={
+            mine.includes(role.key) ? (
+              <CheckCircleFilled aria-label="Vai của bạn" />
+            ) : null
+          }
+        >
+          <Flex wrap gap={4}>
+            {role.scopes.map((s) => (
+              <Tag key={s} className="font-mono">
+                {s}
+              </Tag>
+            ))}
+          </Flex>
+        </Card>
+      ))}
     </div>
   );
 }

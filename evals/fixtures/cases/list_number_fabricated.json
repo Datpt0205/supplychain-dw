@@ -1,0 +1,29 @@
+{
+  "text": "DANH SÁCH SẢN PHẨM ĐỀ XUẤT THÁNG 10/2026\nSTT | Mã đề xuất | Tên sản phẩm | NCC | Ảnh | Ghi chú\n1 | DX-2026-050 | Nồi inox 3 đáy 24cm | Công ty Minh Phát | noi24.jpg | Gấp, khách đặt trước\n2 | DX-2026-051 | Chảo chống dính 28cm | Công ty Hòa Bình | chao28.jpg |\n",
+  "model_reading": {
+    "rows": [
+      {
+        "product_name": {
+          "value": "Nồi inox 3 đáy 24cm",
+          "quote": "Nồi inox 3 đáy 24cm"
+        },
+        "category": {
+          "value": "noi",
+          "reason": "Theo loại sản phẩm"
+        },
+        "proposal_code": {
+          "value": "DX-2026-050",
+          "quote": "DX-2026-050"
+        },
+        "item_code": {
+          "value": "SKU-77701",
+          "quote": "SKU-77701"
+        },
+        "priority": {
+          "value": "high",
+          "reason": "Bán chạy 40% năm ngoái"
+        }
+      }
+    ]
+  }
+}

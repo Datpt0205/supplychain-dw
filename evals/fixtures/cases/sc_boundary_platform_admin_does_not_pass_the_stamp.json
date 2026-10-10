@@ -1,0 +1,32 @@
+{
+  "caller": {
+    "tenant": "A",
+    "workspace": "W1",
+    "scopes": [
+      "supply_chain.product_case.read",
+      "supply_chain.duty.rnd"
+    ]
+  },
+  "deciders": {
+    "platform_admin": {
+      "tenant": "A",
+      "workspace": "W1",
+      "person": "admin",
+      "roles": [
+        "platform_admin"
+      ],
+      "scopes": [
+        "approvals.decide"
+      ]
+    },
+    "bod": {
+      "tenant": "A",
+      "workspace": "W1",
+      "person": "bod",
+      "scopes": [
+        "approvals.decide",
+        "supply_chain.approve.bod"
+      ]
+    }
+  }
+}

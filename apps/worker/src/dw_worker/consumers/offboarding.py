@@ -4,8 +4,9 @@ The Postgres half (`SqlTenantOffboarding` in `dw_platform`) is catalog-driven
 and knows nothing about Qdrant or object storage — both live behind ports
 `dw_platform` may not import (import-linter's "Vector/object-storage SDKs
 only inside knowledge adapters"). This is the composition root, so it is the
-one place allowed to hold both halves at once: the generic Postgres rows and
-the two storage buckets and the vector index, orchestrated into one pass.
+one place allowed to hold both halves at once: the generic Postgres rows, the
+storage buckets and the two vector collections (knowledge chunks and the memory
+ranker's points), orchestrated into one pass.
 
 Every step here is safe to re-run from the top: `export_rows` only reads,
 uploading overwrites the same key, `purge_rows`/`delete_object`/
@@ -30,6 +31,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from dw_kernel.ports import UtcClock
+from dw_supply_chain.domain.case_document import ObjectKey
 
 logger = logging.getLogger("dw_worker.offboarding")
 
@@ -77,15 +79,15 @@ class OffboardingStorePort(Protocol):
 
 class BucketPort(Protocol):
     """Structurally `dw_knowledge.ports.ObjectStoragePort` - one instance per
-    bucket this lane touches (knowledge artifacts, feedback attachments, the
-    export destination). All three are plain MinIO buckets holding blobs
-    keyed by path, so one adapter shape covers all three; `dw_api`'s
+    bucket this lane touches (knowledge artifacts, feedback attachments, case
+    documents, the export destination). All four are plain MinIO buckets
+    holding blobs keyed by path, so one adapter shape covers them all; `dw_api`'s
     `MinioAttachmentStorage` also exists and does the same thing under
     different method names (`get`/`put`/`delete`, no `list` until this
     feature added one) for its one bucket — reusing it here would make
     `dw_worker` depend on `dw_api`, which this composition root does not do
     for anything else. `dw_knowledge`'s adapter, pointed at each bucket in
-    turn, is the one this lane uses for all three.
+    turn, is the one this lane uses for all four.
     """
 
     async def put_object(self, key: str, data: bytes, content_type: str) -> str: ...
@@ -98,7 +100,8 @@ class BucketPort(Protocol):
 
 
 class VectorPurgePort(Protocol):
-    """Structurally `dw_knowledge.ports.VectorIndexPort.delete_by_tenant`."""
+    """Structurally `dw_knowledge.ports.VectorIndexPort.delete_by_tenant`, and
+    `dw_memory.ranking.MemoryVectorPurgePort.delete_by_tenant`."""
 
     async def delete_by_tenant(self, tenant_id: UUID) -> None: ...
 
@@ -129,24 +132,35 @@ class TenantOffboardingLane:
     artifacts: BucketPort
     exports: BucketPort
     attachments: BucketPort
+    # Supply Chain's case documents, in their own bucket (ADR 0021).
+    case_documents: BucketPort
     vector_index: VectorPurgePort
+    # The memory ranker's collection. The SQL purge deletes `memory.items`, and
+    # each row's point is an embedding of its content; leaving them would keep
+    # the departed tenant's text in the one store this pass never named. No
+    # default: `None` is the composition root saying there is no vector store.
+    memory_vectors: VectorPurgePort | None
     clock: UtcClock
 
     async def run(self, tenant_id: UUID) -> None:
         rows = await self.store.export_rows(tenant_id)
-        # Two different key shapes, both tenant-prefixed but not the same way:
+        # Three key shapes, all tenant-prefixed but not the same way:
         # knowledge artifacts key as `{tenant_id}/{workspace_id}/...`
         # (dw_knowledge's KnowledgeGateway), feedback attachments as
         # `feedback/{tenant_id}/{workspace_id}/...`
-        # (dw_platform.application.feedback_dto.attachment_key) - checked
-        # against both call sites rather than assumed, since one wrong prefix
-        # here means silently exporting and purging nothing for that bucket.
+        # (dw_platform.application.feedback_dto.attachment_key), case documents
+        # as `supply_chain/{tenant_id}/{workspace_id}/...` (named by their one
+        # owner, `ObjectKey`) - checked against each call site rather than
+        # assumed, since one wrong prefix here means silently exporting and
+        # purging nothing for that bucket.
         artifact_keys = await self.artifacts.list_objects(f"{tenant_id}/")
         artifact_blobs = {key: await self.artifacts.get_object(key) for key in artifact_keys}
         attachment_keys = await self.attachments.list_objects(f"feedback/{tenant_id}/")
         attachment_blobs = {key: await self.attachments.get_object(key) for key in attachment_keys}
+        document_keys = await self.case_documents.list_objects(ObjectKey.tenant_prefix(tenant_id))
+        document_blobs = {key: await self.case_documents.get_object(key) for key in document_keys}
 
-        bundle = _build_bundle(rows, artifact_blobs, attachment_blobs)
+        bundle = _build_bundle(rows, artifact_blobs, attachment_blobs, document_blobs)
         stamp = self.clock.now().strftime("%Y%m%dT%H%M%SZ")
         export_key = f"{tenant_id}/offboarding-{stamp}.zip"
         await self.exports.put_object(export_key, bundle, "application/zip")
@@ -158,7 +172,11 @@ class TenantOffboardingLane:
             await self.artifacts.delete_object(key)
         for key in attachment_keys:
             await self.attachments.delete_object(key)
+        for key in document_keys:
+            await self.case_documents.delete_object(key)
         await self.vector_index.delete_by_tenant(tenant_id)
+        if self.memory_vectors is not None:
+            await self.memory_vectors.delete_by_tenant(tenant_id)
 
         await self.store.mark_status(tenant_id, "completed", export_key=export_key)
 
@@ -167,6 +185,7 @@ def _build_bundle(
     rows: Sequence[_ExportedTable],
     artifact_blobs: dict[str, bytes],
     attachment_blobs: dict[str, bytes],
+    document_blobs: dict[str, bytes],
 ) -> bytes:
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -180,6 +199,8 @@ def _build_bundle(
             zf.writestr(f"blobs/artifacts/{key}", data)
         for key, data in attachment_blobs.items():
             zf.writestr(f"blobs/attachments/{key}", data)
+        for key, data in document_blobs.items():
+            zf.writestr(f"blobs/case_documents/{key}", data)
     return buf.getvalue()
 
 

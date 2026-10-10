@@ -1,0 +1,11 @@
+{
+  "outcome": "proposed",
+  "model_calls": 0,
+  "draft_fields": {
+    "item_code": "EL-00001",
+    "skus": []
+  },
+  "findings": [
+    "bm04_variants_missing"
+  ]
+}

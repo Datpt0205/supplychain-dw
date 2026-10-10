@@ -18,7 +18,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import UTC, timedelta
+from datetime import UTC
 from typing import Any, cast
 
 from langgraph.store.base import BaseStore
@@ -32,6 +32,7 @@ from dw_agent_runtime.adapters.run_store import (
     SqlWorkerRunStore,
 )
 from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardStore
+from dw_agent_runtime.allowance import DailyAllowance
 from dw_agent_runtime.autonomy import AutonomyApprovalPolicy, lower_autonomy
 from dw_agent_runtime.context import access_context_from_run
 from dw_agent_runtime.contracts import RunContext, WorkerDefinition
@@ -42,7 +43,6 @@ from dw_kernel.errors import (
     ConflictError,
     InfrastructureError,
     NotFoundError,
-    QuotaExceededError,
 )
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.ports import IdGenerator, UtcClock
@@ -214,8 +214,13 @@ class LangGraphWorkflowRunner:
         if self.usage_meter is None:
             yield None
             return
+        prompt_id, prompt_version = _loop_prompt(worker)
         async with self.usage_meter.track(
-            run_context, profile_id=worker.default_model_profile, task="agent_loop"
+            run_context,
+            profile_id=worker.default_model_profile,
+            task="agent_loop",
+            prompt_id=prompt_id,
+            prompt_version=prompt_version,
         ) as callbacks:
             yield list(callbacks)
 
@@ -238,80 +243,25 @@ class LangGraphWorkflowRunner:
             }
         )
 
-    async def _require_run_allowance(self, run_context: RunContext) -> None:
-        """Refuse a run the tenant's plan has no allowance left for today.
+    async def _require_allowance(self, run_context: RunContext) -> None:
+        """Refuse a run the tenant's plan has no runs or spend left for today.
 
         Here rather than at the API, because the API is not the only door: a
-        worker reacting to an inbound event starts runs nobody clicked, and a
-        quota enforced on one door only is a quota a connector can walk around.
-        This is the single place a run begins.
+        worker reacting to an inbound event starts runs nobody clicked. The
+        check itself is `DailyAllowance`, the same object a single model call
+        outside a run is checked with (`SingleCallModelGateway`), so the two
+        doors answer the plan's limits one way.
 
-        The plan comes from `run_context`, which carries what the requester was
-        entitled to when the turn started — the same stamp a resume replays. A
-        resume does not pass through here at all: the run was already counted
+        A resume does not pass through here at all: the run was already counted
         when it started, and charging it again would let an approval a manager
         signs on Tuesday be refused by Tuesday's quota.
-
-        Not transactional, and deliberately so: counting is a read, and holding
-        a lock across the whole start path to make the count exact would
-        serialise every run a tenant makes. The slack is bounded by how many
-        runs one tenant starts in the same instant, which is the difference
-        between 200 and 203 a day, not between 200 and unlimited.
         """
-        day_start = (
-            self.clock.now().astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-        )
-        limit = self.allowance.runs_per_day(run_context.plan_id)
-        if limit is None:
-            return
-        used = await self.run_store.started_since(run_context.tenant_id, day_start)
-        if used < limit:
-            return
-        raise QuotaExceededError(
-            "hôm nay đã dùng hết số lượt chạy của gói; thử lại sau 00:00 UTC"
-            " hoặc nâng gói để có thêm lượt",
-            details={
-                "quota": "runs_per_day",
-                "limit": str(limit),
-                "used": str(used),
-                "plan_id": run_context.plan_id,
-                "resets_at": (day_start + timedelta(days=1)).isoformat(),
-            },
-        )
-
-    async def _require_spend_allowance(self, run_context: RunContext) -> None:
-        """Refuse a run once the tenant has spent its plan's daily ceiling.
-
-        Same shape and same slack as `_require_run_allowance`: not
-        transactional, so a burst of runs starting in the same instant can
-        overshoot by whatever they spend before the next one checks — bounded
-        by how much one tenant spends in an instant, not by the ceiling being
-        meaningless.
-
-        `spend_store` is `None` for any wiring that predates this guard, and
-        every plan ships `spend_usd_per_day=None` today (no dollar thresholds
-        decided yet) — both mean this returns immediately, same as before this
-        existed. Recording still runs either way; only the gate is off.
-        """
-        if self.spend_store is None:
-            return
-        limit = self.allowance.spend_usd_per_day(run_context.plan_id)
-        if limit is None:
-            return
-        today = self.clock.now().astimezone(UTC).date()
-        spent = await self.spend_store.spend_today(run_context.tenant_id, today)
-        if spent < limit:
-            return
-        raise QuotaExceededError(
-            "hôm nay đã dùng hết trần chi tiêu của gói; thử lại sau 00:00 UTC"
-            " hoặc nâng gói để có thêm trần",
-            details={
-                "quota": "spend_usd_per_day",
-                "limit": str(limit),
-                "used": str(spent),
-                "plan_id": run_context.plan_id,
-            },
-        )
+        await DailyAllowance(
+            allowance=self.allowance,
+            runs=self.run_store,
+            spend=self.spend_store,
+            clock=self.clock,
+        ).require(run_context)
 
     async def start(
         self,
@@ -321,8 +271,7 @@ class LangGraphWorkflowRunner:
     ) -> uuid.UUID:
         worker = self.worker_registry.resolve(run_context.worker_id, run_context.worker_version)
         run_context = self._with_autonomy(run_context, worker.definition)
-        await self._require_run_allowance(run_context)
-        await self._require_spend_allowance(run_context)
+        await self._require_allowance(run_context)
         graph = self._graph(worker.definition.worker_id, worker.definition.graph_version)
 
         await self.run_store.create(
@@ -377,8 +326,7 @@ class LangGraphWorkflowRunner:
         """
         worker = self.worker_registry.resolve(run_context.worker_id, run_context.worker_version)
         run_context = self._with_autonomy(run_context, worker.definition)
-        await self._require_run_allowance(run_context)
-        await self._require_spend_allowance(run_context)
+        await self._require_allowance(run_context)
         graph = self._graph(worker.definition.worker_id, worker.definition.graph_version)
 
         await self.run_store.create(
@@ -661,7 +609,25 @@ class LangGraphWorkflowRunner:
             payload = first.value if hasattr(first, "value") else first
             if not isinstance(payload, dict):
                 payload = {"value": _jsonable(payload)}
-            approval_id = await self._create_approval(run_context, run_id, payload)
+            try:
+                approval_id = await self._create_approval(run_context, run_id, payload)
+            except Exception:
+                # The pause could not be recorded (a malformed `required_scope`
+                # refused by its CHECK, ADR 0004). `start` and `resume` call this
+                # outside their own failure handling, so without this the row
+                # stayed `running` over a checkpoint no request points at. Ended
+                # as failed, visibly, like the double pause above. The driver's
+                # text (SQL, constraint name) stays in the server log: the run's
+                # `error` is returned as is by `GET /runs/{id}`.
+                logger.exception(
+                    "could not record an approval request", extra={"run_id": str(run_id)}
+                )
+                await self._fail(
+                    run_context,
+                    run_id,
+                    InfrastructureError("the approval request could not be recorded"),
+                )
+                return
             await self.run_store.set_status(
                 run_context,
                 run_id,
@@ -698,6 +664,18 @@ class LangGraphWorkflowRunner:
     async def _create_approval(
         self, run_context: RunContext, run_id: uuid.UUID, payload: dict[str, Any]
     ) -> uuid.UUID:
+        """Raise the approval request a paused run waits on.
+
+        `payload` is the interrupt value a graph node wrote, from code and the
+        tenant's policy, never from model output: a tool call's own arguments
+        travel nested under `payload["payload"]` (`_ask_human`), so no model can
+        set a top-level key such as `required_scope`.
+
+        `required_scope` (ADR 0004) is passed through exactly as the node wrote
+        it, neither coerced nor dropped: its shape has one owner, the CHECK on
+        the column, and a malformed or non-string value fails this INSERT so the
+        run ends failed instead of raising a request nobody could rightly decide.
+        """
         approval = ApprovalRequest(
             id=self.id_generator.new_uuid(),
             tenant_id=TenantId(run_context.tenant_id),
@@ -707,6 +685,7 @@ class LangGraphWorkflowRunner:
             reason=str(payload.get("reason", "workflow requested human review")),
             payload=_jsonable(payload),
             run_id=run_id,
+            required_scope=payload.get("required_scope"),
         )
         context = access_context_from_run(run_context)
         async with self.uow_factory(context) as uow:
@@ -743,3 +722,17 @@ class LangGraphWorkflowRunner:
             raise InfrastructureError(
                 "failed to write audit event", details={"action": action}
             ) from exc
+
+
+def _loop_prompt(worker: WorkerDefinition) -> tuple[str, str]:
+    """The versioned artifact a run's unclaimed model spend is billed under.
+
+    An agent loop: the prompt its worker pins, which is the one
+    `WorkerSystemPrompt` renders. A plain graph has no loop prompt - its nodes
+    bill their own prompts through inner trackers - so what is left over was
+    produced by the graph, and is named by the graph's version rather than by a
+    version that names nothing.
+    """
+    if worker.agent_prompt_id is not None and worker.agent_prompt_version is not None:
+        return worker.agent_prompt_id, worker.agent_prompt_version
+    return f"graph:{worker.worker_id}", worker.graph_version

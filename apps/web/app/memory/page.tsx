@@ -1,24 +1,24 @@
 "use client";
 
 import { useCallback } from "react";
-import { BrainCircuit } from "lucide-react";
-import { Badge, Card, Skeleton } from "@dw/ui";
-import { EmptyState } from "../../components/empty-state";
+import { Card, Flex, Tag, Typography } from "antd";
+import { BulbOutlined } from "@ant-design/icons";
+import { PageHeader, RegionState } from "@dw/ui";
+import { LoadError } from "../../components/load-error";
 import { LoadMore } from "../../components/load-more";
-import { PageHeading } from "../../components/page-heading";
 import { apiClient } from "../../lib/session";
 import { useCachedPages } from "../../lib/use-cached-pages";
 
 const TYPE_LABELS: Record<string, string> = {
-  episodic: "Episode",
-  semantic: "Knowledge",
-  procedural: "Procedure",
-  preference: "Preference",
-  commitment: "Commitment",
+  episodic: "Sự việc",
+  semantic: "Kiến thức",
+  procedural: "Quy trình",
+  preference: "Ưu tiên",
+  commitment: "Cam kết",
 };
 
 export default function MemoryPage() {
-  const { items, loading, loadingMore, error, hasMore, loadMore } =
+  const { items, loading, loadingMore, error, hasMore, loadMore, reload } =
     useCachedPages(
       "memory:items",
       useCallback(
@@ -28,54 +28,52 @@ export default function MemoryPage() {
     );
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <PageHeading
-        icon={BrainCircuit}
-        title="Long-term memory"
-        description="Only information with clear evidence that meets policy is stored long-term."
+    <div className="mx-auto max-w-5xl">
+      <PageHeader
+        icon={<BulbOutlined />}
+        title="Bộ nhớ dài hạn"
+        subtitle="Chỉ thông tin có bằng chứng rõ và đạt chính sách mới được nhớ lâu dài."
       />
-      {error != null && (
-        <p className="text-sm text-red-600">
-          {error instanceof Error ? error.message : "unknown error"}
-        </p>
-      )}
-      {loading && error == null && <Skeleton className="h-56 rounded-2xl" />}
-      {!loading && items.length === 0 && (
-        <EmptyState
-          icon={BrainCircuit}
-          title="No long-term memories yet"
-          description="Evidence-backed items appear once the system completes a qualifying run."
-        />
-      )}
-      <div className="space-y-2">
+      <Flex vertical gap="small">
+        {error != null && <LoadError error={error} onRetry={reload} />}
+        {loading && error == null && <RegionState kind="loading" />}
+        {!loading && error == null && items.length === 0 && (
+          <RegionState
+            kind="empty"
+            title="Chưa có ký ức dài hạn nào"
+            description="Mục có bằng chứng hiện ở đây sau khi hệ thống xong một lượt chạy đủ điều kiện."
+          />
+        )}
         {items.map((item) => (
-          <Card key={item.memory_id} className="p-4 text-sm">
-            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <Badge variant="secondary">
-                {TYPE_LABELS[item.memory_type] ?? item.memory_type}
-              </Badge>
-              <span className="text-xs text-slate-500">
-                confidence {(item.confidence * 100).toFixed(0)}% ·{" "}
-                {item.provenance_count} sources
-              </span>
-            </div>
-            <p className="mt-2">{item.content}</p>
-            <p className="mt-1 text-xs text-slate-400">
-              Run id: {item.created_by_run_id}
-            </p>
+          <Card key={item.memory_id} size="small">
+            <Flex vertical gap={6}>
+              <Flex wrap justify="space-between" align="center" gap="small">
+                <Tag>{TYPE_LABELS[item.memory_type] ?? "Khác"}</Tag>
+                <Typography.Text type="secondary" className="text-xs">
+                  độ tin cậy {(item.confidence * 100).toFixed(0)}% ·{" "}
+                  {item.provenance_count} nguồn
+                </Typography.Text>
+              </Flex>
+              <Typography.Text>{item.content}</Typography.Text>
+              <Typography.Text type="secondary" className="text-xs">
+                Lượt chạy:{" "}
+                <Typography.Text code className="break-all text-xs">
+                  {item.created_by_run_id}
+                </Typography.Text>
+              </Typography.Text>
+            </Flex>
           </Card>
         ))}
-      </div>
-
-      {!loading && items.length > 0 && (
-        <LoadMore
-          hasMore={hasMore}
-          loading={loadingMore}
-          onLoadMore={loadMore}
-          shown={items.length}
-          noun="memories"
-        />
-      )}
+        {!loading && items.length > 0 && (
+          <LoadMore
+            hasMore={hasMore}
+            loading={loadingMore}
+            onLoadMore={loadMore}
+            shown={items.length}
+            noun="ký ức"
+          />
+        )}
+      </Flex>
     </div>
   );
 }

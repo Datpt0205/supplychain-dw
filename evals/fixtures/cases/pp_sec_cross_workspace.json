@@ -1,0 +1,18 @@
+{
+  "values_elsewhere": {
+    "base_thickness": "3.2",
+    "wall_thickness": "0.6",
+    "induction": "pass",
+    "appearance": "pass"
+  },
+  "model_writing": {
+    "notes": [
+      {
+        "text": "Độ dày đáy đo được 2.5 mm, thấp hơn chuẩn 3 mm.",
+        "cites": [
+          "criterion:base_thickness"
+        ]
+      }
+    ]
+  }
+}

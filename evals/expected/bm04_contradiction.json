@@ -1,0 +1,17 @@
+{
+  "outcome": "proposed",
+  "draft_fields": {
+    "moq": null,
+    "unit_price": null,
+    "currency": "USD"
+  },
+  "findings": [
+    "bm04_conflict"
+  ],
+  "findings_must_not_contain": [
+    "2,70",
+    "2.70",
+    "2,50",
+    "2.50"
+  ]
+}

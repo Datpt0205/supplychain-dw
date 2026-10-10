@@ -1,0 +1,15 @@
+{
+  "step": "item_coding",
+  "profile": {
+    "unit_price": "2.50",
+    "currency": "USD",
+    "moq": 500,
+    "lead_time_days": 45,
+    "attributes": {
+      "product_name": "Nồi inox 3 đáy 24cm",
+      "material": "Inox 304",
+      "dimensions": "24 x 12 cm",
+      "variants": "Đỏ 24cm\nSize: 24cm\nXanh: 1.200 cái"
+    }
+  }
+}

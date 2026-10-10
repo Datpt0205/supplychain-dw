@@ -5,7 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
+from pydantic import (
+    AliasChoices,
+    Field,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from dw_knowledge.contracts import DEFAULT_COLLECTION
@@ -48,6 +55,18 @@ class WorkerSettings(BaseSettings):
     # How often Supply Chain's follow-up sweep runs. Five minutes by default;
     # a tester sets 60 to see a reminder land within the minute.
     supply_chain_follow_up_interval_seconds: float = Field(default=300.0, ge=10, le=86400)
+    # How often the BGĐ review reconcile looks for product cases waiting with
+    # no review. Five minutes: a review a start missed waits at most that long.
+    supply_chain_product_review_reconcile_interval_seconds: float = Field(
+        default=300.0, ge=10, le=86400
+    )
+    # How often Supply Chain's extraction lane reads newly uploaded documents
+    # (ticket ai-automation/02). A minute: a supplier's file is read within it.
+    supply_chain_document_extraction_interval_seconds: float = Field(default=60.0, ge=10, le=86400)
+    # How often the `channel_delivery` lane looks for notifications to send
+    # through a linked chat (channels Z2). Thirty seconds: a Zalo
+    # message trails its in-app notification by at most that.
+    channel_delivery_interval_seconds: float = Field(default=30.0, ge=5, le=3600)
 
     # Prometheus scrape target for this process (Ops hardening Phase 5). 9464
     # is the OTel/Prometheus exporter's own convention default; dw-api has no
@@ -98,6 +117,25 @@ class WorkerSettings(BaseSettings):
     feedback_bucket: str = Field(
         default="feedback", validation_alias=AliasChoices("DW_WORKER_FEEDBACK_BUCKET")
     )
+    # Same bucket dw_api writes case documents to (dw_api/settings.py's
+    # `case_documents_bucket`, ADR 0021): offboarding exports and deletes a
+    # tenant's documents there, and the orphan sweep clears keys no row holds.
+    case_documents_bucket: str = Field(
+        default="case-documents",
+        validation_alias=AliasChoices("DW_WORKER_CASE_DOCUMENTS_BUCKET", "CASE_DOCUMENTS_BUCKET"),
+    )
+
+    # OCR of images and scanned PDFs in the extraction lane (supply-chain
+    # ticket ai-automation/21): Docling with EasyOCR, from the `parsers` extra.
+    # Where the weights are baked (the worker image sets it); unset, the engines
+    # download them on first use, which only a local or test profile may do.
+    ocr_artifacts_path: Path | None = None
+    # The lane reads one document at a time: a document over this many pages
+    # is refused before any page is read, and one that runs past the timeout is
+    # refused (unreadable, a person reads it). Measured 37-50 s a page on a
+    # 4-core CPU, so five pages fit five minutes.
+    ocr_max_pages: int = Field(default=5, ge=1, le=50)
+    ocr_timeout_seconds: float = Field(default=300.0, ge=10, le=3600)
 
     # Which Qdrant collection this process reads and writes. Named explicitly
     # because the collection's vector width is fixed at creation: moving to a
@@ -108,8 +146,9 @@ class WorkerSettings(BaseSettings):
         validation_alias=AliasChoices("DW_WORKER_QDRANT_COLLECTION", "QDRANT_COLLECTION"),
     )
 
-    # "hash" (offline default) | "tei" (self-hosted) | "openai_compatible"
-    # (the configured gateway; model and width come from the profile below).
+    # "hash" (offline default) | "openai_compatible" (the configured gateway;
+    # model and width come from the profile below). Anything else is refused
+    # at startup rather than quietly read as "hash".
     embedding_provider: str = Field(
         default="hash", validation_alias=AliasChoices("DW_WORKER_EMBEDDING_PROVIDER")
     )
@@ -144,6 +183,35 @@ class WorkerSettings(BaseSettings):
     openai_api_key: str = Field(
         default="", validation_alias=AliasChoices("DW_WORKER_OPENAI_API_KEY", "OPENAI_API_KEY")
     )
+    # The structured-output model a chat command reads a message with (Zalo
+    # proposal, zalo-channel ticket 04). Same names and defaults the API reads,
+    # mapped onto the one builder both processes use
+    # (`dw_agent_runtime.adapters.model_stack`). "mock" is refused in a
+    # deployed profile there and in `validate_for_profile`.
+    model_provider: str = Field(
+        default="mock",
+        validation_alias=AliasChoices(
+            "DW_WORKER_MODEL_PROVIDER", "DW_API_MODEL_PROVIDER", "DW_MODEL_PROVIDER"
+        ),
+    )
+    openai_structured_mode: str = Field(
+        default="json_schema",
+        validation_alias=AliasChoices(
+            "DW_WORKER_OPENAI_STRUCTURED_MODE", "DW_API_OPENAI_STRUCTURED_MODE"
+        ),
+    )
+    openai_strict_schema: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "DW_WORKER_OPENAI_STRICT_SCHEMA", "DW_API_OPENAI_STRICT_SCHEMA"
+        ),
+    )
+    outbound_allowed_hosts: list[str] = Field(
+        default=[],
+        validation_alias=AliasChoices(
+            "DW_WORKER_OUTBOUND_ALLOWED_HOSTS", "DW_API_OUTBOUND_ALLOWED_HOSTS"
+        ),
+    )
     # Reads uploaded documents and images. Verified per modality, not chosen by
     # tier: gpt-4.1-mini reads a PDF correctly through this gateway but does NOT
     # receive images - asked the colour of a solid blue square it answered
@@ -155,15 +223,6 @@ class WorkerSettings(BaseSettings):
     )
     deepgram_api_key: str = Field(
         default="", validation_alias=AliasChoices("DW_WORKER_DEEPGRAM_API_KEY", "DEEPGRAM_API_KEY")
-    )
-    embed_url: str | None = Field(
-        default=None, validation_alias=AliasChoices("DW_WORKER_EMBED_URL", "TEI_EMBED_URL")
-    )
-    rerank_url: str | None = Field(
-        default=None, validation_alias=AliasChoices("DW_WORKER_RERANK_URL", "TEI_RERANK_URL")
-    )
-    embed_dimension: int = Field(
-        default=1024, validation_alias=AliasChoices("DW_WORKER_EMBED_DIMENSION")
     )
 
     # Jobs drained concurrently per tick. More than one because a single slow
@@ -189,7 +248,7 @@ class WorkerSettings(BaseSettings):
     # transient fault survived twice, not a broken handler retried for ever.
     outbox_max_attempts: int = Field(default=3, ge=1, le=10)
 
-    # --- Zalo self-link (zalo-channel ticket 01) ---
+    # --- Zalo self-link (channels Z1) ---
     # The bot token is a credential (it rides in every Bot API URL) and the link
     # secret must equal the API's: it verifies the ``/start`` token the API
     # signed. ``SecretStr`` so neither prints in a repr, a log or an error.
@@ -200,6 +259,13 @@ class WorkerSettings(BaseSettings):
     zalo_link_secret: SecretStr = Field(
         default=SecretStr(""),
         validation_alias=AliasChoices("DW_WORKER_ZALO_LINK_SECRET", "ZALO_LINK_SECRET"),
+    )
+    # The key decision codes are hashed under; must equal the API's, which
+    # issued them (ADR 0007, channels Z5). Empty = a decision sent from Zalo is
+    # answered "not enabled" and nothing is decided.
+    approval_code_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DW_WORKER_APPROVAL_CODE_SECRET", "DW_APPROVAL_CODE_SECRET"),
     )
     # poll = this process long-polls getUpdates (no public URL needed);
     # webhook = Zalo POSTs to the API and nothing here polls. One bot answers
@@ -214,6 +280,12 @@ class WorkerSettings(BaseSettings):
         min_length=1,
         validation_alias=AliasChoices("DW_WORKER_PRODUCT_NAME", "DW_PRODUCT_NAME"),
     )
+    # The web app's public URL, the API's value: the bot links a person with
+    # several workspaces to `<this>/settings` to choose the one for Zalo.
+    public_web_url: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("DW_WORKER_PUBLIC_WEB_URL", "DW_PUBLIC_WEB_URL"),
+    )
 
     @property
     def zalo_poll_enabled(self) -> bool:
@@ -223,6 +295,31 @@ class WorkerSettings(BaseSettings):
             and bool(self.zalo_bot_token.get_secret_value())
             and bool(self.zalo_link_secret.get_secret_value())
         )
+
+    @property
+    def zalo_webhook_drain_enabled(self) -> bool:
+        """Drain what the API's webhook queued: webhook mode, never with the
+        poll lane, and with the same token and secret the poll lane needs."""
+        return (
+            self.zalo_updates_mode == "webhook"
+            and bool(self.zalo_bot_token.get_secret_value())
+            and bool(self.zalo_link_secret.get_secret_value())
+        )
+
+    @property
+    def zalo_send_enabled(self) -> bool:
+        """Send through the bot whenever there is a token to send with, polled
+        or webhooked: a webhook host's notifications go out the same way."""
+        return bool(self.zalo_bot_token.get_secret_value())
+
+    @field_validator("embedding_provider", mode="before")
+    @classmethod
+    def _blank_means_unset(cls, value: object, info: ValidationInfo) -> object:
+        """Compose reads ``${X:-default}``, so a blank line in .env is "unset" in
+        a container; the same .env on the host must not mean something else."""
+        if value == "" and info.field_name is not None:
+            return cls.model_fields[info.field_name].default
+        return value
 
     @model_validator(mode="after")
     def _the_heartbeat_outruns_the_lease(self) -> WorkerSettings:
@@ -258,10 +355,24 @@ class WorkerSettings(BaseSettings):
         if self.embedding_provider == "hash":
             raise RuntimeError(
                 "the hash embedding provider carries no meaning and is forbidden in the "
-                f"{self.profile} profile - configure 'tei' or 'openai_compatible'"
+                f"{self.profile} profile - configure 'openai_compatible'"
             )
         if not self.qdrant_url:
             raise RuntimeError(
                 f"a vector store is required in the {self.profile} profile - "
                 "the in-memory index is not durable"
+            )
+        if self.ocr_artifacts_path is None:
+            # A deployed worker never downloads model weights at run time.
+            raise RuntimeError(
+                f"DW_WORKER_OCR_ARTIFACTS_PATH (baked OCR weights) is required in the "
+                f"{self.profile} profile"
+            )
+        if (
+            self.zalo_poll_enabled or self.zalo_webhook_drain_enabled
+        ) and self.model_provider == "mock":
+            # Either Zalo lane reads chat messages with the model; fixtures are
+            # not a model.
+            raise RuntimeError(
+                f"the mock model provider is forbidden in the {self.profile} profile"
             )

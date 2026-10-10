@@ -23,12 +23,32 @@ import contextlib
 import logging
 import signal
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardRetention
+from dw_agent_runtime.adapters.checkpoint_retention import SqlCheckpointRetention
+from dw_agent_runtime.adapters.langgraph_runner import LangGraphWorkflowRunner
+from dw_agent_runtime.adapters.model_stack import ModelStack
+from dw_agent_runtime.adapters.run_store import SqlWorkerRunStore
+from dw_agent_runtime.adapters.spend_guard import SqlSpendGuardRetention, SqlSpendGuardStore
+from dw_agent_runtime.allowance import DailyAllowance
+from dw_agent_runtime.approval_flow import ApproveAndResumeService
+from dw_agent_runtime.channel_decisions import (
+    ChannelApprovalDecisionService,
+    ChannelDecisionCommand,
+)
+from dw_agent_runtime.model.run_policy import load_worker_run_policy
+from dw_agent_runtime.ports import ModelGateway, RunAllowancePort
+from dw_agent_runtime.release import UNRELEASED, release_manifest_ref
 from dw_connectors.adapters.zalo_bot import ZaloBotClient
-from dw_kernel.ports import SystemClock, Uuid7Generator
+from dw_connectors.adapters.zalo_inbound import ZaloInbound
+from dw_connectors.adapters.zalo_link import link_help
+from dw_connectors.inbound import ChannelCommandRegistry, InboundRouter
+from dw_connectors.ports import ChatSenderPort
+from dw_kernel.ports import IdGenerator, SystemClock, UtcClock, Uuid7Generator
 from dw_knowledge.adapters.evidence_store import SqlEvidenceStore
 from dw_knowledge.retention import SqlKnowledgeRetention
 from dw_memory.policy import MemoryWritePolicy
@@ -36,27 +56,61 @@ from dw_memory.retention import SqlMemoryRetention
 from dw_memory.service import MemoryService
 from dw_observability.otel import build_telemetry
 from dw_observability.telemetry import TelemetryPort
+from dw_platform.adapters.persistence.approval_codes import (
+    SqlApprovalCodeRetention,
+    SqlApprovalCodeStore,
+)
+from dw_platform.adapters.persistence.channel_deliveries import (
+    SqlChannelDeliveryRetention,
+    SqlChannelOutbox,
+)
+from dw_platform.adapters.persistence.channel_inbound import (
+    SqlChannelInboundLedger,
+    SqlChannelInboundRetention,
+    SqlChannelUpdateQueue,
+)
+from dw_platform.adapters.persistence.channel_preferences import SqlChannelPreferences
+from dw_platform.adapters.persistence.membership_lookup import SqlMembershipLookup
 from dw_platform.adapters.persistence.notifications import SqlNotificationRetention
 from dw_platform.adapters.persistence.offboarding import SqlTenantOffboarding
 from dw_platform.adapters.persistence.outbox_drain import SqlOutboxDrain
 from dw_platform.adapters.persistence.partition_maintenance import SqlPartitionMaintenance
+from dw_platform.adapters.persistence.uow import SqlPlatformUnitOfWorkFactory
 from dw_platform.adapters.persistence.zalo_link_repo import (
     SqlChannelLinkNonceRetention,
     SqlZaloLink,
 )
+from dw_platform.application.access_context import AccessContext
+from dw_platform.application.approval_codes import ApprovalSubjectVersions, DecisionCodeKey
+from dw_platform.application.authorization import ScopeAuthorizationService
+from dw_platform.application.channel_access import LinkedUserAccess
+from dw_platform.application.entitlement import DEFAULT_PLANS, PlanEntitlementService
 from dw_platform.retention_policy import load_retention_policy
+from dw_supply_chain.application.document_extraction import EXTRACTION_LANE
+from dw_supply_chain.application.follow_up_sweep import FOLLOW_UP_SWEEP_LANE
+from dw_supply_chain.application.packaging_papers import PACKAGING_PAPERS_LANE
+from dw_supply_chain.application.po_steps import PO_STEPS_LANE
+from dw_supply_chain.application.proposal_lists import PROPOSAL_LISTS_LANE
+from dw_supply_chain.application.purchase_orders import PURCHASE_ORDER_LANE
+from dw_supply_chain.application.step_preparation import PREPARATION_LANE
+from dw_supply_chain.application.supplier_messages import MESSAGES_LANE
 from dw_worker.composition import (
     REPO_ROOT,
+    build_case_document_storage,
+    build_case_documents_bucket,
     build_embeddings,
     build_export_bucket,
     build_feedback_bucket,
     build_ingest_components,
+    build_model_stack_for,
     build_object_storage,
+    build_ocr_reader,
     build_vector_index,
 )
 from dw_worker.consumers import ConsumerRegistry
+from dw_worker.consumers.channel_delivery import build_channel_delivery_consumer
 from dw_worker.consumers.ingest import build_ingest_consumer
-from dw_worker.consumers.memory import MemoryIndexPort, memory_handlers
+from dw_worker.consumers.memory import memory_handlers
 from dw_worker.consumers.offboarding import INTERVAL_SECONDS as OFFBOARDING_INTERVAL_SECONDS
 from dw_worker.consumers.offboarding import TenantOffboardingLane, build_offboarding_consumer
 from dw_worker.consumers.outbox import EventHandler, build_outbox_consumer
@@ -64,12 +118,53 @@ from dw_worker.consumers.reaper import INTERVAL_SECONDS as REAP_INTERVAL_SECONDS
 from dw_worker.consumers.reaper import ReapTarget, build_reaper_consumer
 from dw_worker.consumers.retention import INTERVAL_SECONDS as RETENTION_INTERVAL_SECONDS
 from dw_worker.consumers.retention import RetentionPrunePort, build_retention_consumer
-from dw_worker.consumers.supply_chain import build_follow_up_consumer, build_follow_up_sweep
+from dw_worker.consumers.supply_chain import (
+    PRODUCT_STRICT_APPROVAL_PREFIXES,
+    build_document_extraction,
+    build_document_extraction_consumer,
+    build_document_orphan_sweep,
+    build_follow_up_consumer,
+    build_follow_up_retention,
+    build_follow_up_sweep,
+    build_packaging_papers,
+    build_packaging_papers_consumer,
+    build_po_steps,
+    build_po_steps_consumer,
+    build_product_review_reconcile,
+    build_product_review_reconcile_consumer,
+    build_product_review_runner,
+    build_proposal_draft_retention,
+    build_proposal_lists,
+    build_proposal_lists_consumer,
+    build_purchase_orders,
+    build_purchase_orders_consumer,
+    build_stage_one_report,
+    build_stage_one_report_consumer,
+    build_step_preparation,
+    build_step_preparation_consumer,
+    build_step_preparation_stack,
+    build_supplier_messages,
+    build_supplier_messages_consumer,
+    build_zalo_case_query_command,
+    build_zalo_proposal_command,
+    product_approval_subjects,
+)
 from dw_worker.consumers.zalo_poll import build_zalo_poll_consumer
+from dw_worker.consumers.zalo_webhook import INTERVAL_SECONDS as ZALO_WEBHOOK_INTERVAL_SECONDS
+from dw_worker.consumers.zalo_webhook import build_zalo_webhook_consumer
 from dw_worker.health import beat
 from dw_worker.settings import WorkerSettings
 
+if TYPE_CHECKING:
+    from dw_memory.adapters.qdrant_ranker import QdrantMemoryRanker
+
 logger = logging.getLogger("dw_worker")
+
+# A module constant so the test holding this file to the classes code can
+# assign reads the file the sweeps below read, not a copy of its name.
+RETENTION_POLICY_PATH = REPO_ROOT / "configs" / "policies" / "retention@1.7.0.yaml"
+# The run store's staleness, the file the reconcile lane's runner reads too.
+WORKER_RUN_POLICY = "worker_runs@1.0.0.yaml"
 
 
 def _build_worker_telemetry(settings: WorkerSettings) -> TelemetryPort:
@@ -83,8 +178,12 @@ def _build_worker_telemetry(settings: WorkerSettings) -> TelemetryPort:
     )
 
 
-def _build_memory_index(settings: WorkerSettings) -> MemoryIndexPort | None:
-    """Imported inside the function so a deployment without Qdrant need not have
+def _build_memory_vectors(settings: WorkerSettings) -> QdrantMemoryRanker | None:
+    """The memory ranker's store: written by the outbox handler, purged by
+    supersession, retention and offboarding. One instance for all four, so
+    the collection that is written is the collection that is purged.
+
+    Imported inside the function so a deployment without Qdrant need not have
     the client installed to boot — the same rule the knowledge index follows."""
     if not settings.qdrant_url:
         return None
@@ -95,6 +194,183 @@ def _build_memory_index(settings: WorkerSettings) -> MemoryIndexPort | None:
     return QdrantMemoryRanker(
         client=AsyncQdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key),
         embedder=build_embeddings(settings),
+    )
+
+
+def release_manifest_ref_for(settings: WorkerSettings, repo_root: Path) -> str:
+    """The release this process serves, stamped on the runs it starts, read
+    by the reader the API uses (`dw_agent_runtime.release`).
+
+    A deployed worker refuses to start without it: the fallback would stamp
+    `unreleased` on every run the BGĐ review reconcile starts, and nothing
+    would say so. The image ships `contracts/release` for this."""
+    ref = release_manifest_ref(repo_root)
+    if settings.is_deployed and ref == UNRELEASED:
+        raise RuntimeError(
+            f"no release manifest under {repo_root} in the {settings.profile} profile:"
+            " a run this worker starts would record no release"
+        )
+    return ref
+
+
+def build_one_call_gateway(
+    stack: ModelStack,
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    allowance: RunAllowancePort,
+    clock: UtcClock,
+) -> ModelGateway:
+    """The gateway a chat command reads one message with: the stack the model
+    builder made (`build_model_stack_for`, the API's builder too), checked
+    against the tenant's plan day — runs and spend — by the same
+    `DailyAllowance` the runner checks a run's start with, before any call."""
+    run_policy = load_worker_run_policy(REPO_ROOT / "configs" / "policies" / WORKER_RUN_POLICY)
+    return stack.one_call(
+        DailyAllowance(
+            allowance=allowance,
+            runs=SqlWorkerRunStore(
+                sessions, stale_run_after_seconds=run_policy.stale_run_after_seconds
+            ),
+            spend=SqlSpendGuardStore(session_factory=sessions),
+            clock=clock,
+        )
+    )
+
+
+def build_channel_decision_command(
+    settings: WorkerSettings,
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    runner: LangGraphWorkflowRunner,
+    subjects: ApprovalSubjectVersions,
+    strict_approval_prefixes: frozenset[str] = frozenset(),
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> ChannelDecisionCommand:
+    """`DUYỆT <mã>` / `KHÔNG <mã> <lý do>` from a linked chat (ADR 0007, channels Z5).
+
+    The decision goes through this process's own `ApproveAndResumeService`,
+    over `runner`: the one that hosts the graph the approval belongs to, so a
+    decided run resumes here from its checkpoint. A context passes its strict
+    prefixes and registers its subject-version port on `subjects`, the way it
+    does in the API's `wiring.py`; a type no context answers for is never
+    decided by chat (no version, no decision). Without
+    `DW_APPROVAL_CODE_SECRET` the command still answers a decision, with
+    "not enabled", so the words never reach a model.
+    """
+    flow = ApproveAndResumeService(
+        uow_factory=SqlPlatformUnitOfWorkFactory(sessions),
+        runner=runner,
+        run_store=runner.run_store,
+        clock=clock,
+        id_generator=ids,
+        # The same ports the receipt read: a decision on a subject that moved
+        # since its approval was raised is refused (ticket ai-automation/05).
+        subjects=subjects,
+    )
+    flow.strict_approval_prefixes |= strict_approval_prefixes
+    secret = settings.approval_code_secret.get_secret_value()
+    return ChannelDecisionCommand(
+        ChannelApprovalDecisionService(
+            approval_flow=flow,
+            authorization=ScopeAuthorizationService(),
+            store=SqlApprovalCodeStore(sessions),
+            subjects=subjects,
+            access=LinkedUserAccess(
+                preferences=SqlChannelPreferences(sessions),
+                lookup=SqlMembershipLookup(sessions),
+            ),
+            key=DecisionCodeKey(secret.encode()) if secret else None,
+            clock=clock,
+            ids=ids,
+        )
+    )
+
+
+def build_channel_commands(
+    settings: WorkerSettings,
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    gateway: ModelGateway,
+    decisions: ChannelDecisionCommand,
+    ids: IdGenerator,
+    clock: UtcClock,
+) -> ChannelCommandRegistry[AccessContext]:
+    """What a linked person can ask for through a chat, in the order it is asked.
+
+    The seam a context plugs its chat commands into. Order is policy, not
+    convenience: the decide command first (`build_channel_decision_command`,
+    ticket 05: a reply to a pending decision is never re-read as a new
+    request), then an open conversation, then intent classification. Z4b's
+    proposal is both of the last two: it continues an open draft or reads a
+    new message as a proposal, and its reading is the classification — a
+    question (ticket 06) it hands on, untouched, to the read-only question
+    command registered last, which also answers whoever may not propose.
+    Each command declares
+    its own scope ceiling; the router builds its context from the person's
+    membership cut to that ceiling.
+    """
+    commands = ChannelCommandRegistry[AccessContext]()
+    # First: a decision is never read as a proposal, nor shown to a model.
+    commands.register("approval_decision", decisions)
+    commands.register(
+        "supply_chain.product_proposal",
+        build_zalo_proposal_command(
+            sessions,
+            configs_dir=REPO_ROOT / "configs",
+            gateway=gateway,
+            ids=ids,
+            clock=clock,
+            web_url=settings.public_web_url,
+        ),
+    )
+    # Last: read-only, so it may see whatever no command before it took.
+    commands.register(
+        "supply_chain.case_query",
+        build_zalo_case_query_command(
+            sessions,
+            configs_dir=REPO_ROOT / "configs",
+            gateway=gateway,
+            ids=ids,
+            web_url=settings.public_web_url,
+        ),
+    )
+    return commands
+
+
+def build_zalo_inbound(
+    settings: WorkerSettings,
+    sessions: async_sessionmaker[AsyncSession],
+    bot: ChatSenderPort,
+    clock: UtcClock,
+    commands: ChannelCommandRegistry[AccessContext],
+) -> ZaloInbound:
+    """The Zalo update entry over this deployment's database: the link flow for
+    ``/start``/``/stop``, the inbound router for everything else.
+
+    One construction, so both lanes here and any test of them run the same
+    wiring: the poll lane feeds it what ``getUpdates`` returns, the webhook
+    drain (Z3) what the API's webhook queued.
+    """
+    zalo_link = SqlZaloLink(sessions)
+    return ZaloInbound(
+        link_secret=settings.zalo_link_secret.get_secret_value(),
+        store=zalo_link,
+        sender=bot,
+        clock=clock,
+        product_name=settings.product_name,
+        router=InboundRouter(
+            identities=zalo_link,
+            ledger=SqlChannelInboundLedger(sessions),
+            access=LinkedUserAccess(
+                preferences=SqlChannelPreferences(sessions),
+                lookup=SqlMembershipLookup(sessions),
+            ),
+            commands=commands,
+            sender=bot,
+            unlinked_reply=link_help(settings.product_name),
+            settings_url=f"{settings.public_web_url.rstrip('/')}/settings",
+        ),
     )
 
 
@@ -128,6 +404,10 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     retention: RetentionPrunePort | None = None
     knowledge_retention: RetentionPrunePort | None = None
     partitions: RetentionPrunePort | None = None
+    # Run checkpoints of finished threads, on the same policy file's
+    # `checkpoints` terms. Its own lane for the same reason memory and knowledge
+    # have theirs: a failing pass must not take the others down with it.
+    checkpoint_retention: RetentionPrunePort | None = None
     # The spend guard's own housekeeping (Ops hardening Phase 3) — a technical
     # constant, not a legal term, so it is not on retention_policy's cadence
     # or file; see SqlSpendGuardRetention's docstring.
@@ -136,14 +416,46 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     notifications_retention: RetentionPrunePort | None = None
     # One-time channel link nonces: a day past expiry, then gone.
     channel_link_nonces_retention: RetentionPrunePort | None = None
+    # Inbound chat message ids: seven days, then gone (INBOUND_MESSAGE_RETENTION).
+    channel_inbound_messages_retention: RetentionPrunePort | None = None
+    # Single-use decision codes: a day, then gone (the database's constant).
+    approval_codes_retention: RetentionPrunePort | None = None
     # The Zalo self-link poll: only with a database, a bot token, a link secret
     # and ZALO_UPDATES_MODE=poll.
     zalo_poll_consumer: Callable[[], Awaitable[None]] | None = None
+    # The Zalo webhook drain: the same, in webhook mode, never beside the poll.
+    zalo_webhook_consumer: Callable[[], Awaitable[None]] | None = None
+    # Notifications out through linked Zalo chats (ADR 0006): a database and a
+    # bot token, polled or webhooked alike.
+    channel_delivery_consumer: Callable[[], Awaitable[None]] | None = None
+    # Channel deliveries: 90 days, never a pending one, the database's constant.
+    channel_deliveries_retention: RetentionPrunePort | None = None
     # Ops hardening Phase 4. Needs object storage too, not just a database -
-    # export/purge touch three buckets and the vector index alongside Postgres.
+    # export/purge touch four buckets and the vector index alongside Postgres.
     offboarding_consumer: Callable[[], Awaitable[None]] | None = None
     # Supply Chain's follow-up sweep: a database is all it needs.
     follow_up_consumer: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's stage-1 daily report to TP Cung ứng: a database too.
+    stage_one_report: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's BGĐ review reconcile: a database is all it needs too.
+    product_review_reconcile: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's case-document orphan sweep: a database and the bucket.
+    document_orphans: RetentionPrunePort | None = None
+    # Supply Chain's document extraction lane: a database, the bucket and a model.
+    document_extraction: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's step preparation lane: a database and the bucket.
+    step_preparation: Callable[[], Awaitable[None]] | None = None
+    purchase_orders: Callable[[], Awaitable[None]] | None = None
+    po_steps: Callable[[], Awaitable[None]] | None = None
+    packaging_papers: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's messages to a supplier: a database and a model.
+    supplier_messages: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's proposal lists read into rows: a database and a model.
+    proposal_lists: Callable[[], Awaitable[None]] | None = None
+    # Supply Chain's chat proposal drafts past their 30 minutes: a database.
+    proposal_drafts_retention: RetentionPrunePort | None = None
+    # Supply Chain's closed follow-ups past their tenant's term: a database.
+    follow_ups_retention: RetentionPrunePort | None = None
 
     if settings.database_url:
         # ---- transactional outbox ----------------------------------------
@@ -156,6 +468,10 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         # fact: a run that stops to decide what is worth keeping is a run someone
         # is waiting on. The handler is idempotent because the outbox delivers at
         # least once — see `dw_worker.consumers.memory`.
+        # Absent without Qdrant, and absent is survivable: the memory is stored
+        # and recalled either way, it simply sorts with the ones nothing has an
+        # opinion about — and there are no points to purge.
+        memory_vectors = _build_memory_vectors(settings)
         handlers: dict[str, EventHandler] = dict(
             memory_handlers(
                 MemoryService(
@@ -164,12 +480,11 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                     clock=clock,
                     id_generator=ids,
                     evidence_store=SqlEvidenceStore(clock=clock),
+                    # A superseded memory's point goes with it.
+                    vector_purge=memory_vectors,
                 ),
                 # Writes the vector that lets a later recall order a long list.
-                # Absent without Qdrant, and absent is survivable: the memory is
-                # stored and recalled either way, it simply sorts with the ones
-                # nothing has an opinion about.
-                _build_memory_index(settings),
+                memory_vectors,
             )
         )
         # Pinned by filename, like every other versioned artifact here: the
@@ -177,11 +492,12 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         # One file read once — the two sweeps are two halves of one commitment,
         # and a build where they disagreed would be a build that answers the
         # compliance question two ways.
-        retention_policy = load_retention_policy(
-            REPO_ROOT / "configs" / "policies" / "retention@1.4.0.yaml"
-        )
+        retention_policy = load_retention_policy(RETENTION_POLICY_PATH)
         retention = SqlMemoryRetention(
-            session_factory=sessions, policy=retention_policy, clock=clock
+            session_factory=sessions,
+            policy=retention_policy,
+            clock=clock,
+            vector_index=memory_vectors,
         )
         # Not retention in the sense of deleting: mostly it CREATES next
         # month's partitions, which is what keeps rows out of the DEFAULT one.
@@ -198,21 +514,203 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
             # deleted document in the only store that can still return it.
             vector_index=build_vector_index(settings),
         )
+        checkpoint_retention = SqlCheckpointRetention(
+            session_factory=sessions, policy=retention_policy, clock=clock
+        )
         spend_guard_retention = SqlSpendGuardRetention(session_factory=sessions, clock=clock)
         notifications_retention = SqlNotificationRetention(session_factory=sessions)
         channel_link_nonces_retention = SqlChannelLinkNonceRetention(session_factory=sessions)
-        if settings.zalo_poll_enabled:
-            zalo_poll_consumer = build_zalo_poll_consumer(
-                ZaloBotClient(bot_token=settings.zalo_bot_token.get_secret_value()),
-                SqlZaloLink(sessions),
-                link_secret=settings.zalo_link_secret.get_secret_value(),
+        channel_inbound_messages_retention = SqlChannelInboundRetention(session_factory=sessions)
+        approval_codes_retention = SqlApprovalCodeRetention(session_factory=sessions)
+        # The runner that hosts BGĐ's review graph: the reconcile lane starts
+        # reviews on it, and a decision sent from Zalo resumes them on it.
+        # Step preparation (ticket ai-automation/05) needs the case-document
+        # bucket too: an approved draft becomes a stored file.
+        step_stack = (
+            build_step_preparation_stack(
+                sessions,
+                build_case_document_storage(settings),
+                configs_dir=REPO_ROOT / "configs",
+                ids=ids,
                 clock=clock,
-                product_name=settings.product_name,
+                # The model that words a sample round's record and request
+                # (ticket ai-automation/09), through the one-call gateway.
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                model_profile=settings.model_profile,
+                gates_dir=REPO_ROOT / "evals" / "gates",
             )
+            if settings.s3_endpoint_url
+            else None
+        )
+        review_runner = build_product_review_runner(
+            sessions,
+            configs_dir=REPO_ROOT / "configs",
+            ids=ids,
+            clock=clock,
+            telemetry=telemetry,
+            release_manifest_ref=release_manifest_ref_for(settings, REPO_ROOT),
+            step_preparation=step_stack,
+        )
+        review_subjects = product_approval_subjects(sessions, step_stack)
+        # Step 10's PO draft (ticket ai-automation/14): code only, no bucket.
+        purchase_orders = build_purchase_orders_consumer(
+            build_purchase_orders(sessions, configs_dir=REPO_ROOT / "configs", ids=ids, clock=clock)
+        )
+        # Steps 11-17's papers (tickets ai-automation/15-18): code only, no bucket.
+        po_steps = build_po_steps_consumer(
+            build_po_steps(sessions, configs_dir=REPO_ROOT / "configs", ids=ids, clock=clock)
+        )
+        # Step 12's papers (ticket ai-automation/16): code, no bucket; the
+        # pre-production test report's notes worded by the model (ticket
+        # ai-automation/17, item 2), through the one-call gateway.
+        packaging_papers = build_packaging_papers_consumer(
+            build_packaging_papers(
+                sessions,
+                configs_dir=REPO_ROOT / "configs",
+                ids=ids,
+                clock=clock,
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                model_profile=settings.model_profile,
+                gates_dir=REPO_ROOT / "evals" / "gates",
+            )
+        )
+        if step_stack is not None:
+            step_preparation = build_step_preparation_consumer(
+                build_step_preparation(
+                    sessions,
+                    runner=review_runner,
+                    subjects=review_subjects,
+                    configs_dir=REPO_ROOT / "configs",
+                    ids=ids,
+                    clock=clock,
+                )
+            )
+        proposal_drafts_retention = build_proposal_draft_retention(sessions)
+        follow_ups_retention = build_follow_up_retention(
+            sessions, policies_dir=REPO_ROOT / "configs" / "policies"
+        )
+        # Rows are queued whether or not this host sends them, so they are
+        # pruned whether or not it does.
+        channel_deliveries_retention = SqlChannelDeliveryRetention(
+            session_factory=sessions,
+            pending_expiry=timedelta(days=retention_policy.channel_deliveries.pending_expiry_days),
+        )
+        if settings.zalo_send_enabled:
+            channel_delivery_consumer = build_channel_delivery_consumer(
+                SqlChannelOutbox(sessions),
+                channel="zalo",
+                address_of=SqlZaloLink(sessions).zalo_id_for,
+                sender=ZaloBotClient(bot_token=settings.zalo_bot_token.get_secret_value()),
+                web_url=settings.public_web_url,
+            )
+        # One bot, one reader (ADR 0008): poll mode polls, webhook mode drains
+        # what the API's webhook queued. Both feed the same inbound entry.
+        if settings.zalo_poll_enabled or settings.zalo_webhook_drain_enabled:
+            bot = ZaloBotClient(bot_token=settings.zalo_bot_token.get_secret_value())
+            commands = build_channel_commands(
+                settings,
+                sessions,
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    # The plan catalogue the API's allowance and the reconcile
+                    # lane's runner read.
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                decisions=build_channel_decision_command(
+                    settings,
+                    sessions,
+                    runner=review_runner,
+                    subjects=review_subjects,
+                    strict_approval_prefixes=PRODUCT_STRICT_APPROVAL_PREFIXES,
+                    ids=ids,
+                    clock=clock,
+                ),
+                ids=ids,
+                clock=clock,
+            )
+            inbound = build_zalo_inbound(settings, sessions, bot, clock, commands)
+            if settings.zalo_poll_enabled:
+                zalo_poll_consumer = build_zalo_poll_consumer(bot, inbound)
+            else:
+                zalo_webhook_consumer = build_zalo_webhook_consumer(
+                    SqlChannelUpdateQueue(sessions), inbound
+                )
         follow_up_consumer = build_follow_up_consumer(
             build_follow_up_sweep(
                 sessions,
                 policies_dir=REPO_ROOT / "configs" / "policies",
+                ids=ids,
+                clock=clock,
+            )
+        )
+        stage_one_report = build_stage_one_report_consumer(
+            build_stage_one_report(
+                sessions, policies_dir=REPO_ROOT / "configs" / "policies", clock=clock
+            )
+        )
+        product_review_reconcile = build_product_review_reconcile_consumer(
+            build_product_review_reconcile(
+                sessions,
+                runner=review_runner,
+                configs_dir=REPO_ROOT / "configs",
+                ids=ids,
+                # The tờ trình BGĐ reads beside its review (ticket
+                # ai-automation/10), drafted before the review is raised.
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                model_profile=settings.model_profile,
+                gates_dir=REPO_ROOT / "evals" / "gates",
+                clock=clock,
+            )
+        )
+        # Lists of proposed products read into rows (ticket ai-automation/08):
+        # stored in PostgreSQL, so a database and a model are all it needs.
+        proposal_lists = build_proposal_lists_consumer(
+            build_proposal_lists(
+                sessions,
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                model_profile=settings.model_profile,
+                configs_dir=REPO_ROOT / "configs",
+                gates_dir=REPO_ROOT / "evals" / "gates",
+                ids=ids,
+                clock=clock,
+            )
+        )
+        # Messages to a supplier AI drafts and a person sends (ADR 0029): the
+        # same one-call gateway, plan allowance and spend ledger.
+        supplier_messages = build_supplier_messages_consumer(
+            build_supplier_messages(
+                sessions,
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                model_profile=settings.model_profile,
+                configs_dir=REPO_ROOT / "configs",
+                gates_dir=REPO_ROOT / "evals" / "gates",
                 ids=ids,
                 clock=clock,
             )
@@ -224,8 +722,35 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                     artifacts=build_object_storage(settings),
                     exports=build_export_bucket(settings),
                     attachments=build_feedback_bucket(settings),
+                    case_documents=build_case_documents_bucket(settings),
                     vector_index=build_vector_index(settings),
+                    memory_vectors=memory_vectors,
                     clock=clock,
+                )
+            )
+            document_orphans = build_document_orphan_sweep(
+                sessions, build_case_document_storage(settings), clock=clock
+            )
+            # Reads case documents into cited fields (ADR 0021 amended
+            # 2026-10-09), through the same one-call gateway, plan allowance
+            # and spend ledger the chat commands use.
+            document_extraction = build_document_extraction_consumer(
+                build_document_extraction(
+                    sessions,
+                    build_case_document_storage(settings),
+                    gateway=build_one_call_gateway(
+                        build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                        sessions,
+                        allowance=PlanEntitlementService(DEFAULT_PLANS),
+                        clock=clock,
+                    ),
+                    model_profile=settings.model_profile,
+                    configs_dir=REPO_ROOT / "configs",
+                    gates_dir=REPO_ROOT / "evals" / "gates",
+                    ids=ids,
+                    clock=clock,
+                    # Images and scans, read by OCR (ticket ai-automation/21).
+                    ocr=build_ocr_reader(settings),
                 )
             )
         registry.register(
@@ -257,9 +782,114 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     # it in `apps/worker/tests/unit/test_worker.py`.
     if follow_up_consumer is not None:
         registry.register(
-            "supply_chain_follow_ups",
+            # Also the sweep's audit actor (`system_actor`, platform ADR 0011).
+            FOLLOW_UP_SWEEP_LANE,
             follow_up_consumer,
             interval_seconds=settings.supply_chain_follow_up_interval_seconds,
+        )
+    # The stage-1 daily report (ticket 08): on the sweep's cadence, since it
+    # reads what the sweep reads; once a day per workspace comes from the
+    # inbox's once-per-key delivery, not from the cadence.
+    if stage_one_report is not None:
+        registry.register(
+            "supply_chain_stage_one_report",
+            stage_one_report,
+            interval_seconds=settings.supply_chain_follow_up_interval_seconds,
+        )
+    # BGĐ's review for a product case waiting without one (stage-1 ticket
+    # 02). Starts runs, claims no queue: no ReapTarget (a stranded run is
+    # settled on its thread's next claim, `SqlWorkerRunStore.create`).
+    if product_review_reconcile is not None:
+        registry.register(
+            "supply_chain_product_review_reconcile",
+            product_review_reconcile,
+            interval_seconds=settings.supply_chain_product_review_reconcile_interval_seconds,
+        )
+    # Case-document objects no row holds (ADR 0021): housekeeping on the
+    # retention cadence, through the retention consumer's error handling.
+    if document_orphans is not None:
+        registry.register(
+            "supply_chain_document_orphans",
+            build_retention_consumer(document_orphans),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
+
+    # Case documents read into cited fields (ticket ai-automation/02): ids
+    # from a definer function, each read under its own workspace's RLS.
+    if document_extraction is not None:
+        registry.register(
+            EXTRACTION_LANE,
+            document_extraction,
+            interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
+        )
+
+    # AI prepares a step, a person approves the move (ticket ai-automation/05):
+    # a minute, the extraction lane's cadence, whose readings it waits on.
+    if step_preparation is not None:
+        registry.register(
+            PREPARATION_LANE,
+            step_preparation,
+            interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
+        )
+
+    # Step 10's PO draft (ticket ai-automation/14): the extraction lane's cadence.
+    if purchase_orders is not None:
+        registry.register(
+            PURCHASE_ORDER_LANE,
+            purchase_orders,
+            interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
+        )
+
+    # Steps 11-17's papers (tickets ai-automation/15-18): the extraction lane's cadence.
+    if po_steps is not None:
+        registry.register(
+            PO_STEPS_LANE,
+            po_steps,
+            interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
+        )
+
+    # Step 12's papers (ticket ai-automation/16): the extraction lane's cadence.
+    if packaging_papers is not None:
+        registry.register(
+            PACKAGING_PAPERS_LANE,
+            packaging_papers,
+            interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
+        )
+
+    # Proposal lists (ticket ai-automation/08): the extraction lane's cadence.
+    if proposal_lists is not None:
+        registry.register(
+            PROPOSAL_LISTS_LANE,
+            proposal_lists,
+            interval_seconds=settings.supply_chain_document_extraction_interval_seconds,
+        )
+
+    # Messages to a supplier (ticket ai-automation/07): on the follow-up
+    # cadence, since a reminder answers an open follow-up.
+    if supplier_messages is not None:
+        registry.register(
+            MESSAGES_LANE,
+            supplier_messages,
+            interval_seconds=settings.supply_chain_follow_up_interval_seconds,
+        )
+
+    # Chat proposal drafts nobody answered within DRAFT_TTL (zalo-channel
+    # ticket 04): its own lane, on the retention cadence, whether or not this
+    # process polls — a webhook host's drafts expire the same way.
+    if proposal_drafts_retention is not None:
+        registry.register(
+            "supply_chain_proposal_drafts_retention",
+            build_retention_consumer(proposal_drafts_retention),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
+
+    # Closed follow-ups past their tenant's term (ticket P3): its own lane on
+    # the retention cadence; open ones are never touched.
+    if follow_ups_retention is not None:
+        registry.register(
+            "supply_chain_follow_ups_retention",
+            build_retention_consumer(follow_ups_retention),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
         )
 
     # ---- channels ----------------------------------------------------------
@@ -268,6 +898,22 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
     if zalo_poll_consumer is not None:
         registry.register("zalo_link_poll", zalo_poll_consumer)
         logger.info("zalo link poll registered")
+    if zalo_webhook_consumer is not None:
+        registry.register(
+            "zalo_webhook_drain",
+            zalo_webhook_consumer,
+            interval_seconds=ZALO_WEBHOOK_INTERVAL_SECONDS,
+        )
+        logger.info("zalo webhook drain registered")
+    # In-app notifications out through linked chats. Claims rows with
+    # SKIP LOCKED and holds no lease, so it needs no ReapTarget: a row a dead
+    # worker held is pending again the moment its transaction ends.
+    if channel_delivery_consumer is not None:
+        registry.register(
+            "channel_delivery",
+            channel_delivery_consumer,
+            interval_seconds=settings.channel_delivery_interval_seconds,
+        )
 
     # ---- periodic repair --------------------------------------------------
     # Registered last because both sweeps act on what everything above created,
@@ -296,6 +942,12 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
             build_retention_consumer(partitions),
             interval_seconds=RETENTION_INTERVAL_SECONDS,
         )
+    if checkpoint_retention is not None:
+        registry.register(
+            "checkpoint_retention",
+            build_retention_consumer(checkpoint_retention),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
     if spend_guard_retention is not None:
         registry.register(
             "spend_guard_retention",
@@ -312,6 +964,24 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         registry.register(
             "channel_link_nonces_retention",
             build_retention_consumer(channel_link_nonces_retention),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
+    if channel_inbound_messages_retention is not None:
+        registry.register(
+            "channel_inbound_messages_retention",
+            build_retention_consumer(channel_inbound_messages_retention),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
+    if channel_deliveries_retention is not None:
+        registry.register(
+            "channel_deliveries_retention",
+            build_retention_consumer(channel_deliveries_retention),
+            interval_seconds=RETENTION_INTERVAL_SECONDS,
+        )
+    if approval_codes_retention is not None:
+        registry.register(
+            "approval_codes_retention",
+            build_retention_consumer(approval_codes_retention),
             interval_seconds=RETENTION_INTERVAL_SECONDS,
         )
     if offboarding_consumer is not None:

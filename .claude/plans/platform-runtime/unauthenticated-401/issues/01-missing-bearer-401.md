@@ -1,36 +1,46 @@
 # 01 — Thiếu hoặc hỏng token Bearer trả 401, không phải 403
 
-Status: needs-triage
+Status: resolved (2026-10-08, nhánh `feat/security-debts`)
 Blocked by: —
 Area: platform-runtime
 
+Ticket gốc viết ở repo sản phẩm đầu tiên (2026-10-05, `needs-triage`); chép về đây khi làm.
+
 ## Mục tiêu
 
-Gọi API không kèm `Authorization: Bearer ...` (hoặc token không kiểm được) hiện trả
+Gọi API không kèm `Authorization: Bearer ...` (hoặc token không kiểm được) trả
 `403 permission_denied` trên mọi route, vì `dw_kernel.http_auth.bearer_token` ném
-`PermissionDeniedError("missing bearer token")` và `dw_api/errors.py` ánh xạ mã đó sang 403.
-HTTP phân biệt hai việc: 401 là "chưa xác thực" (đăng nhập lại sẽ chữa), 403 là "đã biết
-là ai, và không được". Gộp hai việc làm một client không biết nên đăng nhập lại hay báo
-thiếu quyền. Tìm thấy khi viết ticket Z1 của sản phẩm Elmich
-(`supply-chain/zalo-channel/issues/01-zalo-link.md`, tiêu chí route).
+`PermissionDeniedError`. HTTP phân biệt hai việc: 401 là "chưa xác thực" (đăng nhập lại sẽ
+chữa), 403 là "đã biết là ai, và không được". Gộp hai việc làm client không biết nên đăng
+nhập lại hay báo thiếu quyền.
 
-## Việc cần làm
+## Việc đã làm
 
-1. Một mã lỗi riêng cho "chưa xác thực" (ví dụ `ErrorCode.UNAUTHENTICATED`) ánh xạ 401,
-   có header `WWW-Authenticate: Bearer`; `bearer_token` và lối token không kiểm được ném mã
-   đó. `PermissionDeniedError` giữ cho "đã xác thực, không được".
-2. Đọc lại luồng 401 của web (`apps/web/lib/session.ts:124-160`, chuyển trang đăng nhập
-   một lần) trước khi đổi: một route hôm nay trả 403 cho request thiếu token sẽ bắt đầu
-   kích hoạt chuyển trang đó.
-3. Cập nhật mọi test đang khẳng định 403 cho request thiếu token (tìm `missing bearer`).
+- `ErrorCode.UNAUTHENTICATED` (`unauthenticated`) → 401, `UnauthenticatedError`.
+  `bearer_token` (thiếu header, sai scheme, token rỗng) và cả hai verifier (dev HS256,
+  Keycloak) khi token không kiểm được ném lỗi này. `PermissionDeniedError` giữ cho "đã xác
+  thực, không được" (ví dụ không có membership ở tenant được hỏi).
+- Exception handler gắn `WWW-Authenticate: Bearer` cho MỌI phản hồi 401 (kể cả
+  `tenant_context_missing`, vốn đã 401).
+- Web: `clientOptions().fetchImpl` chỉ chuyển về trang đăng nhập khi request CÓ mang token
+  (phiên chết giữa chừng), vẫn một lần cho cả loạt 401. Request không mang token (các gọi
+  của chính trang đăng nhập) nay cũng nhận 401; chuyển trang ở đó sẽ tải lại trang đăng
+  nhập mãi.
+- `ErrorCode` của TS thêm `Unauthenticated`; test mirror sẵn có (`test_error_codes.py`) bắt
+  được khi thiếu.
 
 ## Tiêu chí chấp nhận
 
-- [ ] Không có header, header sai scheme, token rỗng: 401 với `WWW-Authenticate`.
-- [ ] Token hợp lệ mà thiếu quyền: vẫn 403 `permission_denied`.
-- [ ] Mutation: trả lại `PermissionDeniedError` trong `bearer_token` thì test đỏ.
-- [ ] Contract openapi sinh lại; web không chuyển trang hai lần trong một loạt 401.
+- [x] Không có header, header rỗng, sai scheme, token rỗng, token không kiểm được: 401
+      `unauthenticated` với `WWW-Authenticate: Bearer` (`test_me_endpoint.py`, 6 ca).
+- [x] Token hợp lệ mà thiếu quyền: vẫn 403 `permission_denied`, không có challenge.
+- [x] Mutation: `bearer_token` ném lại `PermissionDeniedError` → 17 đỏ; bỏ header challenge
+      → 6 đỏ; verifier ném lại `PermissionDeniedError` → 1 đỏ; web bỏ điều kiện "có token"
+      → vitest 1 đỏ.
+- [x] Contract openapi sinh lại (không đổi: mã lỗi không nằm trong schema); web không chuyển
+      trang hai lần trong một loạt 401 (vitest).
 
 ## Comments
 
-- Chưa ai quyết đổi; ghi lại để Z1 không tích một tiêu chí chưa đạt.
+- Quyết định tạm (Đạt giao): header challenge cho mọi 401, không riêng `unauthenticated`
+  (RFC 9110 §15.5.2 bắt buộc với 401).

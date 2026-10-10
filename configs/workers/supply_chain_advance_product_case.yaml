@@ -1,0 +1,19 @@
+schema_version: "1.0"
+worker_id: supply_chain_advance_product_case
+worker_version: "1.0.0"
+domain: supply_chain
+graph_version: "1.0.0"
+# BGĐ's review of a passed sample (step 6; workflows/advance_product_case_graph.py).
+# No model, prompt or tool call in this graph: these three version fields are
+# nominal, as in supply_chain_advance_case.yaml, kept for provenance uniformity
+# across every worker_runs row. toolset_version is omitted: the graph offers no
+# tool, and WorkerDefinition.toolset_version's None is the honest value.
+prompt_bundle_version: "1.0.0"
+policy_version: "1.0.0"
+memory_policy_version: "1.0.0"
+default_model_profile: balanced
+# web: raised by the step a person takes; worker: raised by the reconcile lane
+# (supply_chain_product_review_reconcile) for a case that reached
+# pending_bod_review without a review.
+supported_channels: [web, worker]
+autonomy_level: A2

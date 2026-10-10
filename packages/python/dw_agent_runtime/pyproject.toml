@@ -21,6 +21,10 @@ dependencies = [
     "pyyaml>=6.0,<7",
     "langchain-openai>=1,<2",
     "langchain>=1,<2",
+    # Versioned document templates rendered in process (doc_templates,
+    # supply-chain ticket ai-automation/03). Pinned to match apps/docgen and
+    # dw_knowledge, which already own it.
+    "python-docx>=1.1,<2",
 ]
 
 [build-system]

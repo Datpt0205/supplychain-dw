@@ -1,0 +1,13 @@
+{
+  "model_calls": 1,
+  "drafted": true,
+  "ai_must_not_contain": [
+    "30%",
+    "2.000"
+  ],
+  "scripted": {
+    "ai_must_contain": [
+      "3.2 mm"
+    ]
+  }
+}

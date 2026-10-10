@@ -173,3 +173,71 @@ async def test_acl_principals_narrow_a_document_to_its_uploader(
     assert await gateway.search(SearchQuery(text="chiết khấu nhượng bộ"), colleague) == [], (
         "a document narrowed to one user must not be readable by a colleague"
     )
+
+
+# --- asking for particular documents -----------------------------------------
+# `document_ids` is a MatchAny on `source_document_id` that the gateway adds to
+# the same `must` list as the trusted conditions: applied before top-k, and only
+# ever narrowing.
+
+_QUESTION = "hạn mức tín dụng nhà cung cấp thanh toán"
+
+
+def _sections(count: int, body: str) -> str:
+    """One markdown section per chunk: the chunker keeps a short section whole."""
+    return "\n\n".join(f"## Mục {i}\n{body} {i}." for i in range(count))
+
+
+async def test_a_requested_document_below_the_global_top_k_still_fills_top_k(
+    gateway: KnowledgeGateway, make_context: ContextFactory
+) -> None:
+    """Thirty chunks of another document are closer to the question than D's five.
+
+    Filtered after the index returned its top-k, asking for D got nothing back:
+    every one of the five global hits belonged to the other document.
+    """
+    context = make_context(TENANT_A, WORKSPACE_A)
+    noise = await gateway.ingest_document(
+        IngestDocumentCommand(title="Chính sách tín dụng", content=_sections(30, _QUESTION)),
+        context,
+    )
+    wanted = await gateway.ingest_document(
+        IngestDocumentCommand(
+            title="Biên bản họp",
+            content=_sections(5, "biên bản họp kho vận có nhắc thanh toán"),
+        ),
+        context,
+    )
+    assert noise.chunk_count == 30 and wanted.chunk_count == 5
+
+    unfiltered = await gateway.search(SearchQuery(text=_QUESTION, top_k=5), context)
+    assert {r.evidence.source_document_id for r in unfiltered} == {noise.document_id}, (
+        "the premise: D ranks below the tenant's global top-k"
+    )
+
+    results = await gateway.search(
+        SearchQuery(text=_QUESTION, top_k=5, document_ids=(wanted.document_id,)), context
+    )
+    assert len(results) == 5
+    assert {r.evidence.source_document_id for r in results} == {wanted.document_id}
+
+
+async def test_naming_another_tenants_document_returns_nothing(
+    gateway: KnowledgeGateway, make_context: ContextFactory
+) -> None:
+    """The document condition joins the trusted ones; it never stands in for them.
+
+    Tenant B knows tenant A's document id and asks for exactly that document,
+    with exactly its text. A document filter that replaced the tenant condition
+    would hand it over.
+    """
+    secret = await gateway.ingest_document(
+        IngestDocumentCommand(title="Bí mật Alpha", content=SECRET_TEXT),
+        make_context(TENANT_A, WORKSPACE_A),
+    )
+
+    results = await gateway.search(
+        SearchQuery(text=SECRET_TEXT, document_ids=(secret.document_id,)),
+        make_context(TENANT_B, WORKSPACE_B),
+    )
+    assert results == [], "a named document id must not cross the tenant fence"

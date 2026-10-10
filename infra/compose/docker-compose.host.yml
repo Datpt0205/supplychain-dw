@@ -1,0 +1,129 @@
+# Hosted overlay: Caddy in front of web, api and Keycloak on three hostnames
+# (ADR 0023). Applied last, on top of the profile overlay:
+#
+#   docker compose --env-file .env -f infra/compose/docker-compose.yml \
+#     -f infra/compose/docker-compose.prod.yml \
+#     -f infra/compose/docker-compose.host.yml --profile full up -d --build
+#
+# (uat: docker-compose.uat.yml in place of prod). Runbook: docs/deploy/host.md.
+#
+# What it changes, and nothing else:
+#   - Caddy is the only service with a port off the loopback (80, 443, 443/udp).
+#     Every base port stays on 127.0.0.1.
+#   - Every public URL is derived from DW_WEB_HOST / DW_API_HOST / DW_AUTH_HOST,
+#     each required (`:?`), so no domain is written in this repository and a
+#     missing one fails here instead of at the first login.
+#   - The upstreams trust X-Forwarded-* from Caddy's fixed address only, so the
+#     API's per-IP rate limit and Keycloak's brute-force detection see the real
+#     client rather than one proxy address for everybody.
+
+networks:
+  # Caddy and the three services it forwards to, nothing else: not Postgres,
+  # Qdrant or Valkey, which run unauthenticated on dw-internal. Internal (no
+  # route off the machine) and a fixed subnet, so Caddy's address is a value
+  # the upstreams can trust by name. Docker hands the other members addresses
+  # from `ip_range` only, so none of them can take Caddy's before it starts
+  # (measured: without it, api got .2 and Caddy failed "Address already in
+  # use"). If the default range is taken on the host, set all three variables;
+  # an address outside the subnet makes `up` fail loudly.
+  dw-proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${DW_PROXY_SUBNET:-172.30.250.0/28}
+          ip_range: ${DW_PROXY_DYNAMIC_RANGE:-172.30.250.8/29}
+  # Caddy's own way out (ACME) and in (published ports). Nothing else joins it.
+  dw-ingress: {}
+
+volumes:
+  # Certificates and the ACME account. Losing them means re-issuing, and the
+  # CA rate-limits re-issuing, so they outlive the container.
+  caddy-data:
+  caddy-config:
+
+services:
+  caddy:
+    # Pinned by tag and digest; trivy 0.74.0 reported 0 HIGH/CRITICAL on
+    # 2026-10-07 (alpine 3.23.6 and the caddy binary).
+    image: caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    profiles: ["full"]
+    environment:
+      DW_WEB_HOST: ${DW_WEB_HOST:?}
+      DW_API_HOST: ${DW_API_HOST:?}
+      DW_AUTH_HOST: ${DW_AUTH_HOST:?}
+      # `local_certs` only for a trial without public DNS; empty in a deployment.
+      DW_CADDY_LOCAL_CERTS: ${DW_CADDY_LOCAL_CERTS:-}
+    volumes:
+      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    networks:
+      dw-ingress: {}
+      dw-proxy:
+        ipv4_address: ${DW_PROXY_CADDY_IP:-172.30.250.2}
+    cap_drop: [ALL]
+    # Binding 80/443 inside the container is the one privilege it needs.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_started
+      keycloak:
+        condition: service_started
+    restart: unless-stopped
+
+  api:
+    networks: [dw-proxy]
+    environment:
+      DW_API_OIDC_ISSUER_URL: https://${DW_AUTH_HOST:?}/realms/dw
+      DW_API_CORS_ORIGINS: '["https://${DW_WEB_HOST:?}"]'
+      DW_API_PUBLIC_BASE_URL: https://${DW_API_HOST:?}
+      DW_PUBLIC_WEB_URL: https://${DW_WEB_HOST:?}
+      # uvicorn reads X-Forwarded-For/-Proto only from these addresses; its
+      # default is the loopback, which behind Caddy means every request looks
+      # like it came from Caddy and the per-IP rate limit is one shared bucket.
+      FORWARDED_ALLOW_IPS: ${DW_PROXY_CADDY_IP:-172.30.250.2}
+
+  worker:
+    environment:
+      # Links in notifications point at the web host.
+      DW_PUBLIC_WEB_URL: https://${DW_WEB_HOST:?}
+
+  keycloak:
+    networks: [dw-proxy]
+    environment:
+      # `iss` of every token, byte for byte DW_API_OIDC_ISSUER_URL above.
+      KC_HOSTNAME: https://${DW_AUTH_HOST:?}
+      # The admin console is not proxied (Caddyfile); it answers on the
+      # loopback port, reached through an SSH tunnel.
+      KC_HOSTNAME_ADMIN: http://localhost:${DW_KEYCLOAK_HOST_PORT:-8686}
+      KC_PROXY_HEADERS: xforwarded
+      KC_PROXY_TRUSTED_ADDRESSES: ${DW_PROXY_CADDY_IP:-172.30.250.2}
+      # Read by the realm import (dw-realm.json placeholders): dw-web's
+      # redirect URIs, web origin and post-logout URIs. Import runs on an
+      # empty Keycloak database only; an existing realm is edited by hand.
+      DW_PUBLIC_WEB_URL: https://${DW_WEB_HOST:?}
+
+  web:
+    networks: [dw-proxy]
+    build:
+      args:
+        # NEXT_PUBLIC_* are compiled into the bundle: a new hostname is a
+        # rebuild (`up --build`), not a restart.
+        NEXT_PUBLIC_AUTH_MODE: oidc
+        NEXT_PUBLIC_API_BASE_URL: https://${DW_API_HOST:?}
+        NEXT_PUBLIC_KEYCLOAK_URL: https://${DW_AUTH_HOST:?}
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: https://${DW_API_HOST:?}

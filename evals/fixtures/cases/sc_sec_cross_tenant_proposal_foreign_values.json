@@ -1,0 +1,23 @@
+{
+  "message": "đề xuất SP chảo chống dính 28cm, mã CH-28",
+  "model_answer": {
+    "kind": "propose_product",
+    "proposal_code": "HG-01",
+    "product_name": "chảo chống dính 28cm",
+    "category": "Nồi Hoàng Gia"
+  },
+  "must_not_echo": [
+    "HG-01",
+    "Nồi Hoàng Gia"
+  ],
+  "categories": [
+    {
+      "key": "noi",
+      "label": "Nồi"
+    },
+    {
+      "key": "chao",
+      "label": "Chảo"
+    }
+  ]
+}

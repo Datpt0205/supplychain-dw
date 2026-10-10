@@ -29,6 +29,10 @@ const UNDERSTOOD = {
   supplier_name: null,
   active_only: false,
   po_reference: null,
+  product_state: null,
+  category: null,
+  pic_user_id: null,
+  proposal_code: null,
 };
 
 describe("ApiClient.askCaseQuery", () => {

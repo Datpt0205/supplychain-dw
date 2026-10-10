@@ -19,3 +19,31 @@ export function errorMessage(error: unknown): string {
 export function errorCode(error: unknown): string | null {
   return error instanceof ApiError ? error.body.code : null;
 }
+
+/**
+ * A failure, as the shared `RegionState` reads it (`stateForError` in
+ * `@dw/ui` owns which code draws which state): the server's code and sentence
+ * (never `"<code>: …"`), or `"offline"` when the request never reached the
+ * server (ui-quality §4) — the browser says it is offline, or `fetch`
+ * rejected with its network TypeError ("Failed to fetch", Firefox's
+ * "NetworkError…", Safari's "Load failed").
+ */
+export function toRegionError(
+  error: unknown,
+): { code: string; message: string; requestId?: string | null } | "offline" {
+  if (error instanceof ApiError) {
+    return {
+      code: error.body.code,
+      message: error.body.message,
+      requestId: error.body.request_id ?? null,
+    };
+  }
+  if (
+    (typeof navigator !== "undefined" && navigator.onLine === false) ||
+    (error instanceof TypeError &&
+      /fetch|network|load failed/i.test(error.message))
+  ) {
+    return "offline";
+  }
+  return { code: "internal", message: errorMessage(error) };
+}

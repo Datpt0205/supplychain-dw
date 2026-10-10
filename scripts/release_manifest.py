@@ -1,7 +1,8 @@
 """Generate the immutable release manifest.
 
 Collects every versioned artifact — platform, API, workers, graphs, prompt
-bundles, toolsets, policies, knowledge index, eval datasets — plus the git SHA,
+bundles, skills, toolsets, policies, document templates, knowledge index, eval datasets —
+plus the git SHA,
 canonicalizes to JSON and derives a content-addressed reference:
 
     sha256:<hex>          → contracts/release/manifest.json
@@ -59,6 +60,11 @@ def _workers() -> list[dict[str, Any]]:
                 # own field docstring; the invariant below only holds workers
                 # that declare one to a real pin.
                 "toolset_version": raw.get("toolset_version"),
+                # The registry prompt an agent loop renders and is billed
+                # under; None for a plain graph. Resolves to an entry of
+                # `prompt_bundles`, like toolset_version to `toolsets`.
+                "agent_prompt_id": raw.get("agent_prompt_id"),
+                "agent_prompt_version": raw.get("agent_prompt_version"),
                 "policy_version": raw["policy_version"],
                 "memory_policy_version": raw["memory_policy_version"],
                 "autonomy_level": raw.get("autonomy_level", "A2"),
@@ -75,6 +81,9 @@ def _prompt_bundles() -> list[dict[str, str]]:
             {
                 "prompt_id": raw["prompt_id"],
                 "version": raw["version"],
+                # The skill ranges it declares; the `skills` section says
+                # which versions this release holds.
+                "skills": list(raw.get("skills") or []),
                 "checksum": _checksum(path),
             }
         )
@@ -183,6 +192,51 @@ def _rubrics() -> list[dict[str, str]]:
     return rubrics
 
 
+def _skills() -> list[dict[str, Any]]:
+    """Process knowledge a prompt declares (`configs/skills`), pinned by
+    content: a skill's words reach a model through the system prompt, so a
+    changed skill moves the ref like a changed prompt does. A run's release
+    names the skill versions its prompts resolved on the platform layer."""
+    skills = []
+    for path in sorted((REPO_ROOT / "configs" / "skills").rglob("*.yaml")):
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        skills.append(
+            {
+                "skill_id": raw["skill_id"],
+                "version": raw["version"],
+                "applies_to": list(raw.get("applies_to") or []),
+                "checksum": _checksum(path),
+            }
+        )
+    return skills
+
+
+def _doc_templates() -> list[dict[str, str]]:
+    """Document templates (declaration + DOCX), pinned by content.
+
+    A draft names the template version it was rendered from; a release that
+    changed a form's wording has to be identifiable afterwards, like a prompt.
+    The checksum is the one `dw_agent_runtime.doc_templates` computes, so the
+    manifest and a loaded registry agree on what a version is.
+    """
+    from dw_agent_runtime.doc_templates import template_checksum
+
+    templates = []
+    for path in sorted((REPO_ROOT / "configs" / "doc_templates").rglob("*.yaml")):
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        templates.append(
+            {
+                "template_id": raw["template_id"],
+                "version": raw["version"],
+                "doc_type": raw["doc_type"],
+                "checksum": template_checksum(
+                    path.read_bytes(), path.with_suffix(".docx").read_bytes()
+                ),
+            }
+        )
+    return templates
+
+
 def _eval_datasets() -> list[dict[str, str]]:
     datasets = []
     for path in sorted((REPO_ROOT / "evals" / "datasets").glob("*.json")):
@@ -209,11 +263,13 @@ def build_manifest() -> dict[str, Any]:
         "api_version": _project_version(REPO_ROOT / "apps" / "api" / "pyproject.toml"),
         "workers": _workers(),
         "prompt_bundles": _prompt_bundles(),
+        "skills": _skills(),
         "copy_bundles": _copy_bundles(),
         "tool_specs": _tool_specs(),
         "toolsets": _toolsets(),
         "rubrics": _rubrics(),
         "policies": _policies(),
+        "doc_templates": _doc_templates(),
         "knowledge_index_version": INDEX_VERSION,
         "memory_policy_version": MemoryWritePolicy().policy_version,
         # What turns a run's autonomy level into approve/do-not-approve. A run

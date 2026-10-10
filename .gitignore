@@ -64,7 +64,14 @@ blob-report/
 
 # Marker written by .claude/hooks/pre-commit-gate.sh; per-checkout state.
 .claude/.commit-gate-seen
+# Per-session baselines written by .claude/hooks/session-start.sh (and the single
+# shared file they replaced).
 .claude/.session-head
+.claude/.session-head.*
+# Switches that turn the commit gate and the Stop hook off. A person creates one
+# in their own checkout; committed, it would switch the gate off in every clone.
+.claude/no-commit-gate
+.claude/no-stop-gate
 
 # Runtime state written by `make dev` (the worker heartbeat); never source.
 .dw/

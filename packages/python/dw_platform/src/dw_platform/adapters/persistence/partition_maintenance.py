@@ -82,7 +82,7 @@ class SqlPartitionMaintenance:
         """Both cutoffs in one call, and `None` for a table with no term.
 
         `None` reaches the function as SQL NULL, which is how the table is told
-        it is never dropped — the same meaning `legal_hold` carries for memory,
+        it is never dropped — the same meaning a memory class with no `days` carries,
         and what a decided-but-not-yet-enforced term resolves to. Passing a very
         old timestamp instead would be a term nobody wrote.
 

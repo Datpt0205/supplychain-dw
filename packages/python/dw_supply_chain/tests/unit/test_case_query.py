@@ -15,7 +15,7 @@ from dw_supply_chain.domain.case_query import (
     ground,
     ignored_fields,
     plan_case_query,
-    resolve_supplier,
+    resolve_name,
 )
 from dw_supply_chain.domain.evidence import is_verbatim
 from dw_supply_chain.domain.po_case import CaseState
@@ -102,41 +102,41 @@ def test_the_intent_schema_refuses_fields_it_does_not_define() -> None:
         CaseQueryIntent.model_validate({"kind": "list_cases", "tenant_id": "other"})
 
 
-# -- resolve_supplier ----------------------------------------------------------
+# -- resolve_name ----------------------------------------------------------
 
 NAMES = ["Sunhouse Co.", "Công ty TNHH Đồng Nai", "Elmich Co.", "Elmich Việt Nam"]
 
 
 def test_an_equal_name_resolves_regardless_of_case_accents_and_spacing() -> None:
-    resolution = resolve_supplier("cong ty  tnhh dong nai", NAMES)
+    resolution = resolve_name("cong ty  tnhh dong nai", NAMES)
     # The STORED name comes back, never the folded form used to match.
     assert resolution.name == "Công ty TNHH Đồng Nai"
 
 
 def test_a_whole_word_part_of_one_name_resolves() -> None:
-    assert resolve_supplier("sunhouse", NAMES).name == "Sunhouse Co."
+    assert resolve_name("sunhouse", NAMES).name == "Sunhouse Co."
 
 
 def test_part_of_a_word_does_not_match() -> None:
-    resolution = resolve_supplier("sun", NAMES)
+    resolution = resolve_name("sun", NAMES)
     assert resolution.name is None
     assert resolution.candidates == ()
 
 
 def test_an_ambiguous_mention_returns_every_candidate_and_picks_none() -> None:
-    resolution = resolve_supplier("Elmich", NAMES)
+    resolution = resolve_name("Elmich", NAMES)
     assert resolution.name is None
     assert resolution.candidates == ("Elmich Co.", "Elmich Việt Nam")
 
 
 def test_two_stored_spellings_of_one_equal_name_are_ambiguous_not_merged() -> None:
-    resolution = resolve_supplier("elmich co.", ["Elmich Co.", "elmich co."])
+    resolution = resolve_name("elmich co.", ["Elmich Co.", "elmich co."])
     assert resolution.name is None
     assert set(resolution.candidates) == {"Elmich Co.", "elmich co."}
 
 
 def test_an_unknown_supplier_resolves_to_nothing() -> None:
-    resolution = resolve_supplier("Toshiba", NAMES)
+    resolution = resolve_name("Toshiba", NAMES)
     assert resolution.name is None
     assert resolution.candidates == ()
 
@@ -323,20 +323,20 @@ def test_ungrounded_and_unusable_fields_are_reported_as_different_reasons() -> N
 
 
 def test_an_equal_name_wins_over_a_longer_one_containing_it() -> None:
-    resolution = resolve_supplier("Elmich", ["Elmich", "Elmich Việt Nam"])
+    resolution = resolve_name("Elmich", ["Elmich", "Elmich Việt Nam"])
     assert resolution.name == "Elmich"
 
 
 def test_a_mention_with_no_letter_or_digit_names_nothing() -> None:
     # "A ... B" holds "..." as a whole word, so only the guard stops it.
-    resolution = resolve_supplier("...", ["Sunhouse Co.", "A ... B"])
+    resolution = resolve_name("...", ["Sunhouse Co.", "A ... B"])
     assert resolution.name is None
     assert resolution.candidates == ()
 
 
 def test_a_trademark_sign_does_not_move_the_word_boundary() -> None:
     """NFKD would fold "™" into "tm" and glue it onto the name."""
-    assert resolve_supplier("Sunhouse", ["Sunhouse™ Co."]).name == "Sunhouse™ Co."
+    assert resolve_name("Sunhouse", ["Sunhouse™ Co."]).name == "Sunhouse™ Co."
 
 
 @pytest.mark.parametrize(

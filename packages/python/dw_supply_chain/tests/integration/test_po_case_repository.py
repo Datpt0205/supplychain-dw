@@ -26,7 +26,9 @@ from dw_kernel.pagination import PageQuery, page_request
 from dw_platform.application.access_context import AccessContext
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
 from dw_supply_chain.application.ports import POCaseListFilter
+from dw_supply_chain.domain.packaging_design import PreProductionTest, ProductionGate
 from dw_supply_chain.domain.po_case import CaseState, POCase, POCaseId
+from dw_supply_chain.testing.pages import oldest_first
 
 pytestmark = pytest.mark.integration
 
@@ -160,8 +162,14 @@ async def test_po_reference_is_unique_within_a_tenant(
     other = _case(po_reference="PO-DUP-0001")
 
     await repo.add(context, case)
-    with pytest.raises(IntegrityError):
+    # The database's refusal, by its constraint's name (ticket 05).
+    with pytest.raises(ConflictError) as raised:
         await repo.add(context, other)
+    assert raised.value.details == {
+        "constraint": "uq_po_cases_tenant_id_po_reference",
+        "po_reference": "PO-DUP-0001",
+    }
+    assert isinstance(raised.value.__cause__, IntegrityError)
 
 
 async def test_another_tenant_neither_sees_nor_saves_over_the_case(
@@ -340,22 +348,33 @@ async def test_list_page_filters_by_state(
     assert ids == [waiting[1].id, waiting[0].id]
 
 
-async def test_list_page_filters_by_the_exact_supplier_name(
+async def test_list_page_filters_by_the_suppliers_stored_name(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Exact, as stored — the same identity the Control Tower groups by, so
-    near-spellings are other suppliers here too, never a fuzzy match."""
+    """Exact on the stored name — the same identity the Control Tower groups
+    by. A spelling that differs only in case or spaces is the same supplier
+    (the master record, a0035e9faf32), so its case carries the stored name
+    and is listed; a different name is another supplier, never a fuzzy
+    match."""
     tenant, workspace = uuid.uuid4(), uuid.uuid4()
     repo = SqlPOCaseRepository(sessions)
     context = _context(tenant=tenant, workspace=workspace)
     exact = _case(tenant=tenant, workspace=workspace, supplier_name="Elmich Co.")
     await repo.add(context, exact)
-    for near in ("elmich co.", "Elmich Co. ", "Elmich"):
-        await repo.add(context, _case(tenant=tenant, workspace=workspace, supplier_name=near))
+    same = [
+        _case(tenant=tenant, workspace=workspace, supplier_name=spelling)
+        for spelling in ("elmich co.", "Elmich  Co. ")
+    ]
+    for case in same:
+        await repo.add(context, case)
+    other = _case(tenant=tenant, workspace=workspace, supplier_name="Elmich")
+    await repo.add(context, other)
 
     ids, _ = await _list(repo, context, POCaseListFilter(supplier_name="Elmich Co."))
 
-    assert ids == [exact.id]
+    assert ids == [same[1].id, same[0].id, exact.id]
+    assert [case.supplier_name for case in same] == ["Elmich Co.", "Elmich Co."]
+    assert await repo.list_supplier_names(context) == ["Elmich", "Elmich Co."]
 
 
 async def test_list_page_active_only_leaves_out_completed_and_cancelled(
@@ -545,7 +564,7 @@ async def test_current_state_entered_at_is_none_before_any_transition(
     case = _case()
     await repo.add(context, case)
 
-    assert await repo.get_current_state_entered_at(context, case.id) is None
+    assert await repo.get_sla_clock_started_at(context, case.id) is None
 
 
 async def test_save_persists_the_transition_and_current_state_entered_at_reads_it_back(
@@ -559,7 +578,7 @@ async def test_save_persists_the_transition_and_current_state_entered_at_reads_i
     case.request_deposit()
     await repo.save(context, case)
 
-    entered_at = await repo.get_current_state_entered_at(context, case.id)
+    entered_at = await repo.get_sla_clock_started_at(context, case.id)
     assert entered_at is not None
 
 
@@ -576,11 +595,11 @@ async def test_current_state_entered_at_reflects_the_latest_transition_only(
 
     case.request_deposit()
     await repo.save(context, case)
-    first_entered_at = await repo.get_current_state_entered_at(context, case.id)
+    first_entered_at = await repo.get_sla_clock_started_at(context, case.id)
 
     case.confirm_deposit()
     await repo.save(context, case)
-    second_entered_at = await repo.get_current_state_entered_at(context, case.id)
+    second_entered_at = await repo.get_sla_clock_started_at(context, case.id)
 
     assert first_entered_at is not None
     assert second_entered_at is not None
@@ -630,7 +649,11 @@ async def test_a_transitions_reason_is_persisted_and_a_reasonless_one_is_null(
 
     async with sessions() as session, session.begin():
         await session.execute(
-            text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(context.tenant_id)}
+            text(
+                "SELECT set_config('app.tenant_id', :t, true),"
+                " set_config('app.workspace_id', :w, true)"
+            ),
+            {"t": str(context.tenant_id), "w": str(context.workspace_id)},
         )
         rows = (
             await session.execute(
@@ -662,7 +685,9 @@ async def test_list_transitions_returns_the_cases_own_timeline_oldest_first(
     case.confirm_deposit()
     await repo.save(context, case)
 
-    transitions = await repo.list_transitions(context, case.id)
+    transitions = await oldest_first(
+        lambda request: repo.list_transitions(context, case.id, request)
+    )
 
     assert [(t.from_state, t.to_state, t.reason) for t in transitions] == [
         (CaseState.PO_CREATED, CaseState.WAITING_DEPOSIT, None),
@@ -679,7 +704,9 @@ async def test_list_transitions_is_empty_for_a_case_that_never_transitioned(
     case = _case()
     await repo.add(context, case)
 
-    assert await repo.list_transitions(context, case.id) == []
+    assert (
+        await oldest_first(lambda request: repo.list_transitions(context, case.id, request)) == []
+    )
 
 
 async def test_list_transitions_is_empty_for_another_tenants_case(
@@ -691,8 +718,10 @@ async def test_list_transitions_is_empty_for_another_tenants_case(
     case.request_deposit()
     await repo.save(_context(tenant=TENANT_A, workspace=WORKSPACE_A), case)
 
-    transitions = await repo.list_transitions(
-        _context(tenant=TENANT_B, workspace=WORKSPACE_B), case.id
+    transitions = await oldest_first(
+        lambda request: repo.list_transitions(
+            _context(tenant=TENANT_B, workspace=WORKSPACE_B), case.id, request
+        )
     )
     assert transitions == []
 
@@ -706,7 +735,7 @@ async def test_another_tenant_cannot_read_the_transition_history(
     case.request_deposit()
     await repo.save(_context(tenant=TENANT_A, workspace=WORKSPACE_A), case)
 
-    entered_at = await repo.get_current_state_entered_at(
+    entered_at = await repo.get_sla_clock_started_at(
         _context(tenant=TENANT_B, workspace=WORKSPACE_B), case.id
     )
     assert entered_at is None
@@ -737,8 +766,56 @@ async def test_rls_hides_transition_rows_even_from_a_query_with_no_tenant_filter
     assert rows == []
 
 
-# -- list_active / bulk_current_state_entered_at: the Attention Queue's own
+# -- list_active / bulk_sla_clock_started_at: the Attention Queue's own
 #    bulk reads ------------------------------------------------------------
+
+
+async def test_receiving_goods_keeps_the_receipt_clock_that_started_at_payment(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """Step 17's SLA measures payment to goods in stock: starting to receive
+    does not restart it, and the SQL names the same start state as the domain
+    (`sla_clock_start_state`)."""
+    tenant, workspace = uuid.uuid4(), uuid.uuid4()
+    repo = SqlPOCaseRepository(sessions)
+    context = _context(tenant=tenant, workspace=workspace)
+    case = _case(tenant=tenant, workspace=workspace)
+    await repo.add(context, case)
+    for step in (
+        case.request_deposit,
+        case.confirm_deposit,
+        case.start_pre_production,
+        lambda: case.start_production(
+            ProductionGate(required=False, test=PreProductionTest.PENDING)
+        ),
+        case.send_to_qc,
+        case.pass_qc,
+        case.arrive_at_port,
+        case.request_final_payment,
+        case.confirm_payment,
+    ):
+        step()
+        await repo.save(context, case)
+    (paid,) = [
+        t
+        for t in await oldest_first(lambda r: repo.list_transitions(context, case.id, r))
+        if t.to_state is CaseState.PAYMENT_COMPLETED
+    ]
+    assert await repo.get_sla_clock_started_at(context, case.id) == paid.occurred_at
+
+    case.start_warehouse_receiving()
+    await repo.save(context, case)
+    history = await oldest_first(lambda r: repo.list_transitions(context, case.id, r))
+    assert history[-1].to_state is CaseState.WAREHOUSE_RECEIVING
+    assert history[-1].occurred_at > paid.occurred_at
+
+    assert await repo.get_sla_clock_started_at(context, case.id) == paid.occurred_at
+    assert await repo.bulk_sla_clock_started_at(context, [case.id]) == {
+        case.id.value: paid.occurred_at
+    }
+    # Another workspace asking for the same case id gets no clock at all.
+    other = _context(tenant=tenant, workspace=uuid.uuid4())
+    assert await repo.bulk_sla_clock_started_at(other, [case.id]) == {}
 
 
 async def _walk_to_completed(
@@ -752,7 +829,9 @@ async def _walk_to_completed(
         case.request_deposit,
         case.confirm_deposit,
         case.start_pre_production,
-        case.start_production,
+        lambda: case.start_production(
+            ProductionGate(required=False, test=PreProductionTest.PENDING)
+        ),
         case.send_to_qc,
         case.pass_qc,
         case.arrive_at_port,
@@ -782,7 +861,9 @@ async def test_list_active_excludes_terminal_cases(
     cancelled.cancel("customer walked away")
     await repo.save(context, cancelled)
 
-    result = await repo.list_active(context)
+    result = await oldest_first(
+        lambda request: repo.list_page(context, request, POCaseListFilter(active_only=True))
+    )
 
     assert [c.id for c in result] == [active.id]
 
@@ -800,12 +881,15 @@ async def test_list_active_only_returns_the_callers_tenant(
         _case(tenant=other_tenant, workspace=other_workspace),
     )
 
-    result = await repo.list_active(_context(tenant=mine_tenant, workspace=mine_workspace))
+    mine_context = _context(tenant=mine_tenant, workspace=mine_workspace)
+    result = await oldest_first(
+        lambda request: repo.list_page(mine_context, request, POCaseListFilter(active_only=True))
+    )
 
     assert [c.id for c in result] == [mine.id]
 
 
-async def test_bulk_current_state_entered_at_reflects_each_cases_own_latest_transition(
+async def test_bulk_sla_clock_started_at_reflects_each_cases_own_latest_transition(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     tenant, workspace = uuid.uuid4(), uuid.uuid4()
@@ -821,21 +905,19 @@ async def test_bulk_current_state_entered_at_reflects_each_cases_own_latest_tran
     never_transitioned = _case(tenant=tenant, workspace=workspace)
     await repo.add(context, never_transitioned)
 
-    result = await repo.bulk_current_state_entered_at(
-        context, [transitioned.id, never_transitioned.id]
-    )
+    result = await repo.bulk_sla_clock_started_at(context, [transitioned.id, never_transitioned.id])
 
     assert transitioned.id.value in result
     assert never_transitioned.id.value not in result
-    direct = await repo.get_current_state_entered_at(context, transitioned.id)
+    direct = await repo.get_sla_clock_started_at(context, transitioned.id)
     assert result[transitioned.id.value] == direct
 
 
-async def test_bulk_current_state_entered_at_with_no_case_ids_makes_no_query(
+async def test_bulk_sla_clock_started_at_with_no_case_ids_makes_no_query(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     repo = SqlPOCaseRepository(sessions)
-    assert await repo.bulk_current_state_entered_at(_context(), []) == {}
+    assert await repo.bulk_sla_clock_started_at(_context(), []) == {}
 
 
 @pytest.mark.parametrize("padding", ["\t", "\u00a0", " \r\n"])
@@ -902,13 +984,21 @@ async def test_latest_transitions_since_is_one_per_case_the_newest_inside_the_wi
     once.request_deposit()
     await repo.save(context, once)
 
-    latest = dict(await repo.list_latest_transitions_since(context, before))
+    total, moved = await repo.list_latest_transitions_since(context, before, limit=10)
+    latest = dict(moved)
 
+    assert total == 2
     assert set(latest) == {twice.id, once.id}
     assert latest[twice.id].to_state is CaseState.DEPOSIT_CONFIRMED
     assert latest[once.id].to_state is CaseState.WAITING_DEPOSIT
     # Nothing moved after now: an empty window, not the whole history.
-    assert await repo.list_latest_transitions_since(context, datetime.now(UTC)) == []
+    assert await repo.list_latest_transitions_since(context, datetime.now(UTC), limit=10) == (
+        0,
+        [],
+    )
+    # Bounded: the newest mover only, and still counted as two.
+    total, newest = await repo.list_latest_transitions_since(context, before, limit=1)
+    assert (total, [case_id for case_id, _ in newest]) == (2, [once.id])
 
 
 async def test_latest_transitions_since_never_reaches_another_tenant(
@@ -923,4 +1013,4 @@ async def test_latest_transitions_since_never_reaches_another_tenant(
 
     mine = _context(tenant=uuid.uuid4(), workspace=uuid.uuid4())
     since = datetime.now(UTC) - timedelta(hours=1)
-    assert await repo.list_latest_transitions_since(mine, since) == []
+    assert await repo.list_latest_transitions_since(mine, since, limit=10) == (0, [])

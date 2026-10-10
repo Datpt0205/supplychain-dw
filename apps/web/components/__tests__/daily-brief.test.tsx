@@ -16,6 +16,10 @@ function poCase(overrides: Partial<POCase> = {}): POCase {
     interrupted_state: null,
     created_at: "2026-09-01T00:00:00Z",
     version: 2,
+    order_kind: "new",
+    product_dev_case_id: null,
+    pic_user_id: null,
+    category: null,
     ...overrides,
   };
 }
@@ -27,6 +31,8 @@ function group(overrides: Partial<BriefGroup> = {}): BriefGroup {
     qualifier: "deposit",
     state: null,
     total: 1,
+    product_state: null,
+    product_entries: [],
     entries: [
       {
         case: poCase(),
@@ -46,6 +52,10 @@ function brief(overrides: Partial<DailyBrief> = {}): DailyBrief {
     active_case_count: 5,
     flagged_case_count: 1,
     approvals_visible: true,
+    entries_shown: 10,
+    product_cases_visible: true,
+    active_product_case_count: 0,
+    flagged_product_case_count: 0,
     groups: [group()],
     ...overrides,
   };
@@ -74,6 +84,20 @@ describe("groupHeadline", () => {
         }),
       ),
     ).toBe("6 case chờ thanh toán");
+  });
+
+  it("names the cases awaiting their PO in the glossary's words, PO kept whole", () => {
+    expect(
+      groupHeadline(
+        group({
+          key: "waiting_on_us:order_requested",
+          signal: "waiting_on_us",
+          qualifier: "order_requested",
+          state: "order_requested",
+          total: 2,
+        }),
+      ),
+    ).toBe("2 case chờ tạo PO");
   });
 });
 
@@ -164,6 +188,39 @@ describe("DailyBriefView", () => {
         .getAllByRole("link")
         .map((l) => l.textContent),
     ).toEqual(["PO-1"]);
+  });
+
+  it("names a case without its PO number in words, still linked by id", () => {
+    render(
+      <DailyBriefView
+        brief={brief({
+          groups: [
+            group({
+              key: "waiting_on_us:order_requested",
+              signal: "waiting_on_us",
+              qualifier: "order_requested",
+              state: "order_requested",
+              entries: [
+                {
+                  case: poCase({
+                    po_reference: null,
+                    state: "order_requested",
+                  }),
+                  days: 1,
+                  limit_days: null,
+                  transition: null,
+                  approval_action: null,
+                },
+              ],
+            }),
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByText("1 case chờ tạo PO")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Chưa có số PO" }).getAttribute("href"),
+    ).toBe("/supply-chain/po-cases/11111111-1111-4111-8111-111111111111");
   });
 
   it("links every case to its workspace and counts the ones not carried", () => {

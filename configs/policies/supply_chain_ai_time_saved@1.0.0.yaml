@@ -1,0 +1,27 @@
+schema_version: "1.0"
+policy_id: supply_chain_ai_time_saved
+policy_version: "1.0.0"
+# How many minutes a person would spend writing each paper the lanes draft
+# (ticket ai-automation/20): the AI acceptance page multiplies it by the drafts
+# approved as written, and by `edited_credit` for those a person edited first.
+# An ESTIMATE, labelled as one on the page: the numbers below are placeholders
+# until Elmich times its own papers (a tenant replaces this whole through its
+# own override). A type not listed saves nothing.
+edited_credit: 0.5
+minutes_per_draft:
+  sample_evaluation: 30
+  sample_revision_request: 20
+  bod_submission: 45
+  product_profile_bm04: 60
+  purchase_order: 30
+  official_item_code: 15
+  deposit_docs: 15
+  payment_docs: 15
+  packaging_content: 30
+  user_manual: 45
+  colour_revision_request: 15
+  design_revision_request: 20
+  rework_request: 20
+  warehouse_receipt: 20
+  discrepancy_report: 30
+  pre_production_test_report: 30

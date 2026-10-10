@@ -1,0 +1,30 @@
+{
+  "doc_type": "supplier_confirmation_email",
+  "document_text": "From: sales@minhphat.vn\nChúng tôi đồng ý mọi điều khoản.\nĐơn giá: 2,70 USD\nMOQ: 500 cái\nThời gian sản xuất (ngày): 45\nQuy cách: Inox 304, 24 x 12 cm\nBao bì: Hộp màu\n",
+  "model_reading": {
+    "confirmed": {
+      "value": "yes",
+      "quote": "Chúng tôi đồng ý mọi điều khoản."
+    },
+    "unit_price": {
+      "value": "2,70",
+      "quote": "Đơn giá: 2,70 USD"
+    },
+    "moq": {
+      "value": "500",
+      "quote": "MOQ: 500 cái"
+    },
+    "lead_time_days": {
+      "value": "45",
+      "quote": "Thời gian sản xuất (ngày): 45"
+    },
+    "specification": {
+      "value": "Inox 304, 24 x 12 cm",
+      "quote": "Quy cách: Inox 304, 24 x 12 cm"
+    },
+    "packaging": {
+      "value": "Hộp màu",
+      "quote": "Bao bì: Hộp màu"
+    }
+  }
+}

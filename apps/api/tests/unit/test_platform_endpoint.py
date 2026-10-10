@@ -4,11 +4,13 @@ The repository is faked; the service's validation/audit and the route's operator
 gate run for real. The gate is the point: a non-operator can never reach these.
 """
 
+import re
 import uuid
 
 import httpx
 import pytest
 from asgi_lifespan import LifespanManager
+from fastapi.routing import iter_route_contexts
 
 from dw_api.bootstrap import ApiContainer
 from dw_api.health import CheckState, HealthService
@@ -256,3 +258,23 @@ async def test_operator_cannot_remove_themselves() -> None:
     )
     assert response.status_code == 422
     assert repo.removed == []
+
+
+async def test_every_platform_route_refuses_a_non_operator() -> None:
+    """Read from the app's own routes, so a route added later (the support
+    staff and support request routes of ADR 0024 included) is covered the day
+    it exists. A non-operator gets 403 before any repository is reached."""
+    container = make_container(FakeRepo(), False)
+    app = create_app(container)
+    routes = [
+        (method, route.path)
+        for route in iter_route_contexts(app.routes)
+        if route.path and route.path.startswith("/api/v1/platform/")
+        for method in route.methods or ()
+    ]
+    assert ("POST", "/api/v1/platform/support-requests/{grant_id}/assign") in routes
+    assert ("DELETE", "/api/v1/platform/support-staff/{user_id}") in routes
+    for method, path in routes:
+        concrete = re.sub(r"\{[^}]+\}", str(TARGET), path)
+        response = await _request(container, method, concrete, json={})
+        assert response.status_code == 403, (method, path)

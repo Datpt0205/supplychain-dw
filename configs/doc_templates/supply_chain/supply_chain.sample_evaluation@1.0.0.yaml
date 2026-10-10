@@ -1,0 +1,43 @@
+schema_version: '1.0'
+template_id: supply_chain.sample_evaluation
+version: 1.0.0
+title: BIÊN BẢN ĐÁNH GIÁ MẪU
+doc_type: sample_evaluation
+description: 'Bước 3: kết quả test mẫu theo từng tiêu chí; kết luận do người nhập.'
+fields:
+- name: proposal_code
+  label: Mã đề xuất
+  required: true
+- name: product_name
+  label: Tên sản phẩm
+  required: true
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: sample_round
+  label: Vòng mẫu
+  kind: number
+- name: evaluated_on
+  label: Ngày đánh giá
+  kind: date
+  required: true
+- name: evaluator
+  label: Người đánh giá
+- name: criteria
+  label: Tiêu chí đánh giá
+  kind: table
+  columns:
+  - name: criterion
+    label: Tiêu chí
+  - name: standard
+    label: Chuẩn
+  - name: measured
+    label: Đo được
+  - name: result
+    label: Kết quả
+  required: true
+- name: conclusion
+  label: Kết luận
+  required: true
+- name: notes
+  label: Ghi chú

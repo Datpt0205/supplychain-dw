@@ -24,6 +24,8 @@ class WorkspaceMemberView(BaseModel):
     role_keys: list[str]
     permission_set_keys: list[str]
     department: str
+    # `invited` until the first sign-in, then `active`.
+    status: str
 
 
 class IdentityRefView(BaseModel):
@@ -54,6 +56,7 @@ async def list_members(
             role_keys=list(member.role_keys),
             permission_set_keys=list(member.permission_set_keys),
             department=member.department,
+            status=member.status,
         )
         for member in members
     ]

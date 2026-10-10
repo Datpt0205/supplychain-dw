@@ -3,7 +3,10 @@
 A waiver lifts one waivable rule for one tenant, on the record. What these
 tests hold the database and the service to:
 
-- a waiver lets one membership hold both sides, in that tenant only;
+- a waiver lets one membership hold both sides, in that tenant only, once a
+  second admin has confirmed it (f381f1694395) - never the one who proposed it;
+- a role or permission set cannot gain a scope that would make a membership
+  holding it break a rule its tenant has not waived;
 - a rule its author did not mark waivable is a floor, for every writer;
 - every waiver decision needs a reason, a scope, and leaves an audit row
   written in the same transaction;
@@ -47,6 +50,7 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.separation_of_duties import (
     SOD_WAIVERS_WRITE,
+    ConfirmWaiver,
     RevokeWaiver,
     SeparationOfDutiesService,
     WaiveRule,
@@ -77,6 +81,8 @@ class _Identity:
     email: str | None
     issuer: str = "https://issuer.test/realms/dw"
     name: str | None = None
+    auth_methods: frozenset[str] = frozenset()
+    acr: str | None = None
 
 
 @pytest.fixture
@@ -204,6 +210,13 @@ async def _grant(
     )
 
 
+async def _waived(engine: AsyncEngine, rule_key: str, reason: str = REASON) -> None:
+    """Proposed by one admin and confirmed by another: a waiver in effect."""
+    service = _service(engine)
+    await service.waive(_admin(), WaiveRule(rule_key, reason))
+    await service.confirm(_admin(), ConfirmWaiver(rule_key, "đã xem, đồng ý"))
+
+
 async def _scoped(conn: AsyncConnection, tenant: uuid.UUID = ALPHA) -> None:
     await conn.execute(sa.text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant)})
 
@@ -248,13 +261,29 @@ async def test_a_waived_rule_lets_one_membership_hold_both_sides(
     with pytest.raises(ConflictError):
         await _grant(app_engine, user_id, catalogue.orderer, catalogue.payer)
 
-    await _service(app_engine).waive(_admin(), WaiveRule(catalogue.rule, REASON))
+    proposer, confirmer = _admin(), _admin()
+    await _service(app_engine).waive(proposer, WaiveRule(catalogue.rule, REASON))
+    # Proposed, not confirmed: it lifts nothing yet.
+    with pytest.raises(ConflictError):
+        await _grant(app_engine, user_id, catalogue.orderer, catalogue.payer)
+    listed = {r.key: r for r in await _service(app_engine).list_rules(_admin())}
+    pending = listed[catalogue.rule].waiver
+    assert pending is not None and pending.confirmed_by is None
+
+    await _service(app_engine).confirm(confirmer, ConfirmWaiver(catalogue.rule, "đồng ý"))
     await _grant(app_engine, user_id, catalogue.orderer, catalogue.payer)
 
     listed = {r.key: r for r in await _service(app_engine).list_rules(_admin())}
     waiver = listed[catalogue.rule].waiver
     assert waiver is not None and waiver.reason == REASON
-    assert await _audit_actions(app_engine, catalogue.rule) == [("platform.sod.waive", REASON)]
+    assert (waiver.granted_by, waiver.confirmed_by) == (
+        proposer.principal_id,
+        confirmer.principal_id,
+    )
+    assert await _audit_actions(app_engine, catalogue.rule) == [
+        ("platform.sod.waive", REASON),
+        ("platform.sod.waiver_confirm", "đồng ý"),
+    ]
 
 
 async def test_one_tenants_waiver_lifts_nothing_for_another(
@@ -313,7 +342,7 @@ async def test_waiving_the_rule_lifts_nothing_while_a_floor_forbids_the_same_pai
     app_engine: AsyncEngine, migrator_engine: AsyncEngine, catalogue: _Catalogue
 ) -> None:
     await _add_floor(migrator_engine, catalogue)
-    await _service(app_engine).waive(_admin(), WaiveRule(catalogue.rule, REASON))
+    await _waived(app_engine, catalogue.rule)
     user_id = await _user(app_engine)
 
     with pytest.raises(ConflictError) as refused:
@@ -367,7 +396,7 @@ async def test_a_waiver_memberships_rely_on_cannot_be_revoked(
     app_engine: AsyncEngine, catalogue: _Catalogue
 ) -> None:
     service = _service(app_engine)
-    await service.waive(_admin(), WaiveRule(catalogue.rule, REASON))
+    await _waived(app_engine, catalogue.rule)
     user_id = await _user(app_engine)
     await _grant(app_engine, user_id, catalogue.orderer, catalogue.payer)
 
@@ -385,6 +414,7 @@ async def test_a_waiver_memberships_rely_on_cannot_be_revoked(
         await _grant(app_engine, user_id, catalogue.orderer, catalogue.payer)
     assert await _audit_actions(app_engine, catalogue.rule) == [
         ("platform.sod.waive", REASON),
+        ("platform.sod.waiver_confirm", "đã xem, đồng ý"),
         ("platform.sod.waiver_revoke", "đã tuyển thêm người"),
     ]
 
@@ -400,7 +430,7 @@ async def test_revoking_without_an_open_waiver_is_not_found(
 async def test_a_revoke_waits_for_a_grant_relying_on_the_waiver_then_refuses(
     app_engine: AsyncEngine, catalogue: _Catalogue
 ) -> None:
-    await _service(app_engine).waive(_admin(), WaiveRule(catalogue.rule, REASON))
+    await _waived(app_engine, catalogue.rule)
     user_id = await _user(app_engine)
     await _grant(app_engine, user_id, catalogue.orderer)
 
@@ -426,7 +456,7 @@ async def test_a_revoke_waits_for_a_grant_relying_on_the_waiver_then_refuses(
 async def test_a_grant_arriving_during_a_revoke_waits_then_is_refused(
     app_engine: AsyncEngine, catalogue: _Catalogue
 ) -> None:
-    await _service(app_engine).waive(_admin(), WaiveRule(catalogue.rule, REASON))
+    await _waived(app_engine, catalogue.rule)
     user_id = await _user(app_engine)
     await _grant(app_engine, user_id, catalogue.orderer)
 
@@ -505,7 +535,7 @@ async def test_a_rule_made_a_floor_later_stops_honouring_its_open_waivers(
 ) -> None:
     """Clearing `waivable` is the rule author's call, made in a migration.
     From then on the tenant's open waiver lifts nothing: fail closed."""
-    await _service(app_engine).waive(_admin(), WaiveRule(catalogue.rule, REASON))
+    await _waived(app_engine, catalogue.rule)
     async with migrator_engine.begin() as conn:
         await conn.execute(
             sa.update(tables.sod_rules)
@@ -517,3 +547,179 @@ async def test_a_rule_made_a_floor_later_stops_honouring_its_open_waivers(
     with pytest.raises(ConflictError) as refused:
         await _grant(app_engine, user_id, catalogue.orderer, catalogue.payer)
     assert refused.value.details["rule"] == catalogue.rule
+
+
+# ---- a second person (f381f1694395) --------------------------------------------
+
+
+async def test_the_admin_who_proposed_a_waiver_cannot_confirm_it(
+    app_engine: AsyncEngine, migrator_engine: AsyncEngine, catalogue: _Catalogue
+) -> None:
+    proposer = _admin()
+    service = _service(app_engine)
+    await service.waive(proposer, WaiveRule(catalogue.rule, REASON))
+
+    with pytest.raises(ConflictError, match="second person"):
+        await service.confirm(proposer, ConfirmWaiver(catalogue.rule, "tôi tự đồng ý"))
+
+    listed = {r.key: r for r in await service.list_rules(_admin())}
+    waiver = listed[catalogue.rule].waiver
+    assert waiver is not None and waiver.confirmed_by is None
+    assert await _audit_actions(app_engine, catalogue.rule) == [("platform.sod.waive", REASON)]
+    # The database's rule, for every writer: not even the migrator confirms a
+    # waiver in its proposer's name, or creates one already confirmed.
+    with pytest.raises(IntegrityError, match="second_person"):
+        async with migrator_engine.begin() as conn:
+            await conn.execute(
+                sa.update(tables.sod_waivers)
+                .where(tables.sod_waivers.c.rule_key == catalogue.rule)
+                .values(
+                    confirmed_by=tables.sod_waivers.c.granted_by,
+                    confirmed_at=sa.func.now(),
+                    confirm_reason="x",
+                )
+            )
+    with pytest.raises(IntegrityError, match="never on creation"):
+        async with migrator_engine.begin() as conn:
+            await conn.execute(
+                sa.insert(tables.sod_waivers).values(
+                    id=uuid.uuid4(),
+                    tenant_id=BETA,
+                    rule_key=catalogue.rule,
+                    reason=REASON,
+                    granted_by=uuid.uuid4(),
+                    confirmed_by=uuid.uuid4(),
+                    confirmed_at=sa.func.now(),
+                    confirm_reason="x",
+                )
+            )
+
+
+async def test_confirming_needs_the_scope_a_reason_and_a_waiver_waiting_for_it(
+    app_engine: AsyncEngine, catalogue: _Catalogue
+) -> None:
+    service = _service(app_engine)
+    with pytest.raises(NotFoundError):
+        await service.confirm(_admin(), ConfirmWaiver(catalogue.rule, "ok"))
+    await service.waive(_admin(), WaiveRule(catalogue.rule, REASON))
+    without_scope = AccessContext(
+        tenant_id=ALPHA,
+        workspace_id=ALPHA_WS,
+        principal_id=uuid.uuid4(),
+        roles=frozenset({"org_admin"}),
+        scopes=frozenset({"platform.roles.read"}),
+        plan_id="professional",
+    )
+    with pytest.raises(PermissionDeniedError):
+        await service.confirm(without_scope, ConfirmWaiver(catalogue.rule, "ok"))
+    with pytest.raises(DomainError, match="reason"):
+        await service.confirm(_admin(), ConfirmWaiver(catalogue.rule, "  "))
+
+    await service.confirm(_admin(), ConfirmWaiver(catalogue.rule, "ok"))
+    # Confirmed once; a second confirmation finds nothing waiting, and the
+    # confirmation itself cannot be rewritten.
+    with pytest.raises(NotFoundError):
+        await service.confirm(_admin(), ConfirmWaiver(catalogue.rule, "again"))
+    with pytest.raises(IntegrityError, match="confirmed, once"):
+        async with app_engine.begin() as conn:
+            await _scoped(conn)
+            await conn.execute(
+                sa.text(
+                    "UPDATE platform.sod_waivers SET confirmed_by = gen_random_uuid()"
+                    " WHERE rule_key = :k"
+                ),
+                {"k": catalogue.rule},
+            )
+
+
+# ---- a role cannot change under a membership (f381f1694395) --------------------
+
+
+async def _membership_id(engine: AsyncEngine, user_id: uuid.UUID) -> uuid.UUID:
+    async with engine.connect() as conn:
+        found = await conn.scalar(
+            sa.select(tables.memberships.c.id).where(tables.memberships.c.user_id == user_id)
+        )
+    assert isinstance(found, uuid.UUID)
+    return found
+
+
+async def _set_scopes(engine: AsyncEngine, table: sa.Table, key: str, scopes: list[str]) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(table).where(table.c.key == key).values(scopes=scopes))
+
+
+async def _scopes_of(engine: AsyncEngine, table: sa.Table, key: str) -> list[str]:
+    async with engine.connect() as conn:
+        found = await conn.scalar(sa.select(table.c.scopes).where(table.c.key == key))
+    return list(found or [])
+
+
+async def test_widening_a_role_past_a_rule_is_refused_naming_the_memberships(
+    app_engine: AsyncEngine, migrator_engine: AsyncEngine, catalogue: _Catalogue
+) -> None:
+    user_id = await _user(app_engine)
+    await _grant(app_engine, user_id, catalogue.orderer)
+    membership = await _membership_id(migrator_engine, user_id)
+    before = await _scopes_of(migrator_engine, tables.roles, catalogue.orderer)
+    pay = (await _scopes_of(migrator_engine, tables.roles, catalogue.payer))[0]
+
+    with pytest.raises(IntegrityError, match="would break") as refused:
+        await _set_scopes(migrator_engine, tables.roles, catalogue.orderer, [*before, pay])
+    assert str(membership) in str(refused.value)
+    assert catalogue.rule in str(refused.value)
+    assert await _scopes_of(migrator_engine, tables.roles, catalogue.orderer) == before
+
+    # Narrowing, or widening by a scope no rule pairs, is not a conflict.
+    await _set_scopes(migrator_engine, tables.roles, catalogue.orderer, [*before, "test.unpaired"])
+    await _set_scopes(migrator_engine, tables.roles, catalogue.orderer, before)
+
+
+async def test_a_confirmed_waiver_lets_the_role_change(
+    app_engine: AsyncEngine, migrator_engine: AsyncEngine, catalogue: _Catalogue
+) -> None:
+    user_id = await _user(app_engine)
+    await _grant(app_engine, user_id, catalogue.orderer)
+    before = await _scopes_of(migrator_engine, tables.roles, catalogue.orderer)
+    pay = (await _scopes_of(migrator_engine, tables.roles, catalogue.payer))[0]
+    await _service(app_engine).waive(_admin(), WaiveRule(catalogue.rule, REASON))
+    # Proposed only: still refused.
+    with pytest.raises(IntegrityError, match="would break"):
+        await _set_scopes(migrator_engine, tables.roles, catalogue.orderer, [*before, pay])
+
+    await _service(app_engine).confirm(_admin(), ConfirmWaiver(catalogue.rule, "ok"))
+    await _set_scopes(migrator_engine, tables.roles, catalogue.orderer, [*before, pay])
+    await _set_scopes(migrator_engine, tables.roles, catalogue.orderer, before)
+
+
+async def test_widening_a_permission_set_past_a_rule_is_refused(
+    app_engine: AsyncEngine, migrator_engine: AsyncEngine, catalogue: _Catalogue
+) -> None:
+    extra = f"test_set_{uuid.uuid4().hex[:10]}"
+    async with migrator_engine.begin() as conn:
+        await conn.execute(sa.insert(tables.permission_sets).values(key=extra, name=extra))
+    try:
+        user_id = await _user(app_engine)
+        await _grant(app_engine, user_id, catalogue.orderer)
+        async with migrator_engine.begin() as conn:
+            await conn.execute(
+                sa.update(tables.memberships)
+                .where(tables.memberships.c.user_id == user_id)
+                .values(permission_set_keys=[extra])
+            )
+        membership = await _membership_id(migrator_engine, user_id)
+        pay = (await _scopes_of(migrator_engine, tables.roles, catalogue.payer))[0]
+
+        with pytest.raises(IntegrityError, match="would break") as refused:
+            await _set_scopes(migrator_engine, tables.permission_sets, extra, [pay])
+        assert str(membership) in str(refused.value)
+    finally:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(
+                sa.update(tables.memberships)
+                .where(tables.memberships.c.permission_set_keys.op("?")(extra))
+                .values(permission_set_keys=[])
+            )
+            await conn.execute(
+                sa.delete(tables.permission_sets).where(tables.permission_sets.c.key == extra)
+            )

@@ -1,0 +1,18 @@
+{
+  "doc_type": "supplier_confirmation_email",
+  "document_text": "[không đọc được nội dung]",
+  "model_reading": {
+    "confirmed": {
+      "value": "yes",
+      "quote": "Chúng tôi xác nhận đồng ý sản xuất Nồi inox 24cm."
+    },
+    "quantity": {
+      "value": "1200",
+      "quote": "Số lượng: 1200 cái"
+    },
+    "delivery_date": {
+      "value": "2026-11-20",
+      "quote": "Ngày giao: 20/11/2026"
+    }
+  }
+}

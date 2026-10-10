@@ -16,12 +16,15 @@ class ErrorCode(StrEnum):
     VALIDATION_FAILED = "validation_failed"
     NOT_FOUND = "not_found"
     CONFLICT = "conflict"
+    UNAUTHENTICATED = "unauthenticated"
     PERMISSION_DENIED = "permission_denied"
     ENTITLEMENT_DENIED = "entitlement_denied"
     APPROVAL_REQUIRED = "approval_required"
     TENANT_CONTEXT_MISSING = "tenant_context_missing"
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
     RATE_LIMITED = "rate_limited"
+    PAYLOAD_TOO_LARGE = "payload_too_large"
+    UNSUPPORTED_MEDIA_TYPE = "unsupported_media_type"
     TIMEOUT = "timeout"
     UPSTREAM_UNAVAILABLE = "upstream_unavailable"
     INTERNAL = "internal"
@@ -44,12 +47,31 @@ class DomainError(DWError):
     code = ErrorCode.VALIDATION_FAILED
 
 
+class ConfigError(DomainError):
+    """A configuration artifact is invalid; startup must fail.
+
+    Here rather than beside the registries that raise it most, because the
+    composition roots of both processes build components from packages that do
+    not depend on each other (the knowledge adapters, the runtime registries),
+    and a refusal at startup has to be one type whichever package refused.
+    """
+
+
 class NotFoundError(DWError):
     code = ErrorCode.NOT_FOUND
 
 
 class ConflictError(DWError):
     code = ErrorCode.CONFLICT
+
+
+class UnauthenticatedError(DWError):
+    """The request names no verifiable caller: no bearer token, a malformed
+    one, or one the verifier refuses. Signing in again is the fix, which is
+    what separates it from :class:`PermissionDeniedError` (a known caller
+    without the right)."""
+
+    code = ErrorCode.UNAUTHENTICATED
 
 
 class PermissionDeniedError(DWError):
@@ -73,6 +95,22 @@ class QuotaExceededError(DWError):
     """
 
     code = ErrorCode.RATE_LIMITED
+
+
+class PayloadTooLargeError(DWError):
+    """The request carries more bytes than this operation accepts.
+
+    Its own code rather than ``validation_failed``: the client's answer is to
+    send something smaller, not to correct a field, and HTTP has a status for it.
+    """
+
+    code = ErrorCode.PAYLOAD_TOO_LARGE
+
+
+class UnsupportedMediaTypeError(DWError):
+    """The content is of a type this operation does not accept."""
+
+    code = ErrorCode.UNSUPPORTED_MEDIA_TYPE
 
 
 class ApprovalRequiredError(DWError):

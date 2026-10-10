@@ -29,6 +29,8 @@ class WorkspaceMember:
     role_keys: tuple[str, ...]
     permission_set_keys: tuple[str, ...]
     department: str
+    # `invited` until the first sign-in links an identity, then `active`.
+    status: str = "active"
 
 
 @dataclass(frozen=True, slots=True)

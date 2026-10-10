@@ -1,0 +1,18 @@
+{
+  "doc_type": "supplier_confirmation_email",
+  "document_text": "From: sales@minhphat.vn\nSubject: Xac nhan don hang\nChung toi xac nhan dong y san xuat Noi inox 24cm.\nSo luong: 1200 cai\nNgay giao: 20/11/2026\n",
+  "model_reading": {
+    "confirmed": {
+      "value": "yes",
+      "quote": "Chung toi xac nhan dong y san xuat Noi inox 24cm."
+    },
+    "quantity": {
+      "value": "1200",
+      "quote": "So luong: 1200 cai"
+    },
+    "delivery_date": {
+      "value": "2026-11-20",
+      "quote": "Ngay giao: 20/11/2026"
+    }
+  }
+}

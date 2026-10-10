@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from dw_knowledge.contracts import DEFAULT_COLLECTION
@@ -126,6 +126,22 @@ class ApiSettings(BaseSettings):
     feedback_bucket: str = Field(
         default="feedback", validation_alias=AliasChoices("DW_API_FEEDBACK_BUCKET")
     )
+    # Supply Chain case documents (ADR 0021): a bucket of their own, the same
+    # name the worker reads (`dw_worker.settings.case_documents_bucket`) for
+    # offboarding and the orphan sweep.
+    case_documents_bucket: str = Field(
+        default="case-documents",
+        validation_alias=AliasChoices("DW_API_CASE_DOCUMENTS_BUCKET", "CASE_DOCUMENTS_BUCKET"),
+    )
+    # The largest case document one upload may carry. The upload route refuses
+    # a request body over it (plus the multipart framing) from its headers,
+    # before the form is parsed, and holds at most one byte past it in memory.
+    case_document_max_bytes: int = Field(
+        default=25 * 1024 * 1024,
+        ge=1,
+        le=200 * 1024 * 1024,
+        validation_alias=AliasChoices("DW_API_CASE_DOCUMENT_MAX_BYTES"),
+    )
 
     # --- vector store ---
     qdrant_url: str | None = Field(
@@ -143,19 +159,30 @@ class ApiSettings(BaseSettings):
     )
 
     # --- embeddings / rerank ---
-    # "hash" (offline default) | "tei" (self-hosted) | "openai_compatible"
-    # (the configured gateway; model and width come from the model profile).
+    # "hash" (offline default) | "openai_compatible" (the configured gateway;
+    # model and width come from the model profile). Anything else is refused at
+    # startup rather than quietly read as "hash".
     embedding_provider: str = Field(
         default="hash", validation_alias=AliasChoices("DW_API_EMBEDDING_PROVIDER")
     )
-    embed_url: str | None = Field(
-        default=None, validation_alias=AliasChoices("DW_API_EMBED_URL", "TEI_EMBED_URL")
+    # "none" (vector order, the default) | "cohere_compatible" (a hosted
+    # `POST {base_url}/rerank` API, e.g. the FPT Cloud AI Marketplace).
+    rerank_provider: str = Field(
+        default="none", validation_alias=AliasChoices("DW_API_RERANK_PROVIDER")
     )
-    rerank_url: str | None = Field(
-        default=None, validation_alias=AliasChoices("DW_API_RERANK_URL", "TEI_RERANK_URL")
+    rerank_base_url: str | None = Field(
+        default=None, validation_alias=AliasChoices("DW_API_RERANK_BASE_URL")
     )
-    embed_dimension: int = Field(
-        default=1024, validation_alias=AliasChoices("DW_API_EMBED_DIMENSION")
+    rerank_api_key: str | None = Field(
+        default=None, validation_alias=AliasChoices("DW_API_RERANK_API_KEY")
+    )
+    rerank_model: str = Field(
+        default="bge-reranker-v2-m3", validation_alias=AliasChoices("DW_API_RERANK_MODEL")
+    )
+    # A search waits on this, so it stays short: past it the gateway keeps the
+    # vector order instead of failing the search.
+    rerank_timeout_seconds: float = Field(
+        default=10.0, gt=0, le=60, validation_alias=AliasChoices("DW_API_RERANK_TIMEOUT_SECONDS")
     )
 
     # --- model provider ---
@@ -217,7 +244,7 @@ class ApiSettings(BaseSettings):
         ),
     )
 
-    # --- Zalo self-link (zalo-channel ticket 01) ---
+    # --- Zalo self-link (channels Z1) ---
     # One bot per deployment. The token is a credential (it rides in every Bot
     # API URL); the link secret signs the one-time ``/start`` token and must be
     # the worker's value too. Both unset = the /zalo routes are not mounted.
@@ -230,10 +257,47 @@ class ApiSettings(BaseSettings):
         default=SecretStr(""),
         validation_alias=AliasChoices("DW_API_ZALO_LINK_SECRET", "ZALO_LINK_SECRET"),
     )
+    # The server key a decision code is hashed under (ADR 0007, channels Z5):
+    # HMAC-SHA256, so whoever reads the codes table cannot recover a code. The
+    # worker holds the same value to check a code sent from Zalo. Empty = no
+    # code is ever issued and approvals are decided on the web only.
+    approval_code_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DW_API_APPROVAL_CODE_SECRET", "DW_APPROVAL_CODE_SECRET"),
+    )
     # Deep link to the bot's chat shown on the settings page; empty = none.
     zalo_bot_link: str = Field(
         default="", validation_alias=AliasChoices("DW_API_ZALO_BOT_LINK", "ZALO_BOT_LINK")
     )
+
+    # poll = the worker long-polls getUpdates and the webhook route answers 404;
+    # webhook = Zalo POSTs to /api/v1/zalo/webhook and the worker drains what
+    # the API queued (ADR 0008). The worker reads the same
+    # variable, so one value decides both processes: one bot, one reader.
+    zalo_updates_mode: Literal["poll", "webhook"] = Field(
+        default="poll",
+        validation_alias=AliasChoices("DW_API_ZALO_UPDATES_MODE", "ZALO_UPDATES_MODE"),
+    )
+    # Sent by Zalo in ``X-Bot-Api-Secret-Token`` on every webhook call (given to
+    # ``setWebhook`` as ``secret_token`` by scripts/zalo_webhook.py). Empty =
+    # no webhook, whatever the mode. At least 32 characters when deployed.
+    zalo_webhook_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DW_API_ZALO_WEBHOOK_SECRET", "ZALO_WEBHOOK_SECRET"),
+    )
+    # The API as the internet reaches it (the api hostname, ADR 0023): the
+    # webhook URL registered with Zalo is built from it. https when deployed.
+    public_base_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("DW_API_PUBLIC_BASE_URL"),
+    )
+
+    @property
+    def zalo_webhook_enabled(self) -> bool:
+        """The webhook exists only in webhook mode and only with a secret to check."""
+        return self.zalo_updates_mode == "webhook" and bool(
+            self.zalo_webhook_secret.get_secret_value()
+        )
 
     @property
     def zalo_link_enabled(self) -> bool:
@@ -261,6 +325,15 @@ class ApiSettings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("DW_API_LANGFUSE_SECRET_KEY", "LANGFUSE_SECRET_KEY"),
     )
+
+    @field_validator("embedding_provider", "rerank_provider", mode="before")
+    @classmethod
+    def _blank_means_unset(cls, value: object, info: ValidationInfo) -> object:
+        """Compose reads ``${X:-default}``, so a blank line in .env is "unset" in
+        a container; the same .env on the host must not mean something else."""
+        if value == "" and info.field_name is not None:
+            return cls.model_fields[info.field_name].default
+        return value
 
     @property
     def is_deployed(self) -> bool:
@@ -300,7 +373,7 @@ class ApiSettings(BaseSettings):
             if self.embedding_provider == "hash":
                 raise RuntimeError(
                     "the hash embedding provider carries no meaning and is forbidden in the "
-                    f"{self.profile} profile — configure 'tei' or 'openai_compatible'"
+                    f"{self.profile} profile — configure 'openai_compatible'"
                 )
             if not self.qdrant_url:
                 raise RuntimeError(
@@ -310,6 +383,36 @@ class ApiSettings(BaseSettings):
             if not self.cors_origins:
                 raise RuntimeError(
                     f"CORS origins must be listed explicitly in the {self.profile} profile"
+                )
+            # Real people sign in here (ADR 0009): a token, a cookie or a
+            # cross-origin response over plain http is readable on the path.
+            # The issuer is the URL the browser logs in through, so it must be
+            # the TLS host too; the JWKS fetch stays internal and is not checked.
+            plain = [
+                name
+                for name, url in (
+                    ("DW_API_OIDC_ISSUER_URL", self.oidc_issuer_url or ""),
+                    ("DW_API_PUBLIC_BASE_URL", self.public_base_url),
+                    *(("DW_API_CORS_ORIGINS", origin) for origin in self.cors_origins),
+                )
+                if not url.startswith("https://")
+            ]
+            if plain:
+                raise RuntimeError(
+                    f"{', '.join(dict.fromkeys(plain))} must start with https:// "
+                    f"in the {self.profile} profile"
+                )
+            # Zalo reaches the webhook over the internet; a guessable secret
+            # would hand chat traffic to anyone who tries (ADR 0008). The https
+            # base URL it is registered under is checked above for every
+            # deployment, webhook or not.
+            if (
+                self.zalo_updates_mode == "webhook"
+                and len(self.zalo_webhook_secret.get_secret_value()) < 32
+            ):
+                raise RuntimeError(
+                    "ZALO_UPDATES_MODE=webhook needs a ZALO_WEBHOOK_SECRET of at least "
+                    f"32 characters in the {self.profile} profile"
                 )
         if self.auth_mode == "oidc" and not self.oidc_issuer_url:
             raise RuntimeError("auth_mode=oidc requires DW_API_OIDC_ISSUER_URL")

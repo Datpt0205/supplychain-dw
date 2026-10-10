@@ -7,13 +7,14 @@ it directly. Reports are plain JSON under evals/reports.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 from dw_evals.dataset import CaseCategory, EvalCase, EvalDataset
-from dw_evals.graders import GRADERS, GraderContext, GradeResult
+from dw_evals.graders import Grader, GraderContext, GradeResult
 
 
 class CaseResult(BaseModel):
@@ -57,8 +58,10 @@ def _load_ref(repo_root: Path, ref: str) -> dict[str, Any]:
     return data
 
 
-def _grade(ctx: GraderContext, repo_root: Path, case: EvalCase) -> GradeResult:
-    grader = GRADERS.get(case.grader)
+def _grade(
+    ctx: GraderContext, repo_root: Path, case: EvalCase, graders: Mapping[str, Grader]
+) -> GradeResult:
+    grader = graders.get(case.grader)
     if grader is None:
         return GradeResult.fail("unknown grader", grader=case.grader)
     try:
@@ -69,14 +72,23 @@ def _grade(ctx: GraderContext, repo_root: Path, case: EvalCase) -> GradeResult:
         return GradeResult.fail("grader raised", error=f"{type(exc).__name__}: {exc}")
 
 
-def run_dataset(dataset: EvalDataset, repo_root: Path) -> EvalReport:
-    ctx = GraderContext(repo_root=repo_root)
+def run_dataset(
+    dataset: EvalDataset,
+    repo_root: Path,
+    graders: Mapping[str, Grader],
+    *,
+    context: GraderContext | None = None,
+) -> EvalReport:
+    """Grade every case with `graders`, the ONLY table consulted: the caller
+    (the eval composition root) decides which graders exist. No default, so a
+    caller that forgets the table is a type error, not an empty table."""
+    ctx = context or GraderContext(repo_root=repo_root)
     results = tuple(
         CaseResult(
             case_id=case.case_id,
             category=case.category,
             grader=case.grader,
-            passed=(result := _grade(ctx, repo_root, case)).passed,
+            passed=(result := _grade(ctx, repo_root, case, graders)).passed,
             details=result.details,
         )
         for case in dataset.cases

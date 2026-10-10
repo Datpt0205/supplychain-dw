@@ -1,0 +1,20 @@
+{
+  "product_moves": [
+    [
+      "DX-2026-041",
+      "proposed",
+      "propose"
+    ],
+    [
+      "DX-2026-042",
+      "proposed",
+      "import"
+    ],
+    [
+      "DX-2026-041",
+      "pending_bod_review",
+      "pass_sample"
+    ]
+  ],
+  "model_writing": "invalid"
+}

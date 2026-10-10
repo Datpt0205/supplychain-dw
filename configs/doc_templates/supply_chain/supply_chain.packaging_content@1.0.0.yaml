@@ -1,0 +1,38 @@
+schema_version: '1.0'
+template_id: supply_chain.packaging_content
+version: 1.0.0
+title: NỘI DUNG BAO BÌ
+doc_type: packaging_content
+description: 'Bước 12: khung nội dung bao bì từ BM04 (tên, mã, SKU, chất liệu, thông
+  số, xuất xứ); MKT điền nội dung bắt buộc còn thiếu của nhãn.'
+fields:
+- name: po_reference
+  label: Số PO
+- name: product_name
+  label: Tên hàng hóa
+  required: true
+- name: sku_codes
+  label: Mã SKU
+  required: true
+- name: material
+  label: Chất liệu
+  required: true
+- name: dimensions
+  label: Thông số kỹ thuật
+  required: true
+- name: origin
+  label: Xuất xứ
+  required: true
+- name: responsible_party
+  label: Tổ chức chịu trách nhiệm (tên, địa chỉ)
+  required: true
+- name: usage_instructions
+  label: Hướng dẫn sử dụng, bảo quản
+  required: true
+- name: warnings
+  label: Thông tin cảnh báo
+  required: true
+- name: barcode
+  label: Mã vạch
+- name: notes
+  label: Ghi chú

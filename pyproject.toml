@@ -130,11 +130,16 @@ strict = true
 warn_unreachable = true
 show_error_codes = true
 plugins = ["pydantic.mypy"]
+# Integration tests are typed like the code they drive: the apps' too, not only
+# the packages' (they were outside `files`, so a call against a changed port
+# type-checked nowhere until it ran against a database).
 files = [
     "packages/python",
     "apps/api/src",
     "apps/docgen/src",
+    "apps/docgen/tests/integration",
     "apps/worker/src",
+    "apps/worker/tests/integration",
     "scripts",
 ]
 exclude = ['db/migrations/versions', 'tests/(unit|integration)/conftest\.py$']
@@ -156,6 +161,7 @@ mypy_path = [
     "packages/python/dw_agent_runtime/tests/integration",
     "packages/python/dw_agent_runtime/tests/unit",
     "packages/python/dw_supply_chain/tests/integration",
+    "apps/worker/tests/integration",
 ]
 explicit_package_bases = true
 namespace_packages = true
@@ -170,6 +176,20 @@ disallow_incomplete_defs = false
 [[tool.mypy.overrides]]
 module = ["asyncpg", "asyncpg.*"]
 ignore_missing_imports = true
+
+# openpyxl ships no type information; dw_knowledge's in-process XLSX reader
+# (supply-chain ADR 0021 amended 2026-10-09) is its one importer outside docgen.
+[[tool.mypy.overrides]]
+module = ["openpyxl", "openpyxl.*"]
+ignore_missing_imports = true
+
+# Docling comes with the worker's optional `parsers` extra, which CI does not
+# install; dw_knowledge's OCR adapter (supply-chain ticket ai-automation/21)
+# imports it lazily and treats what it returns as untyped either way.
+[[tool.mypy.overrides]]
+module = ["docling", "docling.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
 
 # ---------------------------------------------------------------------------
 # pytest
@@ -266,8 +286,9 @@ forbidden_modules = ["dw_api", "dw_worker", "dw_docgen"]
 [[tool.importlinter.contracts]]
 # The other half of the comment above, which the scaffold's contract does not
 # check on its own: a platform package reaching into a context is the platform
-# becoming that product. `dw_evals` is deliberately absent — it grades a
-# context's refusals in that context's own code.
+# becoming that product. `dw_evals` included: a context's graders live in the
+# context (`<context>.testing.eval_graders`) and join the platform's in the eval
+# composition root, `scripts/run_evals.py` (platform-runtime eval-grader-registry).
 name = "Platform packages do not import a bounded context"
 type = "forbidden"
 source_modules = [
@@ -278,6 +299,7 @@ source_modules = [
     "dw_memory",
     "dw_connectors",
     "dw_observability",
+    "dw_evals",
 ]
 forbidden_modules = ["dw_supply_chain"]
 
@@ -374,18 +396,25 @@ forbidden_modules = ["qdrant_client", "minio", "boto3"]
 ignore_imports = ["dw_memory.adapters.qdrant_ranker -> qdrant_client"]
 
 [[tool.importlinter.contracts]]
-# ADR 0014 / zalo-channel ticket 01: what the bot hears decides nothing. The
-# self-link flow links and unlinks a chat and replies; it cannot reach the
-# approval service or build an access context, so no text in a Zalo message can
-# approve, reject or act as anyone. Z5 opens one separate, code-gated path and
-# keeps this contract on the link flow. The worker's poll lane is in it too,
+# ADR 0007 / channels Z1: what the bot hears decides nothing on its
+# own. The self-link flow links and unlinks a chat and replies; it cannot reach
+# the approval service or build an access context. Since Z4 the update entry
+# (`zalo_inbound`) and the inbound router (`dw_connectors.inbound`) are in it
+# too: they hand a linked person's message to commands registered at the
+# composition root, which receive a context the PLATFORM built from that
+# person's own membership, cut to the command's ceiling (ADR 0005 condition 2).
+# None of these modules can build one, read a scope or reach approvals — the
+# router's context type is a parameter the composition root binds. Z5's decide
+# command is registered the same way. The worker's poll lane is in it too,
 # which is why `dw_worker` and `dw_api` are root packages: an app package left
 # out of `root_packages` is one import-linter cannot see into.
-name = "The Zalo link flow cannot reach approvals or access contexts"
+name = "The Zalo link flow and inbound router cannot reach approvals or access contexts"
 type = "forbidden"
 source_modules = [
     "dw_connectors.adapters.zalo_link",
     "dw_connectors.adapters.zalo_bot",
+    "dw_connectors.adapters.zalo_inbound",
+    "dw_connectors.inbound",
     "dw_worker.consumers.zalo_poll",
 ]
 forbidden_modules = ["dw_agent_runtime", "dw_platform", "dw_api"]

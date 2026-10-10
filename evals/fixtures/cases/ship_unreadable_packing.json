@@ -1,0 +1,48 @@
+{
+  "doc_type": "packing_list",
+  "document_text": "[không đọc được nội dung]",
+  "model_reading": {
+    "invoice_number": {
+      "value": "CI-2026-301",
+      "quote": "Invoice No: CI-2026-301"
+    },
+    "container_number": {
+      "value": "MSCU1234567",
+      "quote": "Container No: MSCU1234567"
+    },
+    "total_cartons": {
+      "value": "170",
+      "quote": "Total: 170 ctns"
+    },
+    "lines": [
+      {
+        "sku_code": {
+          "value": "EL-00001-01",
+          "quote": "EL-00001-01 Noi inox 24cm 500 pcs 50 ctns"
+        },
+        "quantity": {
+          "value": "500",
+          "quote": "EL-00001-01 Noi inox 24cm 500 pcs 50 ctns"
+        },
+        "cartons": {
+          "value": "50",
+          "quote": "EL-00001-01 Noi inox 24cm 500 pcs 50 ctns"
+        }
+      },
+      {
+        "sku_code": {
+          "value": "EL-00001-02",
+          "quote": "EL-00001-02 Noi inox 26cm 1200 pcs 120 ctns"
+        },
+        "quantity": {
+          "value": "1200",
+          "quote": "EL-00001-02 Noi inox 26cm 1200 pcs 120 ctns"
+        },
+        "cartons": {
+          "value": "120",
+          "quote": "EL-00001-02 Noi inox 26cm 1200 pcs 120 ctns"
+        }
+      }
+    ]
+  }
+}

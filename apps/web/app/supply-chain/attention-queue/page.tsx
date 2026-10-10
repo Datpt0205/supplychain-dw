@@ -2,13 +2,18 @@
 
 import { useCallback } from "react";
 import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, Skeleton } from "@dw/ui";
-import { EmptyState } from "../../../components/empty-state";
-import { PageHeading } from "../../../components/page-heading";
-import { CaseStateBadge } from "../../../components/supply-chain/case-state-badge";
-import { MissingUpdateBadge } from "../../../components/supply-chain/missing-update-badge";
-import { SlaStatusBadge } from "../../../components/supply-chain/sla-status-badge";
+import { Empty, Flex, Table, Typography, type TableColumnsType } from "antd";
+import type { AttentionItem } from "@dw/contracts";
+import { PageHeader } from "@dw/ui";
+import { LoadError } from "../../../components/load-error";
+import { CaseStateTag } from "../../../components/supply-chain/case-state-badge";
+import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
+import { MissingUpdateTag } from "../../../components/supply-chain/missing-update-badge";
+import { PoReferenceText } from "../../../components/supply-chain/po-reference";
+import {
+  SlaStatusTag,
+  milestoneLabel,
+} from "../../../components/supply-chain/sla-status-badge";
 import { apiClient } from "../../../lib/session";
 import { useCachedResource } from "../../../lib/use-cached-resource";
 
@@ -17,69 +22,110 @@ import { useCachedResource } from "../../../lib/use-cached-resource";
  * breach, a supplier gone quiet — gathered in one place. Nothing here is
  * invented or ranked by a model; `GET /attention-queue` computes both
  * signals the same way the Case Workspace's own health cards do, just for
- * every active case in the tenant instead of one.
+ * every active case in the tenant instead of one. Rows arrive in the
+ * server's order and render as given.
  */
 export default function AttentionQueuePage() {
-  const {
-    data: items,
-    loading,
-    error,
-  } = useCachedResource(
+  const { data, loading, error, reload } = useCachedResource(
     "supply-chain:attention-queue",
     useCallback(() => apiClient().listAttentionQueue(), []),
   );
 
+  const columns: TableColumnsType<AttentionItem> = [
+    {
+      title: "Hồ sơ PO",
+      key: "case",
+      render: (_: unknown, item) => (
+        <Flex vertical>
+          <Link href={`/supply-chain/po-cases/${item.case.id}`}>
+            <PoReferenceText reference={item.case.po_reference} />
+          </Link>
+          <Typography.Text type="secondary">
+            {item.case.supplier_name}
+          </Typography.Text>
+        </Flex>
+      ),
+    },
+    {
+      title: "Trạng thái",
+      key: "state",
+      render: (_: unknown, item) => <CaseStateTag state={item.case.state} />,
+    },
+    {
+      title: "SLA",
+      key: "sla",
+      render: (_: unknown, item) =>
+        item.sla ? (
+          <Flex vertical gap={2} align="start">
+            <SlaStatusTag status={item.sla.status} />
+            {item.sla.milestone && (
+              <Typography.Text type="secondary">
+                Mốc {milestoneLabel(item.sla.milestone)} · {item.sla.age_days}{" "}
+                ngày
+                {item.sla.threshold_days !== null &&
+                  ` / hạn ${item.sla.threshold_days} ngày`}
+              </Typography.Text>
+            )}
+          </Flex>
+        ) : (
+          <Typography.Text type="secondary">Không có tín hiệu</Typography.Text>
+        ),
+    },
+    {
+      title: "Cập nhật của NCC",
+      key: "missing",
+      render: (_: unknown, item) =>
+        item.missing_update ? (
+          <Flex vertical gap={2} align="start">
+            <MissingUpdateTag status={item.missing_update.status} />
+            <Typography.Text type="secondary">
+              Im lặng {item.missing_update.age_days} ngày
+            </Typography.Text>
+          </Flex>
+        ) : (
+          <Typography.Text type="secondary">Không có tín hiệu</Typography.Text>
+        ),
+    },
+  ];
+
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <PageHeading
-        icon={AlertTriangle}
+    <div className="mx-auto max-w-6xl">
+      <PageHeader
+        breadcrumb={supplyChainCrumbs("Cần chú ý")}
         title="Cần chú ý"
-        description="Case trễ SLA hoặc nhà cung cấp im lặng quá lâu — tính toán thuần túy, không suy diễn."
+        subtitle={
+          data
+            ? `${data.length} Hồ sơ PO trễ SLA hoặc NCC im lặng quá lâu. Tính bằng quy tắc, không suy diễn.`
+            : "Hồ sơ PO trễ SLA hoặc NCC im lặng quá lâu. Tính bằng quy tắc, không suy diễn."
+        }
       />
-      {loading ? (
-        <Skeleton className="h-64 w-full" />
-      ) : error != null || !items ? (
-        // Never "every case is on track" read off a failed request — that is
-        // the one claim this page exists to make, and a 403 did not make it.
-        <p className="text-sm text-destructive">
-          Không tải được danh sách cần chú ý:{" "}
-          {error instanceof Error ? error.message : "lỗi không xác định"}
-        </p>
-      ) : items.length === 0 ? (
-        <EmptyState
-          icon={AlertTriangle}
-          title="Không có case nào cần chú ý"
-          description="Không case nào vượt mốc SLA đã được xác nhận, và case nào cũng có cập nhật gần đây từ nhà cung cấp. Mốc SLA còn chờ xác nhận không được tính."
-        />
+      {/* Never "every case is on track" read off a failed request: that is
+          the one claim this page exists to make, and a 403 did not make it. */}
+      {error != null && !data ? (
+        <LoadError error={error} onRetry={reload} />
       ) : (
-        <ul className="space-y-3">
-          {items.map((item) => (
-            <li key={item.case.id}>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-                  <CardTitle className="text-sm font-medium">
-                    <Link
-                      href={`/supply-chain/po-cases/${item.case.id}`}
-                      className="hover:underline"
-                    >
-                      {item.case.po_reference}
-                    </Link>
-                    <span className="ml-2 font-normal text-muted-foreground">
-                      {item.case.supplier_name}
-                    </span>
-                  </CardTitle>
-                  <CaseStateBadge state={item.case.state} />
-                </CardHeader>
-                <CardContent className="flex flex-wrap gap-2">
-                  {item.sla && <SlaStatusBadge status={item.sla.status} />}
-                  {item.missing_update && (
-                    <MissingUpdateBadge status={item.missing_update.status} />
-                  )}
-                </CardContent>
-              </Card>
-            </li>
-          ))}
-        </ul>
+        <Table<AttentionItem>
+          rowKey={(item) => item.case.id}
+          size="middle"
+          pagination={false}
+          sticky
+          scroll={{ x: "max-content" }}
+          loading={loading}
+          columns={columns}
+          dataSource={data ?? []}
+          locale={{
+            emptyText: loading ? (
+              " "
+            ) : (
+              <Empty description="Không Hồ sơ PO nào cần chú ý: không hồ sơ nào vượt mốc SLA đã xác nhận, và NCC nào cũng có cập nhật gần đây. Mốc SLA còn chờ xác nhận không được tính." />
+            ),
+          }}
+          footer={
+            data && data.length > 0
+              ? () => `${data.length} hồ sơ, theo thứ tự máy chủ trả về.`
+              : undefined
+          }
+        />
       )}
     </div>
   );

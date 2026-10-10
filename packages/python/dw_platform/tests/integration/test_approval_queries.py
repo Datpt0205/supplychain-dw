@@ -22,6 +22,7 @@ from dw_platform.adapters.persistence.approval_queries import SqlPendingApproval
 from dw_platform.adapters.persistence.repositories import SqlApprovalRepository
 from dw_platform.adapters.persistence.tenant_session import TenantScope, tenant_session
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest, ApprovalStatus
 
 pytestmark = pytest.mark.integration
@@ -36,12 +37,12 @@ async def sessions(db_urls: DatabaseUrls) -> AsyncIterator[async_sessionmaker[As
     await engine.dispose()
 
 
-def _context() -> AccessContext:
+def _context(workspace_id: uuid.UUID | None = None) -> AccessContext:
     # A fresh tenant per test: approvals written by other tests in this
     # database never leak into these counts.
     return AccessContext(
         tenant_id=uuid.uuid4(),
-        workspace_id=uuid.uuid4(),
+        workspace_id=workspace_id or uuid.uuid4(),
         principal_id=uuid.uuid4(),
         roles=frozenset({"member"}),
         scopes=frozenset(),
@@ -55,6 +56,7 @@ async def _add(
     approval_type: str,
     *,
     status: ApprovalStatus = ApprovalStatus.PENDING,
+    case_id: str | None = None,
 ) -> ApprovalRequest:
     request = ApprovalRequest(
         id=uuid.uuid4(),
@@ -63,7 +65,7 @@ async def _add(
         approval_type=approval_type,
         requested_by=UserId(context.principal_id),
         reason="test",
-        payload={"case_id": str(uuid.uuid4())},
+        payload={"case_id": case_id or str(uuid.uuid4())},
         status=status,
     )
     async with tenant_session(sessions, TenantScope.from_access_context(context)) as session:
@@ -81,9 +83,9 @@ async def test_the_prefix_is_matched_literally_and_only_pending_rows_count(
     await _add(sessions, context, "workflow.review")
     await _add(sessions, context, f"{_PREFIX}flag_blocked", status=ApprovalStatus.APPROVED)
 
-    total, rows = await SqlPendingApprovalQuery(sessions).list_pending_by_type_prefix(
-        context, prefix=_PREFIX, limit=10
-    )
+    total, rows = await SqlPendingApprovalQuery(
+        sessions, ScopeAuthorizationService()
+    ).list_pending_by_type_prefix(context, prefix=_PREFIX, limit=10)
 
     assert total == 1
     assert [row.id for row in rows] == [wanted.id]
@@ -95,9 +97,9 @@ async def test_the_count_is_every_match_and_the_rows_are_the_newest(
     context = _context()
     added = [await _add(sessions, context, f"{_PREFIX}cancel") for _ in range(3)]
 
-    total, rows = await SqlPendingApprovalQuery(sessions).list_pending_by_type_prefix(
-        context, prefix=_PREFIX, limit=2
-    )
+    total, rows = await SqlPendingApprovalQuery(
+        sessions, ScopeAuthorizationService()
+    ).list_pending_by_type_prefix(context, prefix=_PREFIX, limit=2)
 
     assert total == 3
     assert [row.id for row in rows] == [added[2].id, added[1].id]
@@ -106,11 +108,46 @@ async def test_the_count_is_every_match_and_the_rows_are_the_newest(
 async def test_another_tenants_approvals_are_not_there(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    mine, theirs = _context(), _context()
+    mine = _context()
+    # The other tenant's row carries MY workspace id (UUIDs are not
+    # tenant-bound): only the tenant boundary can keep it out, not the
+    # workspace filter of platform-runtime/approval-audit-and-workspace/02.
+    theirs = _context(workspace_id=mine.workspace_id)
     await _add(sessions, theirs, f"{_PREFIX}cancel")
 
-    total, rows = await SqlPendingApprovalQuery(sessions).list_pending_by_type_prefix(
-        mine, prefix=_PREFIX, limit=10
-    )
+    total, rows = await SqlPendingApprovalQuery(
+        sessions, ScopeAuthorizationService()
+    ).list_pending_by_type_prefix(mine, prefix=_PREFIX, limit=10)
 
     assert (total, rows) == (0, [])
+
+
+async def test_a_payload_match_narrows_the_count_and_the_rows_to_one_record(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """A record page asks for its own record's approvals; the server filters,
+    so a page of every approval never reaches the client."""
+    mine = _context()
+    record = str(uuid.uuid4())
+    wanted = [await _add(sessions, mine, f"{_PREFIX}cancel", case_id=record) for _ in range(2)]
+    await _add(sessions, mine, f"{_PREFIX}cancel")  # another record's
+    await _add(sessions, mine, f"{_PREFIX}cancel", case_id=record, status=ApprovalStatus.APPROVED)
+    # The same record id in another workspace of the same tenant, and in
+    # another tenant: neither is the caller's.
+    same_tenant_other_workspace = AccessContext(
+        tenant_id=mine.tenant_id,
+        workspace_id=uuid.uuid4(),
+        principal_id=mine.principal_id,
+        roles=mine.roles,
+        scopes=mine.scopes,
+        plan_id=mine.plan_id,
+    )
+    await _add(sessions, same_tenant_other_workspace, f"{_PREFIX}cancel", case_id=record)
+    await _add(sessions, _context(mine.workspace_id), f"{_PREFIX}cancel", case_id=record)
+
+    total, rows = await SqlPendingApprovalQuery(
+        sessions, ScopeAuthorizationService()
+    ).list_pending_by_type_prefix(mine, prefix=_PREFIX, limit=1, payload_match=("case_id", record))
+
+    assert total == 2
+    assert [row.id for row in rows] == [wanted[1].id]

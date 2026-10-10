@@ -1,13 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Newspaper, Sparkles } from "lucide-react";
+import { Alert, Button, Flex } from "antd";
+import { RobotOutlined } from "@ant-design/icons";
 import type { DailyBriefSummary } from "@dw/contracts";
-import { Button, Skeleton } from "@dw/ui";
-import { PageHeading } from "../../../components/page-heading";
+import { PageHeader, RegionState } from "@dw/ui";
+import { LoadError } from "../../../components/load-error";
 import { BriefSummaryPanel } from "../../../components/supply-chain/brief-summary";
+import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
 import { DailyBriefView } from "../../../components/supply-chain/daily-brief";
 import { useAuth } from "../../../lib/auth/auth-context";
+import { useWorkspaceMembers } from "../../../lib/directory";
 import { errorMessage } from "../../../lib/error-message";
 import { apiClient } from "../../../lib/session";
 import { useCachedResource } from "../../../lib/use-cached-resource";
@@ -24,10 +27,12 @@ import { useCachedResource } from "../../../lib/use-cached-resource";
  */
 export default function DailyBriefPage() {
   const { active } = useAuth();
+  const members = useWorkspaceMembers();
   const {
     data: brief,
     loading,
     error,
+    reload,
   } = useCachedResource(
     "supply-chain:daily-brief",
     useCallback(() => apiClient().getDailyBrief(), []),
@@ -65,34 +70,35 @@ export default function DailyBriefPage() {
   const shown = summarized?.brief ?? brief;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <PageHeading
-        icon={Newspaper}
+    <div className="mx-auto max-w-4xl">
+      <PageHeader
+        breadcrumb={supplyChainCrumbs("Bản tin hôm nay")}
         title="Bản tin hôm nay"
-        description="Những việc cần xử lý, gom theo tín hiệu xác định và xếp theo thứ tự ưu tiên của công ty — không suy diễn, không chấm điểm."
-      />
-      {loading && !shown ? (
-        <Skeleton className="h-96 w-full" />
-      ) : (error != null && !summarized) || !shown ? (
-        // A failed load is never an empty brief: "nothing to handle" read
-        // off a 403 or an outage is an all-clear nobody gave.
-        <p className="text-sm text-destructive">
-          Không tải được bản tin:{" "}
-          {error instanceof Error ? error.message : "lỗi không xác định"}
-        </p>
-      ) : (
-        <>
-          <div className="flex justify-end">
+        subtitle="Việc cần xử lý của Hồ sơ PO, gom theo tín hiệu xác định và xếp theo thứ tự ưu tiên của công ty: không suy diễn, không chấm điểm."
+        actions={
+          shown ? (
             <Button
-              type="button"
-              variant="outline"
-              onClick={summarize}
-              disabled={pending}
+              icon={<RobotOutlined aria-hidden />}
+              loading={pending}
+              onClick={() => void summarize()}
             >
-              <Sparkles />
               {pending ? "Đang tóm tắt…" : "Tóm tắt bằng AI"}
             </Button>
-          </div>
+          ) : null
+        }
+      />
+      {!shown ? (
+        // A failed load is never an empty brief: "nothing to handle" read
+        // off a 403 or an outage is an all-clear nobody gave.
+        <>
+          {error != null ? (
+            <LoadError error={error} onRetry={reload} />
+          ) : loading ? (
+            <RegionState kind="loading" />
+          ) : null}
+        </>
+      ) : (
+        <Flex vertical gap="middle">
           {/* Announced without moving focus: a summary or a failure arriving
               is a status change a screen reader must hear. */}
           <div role="status" aria-live="polite">
@@ -104,12 +110,15 @@ export default function DailyBriefPage() {
             )}
           </div>
           {summaryError != null && (
-            <p role="alert" className="text-sm text-destructive">
-              {errorMessage(summaryError)}
-            </p>
+            <Alert
+              role="alert"
+              type="error"
+              showIcon
+              title={errorMessage(summaryError)}
+            />
           )}
-          <DailyBriefView brief={shown} />
-        </>
+          <DailyBriefView brief={shown} members={members} />
+        </Flex>
       )}
     </div>
   );

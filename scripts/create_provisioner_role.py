@@ -3,9 +3,10 @@
 ADR-002. This role is the only cross-tenant write authority the API uses. It has
 BYPASSRLS (it must create and list every tenant), but its grants reach ONLY the
 platform provisioning tables — never a business schema — so it cannot read a
-tenant's data. Migration 0067 grants those privileges guarded by ``IF EXISTS``;
-this script both creates the role and re-applies the grants, so the two can run
-in either order.
+tenant's data. Which grants, exactly, has one owner: the database function
+``platform.grant_provisioner_privileges()`` (migration f38f027d8342), which the
+migrations call when the role exists. This script creates the role and calls the
+same function, so the two can run in either order and never hold two lists.
 
 A role is a cluster object and ``dw_migrator`` has no CREATEROLE, so a migration
 cannot make it. Fresh clusters get it from
@@ -28,14 +29,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 ROLE = "dw_provisioner"
 DATABASE = "dw"
-
-# Must match migration 0067 exactly. Business schemas are deliberately absent.
-_WRITE_TABLES = (
-    "platform.tenants",
-    "platform.workspaces",
-    "platform.memberships",
-    "platform.entitlements",
-)
 
 
 def _admin_url(explicit: str | None) -> str:
@@ -95,26 +88,20 @@ async def _create_role(admin_url: str, password: str) -> str:
 
 
 async def _grant(admin_url: str) -> None:
-    """Apply the same grants as migration 0067, on whichever tables exist yet."""
+    """The grants the migrations give the role, from their one owner."""
     url = admin_url.rsplit("/", 1)[0] + f"/{DATABASE}"
     engine = create_async_engine(url, isolation_level="AUTOCOMMIT")
     try:
         async with engine.connect() as conn:
-            await conn.execute(sa.text(f"GRANT USAGE ON SCHEMA platform TO {ROLE}"))
-            for table in _WRITE_TABLES:
-                if await conn.scalar(sa.text("SELECT to_regclass(:t) IS NOT NULL"), {"t": table}):
-                    await conn.execute(
-                        sa.text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO {ROLE}")
-                    )
-            for table, verbs in (
-                ("platform.platform_operators", "SELECT, INSERT, DELETE"),
-                ("platform.provisioning_audit", "SELECT, INSERT"),
-                ("platform.roles", "SELECT"),
-                ("platform.users", "SELECT"),
-                ("platform.plans", "SELECT"),
-            ):
-                if await conn.scalar(sa.text("SELECT to_regclass(:t) IS NOT NULL"), {"t": table}):
-                    await conn.execute(sa.text(f"GRANT {verbs} ON {table} TO {ROLE}"))
+            defined = await conn.scalar(
+                sa.text("SELECT to_regprocedure('platform.grant_provisioner_privileges()')")
+            )
+            if defined is None:
+                raise SystemExit(
+                    "platform.grant_provisioner_privileges() is missing: run the migrations "
+                    "(make db-migrate), then this script again."
+                )
+            await conn.execute(sa.text("SELECT platform.grant_provisioner_privileges()"))
     finally:
         await engine.dispose()
 

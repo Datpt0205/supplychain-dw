@@ -101,7 +101,7 @@ def test_a_host_with_no_infrastructure_wires_no_lane() -> None:
 
 
 def test_only_the_platform_lanes_are_wired() -> None:
-    """Eight lanes a database alone is enough for, and no more.
+    """Twelve lanes a database alone is enough for, and no more.
 
     The outbox, and retention twice. Retention joined the platform set the day
     memory got a lifecycle: `memory.items` is a platform table, so the platform
@@ -120,15 +120,51 @@ def test_only_the_platform_lanes_are_wired() -> None:
     `spend_guard_retention` is the fifth, and reads no policy file at all —
     unlike audit/memory/knowledge, its window answers no compliance question,
     so it is a technical constant in code, not a term in
-    `retention@1.4.0.yaml` (see `SqlSpendGuardRetention`'s docstring).
+    `retention@1.7.0.yaml` (see `SqlSpendGuardRetention`'s docstring).
     `notifications_retention` is the sixth, on the same footing: the in-app
     inbox's 90 days live in `platform.prune_notifications()` itself.
-    `channel_link_nonces_retention` is the seventh: one-time link tokens a day
+    `checkpoint_retention` is the seventh, and reads the policy file again:
+    a checkpoint holds a conversation verbatim, so how long it stays is a
+    compliance answer like memory's (`checkpoints` in the same file).
+    `channel_link_nonces_retention` is the eighth: one-time link tokens a day
     past their expiry, a technical bound like the spend guard's.
+    `channel_inbound_messages_retention` is the ninth: inbound chat message ids
+    kept seven days for the dedupe (`INBOUND_MESSAGE_RETENTION`), its own lane
+    because each pruner is.
+    `channel_deliveries_retention` is the tenth: notifications sent (or not)
+    through a linked chat, 90 days and never a pending one, the database's
+    constant (`platform.prune_channel_deliveries()`). Wired without a bot
+    token too: rows are queued for anyone linked whether or not this host sends.
+    `approval_codes_retention` is the eleventh: single-use decision codes
+    (channels Z5) a day old, the database's constant
+    (`platform.prune_approval_decision_codes()`), whether or not this host polls.
 
     `supply_chain_follow_ups` is the first context lane: Supply Chain's sweep
     that turns due reminders, escalations and SLA breaches into follow-ups
     and notifications. It owns no job queue, so it brings no ReapTarget.
+    `supply_chain_product_review_reconcile` is the second: it raises BGĐ's
+    review for a product case waiting without one (a refused or failed start,
+    or a case that reached the state before the review existed). It starts
+    runs, so this process hosts the review graph; it claims no queue either.
+    `supply_chain_proposal_drafts_retention` is the third: chat proposal
+    drafts nobody answered within `DRAFT_TTL`, deleted on the retention
+    cadence whether or not this process polls Zalo.
+    `supply_chain_stage_one_report` is the fourth: the stage-1 daily report to
+    TP Cung ứng (stage-1 ticket 08), on the sweep's cadence.
+    `supply_chain_follow_ups_retention` is the fifth: closed follow-ups past
+    their tenant's term (ticket P3), on the retention cadence.
+    `supply_chain_supplier_messages` is the sixth: messages to a supplier AI
+    drafts and a person sends (ticket ai-automation/07), through the one-call
+    gateway; it drafts nothing for a tenant whose policy lists no purpose.
+    `supply_chain_proposal_lists` is the seventh: lists of proposed products a
+    PIC uploaded, read into rows (ticket ai-automation/08); the files are in
+    PostgreSQL, so no bucket is needed.
+    `supply_chain_purchase_orders` is the eighth: step 10's PO draft, by code
+    (ticket ai-automation/14); no model and no bucket.
+    `supply_chain_po_steps` is the ninth: the papers of steps 11-17, by code
+    (tickets ai-automation/15-18); no model and no bucket.
+    `supply_chain_packaging_papers` is the tenth: step 12's skeletons and
+    revision requests, by code (ticket ai-automation/16).
 
     Naming the whole set is the point: a context's lane arriving in this process
     becomes a visible change rather than a silent one.
@@ -141,8 +177,21 @@ def test_only_the_platform_lanes_are_wired() -> None:
         "partitions",
         "spend_guard_retention",
         "notifications_retention",
+        "checkpoint_retention",
         "channel_link_nonces_retention",
+        "channel_inbound_messages_retention",
+        "channel_deliveries_retention",
+        "approval_codes_retention",
         "supply_chain_follow_ups",
+        "supply_chain_product_review_reconcile",
+        "supply_chain_proposal_drafts_retention",
+        "supply_chain_supplier_messages",
+        "supply_chain_proposal_lists",
+        "supply_chain_purchase_orders",
+        "supply_chain_po_steps",
+        "supply_chain_packaging_papers",
+        "supply_chain_stage_one_report",
+        "supply_chain_follow_ups_retention",
     }
 
 
@@ -161,6 +210,39 @@ def test_the_offboarding_lane_needs_object_storage_too_not_just_a_database() -> 
     assert "offboarding" in build_registry(db_and_s3).all()
 
 
+def test_the_case_document_orphan_sweep_needs_object_storage_too() -> None:
+    """`supply_chain_document_orphans` lists the case-documents bucket and asks
+    the database about each old key, so like offboarding it is wired only when
+    both are there, and runs on the retention cadence."""
+    db_only = bare_settings(database_url="postgresql+asyncpg://dw:dw@localhost/dw")
+    assert "supply_chain_document_orphans" not in build_registry(db_only).all()
+
+    db_and_s3 = build_registry(
+        bare_settings(
+            database_url="postgresql+asyncpg://dw:dw@localhost/dw",
+            s3_endpoint_url="http://localhost:9000",
+        )
+    )
+    assert "supply_chain_document_orphans" in db_and_s3.all()
+    assert db_and_s3.interval_for("supply_chain_document_orphans", 1.0) == 3600.0
+
+
+def test_the_document_extraction_lane_needs_a_database_and_the_bucket() -> None:
+    """`supply_chain_document_extraction` (ticket ai-automation/02) reads
+    stored files, so it is wired only with object storage, on its own cadence."""
+    db_only = bare_settings(database_url="postgresql+asyncpg://dw:dw@localhost/dw")
+    assert "supply_chain_document_extraction" not in build_registry(db_only).all()
+
+    db_and_s3 = build_registry(
+        bare_settings(
+            database_url="postgresql+asyncpg://dw:dw@localhost/dw",
+            s3_endpoint_url="http://localhost:9000",
+        )
+    )
+    assert "supply_chain_document_extraction" in db_and_s3.all()
+    assert db_and_s3.interval_for("supply_chain_document_extraction", 1.0) == 60.0
+
+
 def test_the_follow_up_sweep_runs_on_its_own_configurable_cadence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -177,3 +259,58 @@ def test_the_follow_up_sweep_runs_on_its_own_configurable_cadence(
     )
     assert default.interval_for("supply_chain_follow_ups", 1.0) == 300.0
     assert quick.interval_for("supply_chain_follow_ups", 1.0) == 60.0
+
+
+def test_the_bgd_review_reconcile_runs_on_its_own_configurable_cadence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(
+        "DW_WORKER_SUPPLY_CHAIN_PRODUCT_REVIEW_RECONCILE_INTERVAL_SECONDS", raising=False
+    )
+    default = build_registry(bare_settings(database_url="postgresql+asyncpg://dw:dw@localhost/dw"))
+    quick = build_registry(
+        bare_settings(
+            database_url="postgresql+asyncpg://dw:dw@localhost/dw",
+            supply_chain_product_review_reconcile_interval_seconds=30,
+        )
+    )
+    assert default.interval_for("supply_chain_product_review_reconcile", 1.0) == 300.0
+    assert quick.interval_for("supply_chain_product_review_reconcile", 1.0) == 30.0
+
+
+def test_the_pinned_retention_policy_promises_only_classes_code_can_assign() -> None:
+    """A memory class nothing can put on a row is a promise in a compliance
+    file that the code does not keep (`failure-modes.md` #1). `sensitive`,
+    `ephemeral` and `legal_hold` were exactly that until 1.5.0; a class comes
+    back together with the path that assigns it, and this goes red until then.
+
+    Equality, so the other direction holds too: the class the service writes
+    has a term in the file the sweep reads.
+    """
+    from dw_memory.service import RETENTION_CLASS
+    from dw_platform.retention_policy import load_retention_policy
+    from dw_worker.main import RETENTION_POLICY_PATH
+
+    assert set(load_retention_policy(RETENTION_POLICY_PATH).classes) == {RETENTION_CLASS}
+
+
+def test_the_channel_delivery_lane_needs_a_bot_token_and_runs_on_its_own_cadence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wired with a database and a bot token, whatever ZALO_UPDATES_MODE says:
+    a webhook host sends the same way. Thirty seconds unless configured."""
+    monkeypatch.delenv("DW_WORKER_CHANNEL_DELIVERY_INTERVAL_SECONDS", raising=False)
+    db = "postgresql+asyncpg://dw:dw@localhost/dw"
+    assert "channel_delivery" not in build_registry(bare_settings(database_url=db)).all()
+
+    webhook = build_registry(
+        bare_settings(database_url=db, zalo_bot_token="t", zalo_updates_mode="webhook")
+    )
+    assert "channel_delivery" in webhook.all()
+    assert "zalo_link_poll" not in webhook.all()
+    assert webhook.interval_for("channel_delivery", 1.0) == 30.0
+
+    quick = build_registry(
+        bare_settings(database_url=db, zalo_bot_token="t", channel_delivery_interval_seconds=5)
+    )
+    assert quick.interval_for("channel_delivery", 1.0) == 5.0

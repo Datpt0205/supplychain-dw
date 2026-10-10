@@ -88,13 +88,47 @@ _POLICIES = sa.text(
 #
 # `app.tenant_id` is the ordinary one. `app.principal_id` exists because identity
 # bootstrap has to read your own membership BEFORE a tenant is resolved — there
-# is no tenant to filter by yet. `app.worker_drain` is the background drain's
+# is no tenant to filter by yet; a linked chat's command reads the person's own
+# rows the same way, for the same reason (`_PRINCIPAL_ONLY_ON_PURPOSE` below
+# lists every such policy). `app.worker_drain` is the background drain's
 # deliberate escape hatch, set only by a process draining queues across tenants.
 _TRUSTED_SETTINGS = (
     "current_setting('app.tenant_id'",
     "current_setting('app.principal_id'",
     "current_setting('app.worker_drain'",
 )
+
+# `app.principal_id` is trusted, but it narrows to ONE PERSON across every tenant
+# they belong to, which is wider than a tenant in one direction. So a policy that
+# narrows by principal and not by tenant is allowed only on rows that belong to
+# the person rather than to a workspace, and each one needs a written reason.
+# Both readers bind the setting per transaction from a user the server resolved:
+# sign-in from a verified token, a chat command from the chat's link row.
+_PRINCIPAL_SETTING = "current_setting('app.principal_id'"
+_PRINCIPAL_ONLY_ON_PURPOSE: dict[tuple[str, str], str] = {
+    ("memberships", "memberships_self_select"): (
+        "identity bootstrap lists the caller's own memberships before a tenant is "
+        "resolved; SELECT only, and every write goes through the tenant policy"
+    ),
+    ("tenants", "tenants_self_select"): (
+        "sign-in names the tenants of the caller's own memberships before one is "
+        "chosen; SELECT only, through those memberships"
+    ),
+    ("workspaces", "workspaces_self_select"): (
+        "sign-in names the workspaces of the caller's own memberships before one "
+        "is chosen; SELECT only, through those memberships"
+    ),
+    ("approval_decision_codes", "approval_decision_codes_self_select"): (
+        "a decision code is the person's own and the bot reads it from the chat's "
+        "linked person before it knows a tenant (migration e399be8c0a2d); SELECT "
+        "only, and every write runs under the tenant and workspace policy"
+    ),
+    ("channel_preferences", "channel_preferences_self"): (
+        "the workspace a person chose for chat commands is the person's own row, "
+        "read by the bot before it knows a tenant (migration 9f2becb1bf80); the FK "
+        "to the membership keeps it naming a workspace the person belongs to"
+    ),
+}
 
 # Policies that narrow by no setting at all. Each needs a reason, and the reason
 # is what a reviewer checks — not the entry's existence. A new policy that
@@ -414,10 +448,11 @@ _SCOPE = "current_setting('app.workspace_scope', true) = 'tenant'"
 
 
 async def test_the_scope_rules_catch_the_wrong_shapes(session: AsyncSession) -> None:
-    """The two rules above pass on today's schema because no table is narrowed
-    by workspace yet, which proves nothing about them. These are real
-    Postgres-printed policies of each shape, made and rolled back in one
-    transaction."""
+    """The two rules above passed vacuously while no table was narrowed by
+    workspace (`supply_chain.case_documents` is the first, migration
+    f6a8142a6cd2), and a pass on the right shape still proves nothing about
+    catching a wrong one. These are real Postgres-printed policies of each
+    shape, made and rolled back in one transaction."""
     shapes = {
         "spec": f"{_TENANT} AND ({_WORKSPACE} OR {_SCOPE})",
         "tenant_or_scope": f"{_TENANT} OR {_SCOPE}",
@@ -460,3 +495,89 @@ async def test_the_scope_rules_catch_the_wrong_shapes(session: AsyncSession) -> 
         assert workspace_tables_blind_to_scope(rows) == ["public.scope_rules_blind"]
     finally:
         await session.rollback()
+
+
+async def test_a_policy_narrowed_by_principal_alone_has_a_written_reason(
+    session: AsyncSession,
+) -> None:
+    """A principal-only policy is a person-wide read, so it is listed with why.
+
+    A new table whose only policy reads `app.principal_id` would otherwise pass
+    `test_every_policy_actually_consults_the_tenant_setting` unexamined."""
+    rows = (await session.execute(_POLICIES, {"schemas": await tenant_schemas(session)})).all()
+
+    def principal_only(predicate: str | None) -> bool:
+        return (
+            predicate is not None
+            and _PRINCIPAL_SETTING in predicate
+            and _TENANT_SETTING not in predicate
+        )
+
+    found = {
+        (r.tablename, r.policyname)
+        for r in rows
+        if principal_only(r.qual) or principal_only(r.with_check)
+    }
+    assert found == set(_PRINCIPAL_ONLY_ON_PURPOSE), (
+        f"principal-only policies without a written reason: "
+        f"{sorted(found - set(_PRINCIPAL_ONLY_ON_PURPOSE))}; "
+        f"reasons for policies that no longer exist: "
+        f"{sorted(set(_PRINCIPAL_ONLY_ON_PURPOSE) - found)}"
+    )
+
+
+async def test_a_connection_that_binds_no_principal_reads_no_chat_preference(
+    db_urls: DatabaseUrls, session: AsyncSession
+) -> None:
+    """The principal-only table's version of the unscoped-connection contract
+    above: a row exists, and `dw_app` with no `app.principal_id` sees none."""
+    user, tenant, workspace = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    for statement, params in (
+        (
+            "INSERT INTO platform.users (id, subject, display_name) VALUES (:u, :s, 'x')",
+            {"u": user, "s": f"rls|{user}"},
+        ),
+        (
+            "INSERT INTO platform.tenants (id, slug, name) VALUES (:t, :slug, 'T')",
+            {"t": tenant, "slug": f"rls-{tenant.hex[:8]}"},
+        ),
+        (
+            "INSERT INTO platform.workspaces (id, tenant_id, slug, name)"
+            " VALUES (:w, :t, 'main', 'Main')",
+            {"w": workspace, "t": tenant},
+        ),
+        (
+            "INSERT INTO platform.memberships (id, tenant_id, workspace_id, user_id)"
+            " VALUES (gen_random_uuid(), :t, :w, :u)",
+            {"t": tenant, "w": workspace, "u": user},
+        ),
+        (
+            "INSERT INTO platform.channel_preferences (user_id, tenant_id, workspace_id)"
+            " VALUES (:u, :t, :w)",
+            {"u": user, "t": tenant, "w": workspace},
+        ),
+    ):
+        await session.execute(sa.text(statement), params)
+    await session.commit()
+
+    engine = create_async_engine(db_urls.app, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            # A tenant bound is not enough either: the row is narrowed by person.
+            await conn.execute(
+                sa.text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant)}
+            )
+            seen = (
+                await conn.execute(sa.text("SELECT count(*) FROM platform.channel_preferences"))
+            ).scalar_one()
+    finally:
+        await engine.dispose()
+
+    there = (
+        await session.execute(
+            sa.text("SELECT count(*) FROM platform.channel_preferences WHERE user_id = :u"),
+            {"u": user},
+        )
+    ).scalar_one()
+    assert seen == 0, "a connection without a principal read a person's chat preference"
+    assert there == 1, "the probe row is missing, so the zero above proved nothing"

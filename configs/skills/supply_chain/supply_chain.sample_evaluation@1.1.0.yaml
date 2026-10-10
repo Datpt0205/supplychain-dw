@@ -1,0 +1,26 @@
+schema_version: '1.0'
+skill_id: supply_chain.sample_evaluation
+version: 1.1.0
+title: Đọc biên bản đánh giá mẫu
+applies_to:
+- supply_chain.extract_sample_evaluation
+- supply_chain.draft_sample_evaluation
+body: 'Một biên bản đánh giá mẫu ghi: sản phẩm, NCC, vòng mẫu, ngày đánh giá, người hoặc
+
+  bộ phận đánh giá, từng tiêu chí (chuẩn, kết quả đo, đạt hay không đạt) và kết luận.
+
+
+  Kết luận có ba nghĩa:
+
+  - "đạt", "chấp nhận", "OK": pass.
+
+  - "không đạt", "loại", "không chấp nhận": fail.
+
+  - "yêu cầu chỉnh sửa", "làm lại mẫu", "đạt có điều kiện, cần sửa": revise.
+
+
+  Kết luận lấy từ câu kết luận của biên bản, không suy ra từ việc có tiêu chí nào trượt.
+
+  Một tiêu chí không đạt chép đúng tên và mức trượt biên bản ghi.
+
+  '

@@ -1,0 +1,18 @@
+{
+  "purpose": "sample_request",
+  "case": {
+    "state": "sample_requested",
+    "product_name": "Chao chong dinh 28cm",
+    "supplier_name": "Cong ty Gia dung Minh Phat"
+  },
+  "model_writing": {
+    "paragraphs": [
+      {
+        "text": "De nghi quy cong ty gui mau Chao chong dinh 28cm cho ho so DX-2026-041.",
+        "cites": [
+          "case"
+        ]
+      }
+    ]
+  }
+}

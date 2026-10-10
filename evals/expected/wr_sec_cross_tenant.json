@@ -1,0 +1,8 @@
+{
+  "figures": {
+    "proposed": 0
+  },
+  "prompt_must_not_contain": [
+    "DX-TENANT-B"
+  ]
+}

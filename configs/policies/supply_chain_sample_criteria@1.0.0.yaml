@@ -1,0 +1,27 @@
+schema_version: "1.0"
+policy_id: supply_chain_sample_criteria
+policy_version: "1.0.0"
+# What R&D measures on a sample round and what passes (ticket
+# ai-automation/09). Code compares each measured value with its criterion;
+# the sample evaluation record's criteria table, the revision request's items
+# and the next round's check of each item come from that comparison, never
+# from a model. A tenant replaces this whole through its own override
+# (PUT /api/v1/supply-chain/sample-criteria-policy).
+#
+# A criterion is `number` (a value and its unit, passing between `min` and
+# `max` inclusive, either bound optional) or `check` (R&D types pass or fail).
+# `by_category` replaces `default` for the products of that Category key.
+#
+# The platform's criteria are neutral checks only: thresholds belong to the
+# products a company makes.
+default:
+  - key: dimensions
+    label: Kích thước đúng bản vẽ
+    kind: check
+  - key: appearance
+    label: Ngoại quan (vết xước, móp, màu)
+    kind: check
+  - key: function
+    label: Chức năng khi dùng thử
+    kind: check
+by_category: {}

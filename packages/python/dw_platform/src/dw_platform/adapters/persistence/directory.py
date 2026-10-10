@@ -24,6 +24,21 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.application.directory import IdentityRef, WorkspaceMember
 
 
+def member_status() -> sa.ColumnElement[str]:
+    """`invited` until the person has signed in once, `active` after.
+
+    The one reading of a member's status, for the workspace directory and the
+    tenant-wide member list alike: signed in means a sign-in identity is linked
+    to the user. A linked chat is a delivery address, not a sign-in, so it does
+    not count. Correlated on `platform.users`, which the caller's query joins.
+    """
+    signed_in = sa.exists().where(
+        tables.external_identities.c.user_id == tables.users.c.id,
+        tables.external_identities.c.provider.not_in(tables.CHANNEL_LINK_PROVIDERS),
+    )
+    return sa.case((signed_in, sa.literal("active")), else_=sa.literal("invited"))
+
+
 @dataclass(frozen=True)
 class SqlWorkspaceDirectory:
     """Implements ``WorkspaceDirectoryPort``."""
@@ -39,6 +54,7 @@ class SqlWorkspaceDirectory:
                 tables.memberships.c.role_keys,
                 tables.memberships.c.permission_set_keys,
                 tables.memberships.c.department,
+                member_status().label("status"),
             )
             .select_from(
                 tables.memberships.join(
@@ -59,6 +75,7 @@ class SqlWorkspaceDirectory:
                 role_keys=tuple(row.role_keys),
                 permission_set_keys=tuple(row.permission_set_keys),
                 department=row.department,
+                status=row.status,
             )
             for row in rows
         ]

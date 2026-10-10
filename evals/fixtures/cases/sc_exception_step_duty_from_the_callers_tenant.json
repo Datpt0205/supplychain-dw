@@ -1,0 +1,52 @@
+{
+  "command": "step",
+  "caller": {
+    "tenant": "A",
+    "workspace": "W1",
+    "scopes": [
+      "supply_chain.product_case.read",
+      "supply_chain.product_case.write",
+      "supply_chain.duty.ordering",
+      "supply_chain.duty.exceptions"
+    ]
+  },
+  "tenant_overrides": {
+    "A": {
+      "supply_chain_product_action_duties": {
+        "schema_version": "1.0",
+        "policy_id": "supply_chain_product_action_duties",
+        "policy_version": "1.3.0",
+        "action_duties": {
+          "propose": "ordering",
+          "request_sample": "supply_lead",
+          "receive_sample": "rnd",
+          "pass_sample": "rnd",
+          "request_revision": "rnd",
+          "receive_revised_sample": "rnd",
+          "reject_sample": "rnd",
+          "wait_for_external": "exceptions",
+          "flag_blocked": "exceptions",
+          "flag_manual_review": "exceptions",
+          "resume": "exceptions",
+          "cancel": "ordering",
+          "complete_profile": "rnd",
+          "confirm_with_supplier": "supply_lead",
+          "issue_item_code": "ordering",
+          "add_sku": "ordering",
+          "remove_sku": "ordering",
+          "submit_for_signoff": "ordering",
+          "place_order": "ordering"
+        }
+      }
+    }
+  },
+  "stored_case": {
+    "tenant": "A",
+    "workspace": "W1",
+    "state": "proposed"
+  },
+  "request": {
+    "action": "request_sample",
+    "supplier_name": "NCC Mẫu"
+  }
+}

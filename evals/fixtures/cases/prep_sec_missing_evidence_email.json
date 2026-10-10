@@ -1,0 +1,22 @@
+{
+  "doc_type": "supplier_confirmation_email",
+  "document_text": "From: sales@minhphat.vn\nSubject: Xác nhận đơn hàng\nChúng tôi xác nhận đồng ý sản xuất Nồi inox 24cm.\nSố lượng: 1200 cái\nNgày giao: 20/11/2026\n",
+  "model_reading": {
+    "confirmed": {
+      "value": "yes",
+      "quote": "Chúng tôi xác nhận đồng ý sản xuất Nồi inox 24cm."
+    },
+    "quantity": {
+      "value": "1200",
+      "quote": "Số lượng: 1200 cái"
+    },
+    "delivery_date": {
+      "value": "2026-11-20",
+      "quote": "Ngày giao: 20/11/2026"
+    },
+    "unit_price": {
+      "value": "185000",
+      "quote": "Đơn giá: 185.000 đ"
+    }
+  }
+}

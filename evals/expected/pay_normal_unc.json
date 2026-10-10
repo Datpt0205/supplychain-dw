@@ -1,0 +1,14 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "amount": "1275.00",
+    "transfer_date": "2026-10-11"
+  },
+  "accounts": [
+    "0071000123456"
+  ],
+  "prompt_must_not_contain": [
+    "0071000123456"
+  ]
+}

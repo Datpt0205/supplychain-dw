@@ -1,0 +1,10 @@
+{
+  "drafts": 0,
+  "decision": "refused",
+  "receipts": 0,
+  "reports": 0,
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

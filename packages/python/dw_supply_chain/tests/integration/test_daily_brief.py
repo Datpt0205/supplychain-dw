@@ -29,6 +29,9 @@ from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
+from dw_supply_chain.adapters.persistence.product_case_repository import (
+    SqlProductCaseRepository,
+)
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
@@ -43,6 +46,7 @@ from dw_supply_chain.domain.supplier_update import (
     SupplierUpdateId,
 )
 from dw_supply_chain.sla_policy import (
+    ProductCategory,
     SLAConfirmationStatus,
     SLAMilestone,
     SupplierUpdateCadence,
@@ -138,15 +142,19 @@ def _handler(sessions: async_sessionmaker[AsyncSession], *, now: datetime) -> Ge
     return GetDailyBrief(
         po_case_repo=SqlPOCaseRepository(sessions),
         supplier_update_repo=SqlSupplierUpdateRepository(sessions),
+        product_case_repo=SqlProductCaseRepository(sessions),
         policy_override_repo=_NoOverrides(),
         # A 0-day deposit SLA: any case waiting on its deposit is over it,
         # so the test needs no clock far enough ahead to leave the change
         # window.
         platform_default_policy=SupplyChainSLAPolicy(
-            schema_version="1.0",
+            schema_version="2.0",
             policy_id="supply_chain_sla",
-            policy_version="1.0.0",
-            sla={"deposit": SLAMilestone(duration="0d", status=SLAConfirmationStatus.CONFIRMED)},
+            policy_version="2.0.0",
+            categories=(ProductCategory(key="noi", label="Nồi"),),
+            default={
+                "deposit": SLAMilestone(duration="0d", status=SLAConfirmationStatus.CONFIRMED)
+            },
             supplier_update=SupplierUpdateCadence(reminder_after="5d", escalation_after="10d"),
         ),
         platform_default_brief_policy=SupplyChainBriefPolicy(
@@ -155,7 +163,7 @@ def _handler(sessions: async_sessionmaker[AsyncSession], *, now: datetime) -> Ge
             policy_version="1.0.0",
             signal_order=tuple(BriefSignal),
         ),
-        pending_approvals=SqlPendingApprovalQuery(sessions),
+        pending_approvals=SqlPendingApprovalQuery(sessions, ScopeAuthorizationService()),
         authz=ScopeAuthorizationService(),
         clock=FixedClock(now),
     )
@@ -165,7 +173,10 @@ async def test_the_brief_holds_only_the_callers_tenant(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     mine = _context(uuid.uuid4(), uuid.uuid4())
-    other = _context(uuid.uuid4(), uuid.uuid4())
+    # Same workspace id, another tenant (UUIDs are not tenant-bound): only the
+    # tenant boundary can keep its rows out, not the workspace filter the
+    # approval count carries since platform-runtime/approval-audit-and-workspace/02.
+    other = _context(uuid.uuid4(), mine.workspace_id)
     cases = SqlPOCaseRepository(sessions)
     updates = SqlSupplierUpdateRepository(sessions)
 

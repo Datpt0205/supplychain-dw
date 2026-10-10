@@ -54,6 +54,6 @@ thay cho ô ghi chú và hai nút quyết. Context không khai gì thì trang gi
 
 ## Danh sách ticket
 
-| #   | Ticket                                                                                         | Status          | Blocked by                                                                                                           |
-| --- | ---------------------------------------------------------------------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------- |
-| 01  | [Liên kết sang hộp duyệt của context trên `/approvals`](issues/01-approval-host-inbox-link.md) | ready-for-agent | .claude/plans/web-ui/antd-shell/issues/03-lib-dates.md, .claude/plans/web-ui/antd-shell/issues/05-ui-test-harness.md |
+| #   | Ticket                                                                                         | Status   | Blocked by                                                                                                           |
+| --- | ---------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| 01  | [Liên kết sang hộp duyệt của context trên `/approvals`](issues/01-approval-host-inbox-link.md) | resolved | .claude/plans/web-ui/antd-shell/issues/03-lib-dates.md, .claude/plans/web-ui/antd-shell/issues/05-ui-test-harness.md |

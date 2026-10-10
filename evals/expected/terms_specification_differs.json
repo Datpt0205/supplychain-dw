@@ -1,0 +1,11 @@
+{
+  "outcome": "proposed",
+  "comparison": {
+    "unit_price": "match",
+    "currency": "match",
+    "moq": "match",
+    "lead_time_days": "match",
+    "specification": "differ",
+    "packaging": "match"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "outcome": "proposed",
+  "comparison": {
+    "unit_price": "not_stated",
+    "currency": "not_stated",
+    "moq": "not_stated",
+    "lead_time_days": "not_stated",
+    "specification": "not_stated",
+    "packaging": "not_stated"
+  },
+  "findings": [
+    "term_not_stated"
+  ]
+}

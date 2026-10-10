@@ -7,6 +7,8 @@ layer lives. Only the composition root imports concrete adapters
 
 from __future__ import annotations
 
+import importlib.util
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,23 +21,40 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from dw_agent_runtime.model.profiles import ModelProfileRegistry, ModelRoute
-from dw_kernel.errors import InfrastructureError
-from dw_kernel.ports import SystemClock, Uuid7Generator
+from dw_agent_runtime.adapters.model_stack import (
+    ModelProviderConfig,
+    ModelStack,
+    build_model_stack,
+)
+from dw_agent_runtime.model.profiles import ModelProfileRegistry
+from dw_agent_runtime.model.prompts import load_shipped_prompts
+from dw_kernel.ports import SystemClock, UtcClock, Uuid7Generator
 from dw_knowledge.adapters.api_parsers import (
     DeepgramTranscriptParser,
     GatewayFileParser,
     PlaintextAttachmentParser,
 )
 from dw_knowledge.adapters.composite_parser import CompositeParser
+from dw_knowledge.adapters.embedding_factory import build_embeddings as shared_build_embeddings
 from dw_knowledge.attachment_policy import load_attachment_policy
 from dw_knowledge.gateway import KnowledgeGateway
 from dw_knowledge.ingest_jobs import IngestJobStore
-from dw_knowledge.ports import DocumentParserPort, EmbeddingPort, ObjectStoragePort, VectorIndexPort
+from dw_knowledge.ports import (
+    DocumentParserPort,
+    EmbeddingPort,
+    ObjectStoragePort,
+    OcrPort,
+    VectorIndexPort,
+)
+from dw_observability.telemetry import TelemetryPort
 from dw_worker.settings import WorkerSettings
 
 if TYPE_CHECKING:
     from minio import Minio
+
+    from dw_supply_chain.adapters.storage.minio_case_documents import MinioCaseDocumentStorage
+
+logger = logging.getLogger(__name__)
 
 # The image sets DW_REPO_ROOT=/app; outside a container the checkout root is
 # four levels up from this file.
@@ -96,51 +115,64 @@ def build_feedback_bucket(settings: WorkerSettings) -> ObjectStoragePort:
     )
 
 
+def build_case_documents_bucket(settings: WorkerSettings) -> ObjectStoragePort:
+    """Supply Chain's case-documents bucket, in the shape offboarding reads
+    every bucket through (the same reuse as `build_feedback_bucket`)."""
+    from dw_knowledge.adapters.minio_storage import MinioObjectStorageAdapter
+
+    return MinioObjectStorageAdapter(
+        client=_build_minio_client(settings), bucket=settings.case_documents_bucket
+    )
+
+
+def build_case_document_storage(settings: WorkerSettings) -> MinioCaseDocumentStorage:
+    """The same bucket through Supply Chain's own adapter, which lists with
+    each object's last-modified time: what the orphan sweep needs."""
+    from dw_supply_chain.adapters.storage.minio_case_documents import MinioCaseDocumentStorage
+
+    return MinioCaseDocumentStorage(
+        client=_build_minio_client(settings), bucket=settings.case_documents_bucket
+    )
+
+
+def build_ocr_reader(settings: WorkerSettings) -> OcrPort | None:
+    """Docling with EasyOCR for images and scanned PDFs (supply-chain ticket
+    ai-automation/21), bounded by the settings' page limit and timeout.
+
+    Docling comes with the `parsers` extra. Without it a local process reads
+    no image (the extraction lane records them unreadable, as before OCR); a
+    deployed one refuses to start, because its image always carries it."""
+    if importlib.util.find_spec("docling") is None:
+        if settings.is_deployed:
+            raise RuntimeError(
+                "OCR (docling) is missing from a deployed worker: install the `parsers` extra"
+            )
+        logger.warning("OCR off: docling is not installed (the worker's `parsers` extra)")
+        return None
+    from dw_knowledge.adapters.docling_ocr import DoclingOcrReader
+
+    return DoclingOcrReader(
+        max_pages=settings.ocr_max_pages,
+        timeout_seconds=settings.ocr_timeout_seconds,
+        artifacts_path=settings.ocr_artifacts_path,
+    )
+
+
 def build_embeddings(settings: WorkerSettings) -> EmbeddingPort:
     """Public because two lanes need it: knowledge ingestion, and the memory
-    index. A second builder would be a second answer to "which model embeds
-    this deployment's text", and the copy nobody edits keeps the old model."""
-    """The index's shape comes from config, never from a runtime default.
-
-    The model id and the vector width are one decision, so they live together on
-    the profile's embedding route rather than half in YAML and half in an env
-    var that a second process could disagree about.
+    index. Built by `dw_knowledge`'s one builder, the one the API embeds
+    questions with, so "which model embeds this deployment's text" has a
+    single answer: the `embedding` route of the configured model profile.
     """
-    if settings.embedding_provider == "openai_compatible":
-        from dw_knowledge.adapters.openai_embedding import OpenAICompatibleEmbeddingAdapter
-
-        route = _embedding_route(settings)
-        assert route.dimensions is not None  # enforced by ModelProfile
-        return OpenAICompatibleEmbeddingAdapter(
-            base_url=settings.openai_base_url,
-            api_key=settings.openai_api_key,
-            model=route.model,
-            _dimension=route.dimensions,
-            timeout=float(route.timeout_seconds),
-        )
-    if settings.embedding_provider == "tei" and settings.embed_url:
-        from dw_knowledge.adapters.tei_embedding import TeiEmbeddingAdapter
-
-        return TeiEmbeddingAdapter(base_url=settings.embed_url, _dimension=settings.embed_dimension)
-    from dw_knowledge.adapters.hash_embedding import HashEmbeddingAdapter
-
-    return HashEmbeddingAdapter()
-
-
-def _embedding_route(settings: WorkerSettings) -> ModelRoute:
     profiles = ModelProfileRegistry()
     profiles.load_directory(REPO_ROOT / "configs" / "models")
-    profile = profiles.resolve(settings.model_profile)
-    if profile.embedding is None:
-        raise InfrastructureError(
-            "the model profile declares no embedding route",
-            details={"profile_id": settings.model_profile},
-        )
-    if not settings.openai_base_url or not settings.openai_api_key:
-        raise InfrastructureError(
-            "openai_compatible embeddings need OPENAI_BASE_URL and OPENAI_API_KEY"
-        )
-    return profile.embedding
+    return shared_build_embeddings(
+        settings.embedding_provider,
+        profiles.resolve(settings.model_profile).embedding,
+        base_url=settings.openai_base_url,
+        api_key=settings.openai_api_key,
+        profile_id=settings.model_profile,
+    )
 
 
 def build_vector_index(settings: WorkerSettings) -> VectorIndexPort:
@@ -219,4 +251,50 @@ def build_ingest_components(settings: WorkerSettings) -> IngestComponents | None
         job_store=job_store,
         parser=build_parser(settings),
         object_storage=storage,
+    )
+
+
+# The recorded answers the mock provider replays, the directory the API reads.
+MOCK_MODEL_FIXTURES = REPO_ROOT / "evals" / "fixtures" / "mock_model"
+
+
+def model_provider_config(settings: WorkerSettings) -> ModelProviderConfig:
+    """This process's settings, read for the model builder the API uses too."""
+    return ModelProviderConfig(
+        provider=settings.model_provider,
+        model_profile=settings.model_profile,
+        profile=settings.profile,
+        is_deployed=settings.is_deployed,
+        openai_api_key=settings.openai_api_key or None,
+        openai_base_url=settings.openai_base_url or None,
+        openai_structured_mode=settings.openai_structured_mode,
+        openai_strict_schema=settings.openai_strict_schema,
+        outbound_allowed_hosts=tuple(settings.outbound_allowed_hosts),
+    )
+
+
+def build_model_stack_for(
+    settings: WorkerSettings,
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    clock: UtcClock,
+    telemetry: TelemetryPort,
+) -> ModelStack:
+    """The worker's model gateway, spend ledger and usage recorders, built by
+    the same `build_model_stack` the API builds its own with: the profiles,
+    the shipped prompts, the daily spend guard. A chat command's model call
+    therefore spends against the same per-run ceiling and the same daily
+    guard as a request's (ticket 04, decision A6)."""
+    profiles = ModelProfileRegistry()
+    profiles.load_directory(REPO_ROOT / "configs" / "models")
+    # Prompts and the skills they declare, checked against each other.
+    prompts = load_shipped_prompts(REPO_ROOT / "configs")
+    return build_model_stack(
+        model_provider_config(settings),
+        profiles=profiles,
+        prompts=prompts,
+        session_factory=sessions,
+        clock=clock,
+        telemetry=telemetry,
+        mock_fixtures_dir=MOCK_MODEL_FIXTURES,
     )

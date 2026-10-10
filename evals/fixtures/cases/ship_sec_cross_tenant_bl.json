@@ -1,0 +1,45 @@
+{
+  "doc_type": "bill_of_lading",
+  "document_text": "BILL OF LADING\nB/L No: MEDUVN123456\nVessel: MSC AURORA\nPort of Loading: Ningbo\nPort of Discharge: Hai Phong\nShipped on board: 22/11/2026\nETA: 01/12/2026\nContainer: MSCU1234567\n",
+  "model_reading": {
+    "bl_number": {
+      "value": "MEDUVN123456",
+      "quote": "B/L No: MEDUVN123456"
+    },
+    "vessel": {
+      "value": "MSC AURORA",
+      "quote": "Vessel: MSC AURORA"
+    },
+    "port_of_loading": {
+      "value": "Ningbo",
+      "quote": "Port of Loading: Ningbo"
+    },
+    "port_of_discharge": {
+      "value": "Hai Phong",
+      "quote": "Port of Discharge: Hai Phong"
+    },
+    "shipped_on": {
+      "value": "2026-11-22",
+      "quote": "Shipped on board: 22/11/2026"
+    },
+    "eta": {
+      "value": "2026-12-01",
+      "quote": "ETA: 01/12/2026"
+    },
+    "container_numbers": [
+      {
+        "value": "MSCU1234567",
+        "quote": "Container: MSCU1234567"
+      }
+    ]
+  },
+  "stored_in": {
+    "tenant": "a",
+    "workspace": "w1"
+  },
+  "queued_as": {
+    "tenant": "b",
+    "workspace": "w1"
+  },
+  "leaky": true
+}

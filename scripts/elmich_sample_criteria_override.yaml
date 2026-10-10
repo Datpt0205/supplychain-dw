@@ -1,0 +1,58 @@
+schema_version: "1.0"
+policy_id: supply_chain_sample_criteria
+policy_version: "1.0.0"
+
+# Override của TENANT ELMICH (không phải platform default): tiêu chí test mẫu theo
+# nhóm sản phẩm (ticket ai-automation/09). Ghi bằng
+#   uv run python scripts/seed_supply_chain_demo.py elmich-sample-criteria
+# (local) hoặc PUT /api/v1/supply-chain/sample-criteria-policy (máy chủ), qua
+# handler kiểm schema, quyền supply_chain.action_duties.write và audit.
+#
+# NGƯỠNG CHỜ ELMICH XÁC NHẬN (như SLA, QE-04): các con số dưới đây là giá trị đặt
+# chỗ từ thông số kỹ thuật thường gặp của nồi, chảo inox và chống dính, để R&D
+# thử luồng; R&D Elmich sửa trước khi dùng thật.
+default:
+  - key: dimensions
+    label: Kích thước đúng bản vẽ
+    kind: check
+  - key: appearance
+    label: Ngoại quan (vết xước, móp, màu)
+    kind: check
+  - key: function
+    label: Chức năng khi dùng thử
+    kind: check
+by_category:
+  noi:
+    - key: base_thickness
+      label: Độ dày đáy
+      kind: number
+      unit: mm
+      min: 3
+    - key: wall_thickness
+      label: Độ dày thành
+      kind: number
+      unit: mm
+      min: 0.5
+    - key: induction
+      label: Dùng được bếp từ
+      kind: check
+    - key: appearance
+      label: Ngoại quan (vết xước, móp, màu)
+      kind: check
+  chao:
+    - key: coating_thickness
+      label: Độ dày lớp chống dính
+      kind: number
+      unit: µm
+      min: 25
+    - key: base_thickness
+      label: Độ dày đáy
+      kind: number
+      unit: mm
+      min: 2.5
+    - key: non_stick
+      label: Thử chống dính (trứng rán không dính)
+      kind: check
+    - key: appearance
+      label: Ngoại quan (vết xước, móp, màu)
+      kind: check

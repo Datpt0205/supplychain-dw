@@ -1,0 +1,12 @@
+{
+  "model_calls": 1,
+  "status": "drafted",
+  "body_must_contain": [
+    "Kính gửi Chị Lan,",
+    "Mong anh/chị phản hồi trước ngày 11/10/2026.",
+    "Trân trọng,"
+  ],
+  "scripted": {
+    "dropped": 0
+  }
+}

@@ -1,0 +1,61 @@
+schema_version: '1.0'
+skill_id: supply_chain.step_documents
+version: 1.1.0
+title: Chứng từ của từng bước
+applies_to:
+- supply_chain.extract_supplier_confirmation_email
+- supply_chain.extract_supplier_quotation
+- supply_chain.extract_proforma_invoice
+- supply_chain.extract_commercial_invoice
+- supply_chain.extract_bank_transfer_receipt
+body: '- Bước 1: danh sách SP đề xuất, ảnh sản phẩm.
+
+  - Bước 2: ảnh mẫu, báo giá hoặc bảng thông số của NCC.
+
+  - Bước 3, 5: biên bản đánh giá mẫu (mỗi vòng mẫu một biên bản).
+
+  - Bước 4: phiếu yêu cầu chỉnh sửa mẫu.
+
+  - Bước 6: tờ trình BGĐ kèm biên bản đánh giá vòng đạt.
+
+  - Bước 7: hồ sơ sản phẩm BM04.
+
+  - Bước 8: email xác nhận của NCC (sản phẩm, số lượng, giá, ngày giao đúng như BM04).
+
+  - Bước 9: mã hàng hóa chính thức và danh sách SKU.
+
+  - Bước 10: đơn đặt hàng (PO); báo giá NCC là nguồn của đơn giá.
+
+  - Bước 11: hồ sơ đặt cọc (PI của NCC, ủy nhiệm chi).
+
+  - Bước 12: mẫu màu, thiết kế bao bì, nội dung bao bì, sách HDSD, maquette.
+
+  - Bước 13: biên bản test trước sản xuất.
+
+  - Bước 14-15: báo cáo QC, packing list, vận đơn, giấy báo hàng đến.
+
+  - Bước 16: hồ sơ thanh toán (hóa đơn, ủy nhiệm chi).
+
+  - Bước 17: phiếu nhập kho.
+
+
+  Một email xác nhận của NCC thường nêu: sản phẩm, số lượng, đơn giá và tiền tệ, ngày
+
+  giao, điều kiện kèm theo. Báo giá thường có bảng dòng hàng (mô tả, số lượng, đơn giá,
+
+  thành tiền) và tổng; tổng phải bằng tổng các dòng, và hệ thống tự kiểm điều đó.
+
+
+  Hóa đơn chiếu lệ (PI) và hóa đơn thương mại của NCC thường có: số và ngày hóa đơn, tiền
+
+  tệ, bảng dòng hàng (mã hàng hoặc SKU, mô tả, số lượng, đơn giá, thành tiền), tổng, và
+
+  thông tin người thụ hưởng (tên, ngân hàng, số tài khoản). PI thường ghi thêm % hoặc số
+
+  tiền đặt cọc. Ủy nhiệm chi (UNC) của ngân hàng ghi ngày chuyển, số tiền, tiền tệ, người
+
+  thụ hưởng và nội dung chuyển tiền. Số tiền, tiền tệ và tài khoản thụ hưởng được hệ thống
+
+  so với PO và danh mục NCC; một tài khoản khác danh mục là phát hiện cho người duyệt.
+
+  '

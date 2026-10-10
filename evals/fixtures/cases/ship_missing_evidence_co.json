@@ -1,0 +1,22 @@
+{
+  "doc_type": "certificate_of_origin",
+  "document_text": "CERTIFICATE OF ORIGIN\nForm E\nReference No: E2026-0098\nIssued on: 23/11/2026\n",
+  "model_reading": {
+    "certificate_number": {
+      "value": "E2026-0098",
+      "quote": "Reference No: E2026-0098"
+    },
+    "form": {
+      "value": "E",
+      "quote": "Form E"
+    },
+    "issued_on": {
+      "value": "2026-11-23",
+      "quote": "Issued on: 23/11/2026"
+    },
+    "origin_country": {
+      "value": "China",
+      "quote": "Country of origin: China"
+    }
+  }
+}

@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { App } from "antd";
 import type { Page } from "@dw/contracts";
+import { errorMessage } from "./error-message";
 import { useCachedResource } from "./use-cached-resource";
 
 /**
@@ -43,6 +44,7 @@ export function useCachedPages<Item>(
     key,
     useCallback(() => loadPage(null), [loadPage]),
   );
+  const { message } = App.useApp();
   const [extra, setExtra] = useState<Page<Item>[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -72,12 +74,10 @@ export function useCachedPages<Item>(
         setExtra((pages) => [...pages, page]);
       })
       .catch((failure: unknown) => {
-        toast.error(
-          failure instanceof Error ? failure.message : String(failure),
-        );
+        message.error(errorMessage(failure));
       })
       .finally(() => setLoadingMore(false));
-  }, [nextCursor, loadingMore, loadPage]);
+  }, [nextCursor, loadingMore, loadPage, message]);
 
   const items = [
     ...(first.data?.items ?? []),

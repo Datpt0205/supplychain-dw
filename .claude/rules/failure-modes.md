@@ -1,5 +1,10 @@
 # Failure modes this repository actually has
 
+**Scope: every session, on purpose.** This file has no `paths:` frontmatter, so it
+loads whatever part of the tree a session touches. That is deliberate: it applies to
+every change, not to one directory (`CLAUDE.md` "Work style" item 3). A rule that
+only applies to part of the tree carries `paths:`, as `ui-quality.md` does.
+
 Not general advice. Every entry below is a shape that has bitten this codebase,
 with the count of distinct times it was found. They are written as questions to
 ask **while writing the line**, because each one was cheap to prevent and
@@ -38,7 +43,8 @@ paused exactly as often as one at A0. `approval_policy: conditional` was accepte
 by the schema and matched by no branch, so it silently behaved as `never`.
 `budgets` existed on every model profile and the agent loop never consulted it.
 `evidence_id` was minted per retrieval and resolved to nothing at all. Also:
-`retention_policy`, the memory REVIEW queue, `cancel_thread`, the
+`retention_policy`, the memory REVIEW queue (read since 2026-10-06: a held
+candidate opens a `memory.review` approval), `cancel_thread`, the
 `prompt_bundle_version` binding, `@dw/agent-ui`.
 
 **Ask:** who reads this? Name the file and line. If the answer is "nothing yet",

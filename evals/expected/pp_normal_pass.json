@@ -1,0 +1,16 @@
+{
+  "model_calls": 1,
+  "drafted": 1,
+  "results": [
+    "Đạt",
+    "Đạt",
+    "Đạt",
+    "Đạt"
+  ],
+  "fields_absent": [
+    "conclusion"
+  ],
+  "scripted": {
+    "notes": null
+  }
+}

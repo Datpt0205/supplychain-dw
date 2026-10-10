@@ -12,10 +12,11 @@ import {
  * Admin → Feedback inbox.
  */
 
-const LOGIN_BUTTON = "Sign in";
+const LOGIN_BUTTON = "Đăng nhập";
 const API_URL = process.env.E2E_API_URL ?? "http://127.0.0.1:8000";
-// Org admin of the seeded tenant.
-const ADMIN_SUBJECT = "dev|dieu.hoang";
+// The seeded tenant's platform_admin (`seed_env.py`): dieu.hoang, named here before,
+// is a member there and the inbox refuses her.
+const ADMIN_SUBJECT = "dev|chi.le";
 
 // A 1×1 PNG, so the paste path carries a real image through the whole stack.
 const PNG_BASE64 =
@@ -69,7 +70,7 @@ test("US5: the button sits bottom-left on every page and feedback is not in the 
   await loginAsDemoUser(page);
   for (const path of ["/audit", "/memory"]) {
     await page.goto(path);
-    const launcher = page.getByRole("button", { name: "Feedback" });
+    const launcher = page.getByRole("button", { name: "Gửi phản hồi" });
     await expect(launcher).toBeVisible();
     const box = (await launcher.boundingBox())!;
     const viewport = page.viewportSize()!;
@@ -77,7 +78,7 @@ test("US5: the button sits bottom-left on every page and feedback is not in the 
     expect(box.y + box.height).toBeGreaterThan(viewport.height * 0.8);
   }
   await expect(
-    page.getByRole("link", { name: "Feedback", exact: true }),
+    page.getByRole("link", { name: "Gửi phản hồi", exact: true }),
   ).toHaveCount(0);
 });
 
@@ -86,14 +87,17 @@ test("US5: the dialog asks four things, takes a pasted screenshot, and sends", a
 }) => {
   await loginAsDemoUser(page);
   await page.goto("/audit");
-  await page.getByRole("button", { name: "Feedback" }).click();
+  await page.getByRole("button", { name: "Gửi phản hồi" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
 
   // Exactly the four parts — and none of the reference form's two follow-ups.
-  await expect(dialog.getByLabel(/Module đang gặp lỗi/)).toHaveValue(
-    "Audit log",
-  );
+  // The module the page belongs to is preselected (antd Select shows it as
+  // the selected item's title).
+  await expect(
+    dialog.getByRole("combobox", { name: /Module đang gặp lỗi/ }),
+  ).toBeVisible();
+  await expect(dialog.getByTitle("Nhật ký kiểm toán")).toBeVisible();
   await expect(dialog.getByLabel(/Mô tả lỗi/)).toBeVisible();
   await expect(dialog.getByLabel(/Đề xuất giải pháp/)).toBeVisible();
   await expect(
@@ -122,7 +126,7 @@ test("US5: the admin inbox lists the feedback with its screenshot", async ({
   const marker = `Inbox ${Date.now()}`;
   await loginAsDemoUser(page);
   await page.goto("/audit");
-  await page.getByRole("button", { name: "Feedback" }).click();
+  await page.getByRole("button", { name: "Gửi phản hồi" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel(/Mô tả lỗi/).fill(marker);
   await pasteImage(page);
@@ -133,7 +137,7 @@ test("US5: the admin inbox lists the feedback with its screenshot", async ({
   await page.goto("/admin/feedback");
   const entry = page.locator("li", { hasText: marker }).first();
   await expect(entry).toBeVisible();
-  await expect(entry.getByText("Audit log")).toBeVisible();
+  await expect(entry.getByText("Nhật ký kiểm toán")).toBeVisible();
   await expect(
     entry.getByRole("img", { name: "Ảnh đính kèm phản hồi" }),
   ).toBeVisible({

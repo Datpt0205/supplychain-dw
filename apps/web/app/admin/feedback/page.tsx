@@ -1,118 +1,113 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, MessageSquarePlus } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@dw/ui";
+import { Card, Flex, Skeleton, Tag, Typography } from "antd";
+import { MessageOutlined } from "@ant-design/icons";
+import { PageHeader, RegionState } from "@dw/ui";
 import { apiClient } from "../../../lib/session";
-import { PageHeading } from "../../../components/page-heading";
-import { EmptyState } from "../../../components/empty-state";
+import { LoadError } from "../../../components/load-error";
 import { LoadMore } from "../../../components/load-more";
 import { formatDateTime } from "../../../lib/dates";
 import { useCachedPages } from "../../../lib/use-cached-pages";
 
 /**
- * The feedback inbox (spec 003 US5), moved under Admin: what members sent,
- * newest first, each with its module, page, suggestion and screenshots. The
- * API gates it on the members-read scope; the nav item carries the same scope.
+ * The feedback inbox (spec 003 US5), under Admin: what members sent, newest
+ * first, each with its module, page, suggestion and screenshots. The API gates
+ * it on the members-read scope; the nav item carries the same scope.
  */
 export default function FeedbackInboxPage() {
-  const { items, loading, loadingMore, hasMore, loadMore } = useCachedPages(
-    "admin:feedback",
-    useCallback(
-      (cursor: string | null) => apiClient().listFeedback({ cursor }),
-      [],
-    ),
-  );
+  const { items, loading, loadingMore, error, hasMore, loadMore, reload } =
+    useCachedPages(
+      "admin:feedback",
+      useCallback(
+        (cursor: string | null) => apiClient().listFeedback({ cursor }),
+        [],
+      ),
+    );
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeading icon={MessageSquarePlus} title="Feedback inbox" />
-      <Card className="mt-3">
-        <CardHeader>
-          <CardTitle>Phản hồi từ thành viên</CardTitle>
-          <CardDescription>
-            Mới nhất trước. Mỗi phản hồi ghi module, trang, mô tả, đề xuất và
-            ảnh màn hình người gửi đính kèm.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> Đang tải…
-            </div>
-          ) : items.length === 0 ? (
-            <EmptyState
-              icon={MessageSquarePlus}
-              title="Chưa có phản hồi"
-              description="Phản hồi thành viên gửi qua nút góc dưới trái sẽ hiện ở đây."
-            />
-          ) : (
-            <ul className="space-y-3">
-              {items.map((item) => (
-                <li
-                  key={item.id}
-                  className="rounded-xl border bg-card px-4 py-3"
-                >
-                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">
-                      {item.author_name}
-                    </span>
-                    <span>{formatDateTime(item.created_at)}</span>
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                    <span className="rounded-full bg-muted px-2 py-0.5 font-semibold uppercase tracking-wide">
-                      {item.module ?? item.category}
-                    </span>
-                    {item.page_path && (
-                      <span className="truncate">{item.page_path}</span>
+      <PageHeader
+        icon={<MessageOutlined />}
+        title="Hộp phản hồi"
+        subtitle="Mới nhất trước. Mỗi phản hồi ghi module, trang, mô tả, đề xuất và ảnh màn hình người gửi đính kèm."
+      />
+      <Flex vertical gap="middle">
+        {error != null && <LoadError error={error} onRetry={reload} />}
+        {loading && error == null && <RegionState kind="loading" />}
+        {!loading && error == null && items.length === 0 && (
+          <RegionState
+            kind="empty"
+            title="Chưa có phản hồi"
+            description="Phản hồi thành viên gửi qua nút góc dưới trái sẽ hiện ở đây."
+          />
+        )}
+        {items.length > 0 && (
+          <ul className="m-0 flex list-none flex-col gap-3 p-0">
+            {items.map((item) => (
+              <li key={item.id}>
+                <Card size="small">
+                  <Flex vertical gap={6}>
+                    <Flex justify="space-between" gap="small" wrap>
+                      <Typography.Text strong>
+                        {item.author_name}
+                      </Typography.Text>
+                      <Typography.Text type="secondary" className="text-xs">
+                        {formatDateTime(item.created_at)}
+                      </Typography.Text>
+                    </Flex>
+                    <Flex wrap gap="small" align="center">
+                      <Tag>{item.module ?? item.category}</Tag>
+                      {item.page_path && (
+                        <Typography.Text
+                          type="secondary"
+                          code
+                          className="text-xs"
+                        >
+                          {item.page_path}
+                        </Typography.Text>
+                      )}
+                    </Flex>
+                    <Typography.Paragraph className="!mb-0 whitespace-pre-wrap">
+                      {item.message}
+                    </Typography.Paragraph>
+                    {item.suggestion && (
+                      <Typography.Paragraph
+                        type="secondary"
+                        className="!mb-0 whitespace-pre-wrap"
+                      >
+                        <Typography.Text strong>Đề xuất:</Typography.Text>{" "}
+                        {item.suggestion}
+                      </Typography.Paragraph>
                     )}
-                  </div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm">
-                    {item.message}
-                  </p>
-                  {item.suggestion && (
-                    <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
-                      <span className="font-medium text-foreground">
-                        Đề xuất:
-                      </span>{" "}
-                      {item.suggestion}
-                    </p>
-                  )}
-                  {item.attachments.length > 0 && (
-                    <ul className="mt-3 flex flex-wrap gap-2">
-                      {item.attachments.map((attachment) => (
-                        <li key={attachment.id}>
-                          <AttachmentImage
-                            feedbackId={item.id}
-                            attachmentId={attachment.id}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          {!loading && items.length > 0 && (
-            <div className="mt-4">
-              <LoadMore
-                hasMore={hasMore}
-                loading={loadingMore}
-                onLoadMore={loadMore}
-                shown={items.length}
-                noun="phản hồi"
-              />
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                    {item.attachments.length > 0 && (
+                      <ul className="m-0 mt-1 flex list-none flex-wrap gap-2 p-0">
+                        {item.attachments.map((attachment) => (
+                          <li key={attachment.id}>
+                            <AttachmentImage
+                              feedbackId={item.id}
+                              attachmentId={attachment.id}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Flex>
+                </Card>
+              </li>
+            ))}
+          </ul>
+        )}
+        {!loading && items.length > 0 && (
+          <LoadMore
+            hasMore={hasMore}
+            loading={loadingMore}
+            onLoadMore={loadMore}
+            shown={items.length}
+            noun="phản hồi"
+          />
+        )}
+      </Flex>
     </div>
   );
 }
@@ -143,7 +138,7 @@ function AttachmentImage({
     };
   }, [feedbackId, attachmentId]);
   if (!url) {
-    return <div className="size-24 animate-pulse rounded-lg border bg-muted" />;
+    return <Skeleton.Image active className="!size-24" />;
   }
   return (
     <a href={url} target="_blank" rel="noreferrer" title="Mở ảnh">
@@ -151,7 +146,7 @@ function AttachmentImage({
       <img
         src={url}
         alt="Ảnh đính kèm phản hồi"
-        className="size-24 rounded-lg border object-cover"
+        className="size-24 object-cover"
       />
     </a>
   );

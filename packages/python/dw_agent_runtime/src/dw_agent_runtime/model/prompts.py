@@ -2,24 +2,52 @@
 
 A prompt artifact is immutable: changing wording means a new version file.
 Rendering is strict — missing or unknown variables fail fast.
+
+**Every variable is untrusted unless the template says otherwise.** The registry
+wraps each value it interpolates in ``<input name="...">`` with ``&``, ``<`` and
+``>`` escaped, so a value cannot close its block and continue as the prompt's
+own words. Containment used to be each template's job: a template that forgot
+the block, or a document carrying ``</input>``, was enough. A template opts a
+variable out, by name and with the reason, only for a value code builds (a
+date, an identifier); ``raw_variables`` is that list.
+
+**Skills are trusted text, placed in the system part.** A prompt that declares
+``skills: [id@range]`` gets each resolved skill (`model.skills`) appended to its
+system prompt under a fixed heading: reviewed process knowledge, never a
+variable. What was appended is on the rendering (``RenderedPrompt.skills``) and
+in its checksum, so a run can name the skill versions it used.
 """
 
 from __future__ import annotations
 
 import hashlib
+import html
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from dw_agent_runtime.model.skills import SkillRef, SkillRegistry
 from dw_agent_runtime.registry import ConfigError
 from dw_kernel.errors import DomainError, NotFoundError
 from dw_kernel.overlay import TenantOverlay
 
 _VARIABLE_PATTERN = re.compile(r"\{([a-z_][a-z0-9_]*)\}")
+UNTRUSTED_TAG = "input"
+
+
+def contain_untrusted(name: str, value: str) -> str:
+    """The one form an untrusted value takes inside a prompt.
+
+    Escaped rather than stripped: the model still reads what the document said,
+    and nothing in it can open or close a block. ``name`` is a template
+    placeholder, which the pattern above limits to ``[a-z0-9_]``.
+    """
+    escaped = html.escape(value, quote=False)
+    return f'<{UNTRUSTED_TAG} name="{name}">\n{escaped}\n</{UNTRUSTED_TAG}>'
 
 
 class PromptArtifact(BaseModel):
@@ -32,6 +60,28 @@ class PromptArtifact(BaseModel):
     system: str
     template: str
     variables: frozenset[str] = frozenset()
+    # Variables interpolated as written, each with the reason it is safe to:
+    # a value code builds, never one a request, a document or a model wrote.
+    raw_variables: dict[str, str] = Field(default_factory=dict)
+    # Process knowledge this prompt reads, as `skill_id@version` or
+    # `skill_id@^version`; appended to the system part when rendered.
+    skills: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _raw_is_declared_and_justified(self) -> PromptArtifact:
+        for ref in self.skills:
+            SkillRef.parse(ref)
+        unknown = set(self.raw_variables) - set(self.variables)
+        if unknown:
+            raise ValueError(f"raw_variables not among variables: {sorted(unknown)}")
+        unjustified = [name for name, why in self.raw_variables.items() if not why.strip()]
+        if unjustified:
+            raise ValueError(f"raw variable without a reason: {sorted(unjustified)}")
+        # The registry wraps. A template doing it too nests one block in another
+        # and teaches the next author that containment is the template's job.
+        if f"<{UNTRUSTED_TAG}" in self.template or f"</{UNTRUSTED_TAG}" in self.template:
+            raise ValueError(f"template must not write <{UNTRUSTED_TAG}> itself")
+        return self
 
     def declared_placeholders(self) -> frozenset[str]:
         return frozenset(_VARIABLE_PATTERN.findall(self.template))
@@ -44,6 +94,12 @@ class RenderedPrompt:
     system: str
     user: str
     checksum: str
+    # The skill versions appended to `system` (`skill_id@version`).
+    skills: tuple[str, ...] = ()
+
+
+# The heading the skills sit under in a system prompt.
+SKILLS_HEADING = "# Kiến thức quy trình (tham khảo, đã được duyệt)"
 
 
 @dataclass
@@ -53,6 +109,7 @@ class PromptRegistry:
     _prompts: TenantOverlay[tuple[str, str], tuple[PromptArtifact, str]] = field(
         default_factory=TenantOverlay
     )
+    skills: SkillRegistry = field(default_factory=SkillRegistry)
 
     def load_directory(self, directory: Path, *, tenant_id: UUID | None = None) -> None:
         for path in sorted(directory.rglob("*.yaml")):
@@ -89,6 +146,15 @@ class PromptRegistry:
         digest = checksum or hashlib.sha256(artifact.model_dump_json().encode()).hexdigest()
         self._prompts.put(key, (artifact, digest), tenant_id=tenant_id)
 
+    def has(self, prompt_id: str, version: str) -> bool:
+        """Whether the platform layer holds this version.
+
+        The platform layer only: a tenant's override is a variation of a prompt
+        the platform ships, and resolution falls back to the platform, so a
+        version only some tenant holds is one every other tenant cannot render.
+        """
+        return self._prompts.existing((prompt_id, version)) is not None
+
     def render(
         self,
         prompt_id: str,
@@ -104,6 +170,7 @@ class PromptRegistry:
                 details={"prompt_id": prompt_id, "version": version},
             )
         artifact, checksum = entry
+        system, skill_refs, checksum = self._with_skills(artifact, checksum, tenant_id)
         provided = frozenset(variables)
         if provided != artifact.variables:
             raise DomainError(
@@ -117,7 +184,69 @@ class PromptRegistry:
         return RenderedPrompt(
             prompt_id=prompt_id,
             version=version,
-            system=artifact.system,
-            user=artifact.template.format(**variables),
+            system=system,
+            user=artifact.template.format(
+                **{
+                    name: value
+                    if name in artifact.raw_variables
+                    else contain_untrusted(name, value)
+                    for name, value in variables.items()
+                }
+            ),
             checksum=checksum,
+            skills=skill_refs,
         )
+
+    def _with_skills(
+        self, artifact: PromptArtifact, checksum: str, tenant_id: UUID | None
+    ) -> tuple[str, tuple[str, ...], str]:
+        if not artifact.skills:
+            return artifact.system, (), checksum
+        loaded = [
+            self.skills.resolve(SkillRef.parse(ref), tenant_id=tenant_id) for ref in artifact.skills
+        ]
+        newline = "\n"
+        sections = [
+            f"## {s.artifact.title} ({s.artifact.ref}){newline}{s.artifact.body.strip()}"
+            for s in loaded
+        ]
+        system = newline.join(
+            [artifact.system.rstrip(), "", SKILLS_HEADING, "", (newline * 2).join(sections)]
+        )
+        digest = hashlib.sha256(checksum.encode())
+        for s in loaded:
+            digest.update(s.checksum.encode())
+        return system, tuple(s.artifact.ref for s in loaded), digest.hexdigest()
+
+    def check_skills(self) -> None:
+        """Refuses, by name, a platform prompt declaring a skill that does not
+        resolve or does not name it, and a skill naming a prompt that does not
+        exist. Called once both directories are loaded."""
+        prompt_ids = frozenset(a.prompt_id for a, _ in self._prompts.platform_values())
+        self.skills.check_applies_to(prompt_ids)
+        for artifact, _ in self._prompts.platform_values():
+            for raw in artifact.skills:
+                try:
+                    loaded = self.skills.resolve(SkillRef.parse(raw))
+                except NotFoundError as exc:
+                    raise ConfigError(
+                        f"prompt {artifact.prompt_id}@{artifact.version} declares skill {raw},"
+                        " which is not registered"
+                    ) from exc
+                if artifact.prompt_id not in loaded.artifact.applies_to:
+                    raise ConfigError(
+                        f"prompt {artifact.prompt_id}@{artifact.version} declares skill"
+                        f" {loaded.artifact.ref}, whose applies_to does not name it"
+                    )
+
+
+def load_shipped_prompts(configs_dir: Path) -> PromptRegistry:
+    """The platform's prompts and skills from a checkout's `configs/`, checked
+    against each other: the one way a host builds its prompt registry."""
+    registry = PromptRegistry()
+    registry.load_directory(configs_dir / "prompts")
+    skills_dir = configs_dir / "skills"
+    if skills_dir.is_dir():
+        registry.skills.load_directory(skills_dir)
+    registry.check_skills()
+    return registry

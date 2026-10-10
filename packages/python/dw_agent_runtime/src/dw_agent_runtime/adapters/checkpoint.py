@@ -239,9 +239,16 @@ class SqlAlchemyCheckpointSaver(BaseCheckpointSaver[str]):
                 await session.execute(statement)
 
     async def adelete_thread(self, thread_id: str) -> None:
-        # Deletion goes through retention policies (phase 5); runtime never
-        # deletes checkpoints on its own.
-        raise NotImplementedError("checkpoint deletion is a retention-policy operation")
+        # The runtime never deletes checkpoints on its own: a thread's rows go
+        # by the retention term (`SqlCheckpointRetention`, the worker's
+        # `checkpoint_retention` lane) or with the tenant (offboarding). A
+        # delete here would skip the check that no run on the thread is still
+        # waiting to resume from them.
+        raise NotImplementedError(
+            "checkpoints are deleted by the worker's checkpoint_retention lane "
+            "(SqlCheckpointRetention, configs/policies/retention@*.yaml) and by "
+            "tenant offboarding, never by the runtime"
+        )
 
     def _row_to_tuple(self, row: Any, writes_rows: Sequence[Any]) -> CheckpointTuple:
         checkpoint = self.serde.loads_typed((row.type, row.checkpoint))

@@ -13,10 +13,17 @@ transaction that writes the link, with one conditional UPDATE (see
 ``SqlZaloLink.redeem``). A token seen by someone else — a screenshot, a shared
 screen — therefore links at most once, and the second ``/start`` is refused.
 
-The bot accepts exactly two commands, ``/start <token>`` and ``/stop``. Any other
-text gets one sentence of help and changes nothing: no free-text word ("hủy",
-"duyệt", "ok") unlinks anyone or decides anything (ADR 0014). Nothing here
-builds an access context from a Zalo chat id.
+This module owns the two link commands, ``/start <token>`` and ``/stop``; given
+anything else, ``handle_update`` answers with ``link_help`` and changes nothing.
+Since Z4 every other text from a chat goes elsewhere: ``adapters.zalo_inbound``
+sends ``/start`` and ``/stop`` here and the rest to the inbound router
+(``dw_connectors.inbound``). There an unlinked chat gets ``link_help`` too, and a
+linked person's message reaches the commands registered at the composition
+root, each acting with a context built from that person's own membership and
+cut to the command's ceiling — never from the chat. So free text can act through
+a registered command a product context plugs in, but no free-text word unlinks
+anyone, and an approval is decided only under ADR 0007's rule (Z5). This module
+builds no context at all.
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any, Protocol
 
+from dw_connectors.inbound import ChannelIdentityPort
 from dw_connectors.ports import ChatSenderPort
 from dw_kernel.ports import UtcClock
 
@@ -101,10 +109,12 @@ def verify_connect_token(token: str, secret: str, *, now: datetime) -> ConnectTo
 # ---- the store each side is handed -------------------------------------------
 
 
-class ZaloLinkStore(Protocol):
-    """What the bot side writes — see ``dw_platform...zalo_link_repo.SqlZaloLink``.
+class ZaloLinkStore(ChannelIdentityPort, Protocol):
+    """What the bot side reads and writes — see ``dw_platform...zalo_link_repo.SqlZaloLink``.
 
-    Injected so this module stays free of any database dependency.
+    Injected so this module stays free of any database dependency. The
+    inherited ``user_id_for`` is the chat-to-person step the inbound router
+    starts every message from.
     """
 
     async def redeem(self, token: ConnectToken, zalo_id: str) -> bool:
@@ -172,6 +182,22 @@ class ZaloLinking:
 # ---- the bot's side -----------------------------------------------------------
 
 
+def _message(update: dict[str, Any]) -> dict[str, Any]:
+    message: dict[str, Any] = (update.get("result") or update).get("message") or {}
+    return message
+
+
+def message_id_of(update: dict[str, Any]) -> str:
+    """The channel's id for the message, or "" when the update carries none.
+
+    Read from ``message.message_id`` as Zalo's Bot Platform documents it; the
+    poll fixture captured in Z1 predates any use of it, and a live run against
+    the real bot is where it gets measured. Empty means the message cannot
+    be deduplicated, and the caller must not act on it.
+    """
+    return str(_message(update).get("message_id") or "")
+
+
 def parse_update(update: dict[str, Any]) -> tuple[str, str]:
     """Return ``(zalo_id, text)`` from a bot update; either may be empty.
 
@@ -179,16 +205,21 @@ def parse_update(update: dict[str, Any]) -> tuple[str, str]:
     the top level on the webhook path; the chat id is under ``chat`` (private
     chat) or ``from``. Both shapes are normalised here.
     """
-    message = (update.get("result") or update).get("message") or {}
+    message = _message(update)
     text = (message.get("text") or "").strip()
     chat = message.get("chat") or message.get("from") or {}
     return str(chat.get("id") or ""), text
 
 
-def _help(product_name: str) -> str:
+LINK_COMMANDS = (_START, _STOP)
+
+
+def link_help(product_name: str) -> str:
+    """The one sentence on how to link: an unlinked chat's answer to anything,
+    and the answer to a link command this module cannot read."""
     return (
-        f"Bot chỉ nhận hai lệnh: /start <mã> để kết nối Zalo với tài khoản {product_name} "
-        f"(lấy mã ở trang Cài đặt cá nhân), và /stop để ngắt kết nối."
+        f"Để kết nối Zalo với tài khoản {product_name}, lấy mã ở trang Cài đặt cá nhân "
+        "rồi gửi /start <mã>; gửi /stop để ngắt kết nối."
     )
 
 
@@ -235,4 +266,4 @@ async def handle_update(
         else:
             await reply("Zalo này chưa kết nối với tài khoản nào.")
     else:
-        await reply(_help(product_name))
+        await reply(link_help(product_name))

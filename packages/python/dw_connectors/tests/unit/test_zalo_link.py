@@ -81,6 +81,9 @@ class _FakeStore:
     async def zalo_id_for(self, user_id: uuid.UUID) -> str | None:
         return self.links.get(user_id)
 
+    async def user_id_for(self, zalo_id: str) -> uuid.UUID | None:
+        return next((u for u, z in self.links.items() if z == zalo_id), None)
+
     async def unlink_by_user(self, user_id: uuid.UUID) -> None:
         self.links.pop(user_id, None)
 
@@ -386,7 +389,7 @@ async def test_a_reply_that_fails_to_send_keeps_the_link() -> None:
 
 
 def test_handle_update_cannot_reach_an_approval_decision() -> None:
-    """No free text decides anything (ADR 0014): the bot module imports nothing
+    """No free text decides anything (ADR 0007): the bot module imports nothing
     that could. Z5 adds a separate, code-gated path and keeps this test."""
     from pathlib import Path
 

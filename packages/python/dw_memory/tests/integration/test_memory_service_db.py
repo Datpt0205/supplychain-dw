@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -35,6 +35,7 @@ from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_knowledge.adapters.evidence_store import SqlEvidenceStore
 from dw_knowledge.contracts import EvidenceRef
 from dw_memory import tables
+from dw_memory.adapters.qdrant_ranker import QdrantMemoryRanker
 from dw_memory.contracts import MemoryType, WriteDecision
 from dw_memory.policy import MemoryCandidate, MemoryWritePolicy
 from dw_memory.service import MemoryService
@@ -47,14 +48,83 @@ WORKSPACE = uuid.UUID(int=0xCC01)
 SOURCE_TEXT = b"Anh An noi se gui hop dong truoc thu Sau."
 
 
+OTHER_WORKSPACE = uuid.UUID(int=0xCC02)
+
+
+@dataclass(frozen=True)
+class Source:
+    """One seeded document with one chunk, citable as evidence."""
+
+    document_id: uuid.UUID
+    chunk_id: uuid.UUID
+    provenance_hash: str
+
+
 @dataclass(frozen=True)
 class Seeded:
-    """Real source material and a real run, so a citation can be checked."""
+    """Real source material and a real run, so a citation can be checked.
+
+    The first document's fields sit on `Seeded` itself, as they always have;
+    `others` are three more internal documents in the same workspace, because
+    auto-write asks for two independent documents and recall orders by how many
+    a fact rests on. The last three are the boundary cases.
+    """
 
     run_id: uuid.UUID
     document_id: uuid.UUID
     chunk_id: uuid.UUID
     provenance_hash: str
+    others: tuple[Source, ...]
+    confidential: Source
+    other_workspace: Source
+    other_workspace_global: Source
+
+
+async def _seed_document(
+    conn: Any,
+    *,
+    workspace: uuid.UUID,
+    content: bytes,
+    classification: str = "internal",
+    scope: str = "tenant",
+    tenant: uuid.UUID = TENANT,
+) -> Source:
+    document_id, chunk_id = uuid.uuid4(), uuid.uuid4()
+    digest = hashlib.sha256(content).hexdigest()
+    await conn.execute(
+        text(
+            "INSERT INTO knowledge.documents"
+            " (id, tenant_id, workspace_id, title, source_uri, created_by,"
+            "  classification, scope)"
+            " VALUES (:id, :t, :w, 'Bien ban hop', 'file://bien-ban', :actor, :c, :scope)"
+        ),
+        {
+            "id": document_id,
+            "t": tenant,
+            "w": workspace,
+            "actor": uuid.uuid4(),
+            "c": classification,
+            "scope": scope,
+        },
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO knowledge.chunks"
+            " (id, tenant_id, workspace_id, document_id, seq, content,"
+            "  start_offset, end_offset, provenance_hash)"
+            " VALUES (:id, :t, :w, :doc, 0, :content, 0, :end, :hash)"
+        ),
+        {
+            "id": chunk_id,
+            "t": tenant,
+            "w": workspace,
+            "doc": document_id,
+            "content": content.decode(),
+            "end": len(content),
+            "hash": digest,
+        },
+    )
+    return Source(document_id, chunk_id, digest)
 
 
 @pytest.fixture
@@ -62,8 +132,7 @@ async def seeded(urls: RuntimeUrls) -> AsyncIterator[Seeded]:
     """Written as the migrator: RLS is what the service is tested through, not what
     the fixture should have to satisfy to lay down a document."""
     engine = create_async_engine(urls.migrator, poolclass=NullPool)
-    run_id, document_id, chunk_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    digest = hashlib.sha256(SOURCE_TEXT).hexdigest()
+    run_id = uuid.uuid4()
     async with engine.begin() as conn:
         await conn.execute(
             text(
@@ -74,33 +143,35 @@ async def seeded(urls: RuntimeUrls) -> AsyncIterator[Seeded]:
             ),
             {"id": run_id, "t": TENANT, "w": WORKSPACE, "actor": uuid.uuid4()},
         )
-        await conn.execute(
-            text(
-                "INSERT INTO knowledge.documents"
-                " (id, tenant_id, workspace_id, title, source_uri, created_by)"
-                " VALUES (:id, :t, :w, 'Bien ban hop', 'file://bien-ban', :actor)"
-            ),
-            {"id": document_id, "t": TENANT, "w": WORKSPACE, "actor": uuid.uuid4()},
+        first = await _seed_document(conn, workspace=WORKSPACE, content=SOURCE_TEXT)
+        others = tuple(
+            [
+                await _seed_document(
+                    conn, workspace=WORKSPACE, content=SOURCE_TEXT + f" ({n})".encode()
+                )
+                for n in range(3)
+            ]
         )
-        await conn.execute(
-            text(
-                "INSERT INTO knowledge.chunks"
-                " (id, tenant_id, workspace_id, document_id, seq, content,"
-                "  start_offset, end_offset, provenance_hash)"
-                " VALUES (:id, :t, :w, :doc, 0, :content, 0, :end, :hash)"
-            ),
-            {
-                "id": chunk_id,
-                "t": TENANT,
-                "w": WORKSPACE,
-                "doc": document_id,
-                "content": SOURCE_TEXT.decode(),
-                "end": len(SOURCE_TEXT),
-                "hash": digest,
-            },
+        confidential = await _seed_document(
+            conn, workspace=WORKSPACE, content=b"Gia von 12.000", classification="confidential"
+        )
+        other_workspace = await _seed_document(
+            conn, workspace=OTHER_WORKSPACE, content=b"Ban kia hop rieng."
+        )
+        other_workspace_global = await _seed_document(
+            conn, workspace=OTHER_WORKSPACE, content=b"Thong tu 01/2026.", scope="global"
         )
     try:
-        yield Seeded(run_id, document_id, chunk_id, digest)
+        yield Seeded(
+            run_id,
+            first.document_id,
+            first.chunk_id,
+            first.provenance_hash,
+            others,
+            confidential,
+            other_workspace,
+            other_workspace_global,
+        )
     finally:
         await engine.dispose()
 
@@ -149,13 +220,36 @@ def evidence_for(seeded: Seeded, **overrides: object) -> EvidenceRef:
     return EvidenceRef(**fields)
 
 
-def candidate(seeded: Seeded, *, confidence: float = 0.92, **overrides: object) -> MemoryCandidate:
+def cite(source: Source, **overrides: object) -> EvidenceRef:
+    fields: dict[str, object] = {
+        "evidence_id": uuid.uuid4(),
+        "source_document_id": source.document_id,
+        "chunk_id": source.chunk_id,
+        "source_version": "1",
+        "relevance_score": 0.95,
+        "classification": "internal",
+        "provenance_hash": source.provenance_hash,
+    }
+    fields.update(overrides)
+    return EvidenceRef(**fields)
+
+
+def corroborated(seeded: Seeded, ref: EvidenceRef) -> tuple[EvidenceRef, ...]:
+    """`ref` plus a sound citation of a second document, so the candidate is an
+    AUTO_WRITE and its evidence is actually verified. A lone reference goes to
+    review, where nothing is checked yet, and a refusal test built on one would
+    pass by never reaching the check it names."""
+    return (ref, cite(seeded.others[0]))
+
+
+def candidate(seeded: Seeded, *, sources: int = 2, **overrides: object) -> MemoryCandidate:
+    """`sources` distinct documents cited: two is what auto-write asks for."""
+    refs = (evidence_for(seeded), *(cite(s) for s in seeded.others[: sources - 1]))
     fields: dict[str, object] = {
         "worker_id": "demo",
         "memory_type": MemoryType.COMMITMENT,
         "content": "Anh An cam kết gửi hợp đồng trước thứ Sáu.",
-        "provenance_refs": (evidence_for(seeded),),
-        "confidence": confidence,
+        "provenance_refs": refs[:sources],
     }
     fields.update(overrides)
     return MemoryCandidate(**fields)
@@ -186,10 +280,10 @@ async def test_a_stored_memory_traces_back_to_the_document_it_quotes(
 
     assert result.outcome.decision is WriteDecision.AUTO_WRITE
     assert result.item is not None
-    title = await _scalar(
+    cited = await _scalar(
         session_factory,
         """
-        SELECT d.title
+        SELECT array_agg(d.id)
         FROM memory.items i
         JOIN memory.item_evidence ie ON ie.memory_id = i.memory_id
         JOIN knowledge.evidence e ON e.evidence_id = ie.evidence_id
@@ -199,7 +293,8 @@ async def test_a_stored_memory_traces_back_to_the_document_it_quotes(
         """,
         memory_id=result.item.memory_id,
     )
-    assert title == "Bien ban hop"
+    assert isinstance(cited, list)
+    assert set(cited) == {seeded.document_id, seeded.others[0].document_id}
 
 
 async def test_the_run_that_wrote_a_memory_can_be_confirmed(
@@ -248,7 +343,12 @@ async def test_a_fabricated_hash_is_refused_and_nothing_is_written(
 
     with pytest.raises(DomainError, match="hash does not match"):
         await memory_service.propose(
-            candidate(seeded, provenance_refs=(evidence_for(seeded, provenance_hash="b" * 64),)),
+            candidate(
+                seeded,
+                provenance_refs=corroborated(
+                    seeded, evidence_for(seeded, provenance_hash="b" * 64)
+                ),
+            ),
             make_context(),
             created_by_run_id=seeded.run_id,
         )
@@ -263,7 +363,10 @@ async def test_evidence_citing_a_chunk_nobody_stored_is_refused(
 
     with pytest.raises(DomainError, match="does not have"):
         await memory_service.propose(
-            candidate(seeded, provenance_refs=(evidence_for(seeded, chunk_id=uuid.uuid4()),)),
+            candidate(
+                seeded,
+                provenance_refs=corroborated(seeded, evidence_for(seeded, chunk_id=uuid.uuid4())),
+            ),
             make_context(),
             created_by_run_id=seeded.run_id,
         )
@@ -279,7 +382,9 @@ async def test_evidence_that_cites_one_document_and_quotes_another_is_refused(
         await memory_service.propose(
             candidate(
                 seeded,
-                provenance_refs=(evidence_for(seeded, source_document_id=uuid.uuid4()),),
+                provenance_refs=corroborated(
+                    seeded, evidence_for(seeded, source_document_id=uuid.uuid4())
+                ),
             ),
             make_context(),
             created_by_run_id=seeded.run_id,
@@ -295,23 +400,190 @@ async def test_evidence_with_no_chunk_is_refused_rather_than_stored_unverified(
 
     with pytest.raises(DomainError, match="must name the chunk"):
         await memory_service.propose(
-            candidate(seeded, provenance_refs=(evidence_for(seeded, chunk_id=None),)),
+            candidate(
+                seeded, provenance_refs=corroborated(seeded, evidence_for(seeded, chunk_id=None))
+            ),
             make_context(),
             created_by_run_id=seeded.run_id,
         )
 
 
+# ------------------------------------- classification and workspace come --
+# from the evidence, not from the candidate's word for them
+#
+# Recall filters by a memory's classification, so whatever a candidate claimed
+# was what decided who could read the fact later. A candidate that said
+# `internal` while quoting a confidential document was recalled for anyone.
+
+
+async def _counts(session_factory: async_sessionmaker[AsyncSession]) -> tuple[object, object]:
+    return (
+        await _scalar(session_factory, "SELECT count(*) FROM memory.items"),
+        await _scalar(session_factory, "SELECT count(*) FROM memory.write_candidates"),
+    )
+
+
+async def test_a_candidate_claiming_less_than_its_evidence_is_refused_and_nothing_is_written(
+    service: tuple[MemoryService, async_sessionmaker[AsyncSession]], seeded: Seeded
+) -> None:
+    """Refused, not raised to `confidential`: the policy already decided on the
+    claimed `internal`, and raising it afterwards would auto-write a fact the
+    "restricted always needs review" rule never saw at its real level."""
+    memory_service, session_factory = service
+    before = await _counts(session_factory)
+
+    with pytest.raises(DomainError, match="classification"):
+        await memory_service.propose(
+            candidate(
+                seeded,
+                classification="internal",
+                provenance_refs=corroborated(seeded, cite(seeded.confidential)),
+            ),
+            make_context(),
+            created_by_run_id=seeded.run_id,
+        )
+
+    assert await _counts(session_factory) == before, "no item and no candidate row"
+
+
+async def test_evidence_records_the_documents_classification_not_the_references(
+    service: tuple[MemoryService, async_sessionmaker[AsyncSession]], seeded: Seeded
+) -> None:
+    """The reference says `internal`; the document says `confidential`. The
+    document is the owner of that fact, so the evidence row carries it."""
+    memory_service, session_factory = service
+    understated = cite(seeded.confidential, classification="internal")
+
+    result = await memory_service.propose(
+        candidate(
+            seeded,
+            classification="confidential",
+            provenance_refs=corroborated(seeded, understated),
+        ),
+        make_context(),
+        created_by_run_id=seeded.run_id,
+    )
+
+    assert result.item is not None
+    assert result.item.classification == "confidential"
+    recorded = await _scalar(
+        session_factory,
+        "SELECT classification FROM knowledge.evidence WHERE evidence_id = :e",
+        e=understated.evidence_id,
+    )
+    assert recorded == "confidential"
+
+
+async def test_a_chunk_from_another_workspace_is_refused_as_evidence(
+    service: tuple[MemoryService, async_sessionmaker[AsyncSession]], seeded: Seeded
+) -> None:
+    """Same tenant, so RLS lets the chunk through; the other team's material is
+    still not this team's evidence. Recall would hand the fact to this team."""
+    memory_service, session_factory = service
+    before = await _counts(session_factory)
+
+    with pytest.raises(DomainError, match="workspace"):
+        await memory_service.propose(
+            candidate(seeded, provenance_refs=corroborated(seeded, cite(seeded.other_workspace))),
+            make_context(),
+            created_by_run_id=seeded.run_id,
+        )
+
+    assert await _counts(session_factory) == before
+
+
+async def test_a_global_document_from_another_workspace_can_be_cited(
+    service: tuple[MemoryService, async_sessionmaker[AsyncSession]], seeded: Seeded
+) -> None:
+    """The same rule search applies: own workspace OR a global document. A
+    workspace check stricter than search would refuse evidence the run was
+    legitimately shown."""
+    memory_service, _ = service
+
+    result = await memory_service.propose(
+        candidate(
+            seeded, provenance_refs=corroborated(seeded, cite(seeded.other_workspace_global))
+        ),
+        make_context(),
+        created_by_run_id=seeded.run_id,
+    )
+
+    assert result.outcome.decision is WriteDecision.AUTO_WRITE
+    assert result.item is not None
+
+
+async def test_another_tenants_global_document_cannot_be_cited(
+    service: tuple[MemoryService, async_sessionmaker[AsyncSession]],
+    seeded: Seeded,
+    urls: RuntimeUrls,
+) -> None:
+    """The evidence query now joins `knowledge.documents`, whose RLS lets every
+    tenant read a global document. The chunk is what must stay fenced: chunks
+    carry tenant-only RLS, so another tenant's global chunk is simply not there."""
+    memory_service, session_factory = service
+    engine = create_async_engine(urls.migrator, poolclass=NullPool)
+    try:
+        async with engine.begin() as conn:
+            theirs = await _seed_document(
+                conn,
+                workspace=OTHER_WORKSPACE,
+                content=b"Thong tu cua tenant khac.",
+                scope="global",
+                tenant=uuid.UUID(int=0xDEAD),
+            )
+    finally:
+        await engine.dispose()
+    before = await _counts(session_factory)
+
+    with pytest.raises(DomainError, match="does not have"):
+        await memory_service.propose(
+            candidate(seeded, provenance_refs=corroborated(seeded, cite(theirs))),
+            make_context(),
+            created_by_run_id=seeded.run_id,
+        )
+
+    assert await _counts(session_factory) == before
+
+
+async def test_a_document_labelled_off_the_ladder_is_refused_not_ranked(
+    service: tuple[MemoryService, async_sessionmaker[AsyncSession]],
+    seeded: Seeded,
+    urls: RuntimeUrls,
+) -> None:
+    """`knowledge.documents.classification` has no CHECK yet. Ranking `public`
+    would be a guess about who may recall the memory built on it."""
+    memory_service, session_factory = service
+    engine = create_async_engine(urls.migrator, poolclass=NullPool)
+    try:
+        async with engine.begin() as conn:
+            odd = await _seed_document(
+                conn, workspace=WORKSPACE, content=b"Nhan la.", classification="public"
+            )
+    finally:
+        await engine.dispose()
+    before = await _counts(session_factory)
+
+    with pytest.raises(DomainError, match="unknown classification"):
+        await memory_service.propose(
+            candidate(seeded, provenance_refs=corroborated(seeded, cite(odd))),
+            make_context(),
+            created_by_run_id=seeded.run_id,
+        )
+
+    assert await _counts(session_factory) == before
+
+
 # ------------------------------------------------------- policy, and audit --
 
 
-async def test_low_confidence_goes_to_review_without_item(
+async def test_a_single_source_goes_to_review_without_item(
     service: tuple[MemoryService, async_sessionmaker[AsyncSession]], seeded: Seeded
 ) -> None:
     memory_service, session_factory = service
     before = await _scalar(session_factory, "SELECT count(*) FROM memory.items")
 
     result = await memory_service.propose(
-        candidate(seeded, confidence=0.6, memory_type=MemoryType.PREFERENCE),
+        candidate(seeded, sources=1, memory_type=MemoryType.PREFERENCE),
         make_context(),
         created_by_run_id=seeded.run_id,
     )
@@ -327,7 +599,7 @@ async def test_no_provenance_rejected(
     memory_service, _ = service
 
     result = await memory_service.propose(
-        candidate(seeded, provenance_refs=(), confidence=0.99),
+        candidate(seeded, provenance_refs=()),
         make_context(),
         created_by_run_id=seeded.run_id,
     )
@@ -337,17 +609,17 @@ async def test_no_provenance_rejected(
 
 
 @pytest.mark.parametrize(
-    ("confidence", "action"),
+    ("sources", "action"),
     [
-        (0.92, "memory.item_written"),
-        (0.6, "memory.write_held_for_review"),
-        (0.1, "memory.write_rejected"),
+        (2, "memory.item_written"),
+        (1, "memory.write_held_for_review"),
+        (0, "memory.write_rejected"),
     ],
 )
 async def test_every_outcome_reaches_the_audit_trail(
     service: tuple[MemoryService, async_sessionmaker[AsyncSession]],
     seeded: Seeded,
-    confidence: float,
+    sources: int,
     action: str,
 ) -> None:
     """A fact appearing in a customer's system with nobody able to say when it was
@@ -355,7 +627,7 @@ async def test_every_outcome_reaches_the_audit_trail(
     memory_service, session_factory = service
 
     result = await memory_service.propose(
-        candidate(seeded, confidence=confidence), make_context(), created_by_run_id=seeded.run_id
+        candidate(seeded, sources=sources), make_context(), created_by_run_id=seeded.run_id
     )
 
     resource = str(result.item.memory_id) if result.item else str(result.candidate_id)
@@ -366,7 +638,7 @@ async def test_every_outcome_reaches_the_audit_trail(
         action=action,
         resource=resource,
     )
-    assert recorded == "1.0.0"
+    assert recorded == memory_service.policy.policy_version
 
 
 async def test_the_database_refuses_a_memory_with_empty_provenance(
@@ -425,8 +697,8 @@ def a_subject() -> str:
 
 async def _remember(
     # `Any`, not `object`: these are forwarded straight into `candidate`, whose
-    # own signature types each one. `object` makes mypy reject the `confidence`
-    # float it declares, and narrowing here would mean restating that signature.
+    # own signature types each one. `object` makes mypy reject the `sources`
+    # int it declares, and narrowing here would mean restating that signature.
     service: MemoryService,
     seeded: Seeded,
     *,
@@ -590,7 +862,7 @@ async def test_a_newer_answer_closes_the_older_one_and_recall_returns_one(
         subject_refs=(subject,),
         fact_key="contract_date",
         content="Ký ngày 10/10.",
-        confidence=0.99,
+        sources=3,
     )
     await _remember(
         svc,
@@ -599,7 +871,7 @@ async def test_a_newer_answer_closes_the_older_one_and_recall_returns_one(
         subject_refs=(subject,),
         fact_key="contract_date",
         content="Ký ngày 20/10.",
-        confidence=0.80,
+        sources=2,
     )
 
     live = await svc.recall(
@@ -682,6 +954,69 @@ async def test_the_same_question_about_another_customer_is_untouched(
     )
 
     assert [item.content for item in live] == ["Của khách kia."]
+
+
+async def test_the_superseded_memory_loses_its_vector_and_the_new_one_keeps_it(
+    service: tuple[MemoryService, async_sessionmaker[AsyncSession]],
+    seeded: Seeded,
+    ranker: QdrantMemoryRanker,
+    indexed: Callable[..., Awaitable[uuid.UUID]],
+) -> None:
+    """Recall never reads a closed memory, so its point has no reader: it is an
+    embedding of an answer the system no longer gives, kept for nobody."""
+    svc, _ = service
+    svc = replace(svc, vector_purge=ranker)
+    context = make_context()
+    subject = a_subject()
+    older = await svc.propose(
+        candidate(seeded, subject_refs=(subject,), fact_key="contract_date"),
+        context,
+        created_by_run_id=seeded.run_id,
+    )
+    assert older.item is not None
+    await indexed("Ký 10/10.", tenant=TENANT, workspace=WORKSPACE, memory_id=older.item.memory_id)
+    newer = await svc.propose(
+        candidate(seeded, subject_refs=(subject,), fact_key="contract_date", content="Ký 20/10."),
+        context,
+        created_by_run_id=seeded.run_id,
+    )
+    assert newer.item is not None
+    await indexed("Ký 20/10.", tenant=TENANT, workspace=WORKSPACE, memory_id=newer.item.memory_id)
+
+    stored = await ranker.client.retrieve(
+        ranker.collection, ids=[str(older.item.memory_id), str(newer.item.memory_id)]
+    )
+
+    assert {uuid.UUID(str(point.id)) for point in stored} == {newer.item.memory_id}
+
+
+async def test_a_vector_store_that_is_down_does_not_fail_a_supersession(
+    service: tuple[MemoryService, async_sessionmaker[AsyncSession]], seeded: Seeded
+) -> None:
+    """The memory is committed before the point is touched; a stray point costs
+    space, a failed proposal would send a stored fact back round the retry loop."""
+    svc, _ = service
+
+    @dataclass
+    class _Down:
+        async def delete(self, memory_ids: Sequence[uuid.UUID]) -> None:
+            raise RuntimeError("qdrant xuống")
+
+        async def delete_by_tenant(self, tenant_id: uuid.UUID) -> None:
+            raise RuntimeError("qdrant xuống")
+
+    svc = replace(svc, vector_purge=_Down())
+    context = make_context()
+    subject = a_subject()
+    await _remember(svc, seeded, context=context, subject_refs=(subject,), fact_key="contract_date")
+    await _remember(
+        svc, seeded, context=context, subject_refs=(subject,), fact_key="contract_date", content="2"
+    )
+
+    live = await svc.recall(
+        context, worker_id="demo", subject_refs=(subject,), now=datetime.now(UTC)
+    )
+    assert [item.content for item in live] == ["2"]
 
 
 async def test_supersession_names_what_it_closed_on_the_audit_trail(
@@ -830,10 +1165,15 @@ class _Ranker:
         tenant_id: uuid.UUID,
         workspace_id: uuid.UUID,
         worker_id: str,
-        limit: int,
+        candidate_ids: Sequence[uuid.UUID],
     ) -> tuple[uuid.UUID, ...]:
         self.asked.append(
-            {"query": query, "tenant_id": tenant_id, "worker_id": worker_id, "limit": limit}
+            {
+                "query": query,
+                "tenant_id": tenant_id,
+                "worker_id": worker_id,
+                "candidate_ids": tuple(candidate_ids),
+            }
         )
         if self.raises is not None:
             raise self.raises
@@ -841,14 +1181,14 @@ class _Ranker:
 
 
 async def _three(svc: MemoryService, seeded: Seeded, context: AccessContext, subject: str) -> None:
-    for text_, confidence in (("Nhất.", 0.99), ("Nhì.", 0.95), ("Ba.", 0.91)):
+    for text_, sources in (("Nhất.", 4), ("Nhì.", 3), ("Ba.", 2)):
         await _remember(
             svc,
             seeded,
             context=context,
             subject_refs=(subject,),
             content=text_,
-            confidence=confidence,
+            sources=sources,
         )
 
 
@@ -955,6 +1295,26 @@ async def test_the_ranker_is_asked_under_the_runs_own_tenant_and_worker(
     assert ranker.asked[0]["tenant_id"] == TENANT
     assert ranker.asked[0]["worker_id"] == "demo"
     assert ranker.asked[0]["query"] == "câu hỏi"
+
+
+async def test_the_ranker_is_handed_exactly_the_rows_recall_found(
+    service: tuple[MemoryService, async_sessionmaker[AsyncSession]], seeded: Seeded
+) -> None:
+    """The store orders these ids and no others; it never chooses its own."""
+    svc, _ = service
+    context = make_context()
+    subject = a_subject()
+    await _three(svc, seeded, context, subject)
+    found = await svc.recall(
+        context, worker_id="demo", subject_refs=(subject,), now=datetime.now(UTC)
+    )
+    ranker = _Ranker()
+
+    await replace(svc, ranker=ranker).recall(
+        context, worker_id="demo", subject_refs=(subject,), now=datetime.now(UTC), query="x"
+    )
+
+    assert set(ranker.asked[0]["candidate_ids"]) == {item.memory_id for item in found}
 
 
 async def test_no_query_means_the_ranker_is_not_even_asked(

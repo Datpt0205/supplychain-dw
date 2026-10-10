@@ -18,8 +18,16 @@ build it this way:
 - Memories written before the index existed still surface. Filtering on ids from
   the store would have made them vanish silently, which is the worst shape a
   regression can take.
-- Nothing has to be kept in sync. A superseded memory may well still sit in the
-  index; it simply never appears in the rows to be ordered.
+- The store is asked about those rows and no others. `nearest` takes the ids
+  the SQL recalled and orders exactly them; it never searches the worker's whole
+  collection, where memories about other subjects would crowd out the ones
+  recall found and leave `rank_by` with nothing to apply.
+
+The index is still kept in step with the rows, because a point is an embedding
+of a memory's content: when retention deletes a row, supersession closes it, or
+a tenant leaves, `MemoryVectorPurgePort` deletes the point too. That is a
+data-lifecycle duty, not a correctness one — a stray point can no longer reach
+an answer, but it is the tenant's content in a store nobody else sweeps.
 
 So this module is honestly a nice-to-have on top of a correct answer, and it is
 built so it can never become load-bearing by accident.
@@ -34,11 +42,15 @@ from typing import Protocol
 
 logger = logging.getLogger("dw_memory.ranking")
 
-__all__ = ["MemoryRankerPort", "rank_by"]
+__all__ = ["MemoryRankerPort", "MemoryVectorPurgePort", "rank_by"]
 
 
 class MemoryRankerPort(Protocol):
     """Orders a tenant's memory ids by similarity to a question.
+
+    `candidate_ids` are the rows recall already chose, and the answer orders
+    those and nothing else. Required, with no default: the bound that keeps the
+    store from answering a different question has to be impossible to leave off.
 
     Tenancy is a parameter and not optional: the store is asked only for one
     tenant's points. That is defence in depth rather than the boundary — the
@@ -52,8 +64,21 @@ class MemoryRankerPort(Protocol):
         tenant_id: uuid.UUID,
         workspace_id: uuid.UUID,
         worker_id: str,
-        limit: int,
+        candidate_ids: Sequence[uuid.UUID],
     ) -> tuple[uuid.UUID, ...]: ...
+
+
+class MemoryVectorPurgePort(Protocol):
+    """Deletes memory vectors whose rows are gone or closed.
+
+    Separate from `MemoryRankerPort`: recall only orders, and retention,
+    supersession and offboarding only delete. Both raise on failure; each
+    caller decides whether that stops it.
+    """
+
+    async def delete(self, memory_ids: Sequence[uuid.UUID]) -> None: ...
+
+    async def delete_by_tenant(self, tenant_id: uuid.UUID) -> None: ...
 
 
 def rank_by[ItemT](

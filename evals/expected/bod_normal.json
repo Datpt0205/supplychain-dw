@@ -1,0 +1,23 @@
+{
+  "model_calls": 1,
+  "drafted": true,
+  "fields": {
+    "proposal_code": "DX-2026-041",
+    "product_name": "Nồi inox 3 đáy 24cm",
+    "evaluation_result": "Đạt (vòng 1)",
+    "unit_price": "245000",
+    "currency": "VND",
+    "moq": "500"
+  },
+  "prompt_must_not_contain": [
+    "245.000",
+    "245000"
+  ],
+  "scripted": {
+    "ai_must_contain": [
+      "3.2 mm",
+      "45 ngày",
+      "Đề nghị BGĐ xem xét"
+    ]
+  }
+}

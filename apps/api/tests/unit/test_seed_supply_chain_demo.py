@@ -55,3 +55,14 @@ def test_the_local_profile_gets_the_urls(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert migrator.startswith("postgresql+asyncpg://m:")
     assert app.startswith("postgresql+asyncpg://a:")
+
+
+def test_the_stage_one_personas_can_take_steps_one_to_eight() -> None:
+    """R&D tests and passes samples and completes the BM04; BGĐ holds both
+    scopes `decide` asks for on a BGĐ review: `sc_bod` (the stamped scope)
+    and a platform approval role (`approvals.decide`); TP Cung ứng confirms
+    with the supplier. No persona is another."""
+    personas = {subject: roles for subject, _, _, _, roles in _load_script().PERSONAS}
+    assert personas["dev|linh.phan"] == ["member", "sc_rnd"]
+    assert set(personas["dev|khanh.ngo"]) == {"approver", "sc_bod"}
+    assert personas["dev|tuan.le"] == ["member", "sc_supply_lead"]

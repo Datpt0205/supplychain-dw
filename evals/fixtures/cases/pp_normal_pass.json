@@ -1,0 +1,11 @@
+{
+  "values": {
+    "base_thickness": "3.2",
+    "wall_thickness": "0.6",
+    "induction": "pass",
+    "appearance": "pass"
+  },
+  "model_writing": {
+    "notes": []
+  }
+}

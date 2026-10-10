@@ -44,6 +44,13 @@ async def get_run(
 ) -> RunView:
     if container.run_store is None:
         raise InfrastructureError("runtime is not configured")
+    await container.authorization.require(
+        context=context,
+        action="runs.read",
+        resource_type="worker_run",
+        resource_id=str(run_id),
+    )
+    # Read in the caller's workspace: another workspace's run is a 404.
     record = await container.run_store.get(container.run_context_for(context, run_id), run_id)
     return RunView(
         id=record.id,
@@ -71,7 +78,7 @@ async def get_timeline(
         resource_id=str(run_id),
     )
     async with container.uow_factory(context) as uow:
-        events = await uow.audit.list_for_run(run_id)
+        events = await uow.audit.list_for_run(run_id, workspace_id=context.workspace_id)
     return [
         TimelineEvent(
             action=e.action,
@@ -121,6 +128,8 @@ async def cancel_thread(
         resource_type="worker_run",
         resource_id=str(thread_id),
     )
-    if not await container.run_store.thread_belongs_to(context.tenant_id, thread_id):
+    if not await container.run_store.thread_belongs_to(
+        context.tenant_id, context.workspace_id, thread_id
+    ):
         raise NotFoundError("thread not found", details={"thread_id": str(thread_id)})
     return CancelResult(cancelled=await container.runner.cancel_thread(thread_id))

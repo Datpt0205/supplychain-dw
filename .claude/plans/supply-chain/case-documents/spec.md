@@ -2,7 +2,7 @@
 
 Area: supply-chain · Nhánh: `main` · Viết: 5/10/2026
 
-Riêng của context. Quyết định: [ADR 0021](../../../../docs/adr/0021-e11-case-documents-through-an-object-storage-port.md).
+Riêng của context. Quyết định: [ADR 0021](../../../../packages/python/dw_supply_chain/docs/adr/0021-e11-case-documents-through-an-object-storage-port.md).
 
 ## Mục tiêu
 
@@ -34,6 +34,6 @@ Ticket 01 `resolved`.
 
 ## Danh sách ticket
 
-| #   | Ticket                                                            | Status          | Blocked by                                                        |
-| --- | ----------------------------------------------------------------- | --------------- | ----------------------------------------------------------------- |
-| 01  | [Bảng, port lưu trữ, route chứng từ](issues/01-case-documents.md) | ready-for-agent | .claude/plans/supply-chain/port/issues/01-port-dw-supply-chain.md |
+| #   | Ticket                                                            | Status   | Blocked by                                                        |
+| --- | ----------------------------------------------------------------- | -------- | ----------------------------------------------------------------- |
+| 01  | [Bảng, port lưu trữ, route chứng từ](issues/01-case-documents.md) | resolved | .claude/plans/supply-chain/port/issues/01-port-dw-supply-chain.md |

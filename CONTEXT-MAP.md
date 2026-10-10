@@ -4,10 +4,10 @@ This repository is a platform backbone plus bounded contexts that plug into it
 (`CLAUDE.md`, "Adding a bounded context"). Each context owns its own language
 and its own decisions; the platform's decisions apply to every context.
 
-| Context               | What it covers                                                                                                                                                             | Glossary                                     | Decisions                                  |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------ |
-| Platform              | Tenancy and authorization, the agent runtime, model gateway, knowledge, memory, audit, notifications, ops                                                                  | `docs/platform/CONTEXT.md`                   | `docs/adr/`                                |
-| Supply Chain (Elmich) | Elmich's product-to-stock process, Part A, steps 1–17: product development case (steps 1–9), the ĐẶT HÀNG hand-off, PO case (steps 10–17), SLA, follow-ups, case documents | `packages/python/dw_supply_chain/CONTEXT.md` | `docs/adr/0011`–`0023` for now (see below) |
+| Context               | What it covers                                                                                                                                                             | Glossary                                     | Decisions                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Platform              | Tenancy and authorization, the agent runtime, model gateway, knowledge, memory, audit, notifications, ops                                                                  | `docs/platform/CONTEXT.md`                   | `docs/adr/`                                                                              |
+| Supply Chain (Elmich) | Elmich's product-to-stock process, Part A, steps 1–17: product development case (steps 1–9), the ĐẶT HÀNG hand-off, PO case (steps 10–17), SLA, follow-ups, case documents | `packages/python/dw_supply_chain/CONTEXT.md` | `packages/python/dw_supply_chain/docs/adr/`, and the generic ones in `docs/adr/` (below) |
 
 This checkout is the Elmich product repo and ships one business context,
 Supply Chain (`packages/python/dw_supply_chain`). Its process spec is
@@ -16,10 +16,11 @@ Supply Chain (`packages/python/dw_supply_chain`). Its process spec is
 `packages/python/dw_<name>/CONTEXT.md` and its decisions at
 `packages/python/dw_<name>/docs/adr/`.
 
-Supply Chain's decisions sit in `docs/adr/` (0011–0023) while the package is
-being ported: the generic ones (0012–0015, 0020, 0022, 0023) belong there;
-the context-only ones (0016–0019, 0021) move to
-`packages/python/dw_supply_chain/docs/adr/` afterwards (ADR 0011).
+Supply Chain's context-only decisions (E6–E9, E11: 0016–0019, 0021) are in
+`packages/python/dw_supply_chain/docs/adr/`, keeping their numbers. Its generic
+ones, upstream candidates for the platform, stay in `docs/adr/` (0011–0015, 0020,
+0022, 0023; ADR 0011 E1); 0020 among them, because the stamped `required_scope`
+is the platform's approval mechanism (its twin is platform ADR 0004).
 
 A glossary or decision folder listed here may not exist yet: they are written
 when a term or a decision is actually resolved (`/domain-modeling`), not

@@ -1,0 +1,88 @@
+# Edge for a hosted deployment (ADR 0023): three hostnames from env, TLS, and
+# nothing reachable that the host does not need. Mounted read-only by
+# infra/compose/docker-compose.host.yml; the runbook is docs/deploy/host.md.
+#
+# Every {$VAR} is substituted when Caddy reads this file, so a hostname lives
+# in .env only. The overlay requires all three (`:?`), so an empty one fails at
+# `docker compose config`, not here as a site with no address.
+{
+	# No admin API: nothing reconfigures this process at runtime, and an
+	# endpoint that can is one more listener to keep off the network.
+	admin off
+	# Empty for a real deployment (certificates from Let's Encrypt/ZeroSSL).
+	# `local_certs` signs with Caddy's internal CA instead, for a trial on a
+	# machine with no public DNS; a browser then refuses it, which is the point.
+	{$DW_CADDY_LOCAL_CERTS}
+}
+
+# Response headers every host carries. Applied with `defer` so they also win
+# over what the upstream set (uvicorn sends `server: uvicorn`).
+(edge_headers) {
+	header {
+		defer
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+		-Via
+		-X-Powered-By
+	}
+}
+
+# Caddy replaces X-Forwarded-For/-Proto/-Host with what it saw itself (it trusts
+# no incoming value without `trusted_proxies`), so the upstreams, which trust
+# only this container's address, get the real client IP. A CDN in front needs
+# `trusted_proxies` here first, or every caller shares the CDN's IP and the
+# API's per-IP rate limit (docs/deploy/host.md).
+
+{$DW_WEB_HOST} {
+	import edge_headers
+	header X-Frame-Options "DENY"
+	# The pages' Content-Security-Policy is the web app's own
+	# (apps/web/middleware.ts): its script nonce is minted per request, which
+	# only the process rendering the page can do, so Caddy does not write one.
+	reverse_proxy web:3000
+}
+
+{$DW_API_HOST} {
+	import edge_headers
+	header X-Frame-Options "DENY"
+	# JSON only: nothing here is a document to run or embed anything.
+	header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+	# The platform API only. `/metrics` is unauthenticated by design and relies
+	# on being reachable from dw-internal alone (main.py); proxying the whole
+	# host would publish it. An allow-list fails closed for any route added at
+	# the root later. The Zalo webhook is /api/v1/zalo/webhook, so it is here
+	# and on no other host; its secret travels in a header, never in the path,
+	# and this file writes no access log that could record either.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle {
+		respond 404
+	}
+}
+
+{$DW_AUTH_HOST} {
+	import edge_headers
+	# No X-Frame-Options here: keycloak-js loads the login-status iframe from
+	# this host inside the web origin, and Keycloak sets its own framing rules
+	# on the pages that must not be framed.
+	#
+	# Keycloak's recommended public paths only. The admin console and admin
+	# REST API (/admin), health and metrics stay on the loopback port; an
+	# operator reaches them through an SSH tunnel (runbook).
+	# The admin console's realm (`master`) is not for this host either; first,
+	# because handle blocks with named matchers run in the order written.
+	@master path /realms/master /realms/master/*
+	handle @master {
+		respond 404
+	}
+	@public path /realms/* /resources/* /robots.txt
+	handle @public {
+		reverse_proxy keycloak:8080
+	}
+	handle {
+		respond 404
+	}
+}

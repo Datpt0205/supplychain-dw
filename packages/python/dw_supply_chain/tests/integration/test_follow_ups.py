@@ -41,17 +41,26 @@ from dw_platform.adapters.persistence.scope_holders import SqlScopeHolders
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.application.notifications import NotificationService
-from dw_platform.domain.audit import AuditEvent
+from dw_platform.domain.audit import AuditEvent, system_actor
 from dw_platform.testing.seed_env import seed_test_env
 from dw_supply_chain.adapters.persistence.follow_up_repository import (
     SqlFollowUpRepository,
-    SqlTenantsWithCases,
+    SqlWorkspacesWithCases,
 )
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
+from dw_supply_chain.adapters.persistence.product_case_repository import (
+    SqlProductCaseRepository,
+)
 from dw_supply_chain.adapters.persistence.supplier_update_repository import (
     SqlSupplierUpdateRepository,
 )
-from dw_supply_chain.application.follow_up_sweep import SweepFollowUps, sweep_context
+from dw_supply_chain.application.follow_up_sweep import (
+    FOLLOW_UP_OPENED,
+    FOLLOW_UP_RESOLVED,
+    FOLLOW_UP_SWEEP_LANE,
+    SweepFollowUps,
+    sweep_context,
+)
 from dw_supply_chain.application.handlers import CloseFollowUp, ListFollowUps
 from dw_supply_chain.domain.follow_up import FollowUpKind, FollowUpStatus
 from dw_supply_chain.domain.po_case import POCase, POCaseId
@@ -81,6 +90,8 @@ class _Identity:
     email: str | None
     issuer: str = "https://issuer.test/realms/dw"
     name: str | None = None
+    auth_methods: frozenset[str] = frozenset()
+    acr: str | None = None
 
 
 @dataclass(frozen=True)
@@ -90,8 +101,9 @@ class _Stack:
 
     def sweep(self) -> SweepFollowUps:
         return SweepFollowUps(
-            tenants=SqlTenantsWithCases(self.sessions),
+            workspaces=SqlWorkspacesWithCases(self.sessions),
             po_case_repo=SqlPOCaseRepository(self.sessions),
+            product_case_repo=SqlProductCaseRepository(self.sessions),
             supplier_update_repo=SqlSupplierUpdateRepository(self.sessions),
             policy_override_repo=SqlPolicyOverrideRepository(self.sessions),
             platform_default_sla_policy=load_supply_chain_sla_policy(POLICIES / SLA_POLICY_FILE),
@@ -100,6 +112,7 @@ class _Stack:
             ),
             follow_up_repo=SqlFollowUpRepository(self.sessions),
             holders=SqlScopeHolders(self.sessions),
+            members=SqlScopeHolders(self.sessions),
             notifier=SqlNotificationRepository(self.sessions),
             ids=Uuid4Generator(),
             clock=SystemClock(),
@@ -213,11 +226,12 @@ async def test_a_quiet_case_reaches_its_coordinator_once_and_resolves_when_the_s
     case = await _quiet_case(stack, operator)
     sweep = stack.sweep()
 
-    await sweep.sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
-    await sweep.sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
+    await sweep.sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
+    await sweep.sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
 
     assert await _follow_ups_of(stack, case) == [("update_reminder", "open", [RECORDS])]
     inbox = NotificationService(SqlNotificationRepository(stack.sessions))
+    assert case.po_reference is not None
     mine = [n for n in (await inbox.latest(operator)).items if case.po_reference in n.title]
     assert [(n.title, n.link) for n in mine] == [
         (f"Nhắc NCC cập nhật: {case.po_reference}", f"/supply-chain/po-cases/{case.id.value}")
@@ -243,24 +257,44 @@ async def test_a_quiet_case_reaches_its_coordinator_once_and_resolves_when_the_s
             requires_confirmation=False,
         ),
     )
-    await sweep.sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
+    await sweep.sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
 
     assert await _follow_ups_of(stack, case) == [("update_reminder", "resolved", [RECORDS])]
+    # The sweep's own open and resolve, each in `platform.audit_events` as the
+    # lane (platform ADR 0011), in the follow-up's tenant and workspace.
+    async with stack.migrator.connect() as conn:
+        audited = (
+            await conn.execute(
+                sa.text(
+                    "SELECT a.action, a.actor_id, a.tenant_id, a.workspace_id,"
+                    " a.details ->> 'actor' AS label"
+                    " FROM platform.audit_events a JOIN supply_chain.follow_ups f"
+                    " ON a.resource_id = f.id::text AND a.resource_type = 'follow_up'"
+                    " WHERE f.po_case_id = :id ORDER BY a.occurred_at, a.action DESC"
+                ),
+                {"id": case.id.value},
+            )
+        ).all()
+    lane = system_actor(FOLLOW_UP_SWEEP_LANE).value
+    assert [(r.action, r.actor_id, r.tenant_id, r.workspace_id, r.label) for r in audited] == [
+        (action, lane, ALPHA, ALPHA_WS, f"system:{FOLLOW_UP_SWEEP_LANE}")
+        for action in (FOLLOW_UP_OPENED, FOLLOW_UP_RESOLVED)
+    ]
 
 
 async def test_another_tenant_sees_and_sweeps_none_of_it(stack: _Stack) -> None:
     operator = await _member(stack, "sc_operator")
     case = await _quiet_case(stack, operator)
-    await stack.sweep().sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
+    await stack.sweep().sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
     beta = await _member(stack, "sc_operator", BETA, BETA_WS)
 
     listed = await ListFollowUps(
         SqlFollowUpRepository(stack.sessions), ScopeAuthorizationService()
     ).handle(beta)
-    assert [v for v in listed if v.record.po_case_id == case.id.value] == []
+    assert [v for v in listed if v.record.case_id == case.id.value] == []
 
     # Beta's own sweep resolves nothing of Alpha's.
-    await stack.sweep().sweep_tenant(sweep_context(BETA, BETA_WS))
+    await stack.sweep().sweep_workspace(sweep_context(BETA, BETA_WS))
     assert await _follow_ups_of(stack, case) == [("update_reminder", "open", [RECORDS])]
 
 
@@ -270,8 +304,8 @@ async def test_the_cross_tenant_read_is_ids_only_and_unscoped_reads_nothing(
     operator = await _member(stack, "sc_operator")
     await _quiet_case(stack, operator)
 
-    tenants = await SqlTenantsWithCases(stack.sessions).tenants()
-    assert ALPHA in {tenant for tenant, _ in tenants}
+    workspaces = await SqlWorkspacesWithCases(stack.sessions).workspaces()
+    assert (ALPHA, ALPHA_WS) in workspaces
 
     async with stack.sessions() as session, session.begin():
         visible = await session.scalar(sa.text("SELECT count(*) FROM supply_chain.follow_ups"))
@@ -283,9 +317,9 @@ async def test_a_coordinator_closes_it_with_an_audit_row_and_it_cannot_be_delete
 ) -> None:
     operator = await _member(stack, "sc_operator")
     case = await _quiet_case(stack, operator)
-    await stack.sweep().sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
+    await stack.sweep().sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
     repo = SqlFollowUpRepository(stack.sessions)
-    (open_one,) = [r for r in await repo.list_open(operator) if r.po_case_id == case.id.value]
+    (open_one,) = [r for r in await repo.list_open(operator) if r.case_id == case.id.value]
 
     await CloseFollowUp(repo, ScopeAuthorizationService(), Uuid4Generator(), SystemClock()).handle(
         operator, open_one.id, "đã gọi NCC"
@@ -308,7 +342,7 @@ async def test_a_coordinator_closes_it_with_an_audit_row_and_it_cannot_be_delete
         )
     assert audited == 1
     # A closed episode does not reopen.
-    await stack.sweep().sweep_tenant(sweep_context(ALPHA, ALPHA_WS))
+    await stack.sweep().sweep_workspace(sweep_context(ALPHA, ALPHA_WS))
     assert [k for k, s, _ in await _follow_ups_of(stack, case)] == [FollowUpKind.UPDATE_REMINDER]
 
     with pytest.raises(ProgrammingError, match="permission denied"):
@@ -324,8 +358,6 @@ async def test_a_coordinator_closes_it_with_an_audit_row_and_it_cannot_be_delete
 async def test_whoever_holds_the_scope_through_a_role_is_a_recipient(stack: _Stack) -> None:
     operator = await _member(stack, "sc_operator")
     owner = await _member(stack, "sc_process_admin")
-    holders = await SqlScopeHolders(stack.sessions).holding(
-        sweep_context(ALPHA, ALPHA_WS), ALPHA_WS, frozenset({RECORDS})
-    )
+    holders = await SqlScopeHolders(stack.sessions).holding(ALPHA, ALPHA_WS, frozenset({RECORDS}))
     assert operator.principal_id in holders
     assert owner.principal_id not in holders

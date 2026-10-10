@@ -16,6 +16,8 @@ DW_APPROVAL_WAIT_SECONDS: Final = "dw_approval_wait_seconds"  # labels: worker, 
 DW_MODEL_TOKENS_TOTAL: Final = "dw_model_tokens_total"  # labels: provider, model, direction
 DW_MODEL_COST_USD_TOTAL: Final = "dw_model_cost_usd_total"  # labels: worker, provider
 DW_RETRIEVAL_HIT_RATE: Final = "dw_retrieval_hit_rate"  # labels: worker
+# A search answered in vector order because the reranker failed.
+DW_RETRIEVAL_RERANK_SKIPPED_TOTAL: Final = "dw_retrieval_rerank_skipped_total"  # labels: error
 DW_HUMAN_INTERVENTION_RATE: Final = "dw_human_intervention_rate"  # labels: worker
 DW_TASK_SUCCESS_RATE: Final = "dw_task_success_rate"  # labels: worker
 
@@ -37,6 +39,7 @@ ALL_METRICS: Final = (
     DW_MODEL_TOKENS_TOTAL,
     DW_MODEL_COST_USD_TOTAL,
     DW_RETRIEVAL_HIT_RATE,
+    DW_RETRIEVAL_RERANK_SKIPPED_TOTAL,
     DW_HUMAN_INTERVENTION_RATE,
     DW_TASK_SUCCESS_RATE,
     DW_OUTBOX_BACKLOG_SIZE,

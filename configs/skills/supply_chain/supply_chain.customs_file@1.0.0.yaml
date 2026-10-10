@@ -1,0 +1,12 @@
+schema_version: '1.0'
+skill_id: supply_chain.customs_file
+version: 1.0.0
+title: Hồ sơ hải quan hàng nhập khẩu
+applies_to: []
+body: "Hồ sơ thông quan hàng nhập khẩu (bước 15) thường gồm:\n- Tờ khai hải quan.\n- Hợp đồng mua bán\
+  \ (hoặc đơn đặt hàng có giá trị tương đương).\n- Hóa đơn thương mại (commercial invoice).\n- Phiếu đóng\
+  \ gói (packing list).\n- Vận đơn (B/L) và giấy báo hàng đến.\n- Giấy chứng nhận xuất xứ (C/O) khi hưởng\
+  \ thuế suất ưu đãi.\n- Chứng từ kiểm tra chuyên ngành khi mặt hàng thuộc diện phải kiểm (ví dụ dụng\
+  \ cụ tiếp\n  xúc thực phẩm).\n\nSố lượng, mô tả hàng và trị giá phải khớp giữa hóa đơn, packing list,\
+  \ vận đơn và PO;\nchỗ lệch là một phát hiện cho người duyệt. Danh mục chứng từ cụ thể theo quy định\
+  \ hải\nquan hiện hành và theo mặt hàng; đối chiếu với đại lý hải quan khi có nghi ngờ.\n"

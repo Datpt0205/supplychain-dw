@@ -1,0 +1,11 @@
+{
+  "outcome": "proposed",
+  "draft_fields": {
+    "unit_price": "2.50"
+  },
+  "scripted": {
+    "draft_fields": {
+      "net_weight_g": null
+    }
+  }
+}

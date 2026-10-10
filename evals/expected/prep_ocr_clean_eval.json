@@ -1,0 +1,18 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "result": "fail",
+    "evaluated_on": "2026-10-05",
+    "sample_round": "2",
+    "evaluator": null
+  },
+  "scripted": {
+    "gaps": [
+      {
+        "field": "evaluator",
+        "reason": "low_confidence"
+      }
+    ]
+  }
+}

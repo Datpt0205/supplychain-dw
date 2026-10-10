@@ -27,6 +27,7 @@ from dw_api.exception_handlers import register_exception_handlers
 from dw_api.middleware.rate_limit import RateLimitMiddleware
 from dw_api.middleware.request_id import RequestIdMiddleware
 from dw_api.routes.v1.admin_console import router as admin_console_router
+from dw_api.routes.v1.admin_members import invitations_router as admin_invitations_router
 from dw_api.routes.v1.admin_members import router as admin_members_router
 from dw_api.routes.v1.approvals import router as approvals_router
 from dw_api.routes.v1.audit import router as audit_router
@@ -41,7 +42,9 @@ from dw_api.routes.v1.memory import router as memory_router
 from dw_api.routes.v1.notifications import router as notifications_router
 from dw_api.routes.v1.platform import router as platform_router
 from dw_api.routes.v1.runs import router as runs_router
+from dw_api.routes.v1.support import router as support_router
 from dw_api.routes.v1.zalo import router as zalo_router
+from dw_api.routes.v1.zalo import webhook_router as zalo_webhook_router
 
 _LOG = logging.getLogger(__name__)
 
@@ -52,6 +55,8 @@ _CORS_HEADERS = [
     "Content-Type",
     "X-Tenant-Id",
     "X-Workspace-Id",
+    # The customer's grant a support staff member acts under (ADR 0024).
+    "X-DW-Support-Grant",
     "Idempotency-Key",
 ]
 _CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
@@ -144,6 +149,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
         notifications_router,
         directory_router,
         admin_members_router,
+        admin_invitations_router,
         admin_console_router,
         approvals_router,
         runs_router,
@@ -152,6 +158,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
         knowledge_router,
         memory_router,
         integrations_router,
+        support_router,
     ):
         app.include_router(router, prefix="/api/v1")
 
@@ -159,6 +166,12 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
     # secret are both configured, so an unconfigured deployment answers 404.
     if container.zalo_linking is not None:
         app.include_router(zalo_router, prefix="/api/v1")
+
+    # Zalo's own door, the hosted way updates arrive (ADR 0008): only in
+    # webhook mode with a secret set. In poll mode the worker reads the bot
+    # and this route does not exist, so the two never both read one bot.
+    if settings.zalo_webhook_enabled and container.zalo_webhook_inbox is not None:
+        app.include_router(zalo_webhook_router, prefix="/api/v1")
 
     # Platform provisioning: mounted only when the provisioner connection is
     # configured, so environments that never provision stay lean.
@@ -170,6 +183,8 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
     # mounts nothing rather than mounting a route that 500s on every call.
     if (
         container.supply_chain_create_po_case is not None
+        and container.supply_chain_create_po is not None
+        and container.supply_chain_reassign_po_case_pic is not None
         and container.supply_chain_get_po_case is not None
         and container.supply_chain_list_po_cases is not None
         and container.supply_chain_submit_supplier_update is not None
@@ -179,6 +194,7 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
         and container.supply_chain_get_missing_update_status is not None
         and container.supply_chain_advance_po_case is not None
         and container.supply_chain_list_case_transitions is not None
+        and container.supply_chain_list_case_approvals is not None
         and container.supply_chain_get_sla_evaluation is not None
         and container.supply_chain_get_sla_policy is not None
         and container.supply_chain_set_sla_policy_override is not None
@@ -232,6 +248,259 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
                 container.supply_chain_close_follow_up,
                 container.supply_chain_get_follow_up_policy,
                 container.supply_chain_set_follow_up_policy_override,
+                create_po=container.supply_chain_create_po,
+                reassign_pic=container.supply_chain_reassign_po_case_pic,
+                list_case_approvals=container.supply_chain_list_case_approvals,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
+    # Case documents (ADR 0021): their own router on their own guard, rather
+    # than three more arguments to the chain above.
+    if (
+        container.supply_chain_upload_case_document is not None
+        and container.supply_chain_list_case_documents is not None
+        and container.supply_chain_download_case_document is not None
+    ):
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_form_idempotent_operation
+        from dw_supply_chain.presentation.document_routes import build_documents_router
+
+        app.include_router(
+            build_documents_router(
+                container.supply_chain_upload_case_document,
+                container.supply_chain_list_case_documents,
+                container.supply_chain_download_case_document,
+                resolve_access_context=get_access_context,
+                resolve_form_idempotency=get_form_idempotent_operation,
+            )
+        )
+
+    # Reports and AI acceptance (ticket ai-automation/20): their own router.
+    if container.supply_chain_reports is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_supply_chain.presentation.report_routes import build_report_router
+
+        app.include_router(
+            build_report_router(
+                container.supply_chain_reports, resolve_access_context=get_access_context
+            )
+        )
+
+    # The read-only case assistant (ticket ai-automation/19): its own router
+    # on its own guard.
+    if container.supply_chain_ask_about_case is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_supply_chain.presentation.case_assistant_routes import (
+            build_case_assistant_router,
+        )
+
+        app.include_router(
+            build_case_assistant_router(
+                container.supply_chain_ask_about_case,
+                resolve_access_context=get_access_context,
+            )
+        )
+
+    # Step 12's colour, packaging and pre-production sub-flow (slice PK): its
+    # own router on its own guard, as the documents router is.
+    if (
+        container.supply_chain_get_packaging_design is not None
+        and container.supply_chain_take_packaging_step is not None
+        and container.supply_chain_get_packaging_policy is not None
+        and container.supply_chain_set_packaging_policy_override is not None
+        and container.supply_chain_get_packaging_proof is not None
+        and container.supply_chain_get_pre_production is not None
+        and container.supply_chain_record_pre_production is not None
+    ):
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.packaging_routes import build_packaging_router
+
+        app.include_router(
+            build_packaging_router(
+                container.supply_chain_get_packaging_design,
+                container.supply_chain_take_packaging_step,
+                container.supply_chain_get_packaging_policy,
+                container.supply_chain_set_packaging_policy_override,
+                get_proof=container.supply_chain_get_packaging_proof,
+                get_checklist=container.supply_chain_get_pre_production,
+                record_measurement=container.supply_chain_record_pre_production,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
+    # Commercial data and BM04 as fields (ADR 0026, ticket ai-automation/01):
+    # its own router on its own guard, as the documents router is.
+    if container.supply_chain_commercial is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.commercial_routes import build_commercial_router
+
+        app.include_router(
+            build_commercial_router(
+                container.supply_chain_commercial,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
+    # Document drafts and templates (ticket ai-automation/03): own router.
+    if container.supply_chain_drafts is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.draft_routes import build_draft_router
+
+        app.include_router(
+            build_draft_router(
+                container.supply_chain_drafts,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
+    # Step proposals (ticket ai-automation/05): own router.
+    if container.supply_chain_step_proposals is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.step_proposal_routes import build_step_proposal_router
+
+        app.include_router(
+            build_step_proposal_router(
+                container.supply_chain_step_proposals,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
+    # Messages to a supplier (ticket ai-automation/07): own router.
+    if container.supply_chain_supplier_messages is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.supplier_message_routes import (
+            build_supplier_message_router,
+        )
+
+        app.include_router(
+            build_supplier_message_router(
+                container.supply_chain_supplier_messages,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
+    # A sample round's checklist (ticket ai-automation/09): own router.
+    if container.supply_chain_sample_checklist is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.sample_checklist_routes import (
+            build_sample_checklist_router,
+        )
+
+        app.include_router(
+            build_sample_checklist_router(
+                container.supply_chain_sample_checklist,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
+    # Proposal lists (ticket ai-automation/08): own router.
+    if container.supply_chain_proposal_lists is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import (
+            get_form_idempotent_operation,
+            get_idempotent_operation,
+        )
+        from dw_supply_chain.presentation.proposal_list_routes import (
+            build_proposal_list_router,
+        )
+
+        app.include_router(
+            build_proposal_list_router(
+                container.supply_chain_proposal_lists,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+                resolve_form_idempotency=get_form_idempotent_operation,
+            )
+        )
+
+    # Step 10's PO draft and its approval (ticket ai-automation/14): own router.
+    if container.supply_chain_purchase_orders is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.purchase_order_routes import (
+            build_purchase_order_router,
+        )
+
+        app.include_router(
+            build_purchase_order_router(
+                container.supply_chain_purchase_orders,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
+    # Steps 11-17 prepared by code (tickets ai-automation/15-18): own router.
+    if container.supply_chain_po_steps is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.po_step_routes import build_po_step_router
+
+        app.include_router(
+            build_po_step_router(
+                container.supply_chain_po_steps,
+                resolve_access_context=get_access_context,
+                resolve_idempotency=get_idempotent_operation,
+            )
+        )
+
+    # The one-time import (ticket onboarding/01): own router.
+    if container.supply_chain_import is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_form_idempotent_operation
+        from dw_supply_chain.presentation.import_routes import build_import_router
+
+        app.include_router(
+            build_import_router(
+                container.supply_chain_import,
+                resolve_access_context=get_access_context,
+                resolve_form_idempotency=get_form_idempotent_operation,
+            )
+        )
+
+    # Product-development cases (stage 1): their own router on their own guard,
+    # as the documents router is.
+    if (
+        container.supply_chain_propose_product_case is not None
+        and container.supply_chain_get_product_case is not None
+        and container.supply_chain_list_product_cases is not None
+        and container.supply_chain_advance_product_case is not None
+        and container.supply_chain_place_order is not None
+        and container.supply_chain_reassign_product_case_pic is not None
+        and container.supply_chain_list_product_categories is not None
+        and container.supply_chain_list_product_case_transitions is not None
+        and container.supply_chain_get_product_action_duties is not None
+        and container.supply_chain_set_product_action_duties_override is not None
+    ):
+        from dw_api.dependencies.auth import get_access_context
+        from dw_api.dependencies.idempotency import get_idempotent_operation
+        from dw_supply_chain.presentation.product_case_routes import build_product_cases_router
+
+        app.include_router(
+            build_product_cases_router(
+                container.supply_chain_propose_product_case,
+                container.supply_chain_get_product_case,
+                container.supply_chain_list_product_cases,
+                container.supply_chain_advance_product_case,
+                container.supply_chain_list_product_case_transitions,
+                container.supply_chain_get_product_action_duties,
+                container.supply_chain_set_product_action_duties_override,
+                place_order=container.supply_chain_place_order,
+                reassign_pic=container.supply_chain_reassign_product_case_pic,
+                list_categories=container.supply_chain_list_product_categories,
                 resolve_access_context=get_access_context,
                 resolve_idempotency=get_idempotent_operation,
             )

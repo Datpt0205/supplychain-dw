@@ -42,6 +42,6 @@ describe("AppFrame and the layer-check fixture", () => {
     state.mode = "oidc";
     render(<AppFrame>fixture content</AppFrame>);
     expect(screen.queryByText("fixture content")).toBeNull();
-    expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Đăng nhập" })).toBeTruthy();
   });
 });

@@ -1,0 +1,19 @@
+{
+  "step": "supplier_confirmation",
+  "documents": [
+    {
+      "doc_type": "supplier_confirmation_email",
+      "text": "Chúng tôi xác nhận đồng ý sản xuất.\n",
+      "reading": {
+        "confirmed": {
+          "value": "yes",
+          "quote": "Chúng tôi xác nhận đồng ý sản xuất."
+        }
+      }
+    }
+  ],
+  "decide": {
+    "approve": true,
+    "typed_input": {}
+  }
+}

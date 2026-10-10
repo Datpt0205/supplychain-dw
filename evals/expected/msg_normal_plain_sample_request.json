@@ -1,0 +1,10 @@
+{
+  "model_calls": 1,
+  "status": "drafted",
+  "body_must_contain": [
+    "Kính gửi Cong ty Gia dung Minh Phat,"
+  ],
+  "scripted": {
+    "dropped": 0
+  }
+}

@@ -42,6 +42,11 @@ class ModelRoute(BaseModel):
     # there because it decides the Qdrant collection's shape, and a shape is not
     # something to discover at runtime from whatever the provider returned.
     dimensions: int | None = Field(default=None, gt=0)
+    # The most input one call on this route is sent. Read by context compaction,
+    # which splits what it summarises into calls no larger than this; a route
+    # used as a summariser must declare it, and compaction refuses to build
+    # otherwise rather than fall back to a number nobody chose.
+    max_input_tokens: int | None = Field(default=None, gt=0)
     # What this route costs, so a run's cost ceiling is computable. Declared per
     # route because price is a property of the model and the provider serving
     # it. Absent means unpriced: such a route is bounded by the token ceiling

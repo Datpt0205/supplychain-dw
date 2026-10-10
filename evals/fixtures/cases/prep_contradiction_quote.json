@@ -1,0 +1,10 @@
+{
+  "doc_type": "supplier_quotation",
+  "document_text": "Ngày báo giá: 01/10/2026\nHiệu lực đến: 30/09/2026\nMOQ: 500\n",
+  "model_reading": {
+    "valid_until": {
+      "value": "2026-10-30",
+      "quote": "Hiệu lực đến: 30/09/2026"
+    }
+  }
+}

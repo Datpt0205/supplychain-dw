@@ -1,0 +1,41 @@
+{
+  "purpose": "production_progress",
+  "contact": {
+    "name": "Chị Lan",
+    "email": "lan@minhphat.example"
+  },
+  "schedule": {
+    "etd": {
+      "value": "2026-11-20",
+      "quote": "ETD: 20/11/2026"
+    },
+    "milestones": [
+      {
+        "name": {
+          "value": "Đóng gói",
+          "quote": "Đóng gói: 10/11/2026"
+        },
+        "planned_date": {
+          "value": "2026-11-10",
+          "quote": "Đóng gói: 10/11/2026"
+        }
+      }
+    ]
+  },
+  "model_writing": {
+    "paragraphs": [
+      {
+        "text": "Kính gửi Quý công ty, xin cập nhật tiến độ sản xuất đơn hàng tuần này.",
+        "cites": [
+          "case"
+        ]
+      },
+      {
+        "text": "Theo lịch, ETD là 30/12/2026.",
+        "cites": [
+          "schedule"
+        ]
+      }
+    ]
+  }
+}

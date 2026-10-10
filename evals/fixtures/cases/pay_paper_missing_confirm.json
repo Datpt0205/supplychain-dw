@@ -1,0 +1,29 @@
+{
+  "step": "deposit_payment",
+  "master": "0071000123456",
+  "documents": [
+    {
+      "doc_type": "bank_transfer_receipt",
+      "reading": {
+        "amount": "1275.00",
+        "currency": "USD",
+        "transfer_date": "2026-10-11"
+      },
+      "accounts": [
+        "0071000123456"
+      ]
+    }
+  ],
+  "decide": {
+    "scopes": [
+      "supply_chain.duty.finance",
+      "supply_chain.commercial.read",
+      "supply_chain.commercial.write",
+      "supply_chain.po_case.read"
+    ],
+    "results": {
+      "paid_amount": "1275",
+      "paid_on": "2026-10-11"
+    }
+  }
+}

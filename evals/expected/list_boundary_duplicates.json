@@ -1,0 +1,16 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "rows": {
+    "0": {
+      "findings": [
+        "proposal_code_taken"
+      ]
+    },
+    "1": {
+      "findings": [
+        "product_seen"
+      ]
+    }
+  }
+}

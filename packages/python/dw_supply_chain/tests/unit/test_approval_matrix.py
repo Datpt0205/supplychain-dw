@@ -73,3 +73,15 @@ def test_an_unversioned_or_malformed_file_is_refused_not_guessed() -> None:
     del raw["policy_version"]
     with pytest.raises(ValidationError):
         SupplyChainApprovalMatrix.model_validate(raw)
+
+
+def test_the_default_matrix_does_not_list_create_po() -> None:
+    matrix = load_supply_chain_approval_matrix(MATRIX_PATH)
+    assert CaseAction.CREATE_PO not in matrix.approval_required_actions
+
+
+def test_a_matrix_gating_create_po_is_refused() -> None:
+    """`create_po` is its own command and never starts an approval run, so an
+    entry for it would gate nothing (failure-modes #1)."""
+    with pytest.raises(ValidationError, match="create_po"):
+        _matrix(approval_required_actions=frozenset({CaseAction.CREATE_PO}))

@@ -1,0 +1,11 @@
+{
+  "drafted": {
+    "colour_revision_request": 1
+  },
+  "draft_fields": {
+    "colour_revision_request": {
+      "expected_colours": "Bạc",
+      "requirement": null
+    }
+  }
+}

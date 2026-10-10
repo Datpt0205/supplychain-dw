@@ -1,0 +1,22 @@
+{
+  "doc_type": "product_profile_bm04",
+  "document_text": "[không đọc được nội dung]",
+  "model_reading": {
+    "product_name": {
+      "value": "Nồi inox 3 đáy 24cm",
+      "quote": "Tên sản phẩm: Nồi inox 3 đáy 24cm"
+    },
+    "material": {
+      "value": "Inox 304",
+      "quote": "Chất liệu: Inox 304"
+    },
+    "net_weight_g": {
+      "value": "1250",
+      "quote": "Khối lượng tịnh (g): 1250"
+    },
+    "moq": {
+      "value": "500",
+      "quote": "MOQ: 500"
+    }
+  }
+}

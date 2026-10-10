@@ -1,0 +1,12 @@
+{
+  "findings_absent": [
+    "label_missing",
+    "proof_differs",
+    "sku_unknown",
+    "sku_missing"
+  ],
+  "drafted": {
+    "design_revision_request": 0
+  },
+  "proof_status": "extracted"
+}

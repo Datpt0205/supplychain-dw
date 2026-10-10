@@ -1,10 +1,15 @@
-import type { CaseState } from "@dw/contracts";
-import { Badge, type BadgeProps } from "@dw/ui";
+import type { CaseState, OrderKind } from "@dw/contracts";
+import { StatusTag, type StatusTone } from "@dw/ui";
 
-/** Vietnamese label + badge tone for each `CaseState` the backend can return.
- * One place: a new state added on the Python side shows up here as a plain
- * fallback (the raw value) rather than breaking the page. */
+/** Vietnamese label for each `CaseState` the backend can return. The one
+ * owner of these words (CONTEXT.md "Trạng thái của Hồ sơ PO" copies it); a
+ * state added on the Python side fails the type check here first. */
+/** The first history row of a case the one-time import brought in
+ * (onboarding/02): it has no state before it. */
+export const IMPORTED_LABEL = "Nạp từ dữ liệu cũ";
+
 export const CASE_STATE_LABEL: Record<CaseState, string> = {
+  order_requested: "Chờ tạo PO",
   po_created: "Đã tạo PO",
   waiting_deposit: "Chờ đặt cọc",
   deposit_confirmed: "Đã xác nhận cọc",
@@ -24,30 +29,52 @@ export const CASE_STATE_LABEL: Record<CaseState, string> = {
   cancelled: "Đã hủy",
 };
 
-const STATE_VARIANT: Record<CaseState, BadgeProps["variant"]> = {
-  po_created: "secondary",
-  waiting_deposit: "default",
-  deposit_confirmed: "default",
-  pre_production: "default",
-  production: "default",
-  qc: "default",
-  in_transit: "default",
-  arrived_port: "default",
-  waiting_payment: "default",
-  payment_completed: "default",
-  warehouse_receiving: "default",
-  completed: "success",
-  waiting_external: "warning",
-  blocked: "warning",
-  rework: "warning",
-  manual_review: "warning",
-  cancelled: "destructive",
+/**
+ * Each state's step of the 17 (CONTEXT.md's notes column; null for an end or
+ * an interruption) and its tone. A step in progress is blue; only an
+ * interruption asks for attention, and colour never carries the meaning
+ * alone: the label does.
+ */
+export const CASE_STATE_META: Record<
+  CaseState,
+  { step: number | null; tone: StatusTone }
+> = {
+  order_requested: { step: 10, tone: "pri" },
+  po_created: { step: 10, tone: "pri" },
+  waiting_deposit: { step: 11, tone: "pri" },
+  deposit_confirmed: { step: 11, tone: "pri" },
+  pre_production: { step: 12, tone: "pri" },
+  production: { step: 13, tone: "pri" },
+  qc: { step: 14, tone: "pri" },
+  in_transit: { step: 14, tone: "pri" },
+  arrived_port: { step: 15, tone: "pri" },
+  waiting_payment: { step: 16, tone: "pri" },
+  payment_completed: { step: 16, tone: "pri" },
+  warehouse_receiving: { step: 17, tone: "pri" },
+  completed: { step: null, tone: "ok" },
+  waiting_external: { step: null, tone: "gold" },
+  blocked: { step: null, tone: "err" },
+  rework: { step: 13, tone: "warn" },
+  manual_review: { step: null, tone: "warn" },
+  cancelled: { step: null, tone: "gray" },
 };
 
-export function CaseStateBadge({ state }: { state: CaseState }) {
+/** Step 10's classification of the order (`OrderKind`). */
+export const ORDER_KIND_LABEL: Record<OrderKind, string> = {
+  new: "Hàng mới",
+  reorder: "Hàng đặt lại",
+};
+
+/** "Bước 11 · Giai đoạn 2": where a step sits in the 17. */
+export function stepLabel(step: number | null): string | null {
+  if (step === null) return null;
+  return `Bước ${step} · Giai đoạn ${step <= 9 ? 1 : 2}`;
+}
+
+export function CaseStateTag({ state }: { state: CaseState }) {
   return (
-    <Badge variant={STATE_VARIANT[state]}>
+    <StatusTag tone={CASE_STATE_META[state]?.tone ?? "gray"}>
       {CASE_STATE_LABEL[state] ?? state}
-    </Badge>
+    </StatusTag>
   );
 }

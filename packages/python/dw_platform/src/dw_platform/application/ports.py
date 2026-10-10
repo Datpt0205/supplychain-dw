@@ -16,6 +16,8 @@ from dw_kernel.pagination import Page, PageRequest
 from dw_platform.application.access_context import AccessContext
 
 if TYPE_CHECKING:
+    from dw_platform.application.approval_codes import DecisionCodeLedgerPort
+    from dw_platform.application.authorization import ApprovalAudience
     from dw_platform.application.directory import IdentityRef, WorkspaceMember
     from dw_platform.domain.approval import ApprovalDecision, ApprovalRequest
     from dw_platform.domain.audit import AuditEvent
@@ -34,6 +36,22 @@ class VerifiedIdentity(Protocol):
 
     @property
     def issuer(self) -> str: ...
+
+    @property
+    def auth_methods(self) -> frozenset[str]:
+        """The token's `amr`: how the person authenticated this session.
+
+        Keycloak emits a method only for an execution configured with an
+        authentication reference (`dw-realm.json`: `pwd`, `otp`); measured
+        2026-10-08 on 26.7.2. Empty when the claim is absent, which a check
+        for a second factor reads as "none"."""
+        ...
+
+    @property
+    def acr(self) -> str | None:
+        """The token's `acr`. Measured "1" with and without OTP, so nothing
+        decides on it today; carried for a later level-of-assurance policy."""
+        ...
 
 
 class TokenVerifierPort(Protocol):
@@ -136,11 +154,19 @@ class PolicyOverridePort(Protocol):
 
 
 class ApprovalRepositoryPort(Protocol):
-    """Persistence for the approval aggregate (tenant-scoped via RLS)."""
+    """Persistence for the approval aggregate (tenant-scoped via RLS).
+
+    Reads are narrowed to the caller's workspace by the repository, since RLS
+    on this table narrows by tenant only: another workspace's request is
+    absent, exactly like another tenant's. And to what the caller's
+    `ApprovalAudience` may see (ADR 0004): a stamped request the caller may
+    neither decide nor asked for is absent the same way."""
 
     async def add(self, request: ApprovalRequest) -> None: ...
 
-    async def get(self, request_id: UUID) -> ApprovalRequest | None: ...
+    async def get(
+        self, request_id: UUID, *, workspace_id: UUID, audience: ApprovalAudience
+    ) -> ApprovalRequest | None: ...
 
     async def save(self, request: ApprovalRequest) -> None:
         """Persist state transition with optimistic concurrency on version."""
@@ -148,23 +174,30 @@ class ApprovalRepositoryPort(Protocol):
 
     async def add_decision(self, decision: ApprovalDecision) -> None: ...
 
-    async def list_pending(self, request: PageRequest) -> Page[ApprovalRequest]:
+    async def list_pending(
+        self, request: PageRequest, *, workspace_id: UUID, audience: ApprovalAudience
+    ) -> Page[ApprovalRequest]:
         """The inbox, newest first and resumable. Pending work is bounded by how
         fast humans clear it, which on a stalled tenant is not bounded at all."""
         ...
 
 
 class AuditRepositoryPort(Protocol):
-    """Append-only audit trail; no update/delete exists by design."""
+    """Append-only audit trail; no update/delete exists by design.
+
+    Reads are narrowed to the caller's workspace by the repository, since RLS
+    on this table narrows by tenant only."""
 
     async def append(self, event: AuditEvent) -> None: ...
 
-    async def list_page(self, request: PageRequest) -> Page[AuditEvent]:
+    async def list_page(self, request: PageRequest, *, workspace_id: UUID) -> Page[AuditEvent]:
         """Newest first, resumable. The audit trail is the table that grows
         without bound, so it is the one a bare ``limit`` truncates soonest."""
         ...
 
-    async def list_for_run(self, run_id: UUID, limit: int = 100) -> list[AuditEvent]:
+    async def list_for_run(
+        self, run_id: UUID, *, workspace_id: UUID, limit: int = 100
+    ) -> list[AuditEvent]:
         """One run's events, oldest first. Not paged: this is the timeline of a
         single aggregate, bounded by that run's own length rather than by how
         long the tenant has been a customer."""
@@ -297,6 +330,9 @@ class PlatformUnitOfWork(Protocol):
     audit: AuditRepositoryPort
     feedback: FeedbackRepositoryPort
     outbox: OutboxRepositoryPort
+    # Consuming a single-use decision code in the decision's own transaction
+    # (ADR 0007); only a decision admitted by a code touches it.
+    decision_codes: DecisionCodeLedgerPort
 
     async def __aenter__(self) -> PlatformUnitOfWork: ...
 

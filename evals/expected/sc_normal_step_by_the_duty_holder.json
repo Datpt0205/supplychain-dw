@@ -1,0 +1,9 @@
+{
+  "outcome": "done",
+  "asked_scopes": [
+    "supply_chain.duty.ordering"
+  ],
+  "case_read": true,
+  "written": true,
+  "state": "sample_requested"
+}

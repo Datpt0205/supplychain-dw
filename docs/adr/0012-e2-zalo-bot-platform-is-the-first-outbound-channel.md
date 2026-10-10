@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../../packages/python/dw_connectors/src/dw_connectors/ports.py # ChatSenderPort, dòng 27-41
@@ -12,6 +12,8 @@ source:
 ---
 
 # E2. Zalo Bot Platform là kênh làm việc đầu tiên; liên kết nằm ở `external_identities`, token dùng một lần; lệnh đến dựng AccessContext từ membership của người đã liên kết, scope tối thiểu, chỉ ở server
+
+> Phần chung đã đưa về platform (`2ebd50f`) thành ADR 0005 của platform ([`0005-zalo-bot-is-the-first-chat-channel.md`](0005-zalo-bot-is-the-first-chat-channel.md)); code platform ở đây trích ADR 0005, ADR này giữ phần của Elmich.
 
 Người dùng nội bộ của Elmich dùng Zalo, không dùng Slack. Kênh đầu tiên là **Zalo
 Bot Platform** (`bot-api.zaloplatforms.com`), qua `ZaloBotClient` có sẵn trong
@@ -48,6 +50,22 @@ một bảng liên kết có `tenant_id`; chưa làm.
       nào rộng hơn membership. Trần lệch với quyền handler thật đòi thì lệnh bị từ chối,
       không mở rộng: hướng lệch đóng, và mỗi lệnh có test chạy được với đúng trần của nó.
     - tenant bị khóa hoặc membership đã gỡ thì từ chối như đăng nhập.
+    - AccessContext này không mang role nào (bổ sung 7/10/2026, Z4a): role
+      `platform_admin` qua mọi kiểm scope (`ScopeAuthorizationService`), nên một role
+      mang theo sẽ vượt trần. Quyền của lệnh là đúng phần scope giao với trần
+      (`SqlMembershipLookup.find_linked_access`, `LinkedUserAccess`).
+    - **Trần của lệnh đề xuất suy từ chính policy handler thi hành** (bổ sung 7/10/2026,
+      Z4b). Trần không phải danh sách viết tay: `ProposeProductCase.propose_scopes`
+      trả `supply_chain.product_case.write` cộng scope của duty mà policy
+      `supply_chain_product_action_duties` của tenant (bản override nếu có) giao cho
+      `propose`, và handler đòi đúng tập đó. Router cắt context theo
+      `PROPOSAL_CEILING` (write cộng scope của mọi duty, suy từ enum `CaseDuty`),
+      rồi lệnh cắt tiếp còn đúng `propose_scopes` của tenant trước khi làm gì; thiếu
+      một scope trong đó thì từ chối, không bản nháp, không gọi mô hình. Vẫn là giao
+      với membership: không `approvals.decide`, không `supply_chain.document.write`
+      (ảnh chưa nhận qua Zalo, ticket 04b), không scope đọc nào. Test: lệnh chạy với
+      đúng trần đó qua `ScopeAuthorizationService` thật (unit) và qua lane poll
+      (integration); tenant đổi duty của `propose` thì trần đổi theo.
 3. **Token dùng một lần.** Token HMAC hiện có hạn 15 phút nhưng dùng lại được trong
    hạn: ai thấy token đều gắn được Zalo của mình vào người đó. Token thêm `jti`; bảng
    `platform.channel_link_nonces` (jti khóa chính, `user_id` FK `ON DELETE CASCADE`
@@ -83,6 +101,84 @@ một bảng liên kết có `tenant_id`; chưa làm.
    adapter.
 7. **Token bot nằm trong URL.** Mọi lỗi httpx và log phải xóa token trước khi ghi
    (SEC-20 của sản phẩm đấu thầu).
+
+## Bổ sung 7/10/2026 (Z4b): mô hình chạy trong worker, qua một bộ dựng chung
+
+Trạng thái: Accepted (2026-10-07, lead theo ủy quyền của Đạt: một bộ dựng model cho API và worker, cùng trần chi tiêu và hạn mức).
+
+Lane poll nằm trong worker, nên lệnh đề xuất đọc tin bằng mô hình ở worker, nơi
+trước Z4b không có `ModelGateway`. Quyết định:
+
+- **Một bộ dựng, hai composition root.** `dw_agent_runtime.adapters.model_stack`
+  (`build_model_adapters`, `build_model_stack`, `ModelStack`) dựng adapter nhà cung
+  cấp (chặn SSRF, cấm mock ở profile deploy), một `RunBudgetLedger` cho cả tiến
+  trình và các usage recorder (spend guard theo ngày, telemetry). API
+  (`bootstrap/runtime.py`) và worker (`dw_worker.composition.build_model_stack_for`)
+  cùng gọi nó; mỗi bên chỉ ánh xạ settings của mình sang `ModelProviderConfig`.
+  `apps/worker` không import `dw_api`.
+- **Cổng một lượt gọi kiểm hạn mức gói.** `DailyAllowance`
+  (`dw_agent_runtime.allowance`) là phần runner vốn kiểm khi bắt đầu run (số run
+  mỗi ngày, trần chi tiêu mỗi ngày), tách ra để runner và
+  `SingleCallModelGateway` dùng chung. `ModelStack.one_call(allowance)` kiểm trước
+  mỗi lượt gọi không có run bao quanh, rồi giải phóng mục ledger sau lượt gọi.
+  **Hệ quả ở API:** các lượt gọi một lần của Supply Chain qua HTTP (hỏi hồ sơ, đọc
+  cập nhật NCC, phân tích trễ, tóm tắt bản tin) từ nay cũng bị từ chối
+  (`QuotaExceededError`) khi gói hết lượt hoặc hết trần trong ngày, như run.
+- **Có giới hạn thời gian.** Lane xử lý từng update một; lượt gọi của lệnh đề xuất
+  bị cắt ở `MODEL_CALL_TIMEOUT_SECONDS` (20 giây) để `/start` không bị chặn, và quá
+  hạn được trả lời "chưa hiểu" như mô hình không gọi được.
+
+## Bổ sung 7/10/2026 (Z6): hỏi chỉ đọc, và một lần phân loại ý định
+
+Trạng thái: Proposed (2026-10-07, lead theo ủy quyền của Đạt; Đạt duyệt hoặc chỉnh).
+
+- **Lệnh hỏi đứng cuối registry**, sau lệnh quyết (Z5) và lệnh đề xuất (Z4b); trần
+  `QA_CEILING = {supply_chain.po_case.read}`: không scope ghi, không duty, không
+  `approvals.decide`, không role. Trần không mang scope đọc hồ sơ phát triển, vì chưa
+  đường nào của lệnh đọc nó (failure-modes #1); ticket S8 thêm khi command bar hiểu hồ
+  sơ phát triển. Lệnh gọi đúng `AnswerCaseQuery` của `POST /case-query` (thêm tham số
+  `channel` cho trace), kiểm câu hỏi bằng chính `CaseQueryRequest` của route (dài tối đa
+  500, không có thẻ `<input>`), cùng `DailyAllowance` và cùng giới hạn 20 giây như Z4b.
+  Câu trả lời do code dựng: tối đa 10 hồ sơ (số PO, NCC, nhãn trạng thái, liên kết
+  tuyệt đối), "còn nữa" kèm liên kết danh sách có bộ lọc; không giá, chứng từ, ghi chú
+  (QE-20 tạm thời).
+- **Một lần phân loại là lần đọc của lệnh đề xuất.** Prompt
+  `product_proposal_understanding@1.1.0` thêm `kind: question` (hỏi về, hoặc đòi đổi,
+  hồ sơ đã có); lệnh đề xuất trả lượt cho lệnh hỏi, không đụng bản nháp. Người hỏi có
+  quyền đề xuất tốn hai lượt gọi mô hình cho một câu hỏi (phân loại rồi đọc câu hỏi),
+  cả hai trừ vào hạn mức ngày của gói.
+- **Người không có quyền đề xuất được lệnh đề xuất trả lượt** (trước Z6: từ chối "chưa có
+  quyền đề xuất"), không gọi mô hình, để người chỉ đọc vẫn hỏi được. Hệ quả: người không
+  đề xuất được mà gửi một đề xuất nhận câu của lệnh hỏi ("chưa hiểu… qua Zalo chỉ hỏi
+  được; thao tác trên cổng"), hoặc "chưa có quyền xem hồ sơ cung ứng" nếu cũng không đọc
+  được.
+- **Câu đòi thay đổi** đọc thành `unsupported` và nhận câu "chỉ hỏi được" kèm liên kết
+  cổng; không đường nào từ lệnh hỏi tới handler ghi (test kiến trúc trên import và trường
+  của lệnh).
+- **Chưa đạt: hẹp theo workspace.** `po_cases` chỉ hẹp theo tenant (mục mở của ADR
+  0017), nên người ở W2 thấy Hồ sơ PO của W1 qua Zalo đúng như trên web. Lệnh hỏi không
+  lọc thêm trong code (sẽ là chỗ thực thi thứ hai và lệch với web); ticket
+  `port/issues/04-po-cases-narrowed-by-workspace.md` sở hữu việc sửa ở RLS.
+- **`visible_owners`:** context của lệnh từ chat bị cắt theo trần nên mất
+  `crm.records.all.read`; ở tenant `restricted`, người có scope đó trên web sẽ bị hẹp hơn
+  qua Zalo nếu một repository Supply Chain đọc `visible_owners`. Hiện không repository
+  nào đọc (Hồ sơ PO không hẹp theo người ở cả hai kênh), nên hai kênh trả cùng hồ sơ
+  (test so hai kênh). Hẹp hơn là hướng an toàn; ghi lại để ai thêm lọc theo người biết.
+
+## Bổ sung 7/10/2026 (S8): hỏi về hồ sơ phát triển
+
+Trạng thái: Proposed (2026-10-07, lead theo ủy quyền của Đạt; Đạt duyệt hoặc chỉnh).
+
+- `QA_CEILING = {supply_chain.po_case.read, supply_chain.product_case.read}`: đường đọc hồ
+  sơ phát triển đã có (`ListProductCases`, `ListProductCategories`, tra mã đề xuất), nên
+  scope đọc vào trần đúng lúc có người đọc nó. Vẫn không scope ghi, không duty, không role.
+- Câu trả lời do code dựng như với PO: tối đa 10 hồ sơ (mã đề xuất, tên SP, nhãn trạng
+  thái, liên kết tuyệt đối), "còn nữa" kèm liên kết danh sách có cùng bộ lọc (`state`,
+  `pic`, `category`); mã chỉ có ở tenant hay workspace khác đọc như không tồn tại. Người
+  không có `product_case.read` nhận "chưa có quyền xem". Câu "hồ sơ phát triển sản phẩm
+  chưa hỗ trợ" bỏ.
+- Tên SP đi qua máy chủ Zalo trong câu trả lời cho chính người hỏi có quyền đọc; thông báo
+  báo cáo giai đoạn 1 chỉ có ngày ở tiêu đề (QE-20 tạm).
 
 ## Phương án đã cân nhắc
 

@@ -1,0 +1,167 @@
+{
+  "api_version": "0.1.0",
+  "approval_policy_version": "1.0.0",
+  "copy_bundles": [
+    {
+      "checksum": "2866325cda2ce8ea08d86d4869fdd677572499e0d17f36344a255e6516979410",
+      "copy_id": "platform.runtime",
+      "version": "1.3.0"
+    },
+    {
+      "checksum": "d15eb453fc6e6c8a12f13bce4776ad5ea54c92d45725cb4bf08c2c8b8c05f5f5",
+      "copy_id": "platform.runtime",
+      "version": "1.4.0"
+    },
+    {
+      "checksum": "dcfeed6e919c29bac34362aea015040597fcec5657dbc8fe82a86866fc9ec1db",
+      "copy_id": "platform.runtime",
+      "version": "1.5.0"
+    },
+    {
+      "checksum": "f7cd2b502af52c5a650162e7392e1ee3b3b841387f44e6726afaf7bad67fe5f7",
+      "copy_id": "platform.runtime",
+      "version": "1.6.0"
+    }
+  ],
+  "eval_datasets": [
+    {
+      "checksum": "4504460eb6160e093df4edba7e8a1e955f16a8e9916af80b35a36c22ac86dd5d",
+      "dataset_id": "platform_smoke",
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "17df942dc85b1839c2a73948b09656f3cbb916d29b0bc968f66b26ca11166eb8",
+      "dataset_id": "supply_chain_smoke",
+      "version": "1.4.0"
+    }
+  ],
+  "knowledge_index_version": "2026-07-25.structure-1",
+  "memory_policy_version": "2.0.0",
+  "platform_version": "0.1.0",
+  "policies": [
+    {
+      "checksum": "bbebba26b5708933b6f8ab5c43a08f57d4c6ef595e09afb1a9422df0b7d6b49c",
+      "policy_id": "attachment_ingest",
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "fde5e39c166b55b2616311be8e132555def7c4e2e634d938ed4b58d28a961bf8",
+      "policy_id": "retention",
+      "version": "1.6.0"
+    },
+    {
+      "checksum": "508bc917cee5b4801020b1cbea642a5b7e5c44e0d4d3fe064935287f9fa7dd38",
+      "policy_id": "supply_chain_action_duties",
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "5e06d55e300e750fc814094358e19668328f4859883b48a7a20d08e5918dd3ff",
+      "policy_id": "supply_chain_approval_matrix",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "8b904a49ab3b86ccd57ea75fe72c5dda421762bb0c42f2f94fad674685f3c92c",
+      "policy_id": "supply_chain_brief",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "e02553a42b3fd03cafdd3ccbf01795e7fcf08fe3ee2392990fa85cddd9e782ec",
+      "policy_id": "supply_chain_follow_ups",
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "82de2f5186783dd701634f265dfbd5815e51d13bfcd722a2f7b8c75c0a331352",
+      "policy_id": "supply_chain_product_action_duties",
+      "version": "1.3.0"
+    },
+    {
+      "checksum": "c429bd62ec9d3fe5f80effae569d2048b631434f7a8262bbd9643ce6343fccc4",
+      "policy_id": "supply_chain_product_approvals",
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "8915ffde7fce0313d8655cb16ac7e2f7cb2010519f9d3d7358bb6dae24e936bf",
+      "policy_id": "supply_chain_sla",
+      "version": "2.0.0"
+    },
+    {
+      "checksum": "6cd61b8265d8ce82fdd5047dbec29a09cf5ce6b705226bb97fc24b7e19bf3be5",
+      "policy_id": "worker_runs",
+      "version": "1.0.0"
+    }
+  ],
+  "prompt_bundles": [
+    {
+      "checksum": "d09bde4799b114aa013b9af9c82681cf225b4055bf2e2935870d45b78285bf63",
+      "prompt_id": "platform.untrusted_demo",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "ef053a58ea28421c616ee0ee1e2c4e4f94a6b66a47d3ae192193558320ede7b9",
+      "prompt_id": "supply_chain.case_query_understanding",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "51e58dd4c4a0329f370a688dcffd48cd9ca0e468f4bfadd9c236c5a69b9a544e",
+      "prompt_id": "supply_chain.daily_brief_summary",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "cf05a993c4810ad65a18a98dba7e630ab957825ae38c221b3119e4bad22d1a99",
+      "prompt_id": "supply_chain.delay_impact_analysis",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "9eb1e01932904d135d9a9ee38494c205188ca2ed648238fe68eb6c27e357985d",
+      "prompt_id": "supply_chain.product_proposal_understanding",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "90d333b46afa559861b9083509c72465b1f0587be52b6b1313afe529d9e315b7",
+      "prompt_id": "supply_chain.supplier_update_understanding",
+      "version": "1.0.0"
+    }
+  ],
+  "rubrics": [],
+  "schema_version": "1.0",
+  "tool_specs": [],
+  "toolsets": [],
+  "workers": [
+    {
+      "agent_prompt_id": null,
+      "agent_prompt_version": null,
+      "autonomy_level": "A2",
+      "graph_version": "1.0.0",
+      "memory_policy_version": "1.0.0",
+      "policy_version": "1.0.0",
+      "prompt_bundle_version": "1.0.0",
+      "toolset_version": null,
+      "worker_id": "supply_chain_advance_case",
+      "worker_version": "1.0.0"
+    },
+    {
+      "agent_prompt_id": null,
+      "agent_prompt_version": null,
+      "autonomy_level": "A2",
+      "graph_version": "1.0.0",
+      "memory_policy_version": "1.0.0",
+      "policy_version": "1.0.0",
+      "prompt_bundle_version": "1.0.0",
+      "toolset_version": null,
+      "worker_id": "supply_chain_advance_product_case",
+      "worker_version": "1.0.0"
+    },
+    {
+      "agent_prompt_id": null,
+      "agent_prompt_version": null,
+      "autonomy_level": "A2",
+      "graph_version": "1.0.0",
+      "memory_policy_version": "1.0.0",
+      "policy_version": "1.0.0",
+      "prompt_bundle_version": "1.0.0",
+      "toolset_version": null,
+      "worker_id": "supply_chain_product_signoff",
+      "worker_version": "1.0.0"
+    }
+  ]
+}

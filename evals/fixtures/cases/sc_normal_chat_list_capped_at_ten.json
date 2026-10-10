@@ -1,0 +1,70 @@
+{
+  "question": "các PO đang chờ cọc?",
+  "model_answer": {
+    "kind": "list_cases",
+    "state": "waiting_deposit",
+    "state_quote": "chờ cọc"
+  },
+  "cases": [
+    {
+      "reference": "PO-00",
+      "state": "waiting_deposit",
+      "age": 0
+    },
+    {
+      "reference": "PO-01",
+      "state": "waiting_deposit",
+      "age": 1
+    },
+    {
+      "reference": "PO-02",
+      "state": "waiting_deposit",
+      "age": 2
+    },
+    {
+      "reference": "PO-03",
+      "state": "waiting_deposit",
+      "age": 3
+    },
+    {
+      "reference": "PO-04",
+      "state": "waiting_deposit",
+      "age": 4
+    },
+    {
+      "reference": "PO-05",
+      "state": "waiting_deposit",
+      "age": 5
+    },
+    {
+      "reference": "PO-06",
+      "state": "waiting_deposit",
+      "age": 6
+    },
+    {
+      "reference": "PO-07",
+      "state": "waiting_deposit",
+      "age": 7
+    },
+    {
+      "reference": "PO-08",
+      "state": "waiting_deposit",
+      "age": 8
+    },
+    {
+      "reference": "PO-09",
+      "state": "waiting_deposit",
+      "age": 9
+    },
+    {
+      "reference": "PO-10",
+      "state": "waiting_deposit",
+      "age": 10
+    },
+    {
+      "reference": "PO-11",
+      "state": "waiting_deposit",
+      "age": 11
+    }
+  ]
+}

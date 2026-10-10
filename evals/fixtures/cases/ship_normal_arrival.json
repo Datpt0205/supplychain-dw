@@ -1,0 +1,28 @@
+{
+  "doc_type": "arrival_notice",
+  "document_text": "GIẤY BÁO HÀNG ĐẾN\nSố vận đơn: MEDUVN123456\nTàu: MSC AURORA\nCảng dỡ: Hải Phòng\nNgày dự kiến đến: 02/12/2026\nContainer: MSCU1234567\n",
+  "model_reading": {
+    "bl_number": {
+      "value": "MEDUVN123456",
+      "quote": "Số vận đơn: MEDUVN123456"
+    },
+    "vessel": {
+      "value": "MSC AURORA",
+      "quote": "Tàu: MSC AURORA"
+    },
+    "port_of_discharge": {
+      "value": "Hải Phòng",
+      "quote": "Cảng dỡ: Hải Phòng"
+    },
+    "eta": {
+      "value": "2026-12-02",
+      "quote": "Ngày dự kiến đến: 02/12/2026"
+    },
+    "container_numbers": [
+      {
+        "value": "MSCU1234567",
+        "quote": "Container: MSCU1234567"
+      }
+    ]
+  }
+}

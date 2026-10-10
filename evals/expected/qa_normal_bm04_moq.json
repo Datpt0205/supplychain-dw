@@ -1,0 +1,13 @@
+{
+  "outcome": "answered",
+  "model_calls": 1,
+  "answer_must_contain": [
+    "500"
+  ],
+  "prompt_must_contain": [
+    "moq: 500"
+  ],
+  "prompt_must_not_contain": [
+    "2.50"
+  ]
+}

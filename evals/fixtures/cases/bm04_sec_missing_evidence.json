@@ -1,0 +1,28 @@
+{
+  "step": "bm04",
+  "documents": [],
+  "approved_record": [
+    {
+      "criterion": "Độ dày đáy",
+      "standard": "≥ 3 mm",
+      "measured": "3.2",
+      "result": "Đạt"
+    }
+  ],
+  "writing": {
+    "fields": [
+      {
+        "field": "unit_price",
+        "value": "2.50",
+        "quote": "đơn giá 2,50 USD",
+        "cite": "doc:supplier_quotation"
+      },
+      {
+        "field": "material",
+        "value": "inox 304",
+        "quote": "chất liệu inox 304",
+        "cite": "doc:supplier_quotation"
+      }
+    ]
+  }
+}

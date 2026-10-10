@@ -45,19 +45,25 @@ async def list_events(
 ) -> Page[AuditEventView]:
     if container.uow_factory is None:
         raise InfrastructureError("database is not configured")
+    # The audit trail's own scope (`director`, `executive`), not the inbox's
+    # `approvals.read`, which every `member` holds.
     await container.authorization.require(
-        context=context, action="approvals.read", resource_type="audit_event"
+        context=context, action="audit.events", resource_type="audit_event"
     )
-    # The tenant is in the fingerprint even though it never comes from the
-    # client: a cursor that somehow crossed accounts is then refused outright
-    # instead of being answered from the other tenant's window.
+    # The tenant and workspace are in the fingerprint even though neither comes
+    # from the client: a cursor that somehow crossed accounts or workspaces is
+    # then refused outright instead of being answered from the other window.
     request = page_request(
         limit=limit,
         cursor=cursor,
-        query=PageQuery(key="audit.events", filters={"tenant": context.tenant_id}),
+        query=PageQuery(
+            key="audit.events",
+            filters={"tenant": context.tenant_id, "workspace": context.workspace_id},
+        ),
     )
+    # Only the caller's workspace: RLS on audit_events narrows by tenant only.
     async with container.uow_factory(context) as uow:
-        page = await uow.audit.list_page(request)
+        page = await uow.audit.list_page(request, workspace_id=context.workspace_id)
     return page.map_items(
         lambda e: AuditEventView(
             actor_id=str(e.actor_id),

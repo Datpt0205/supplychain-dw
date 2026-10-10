@@ -1,0 +1,10 @@
+{
+  "findings_absent": [
+    "label_missing",
+    "proof_differs"
+  ],
+  "drafted": {
+    "design_revision_request": 0
+  },
+  "proof_status": null
+}

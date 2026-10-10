@@ -1,0 +1,13 @@
+{
+  "findings": [
+    "label_missing:origin",
+    "label_missing:warnings"
+  ],
+  "drafted": {
+    "design_revision_request": 1
+  },
+  "items": [
+    "origin",
+    "warnings"
+  ]
+}

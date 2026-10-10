@@ -2,6 +2,16 @@
 
 All queries run inside a UoW session that already carries the SET LOCAL tenant
 context, so RLS constrains every statement here.
+
+RLS on `approval_requests` and `audit_events` narrows by tenant only. Their
+reads take the caller's `workspace_id` as a required keyword and narrow by it
+here, so a member never reads another workspace's approval payload or audit
+detail (platform-runtime/approval-audit-and-workspace/02). Required, not
+defaulted: a reader that forgets it does not type-check.
+
+Approval reads also take the caller's `ApprovalAudience` and filter by it in
+the query (`visible_to`): a stamped request is absent to whoever may neither
+decide it nor asked for it (ADR 0004, amendment 2026-10-07).
 """
 
 from __future__ import annotations
@@ -19,6 +29,7 @@ from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.pagination import CursorPosition, Page, PageRequest, build_page
 from dw_platform.adapters.persistence import tables
 from dw_platform.adapters.persistence.keyset import after_position, newest_first
+from dw_platform.application.authorization import ApprovalAudience
 from dw_platform.domain.approval import (
     ApprovalDecision,
     ApprovalRequest,
@@ -39,10 +50,29 @@ def _approval_from_row(row: Row[tuple]) -> ApprovalRequest:  # type: ignore[type
         reason=row.reason,
         payload=dict(row.payload),
         run_id=row.run_id,
+        required_scope=row.required_scope,
         status=ApprovalStatus(row.status),
         created_at=row.created_at,
         decided_at=row.decided_at,
         version=row.version,
+    )
+
+
+def visible_to(audience: ApprovalAudience) -> sa.ColumnElement[bool]:
+    """`ApprovalAudience.may_see`, as a WHERE clause: unstamped, or asked for by
+    the caller, or stamped with a scope the caller holds while also holding
+    `approvals.decide`. Public because the context-facing pending query reads
+    the same rule; a second copy of it would drift (failure-modes #2)."""
+    approvals = tables.approval_requests
+    decidable = (
+        approvals.c.required_scope.in_(sorted(audience.context.scopes))
+        if audience.holds_decide
+        else sa.false()
+    )
+    return sa.or_(
+        approvals.c.required_scope.is_(None),
+        approvals.c.requested_by == audience.context.principal_id,
+        decidable,
     )
 
 
@@ -90,14 +120,25 @@ class SqlApprovalRepository:
                 reason=request.reason,
                 payload=request.payload,
                 run_id=request.run_id,
+                # Written here and nowhere else: `save` records a decision and
+                # must never move who was allowed to make it (ADR 0004).
+                required_scope=request.required_scope,
                 status=request.status.value,
                 version=request.version,
             )
         )
 
-    async def get(self, request_id: uuid.UUID) -> ApprovalRequest | None:
+    async def get(
+        self, request_id: uuid.UUID, *, workspace_id: uuid.UUID, audience: ApprovalAudience
+    ) -> ApprovalRequest | None:
         result = await self.session.execute(
-            sa.select(tables.approval_requests).where(tables.approval_requests.c.id == request_id)
+            sa.select(tables.approval_requests).where(
+                tables.approval_requests.c.id == request_id,
+                # RLS narrows this table by tenant only; the workspace is
+                # narrowed here (approval-audit-and-workspace/02).
+                tables.approval_requests.c.workspace_id == workspace_id,
+                visible_to(audience),
+            )
         )
         row = result.first()
         return _approval_from_row(row) if row else None
@@ -122,11 +163,17 @@ class SqlApprovalRepository:
                 details={"request_id": str(request.id)},
             )
 
-    async def list_pending(self, request: PageRequest) -> Page[ApprovalRequest]:
+    async def list_pending(
+        self, request: PageRequest, *, workspace_id: uuid.UUID, audience: ApprovalAudience
+    ) -> Page[ApprovalRequest]:
         result = await self.session.execute(
             sa.select(tables.approval_requests)
             .where(
+                tables.approval_requests.c.workspace_id == workspace_id,
                 tables.approval_requests.c.status == "pending",
+                # In the query, so a page is a page of the caller's inbox and
+                # never a page of everyone's with holes in it.
+                visible_to(audience),
                 after_position(
                     tables.approval_requests.c.created_at,
                     tables.approval_requests.c.id,
@@ -155,6 +202,7 @@ class SqlApprovalRepository:
                 outcome=decision.outcome.value,
                 comment=decision.comment,
                 decided_at=decision.decided_at,
+                channel=decision.channel,
             )
         )
 
@@ -183,22 +231,28 @@ class SqlAuditRepository:
             )
         )
 
-    async def list_for_run(self, run_id: uuid.UUID, limit: int = 100) -> list[AuditEvent]:
+    async def list_for_run(
+        self, run_id: uuid.UUID, *, workspace_id: uuid.UUID, limit: int = 100
+    ) -> list[AuditEvent]:
         result = await self.session.execute(
             sa.select(tables.audit_events)
-            .where(tables.audit_events.c.run_id == run_id)
+            .where(
+                tables.audit_events.c.run_id == run_id,
+                tables.audit_events.c.workspace_id == workspace_id,
+            )
             .order_by(tables.audit_events.c.occurred_at)
             .limit(limit)
         )
         return self._map_rows(result)
 
-    async def list_page(self, request: PageRequest) -> Page[AuditEvent]:
+    async def list_page(self, request: PageRequest, *, workspace_id: uuid.UUID) -> Page[AuditEvent]:
         result = await self.session.execute(
             sa.select(tables.audit_events)
             .where(
+                tables.audit_events.c.workspace_id == workspace_id,
                 after_position(
                     tables.audit_events.c.occurred_at, tables.audit_events.c.id, request.after
-                )
+                ),
             )
             .order_by(*newest_first(tables.audit_events.c.occurred_at, tables.audit_events.c.id))
             .limit(request.fetch_limit)

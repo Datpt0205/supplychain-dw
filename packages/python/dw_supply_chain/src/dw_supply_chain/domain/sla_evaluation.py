@@ -1,18 +1,29 @@
 """SLA evaluation: has this case's current state overrun its reference SLA.
 
 Pure computation, no model call — matches `missing_update.py`'s own framing:
-the workflow engine decides, nothing here needs a judgment call. The four
-milestones below are exactly the ones `configs/policies/supply_chain_sla@
-*.yaml`'s own comments map onto a `POCase` transition; `bm04`/
-`supplier_confirmation` are pre-PO, DW-SC-01 scope, and have no `CaseState`
-to attach to yet (Phase 4+, not built).
+the workflow engine decides, nothing here needs a judgment call. Each
+milestone of `configs/policies/supply_chain_sla@*.yaml` is attached to the
+one state it measures: four `POCase` states, and the stage-1 states of a
+`ProductDevelopmentCase` (ADR 0019; `bm04` and `supplier_confirmation` were in
+the file with no reader until stage-1 ticket 06). The two tables below are the
+only place that attachment is written.
+
+The case's stamped Category picks the number (`duration_days_for`): its own
+entry for the milestone, or the policy's `default`.
 
 Uses `state`, never `interrupted_state` — a case currently `BLOCKED` mid-
 `WAITING_DEPOSIT` is reported `NOT_APPLICABLE` rather than still evaluated
-against the deposit SLA. Stated simplification, not a hidden gap: the doc
-gives no guidance on how an interrupt should affect an SLA clock, and
-guessing one (paused? still running? reset?) is a business decision, not an
-engineering default to invent.
+against the deposit SLA, and its clock starts again from the resume (the
+caller passes the latest transition into the clock's start state). Stated
+simplification, provisional until Elmich answers QE-14: the doc gives no
+guidance on how an interrupt should affect an SLA clock.
+
+A milestone may span more than one state. `warehouse_receipt` (step 17,
+QE-14 provisional) measures payment to goods in stock: its clock starts when
+the case entered `PAYMENT_COMPLETED` and runs on through `WAREHOUSE_RECEIVING`
+until the case is `COMPLETED`, so starting to receive does not restart it.
+`sla_clock_start_state` names the state each clock starts at; it is the one
+place that says so, and the repository's SQL is built from it.
 """
 
 from __future__ import annotations
@@ -22,6 +33,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from dw_supply_chain.domain.po_case import CaseState
+from dw_supply_chain.domain.product_development_case import ProductDevState
 from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
 
 _MILESTONE_FOR_STATE: dict[CaseState, str] = {
@@ -29,6 +41,34 @@ _MILESTONE_FOR_STATE: dict[CaseState, str] = {
     CaseState.IN_TRANSIT: "port_arrival",
     CaseState.WAITING_PAYMENT: "payment",
     CaseState.PAYMENT_COMPLETED: "warehouse_receipt",
+    CaseState.WAREHOUSE_RECEIVING: "warehouse_receipt",
+}
+
+# A state whose milestone's clock started in an earlier state: the state it
+# started in. Every other state's clock starts when the case entered it.
+SLA_CLOCK_STARTS_IN: dict[CaseState, CaseState] = {
+    CaseState.WAREHOUSE_RECEIVING: CaseState.PAYMENT_COMPLETED,
+}
+
+
+def sla_clock_start_state(state: CaseState) -> CaseState:
+    """The state whose latest entry starts the SLA clock of a case in
+    `state`: `PAYMENT_COMPLETED` while goods are being received (the receipt
+    clock runs from payment), `state` itself otherwise."""
+    return SLA_CLOCK_STARTS_IN.get(state, state)
+
+
+# Stage 1. A separate table, not one keyed by both enums: the two share
+# string values ("blocked", "cancelled"), and a StrEnum member is equal to its
+# value, so one dict would let a PO state find a product milestone.
+_MILESTONE_FOR_PRODUCT_STATE: dict[ProductDevState, str] = {
+    ProductDevState.SAMPLE_REQUESTED: "sample_collection",
+    ProductDevState.SAMPLE_TESTING: "sample_testing",
+    ProductDevState.PENDING_BOD_REVIEW: "bod_review",
+    ProductDevState.PROFILE_IN_PROGRESS: "bm04",
+    ProductDevState.SUPPLIER_CONFIRMATION: "supplier_confirmation",
+    ProductDevState.ITEM_CODING: "item_coding",
+    ProductDevState.PENDING_SIGNOFF: "signoff",
 }
 
 
@@ -53,16 +93,18 @@ class SLAEvaluation:
     threshold_days: int | None
 
 
-def evaluate_sla(
+def _evaluate(
     *,
-    state: CaseState,
+    milestone: str | None,
+    category: str | None,
     entered_current_state_at: datetime,
     now: datetime,
     policy: SupplyChainSLAPolicy,
 ) -> SLAEvaluation:
     age_days = (now - entered_current_state_at).days
-    milestone = _MILESTONE_FOR_STATE.get(state)
-    threshold_days = policy.duration_days_for(milestone) if milestone is not None else None
+    threshold_days = (
+        policy.duration_days_for(milestone, category) if milestone is not None else None
+    )
 
     if milestone is None:
         status = SLAEvaluationStatus.NOT_APPLICABLE
@@ -79,4 +121,41 @@ def evaluate_sla(
         entered_current_state_at=entered_current_state_at,
         age_days=age_days,
         threshold_days=threshold_days,
+    )
+
+
+def evaluate_sla(
+    *,
+    state: CaseState,
+    category: str | None,
+    entered_current_state_at: datetime,
+    now: datetime,
+    policy: SupplyChainSLAPolicy,
+) -> SLAEvaluation:
+    """A PO case. `category` is the case's stamp; None for a case opened
+    without one, which is evaluated on `default`."""
+    return _evaluate(
+        milestone=_MILESTONE_FOR_STATE.get(state),
+        category=category,
+        entered_current_state_at=entered_current_state_at,
+        now=now,
+        policy=policy,
+    )
+
+
+def evaluate_product_sla(
+    *,
+    state: ProductDevState,
+    category: str,
+    entered_current_state_at: datetime,
+    now: datetime,
+    policy: SupplyChainSLAPolicy,
+) -> SLAEvaluation:
+    """A product-development case, under its stamped Category."""
+    return _evaluate(
+        milestone=_MILESTONE_FOR_PRODUCT_STATE.get(state),
+        category=category,
+        entered_current_state_at=entered_current_state_at,
+        now=now,
+        policy=policy,
     )

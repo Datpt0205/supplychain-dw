@@ -20,12 +20,23 @@ from typing import Any
 
 import httpx
 
+from dw_connectors.ports import ChatRecipientUnreachableError
+
 _BASE = "https://bot-api.zaloplatforms.com"
 _REDACTED = "bot***"
 
 # Zalo hard-caps one message at 2000 characters; stay under it with room to
 # spare. Without the split a long message is refused and never delivered.
 _MAX_CHARS = 1900
+
+# Codes on which ``sendMessage`` will never succeed for this chat, whether they
+# come as the HTTP status or as ``error_code`` in an ``ok: false`` body: the
+# Telegram dialect answers 400 "chat not found" and 403 "blocked by the user".
+# PROVISIONAL (channels Z2): taken from the dialect, not measured
+# against Zalo; a live run confirms or corrects it. Everything
+# else - 401 included, which is this deployment's token and not the person's
+# chat - is retried, up to the outbox's ceiling.
+_UNREACHABLE = frozenset({400, 403, 404})
 
 
 def _split_for_zalo(text: str) -> list[str]:
@@ -148,25 +159,41 @@ class ZaloBotClient:
     async def _send_one(self, chat_id: str, text: str) -> str:
         async with self._client(15) as client:
             response = await client.post("/sendMessage", json={"chat_id": chat_id, "text": text})
+            if response.status_code in _UNREACHABLE:
+                raise ChatRecipientUnreachableError(
+                    f"zalo sendMessage refused: HTTP {response.status_code}"
+                )
             response.raise_for_status()
             data = response.json()
         if not data.get("ok"):
+            if data.get("error_code") in _UNREACHABLE:
+                raise ChatRecipientUnreachableError(
+                    f"zalo sendMessage refused: {data.get('error_code')} "
+                    f"{self._scrub(str(data.get('description')))}"
+                )
             raise RuntimeError(
                 f"zalo sendMessage failed: {self._scrub(str(data.get('description')))}"
             )
         result = data.get("result") or {}
         return str(result.get("message_id", ""))
 
-    async def set_webhook(self, url: str) -> None:
-        """Point the bot at ``url`` so updates are POSTed there instead of polled."""
+    async def set_webhook(self, url: str, *, secret_token: str) -> None:
+        """Point the bot at ``url`` so updates are POSTed there instead of polled.
+
+        Zalo sends ``secret_token`` back in the ``X-Bot-Api-Secret-Token``
+        header of every call, which is how the API tells Zalo from anyone else
+        (ADR 0008); the URL carries no secret, so none lands in an
+        access log. A failure's text has both the token and the secret scrubbed.
+        """
         async with self._client(15) as client:
-            response = await client.post("/setWebhook", json={"url": url})
+            response = await client.post(
+                "/setWebhook", json={"url": url, "secret_token": secret_token}
+            )
             response.raise_for_status()
             data = response.json()
         if not data.get("ok"):
-            raise RuntimeError(
-                f"zalo setWebhook failed: {self._scrub(str(data.get('description')))}"
-            )
+            description = self._scrub(str(data.get("description"))).replace(secret_token, "***")
+            raise RuntimeError(f"zalo setWebhook failed: {description}")
 
     async def delete_webhook(self) -> None:
         """Remove the webhook so ``getUpdates`` long-polling works again."""

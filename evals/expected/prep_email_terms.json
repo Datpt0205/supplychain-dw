@@ -1,0 +1,15 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "moq": "500",
+    "lead_time_days": "45",
+    "unit_price": "2.70"
+  },
+  "scripted": {
+    "fields": {
+      "packaging": "Hộp màu",
+      "specification": "Inox 304, 24 x 12 cm"
+    }
+  }
+}

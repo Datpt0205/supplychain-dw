@@ -13,6 +13,7 @@ from types import TracebackType
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from dw_kernel.errors import TenantContextMissingError
+from dw_platform.adapters.persistence.approval_codes import SqlDecisionCodeLedger
 from dw_platform.adapters.persistence.repositories import (
     SqlApprovalRepository,
     SqlAuditRepository,
@@ -21,6 +22,7 @@ from dw_platform.adapters.persistence.repositories import (
 )
 from dw_platform.adapters.persistence.tenant_session import TenantScope, bind_tenant
 from dw_platform.application.access_context import AccessContext
+from dw_platform.application.approval_codes import DecisionCodeLedgerPort
 from dw_platform.application.ports import (
     ApprovalRepositoryPort,
     AuditRepositoryPort,
@@ -36,6 +38,7 @@ class SqlPlatformUnitOfWork:
     audit: AuditRepositoryPort
     feedback: FeedbackRepositoryPort
     outbox: OutboxRepositoryPort
+    decision_codes: DecisionCodeLedgerPort
 
     def __init__(
         self,
@@ -61,6 +64,7 @@ class SqlPlatformUnitOfWork:
         self.audit = SqlAuditRepository(session)
         self.feedback = SqlFeedbackRepository(session)
         self.outbox = SqlOutboxRepository(session)
+        self.decision_codes = SqlDecisionCodeLedger(session)
         return self
 
     async def __aexit__(

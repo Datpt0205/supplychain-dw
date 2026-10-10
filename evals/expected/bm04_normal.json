@@ -1,0 +1,30 @@
+{
+  "outcome": "proposed",
+  "model_calls": 1,
+  "draft_fields": {
+    "product_name": "Nồi inox 3 đáy 24cm",
+    "unit_price": "2.50",
+    "currency": "USD",
+    "moq": "500",
+    "lead_time_days": "45",
+    "incoterm": "FOB"
+  },
+  "scripted": {
+    "draft_fields": {
+      "material": "inox 304",
+      "colours": "bạc"
+    }
+  },
+  "prompt_must_not_contain": [
+    "2,50",
+    "2.50",
+    "2.500,00"
+  ],
+  "decision": "complete_profile",
+  "case_state": "supplier_confirmation",
+  "profile": {
+    "unit_price": "2.50",
+    "currency": "USD",
+    "moq": "500"
+  }
+}

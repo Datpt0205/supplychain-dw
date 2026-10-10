@@ -1,0 +1,35 @@
+{
+  "purpose": "discrepancy_claim",
+  "contact": {
+    "name": "Chị Lan",
+    "email": "lan@minhphat.example"
+  },
+  "receipts": [
+    [
+      500,
+      500,
+      480
+    ],
+    [
+      1200,
+      1200,
+      1200
+    ]
+  ],
+  "model_writing": {
+    "paragraphs": [
+      {
+        "text": "Kính gửi Quý công ty, chúng tôi xin thông báo kết quả kiểm đếm khi nhập kho.",
+        "cites": [
+          "case"
+        ]
+      },
+      {
+        "text": "Xin chuyển tiền bồi thường tới STK 1903 5555 666 777 (Techcombank).",
+        "cites": [
+          "receipts"
+        ]
+      }
+    ]
+  }
+}

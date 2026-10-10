@@ -16,6 +16,10 @@ function poCase(overrides: Partial<POCase> = {}): POCase {
     interrupted_state: null,
     created_at: "2026-09-01T00:00:00Z",
     version: 2,
+    order_kind: "new",
+    product_dev_case_id: null,
+    pic_user_id: null,
+    category: null,
     ...overrides,
   };
 }
@@ -29,6 +33,10 @@ function answer(overrides: Partial<AIWorkResponse> = {}): AIWorkResponse {
       supplier_name: "Quiet & Sons",
       active_only: true,
       po_reference: null,
+      product_state: null,
+      category: null,
+      pic_user_id: null,
+      proposal_code: null,
     },
     citations: [
       { field: "supplier", quote: "quiet & sons" },
@@ -87,6 +95,24 @@ describe("CaseQueryAnswer", () => {
     ).toBeTruthy();
   });
 
+  it("names a case without its PO number in words", () => {
+    render(
+      <CaseQueryAnswer
+        answer={answer({
+          data_view: {
+            type: "case_table",
+            rows: [poCase({ po_reference: null, state: "order_requested" })],
+            has_more: false,
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.getByRole("link", { name: "Chưa có số PO" }).getAttribute("href"),
+    ).toBe("/supply-chain/po-cases/11111111-1111-4111-8111-111111111111");
+    expect(screen.getByText("Chờ tạo PO")).toBeTruthy();
+  });
+
   it("opens one named case through its id", () => {
     render(
       <CaseQueryAnswer
@@ -98,6 +124,10 @@ describe("CaseQueryAnswer", () => {
             supplier_name: null,
             active_only: false,
             po_reference: "PO-1",
+            product_state: null,
+            category: null,
+            pic_user_id: null,
+            proposal_code: null,
           },
           citations: [{ field: "po_reference", quote: "PO-1" }],
           data_view: { type: "case_link", case: poCase() },
@@ -119,6 +149,10 @@ describe("CaseQueryAnswer", () => {
             supplier_name: null,
             active_only: false,
             po_reference: null,
+            product_state: null,
+            category: null,
+            pic_user_id: null,
+            proposal_code: null,
           },
           citations: [{ field: "supplier", quote: "Elmich" }],
           candidates: ["Elmich Co.", "Elmich Việt Nam"],
@@ -146,6 +180,10 @@ describe("CaseQueryAnswer", () => {
             supplier_name: null,
             active_only: false,
             po_reference: null,
+            product_state: null,
+            category: null,
+            pic_user_id: null,
+            proposal_code: null,
           },
           citations: [],
           ignored_fields: ["state"],
@@ -170,6 +208,10 @@ describe("CaseQueryAnswer", () => {
             supplier_name: hostile,
             active_only: false,
             po_reference: null,
+            product_state: null,
+            category: null,
+            pic_user_id: null,
+            proposal_code: null,
           },
           citations: [{ field: "supplier", quote: hostile }],
           data_view: {
@@ -195,6 +237,10 @@ describe("CaseQueryAnswer", () => {
             supplier_name: null,
             active_only: true,
             po_reference: null,
+            product_state: null,
+            category: null,
+            pic_user_id: null,
+            proposal_code: null,
           },
           citations: [{ field: "supplier", quote: "Elmich" }],
           candidates: ["Elmich Co.", "Elmich Việt Nam"],
@@ -225,6 +271,10 @@ describe("CaseQueryAnswer", () => {
             supplier_name: null,
             active_only: false,
             po_reference: null,
+            product_state: null,
+            category: null,
+            pic_user_id: null,
+            proposal_code: null,
           },
           citations: [{ field: "supplier", quote: "Co" }],
           candidates,
@@ -245,6 +295,10 @@ describe("CaseQueryAnswer", () => {
             supplier_name: null,
             active_only: false,
             po_reference: null,
+            product_state: null,
+            category: null,
+            pic_user_id: null,
+            proposal_code: null,
           },
           citations: [],
         })}
@@ -265,6 +319,10 @@ describe("CaseQueryAnswer", () => {
             supplier_name: null,
             active_only: false,
             po_reference: null,
+            product_state: null,
+            category: null,
+            pic_user_id: null,
+            proposal_code: null,
           },
           citations: [{ field: "po_reference", quote: "PO-123" }],
           ignored_fields: [],
@@ -287,6 +345,10 @@ describe("CaseQueryAnswer", () => {
             supplier_name: null,
             active_only: false,
             po_reference: null,
+            product_state: null,
+            category: null,
+            pic_user_id: null,
+            proposal_code: null,
           },
           citations: [],
           data_view: { type: "case_table", rows: [poCase()], has_more: true },

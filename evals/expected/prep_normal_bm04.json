@@ -1,0 +1,9 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "material": "Inox 304",
+    "net_weight_g": "1250",
+    "moq": "500"
+  }
+}

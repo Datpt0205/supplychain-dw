@@ -3,14 +3,15 @@
 import { useEffect, useMemo, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Badge, Typography } from "antd";
-import { Bot, Loader2, LogOut } from "lucide-react";
-import { AppShell, Button, type AppShellItem } from "@dw/ui";
+import { Badge, Button, Card, Flex, Spin, Typography, theme } from "antd";
+import { LogoutOutlined, RobotOutlined } from "@ant-design/icons";
+import { AppShell, type AppShellItem } from "@dw/ui";
 import { useAuth } from "../lib/auth/auth-context";
 import { AUTH_MODE } from "../lib/auth/config";
 import { useNavBadges } from "../lib/nav/badges";
 import { NAV_ITEMS } from "../lib/nav/registry";
-import { hasAnyRole } from "../lib/nav/roles";
+import type { NavContext } from "../lib/nav/types";
+import { barNav, visibleNav } from "../lib/nav/visibility";
 import { LoginScreen } from "./login-screen";
 import { NotificationBell } from "./notification-bell";
 import { SessionChip } from "./session-chip";
@@ -19,11 +20,64 @@ import { FeedbackLauncher } from "./feedback/launcher";
 
 function CenteredCard({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border bg-card p-8 text-center shadow-sm">
-        {children}
-      </div>
-    </div>
+    <Flex align="center" justify="center" className="min-h-screen p-6">
+      <Card className="w-full max-w-md text-center">{children}</Card>
+    </Flex>
+  );
+}
+
+function FullScreenSpin({ tip }: { tip: string }) {
+  return (
+    <Flex
+      align="center"
+      justify="center"
+      gap="small"
+      className="min-h-screen"
+      role="status"
+    >
+      <Spin />
+      <Typography.Text type="secondary">{tip}</Typography.Text>
+    </Flex>
+  );
+}
+
+/** The brand mark: the theme's primary colour, so a product's theme owns it. */
+function Brand({
+  href,
+  context,
+}: {
+  href: string;
+  /** The bounded context the bar is, named beside the brand. */
+  context: NavContext | null;
+}) {
+  const { token } = theme.useToken();
+  return (
+    <Link
+      href={href}
+      aria-label={
+        context
+          ? `Digital Worker · ${context.product}, về trang đầu`
+          : "Digital Worker, về trang đầu"
+      }
+      className="flex items-center gap-2.5"
+    >
+      <span
+        className="flex size-8 shrink-0 items-center justify-center"
+        style={{
+          background: token.colorPrimary,
+          color: token.colorTextLightSolid,
+          borderRadius: token.borderRadiusLG,
+        }}
+      >
+        <RobotOutlined aria-hidden />
+      </span>
+      <Typography.Text strong className="hidden whitespace-nowrap sm:inline">
+        Digital Worker
+        {context ? (
+          <Typography.Text type="secondary">{` · ${context.product}`}</Typography.Text>
+        ) : null}
+      </Typography.Text>
+    </Link>
   );
 }
 
@@ -36,21 +90,16 @@ export function AppFrame({ children }: { children: ReactNode }) {
   const router = useRouter();
   const badges = useNavBadges();
 
-  // The nav the user can actually reach. Three filters: scope is the
-  // permission the API enforces anyway, role is who the page is for, and
-  // operatorOnly is the cross-tenant provisioning area.
-  const visibleNav = useMemo(
+  // The nav the user can actually reach, and the bar drawn from it: a
+  // context's own pages for someone whose work is that context alone.
+  const bar = useMemo(
     () =>
-      NAV_ITEMS.filter(
-        (item) =>
-          (!item.operatorOnly || isPlatformOperator) &&
-          (!item.scope || hasScope(item.scope)) &&
-          (!item.roles || hasAnyRole(roles, item.roles)),
-      ),
+      barNav(visibleNav(NAV_ITEMS, { isPlatformOperator, hasScope, roles })),
     [isPlatformOperator, hasScope, roles],
   );
+  const nav = bar.items;
   // Where the logo points; the old /feedback page is gone (spec 003 US5).
-  const home = visibleNav[0]?.href ?? "/";
+  const home = nav[0]?.href ?? "/";
 
   // Where to send the user when the page they are on isn't one they can use.
   const redirectTo = useMemo(() => {
@@ -77,27 +126,23 @@ export function AppFrame({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  if (status === "loading") {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
-        <Loader2 className="mr-2 size-5 animate-spin" /> Loading…
-      </div>
-    );
-  }
+  if (status === "loading") return <FullScreenSpin tip="Đang tải…" />;
 
   if (status === "unauthenticated") return <LoginScreen />;
 
   if (status === "error") {
     return (
       <CenteredCard>
-        <h1 className="text-lg font-semibold">Could not reach the server</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{error}</p>
-        <div className="mt-5 flex justify-center gap-2">
-          <Button onClick={() => window.location.reload()}>Retry</Button>
-          <Button variant="outline" onClick={logout}>
-            Sign out
+        <Typography.Title level={4}>
+          Không kết nối được máy chủ
+        </Typography.Title>
+        <Typography.Paragraph type="secondary">{error}</Typography.Paragraph>
+        <Flex justify="center" gap="small">
+          <Button type="primary" onClick={() => window.location.reload()}>
+            Thử lại
           </Button>
-        </div>
+          <Button onClick={logout}>Đăng xuất</Button>
+        </Flex>
       </CenteredCard>
     );
   }
@@ -105,13 +150,15 @@ export function AppFrame({ children }: { children: ReactNode }) {
   if (status === "no-workspace") {
     return (
       <CenteredCard>
-        <h1 className="text-lg font-semibold">No workspace yet</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          You are signed in but not assigned to any workspace yet. Contact an
-          administrator to be granted access.
-        </p>
-        <Button className="mt-5" variant="outline" onClick={logout}>
-          <LogOut /> Sign out
+        <Typography.Title level={4}>
+          Bạn chưa thuộc workspace nào
+        </Typography.Title>
+        <Typography.Paragraph type="secondary">
+          Bạn đã đăng nhập nhưng chưa được thêm vào workspace nào. Hãy nhờ quản
+          trị viên của công ty cấp quyền.
+        </Typography.Paragraph>
+        <Button icon={<LogoutOutlined aria-hidden />} onClick={logout}>
+          Đăng xuất
         </Button>
       </CenteredCard>
     );
@@ -119,20 +166,17 @@ export function AppFrame({ children }: { children: ReactNode }) {
 
   // status === "ready". While a redirect is pending, hold a loader instead of
   // mounting a page the user can't use — that is what stops its data calls from
-  // firing a 403 (and a toast) before the redirect lands.
-  if (redirectTo) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
-        <Loader2 className="mr-2 size-5 animate-spin" /> Đang chuyển…
-      </div>
-    );
-  }
-  const navItems: AppShellItem[] = visibleNav.map((item) => {
+  // firing a 403 (and a notice) before the redirect lands.
+  if (redirectTo) return <FullScreenSpin tip="Đang chuyển…" />;
+
+  const navItems: AppShellItem[] = nav.map((item) => {
     const Icon = item.icon;
     const count = item.badgeKey ? badges[item.badgeKey] : undefined;
     return {
       key: item.href,
-      icon: <Icon className="size-4" />,
+      // aria-hidden: antd names an icon after its glyph, so the item read
+      // "read Bản tin hôm nay" to a screen reader.
+      icon: <Icon aria-hidden />,
       label: (
         // Out of the tab order: the menu is the keyboard's way in (AppShellItem).
         <Link href={item.href} title={item.hint} tabIndex={-1}>
@@ -142,7 +186,7 @@ export function AppFrame({ children }: { children: ReactNode }) {
       ),
     };
   });
-  const selectedKey = visibleNav.find((item) =>
+  const selectedKey = nav.find((item) =>
     item.exact
       ? pathname === item.href
       : pathname === item.href || pathname.startsWith(item.href + "/"),
@@ -151,20 +195,7 @@ export function AppFrame({ children }: { children: ReactNode }) {
   return (
     <>
       <AppShell
-        brand={
-          <Link
-            href={home}
-            aria-label="Digital Worker"
-            className="flex items-center gap-2.5"
-          >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Bot className="size-4" />
-            </span>
-            <Typography.Text strong className="hidden sm:inline">
-              Digital Worker
-            </Typography.Text>
-          </Link>
-        }
+        brand={<Brand href={home} context={bar.context} />}
         items={navItems}
         onNavigate={(href) => router.push(href)}
         selectedKey={selectedKey}
@@ -175,13 +206,13 @@ export function AppFrame({ children }: { children: ReactNode }) {
             <SessionChip />
           </>
         }
-        navLabel="Main navigation"
-        menuLabel="Open menu"
+        navLabel="Điều hướng chính"
+        menuLabel="Mở menu"
       >
         {children}
       </AppShell>
-      {/* Spec 003 US5: feedback is a utility beside the app, pinned to the
-          bottom-left corner of every page rather than a line in the nav. */}
+      {/* Feedback is a utility beside the app, pinned to the bottom-left
+          corner of every page rather than a line in the nav. */}
       <FeedbackLauncher />
     </>
   );

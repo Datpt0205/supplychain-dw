@@ -33,7 +33,10 @@ def register_exception_handlers(app: FastAPI) -> None:
             details={k: str(v) for k, v in exc.details.items()},
             request_id=getattr(request.state, "request_id", None),
         )
-        return JSONResponse(status_code=status_for(exc.code), content=body.model_dump())
+        status = status_for(exc.code)
+        # Every 401 names the scheme that would satisfy it (RFC 9110 15.5.2).
+        headers = {"WWW-Authenticate": "Bearer"} if status == 401 else None
+        return JSONResponse(status_code=status, content=body.model_dump(), headers=headers)
 
     @app.exception_handler(Exception)
     async def handle_unexpected(request: Request, exc: Exception) -> JSONResponse:

@@ -1,0 +1,145 @@
+schema_version: "1.0"
+policy_id: supply_chain_step_preparation
+policy_version: "1.11.0"
+
+# Override của TENANT ELMICH (không phải platform default): các bước AI chuẩn bị
+# (ADR 0025, ticket ai-automation/05). Ghi bằng
+#   uv run python scripts/seed_supply_chain_demo.py elmich-step-preparation
+# (local) hoặc PUT /api/v1/supply-chain/step-preparation-policy (máy chủ,
+# docs/deploy/host.md mục 7), qua handler kiểm schema, quyền
+# supply_chain.action_duties.write và audit.
+#
+# Chỉ các bước đã có công thức ở lát AI-05; các bước khác thêm khi ticket của
+# chúng (AI-08 đến AI-18) mang bản nháp và phép kiểm riêng.
+steps:
+  # Bước 3-5, test mẫu (việc vật lý; 1.2.0, ticket ai-automation/09): R&D nhập
+  # số đo theo tiêu chí của nhóm sản phẩm (policy supply_chain_sample_criteria);
+  # code so ngưỡng; AI soạn biên bản (bảng tiêu chí của code, ghi chú có dẫn
+  # chứng) và phiếu yêu cầu chỉnh sửa (mỗi tiêu chí trượt một mục, yêu cầu AI
+  # viết có dẫn chứng), kiểm từng mục phiếu vòng trước. Ô kết luận (Đạt / Cần
+  # chỉnh sửa / Hủy) và ngày đánh giá để trống, gợi ý bên cạnh; R&D chọn rồi duyệt
+  # trên web: Đạt sang "Chờ BGĐ duyệt" với biên bản, Cần chỉnh sửa gửi phiếu,
+  # Hủy đóng hồ sơ; lý do của hai bước sau là nhận xét của người duyệt.
+  - case_kind: product
+    state: sample_testing
+    action: pass_sample
+    sources: [sample_evaluation, supplier_quotation]
+    drafts:
+      - doc_type: sample_evaluation
+        recipe: sample_evaluation
+      - doc_type: sample_revision_request
+        recipe: revision_request
+    checks: [sources_read, criteria_measured, revision_checked, drafts_complete]
+    physical: true
+    result_fields: [evaluated_on, conclusion]
+    outcome_field: conclusion
+    outcomes:
+      pass: { action: pass_sample, label: "Đạt" }
+      revise: { action: request_revision, label: "Cần chỉnh sửa" }
+      reject: { action: reject_sample, label: "Hủy" }
+  # Bước 7, BM04 (1.4.0, ticket ai-automation/11): AI điền BM04 từ hồ sơ, báo
+  # giá/spec của NCC và BM04 NCC gửi (nếu có, tải lên trong bước này), biên bản
+  # đánh giá mẫu đã duyệt. Mỗi ô dẫn nguồn; hai nguồn ghi khác nhau là mâu thuẫn
+  # nêu cả hai (giá chỉ nêu tên chứng từ), ô trống; ô bắt buộc của biểu mẫu công
+  # ty không có nguồn là phát hiện. Giá, tiền tệ, MOQ, thời gian, Incoterm do
+  # code điền từ chứng từ, không qua mô hình. Duyệt: BM04 thành chứng từ và một
+  # phiên bản hồ sơ sản phẩm (giá chỉ khi người duyệt có quyền ghi giá).
+  - case_kind: product
+    state: profile_in_progress
+    action: complete_profile
+    sources: [supplier_quotation, product_profile_bm04]
+    drafts:
+      - doc_type: product_profile_bm04
+        recipe: bm04
+    checks: [sources_read, bm04_sources, drafts_complete]
+  # Bước 8, chốt với NCC: AI đọc email xác nhận của NCC đã tải lên; TP Cung ứng
+  # duyệt "sang bước mã hàng với email này" (web hoặc Zalo bằng mã của cổng).
+  # 1.5.0 (ticket ai-automation/12): code so từng điều khoản của thư (giá, tiền
+  # tệ, MOQ, thời gian, quy cách, bao bì) với phiên bản BM04 mới nhất: khớp,
+  # khác, thư chưa nêu, BM04 chưa có; khác biệt nêu trong đề xuất, giá không
+  # bao giờ in số (trang duyệt và Zalo đọc đề xuất không cần quyền giá).
+  - case_kind: product
+    state: supplier_confirmation
+    action: confirm_with_supplier
+    sources: [supplier_confirmation_email]
+    checks: [sources_present, sources_read, terms_match_bm04]
+  # Bước 9, mã hàng và SKU (1.6.0, ticket ai-automation/13): code đề xuất mã
+  # hàng theo quy tắc mã của công ty (supply_chain_item_code_rule; Elmich tạm
+  # EL-00001 tới khi trả lời QE-11) và một SKU mỗi biến thể của BM04 (số lượng
+  # dự kiến chỉ khi dòng BM04 ghi), kiểm trùng với mã trong ứng dụng và danh
+  # mục đã nạp (ON-01), soạn phiếu mã hàng trình ký. Không mô hình nào được hỏi.
+  # Duyệt: mã hàng, SKU và trình ký trong một giao dịch; mã trùng bị từ chối.
+  - case_kind: product
+    state: item_coding
+    action: submit_for_signoff
+    drafts:
+      - doc_type: official_item_code
+        recipe: item_coding
+    checks: [codes_free, drafts_complete]
+# Thư gửi NCC (ADR 0029, ticket ai-automation/07): AI soạn, người sao chép, gửi
+# từ hộp thư của mình rồi bấm "Đã gửi". Xin mẫu khi hồ sơ vào bước 2, nhắc NCC
+# khi follow-up phía NCC mở (im lặng, quá hạn mẫu), xác nhận sản phẩm khi hồ sơ
+# vào bước 8. Không giá, không số tài khoản trong thư.
+# 1.2.0: phiếu yêu cầu chỉnh sửa đã duyệt cũng có thư gửi NCC (ai-automation/09).
+# 1.10.0 (ticket ai-automation/17): thư hỏi tiến độ sản xuất hằng tuần cho Hồ sơ
+# PO đang sản xuất, nhắc lại các mốc và ETD đúng như lịch NCC gửi.
+# 1.11.0 (ticket ai-automation/18): thư khiếu nại khi số Kho đếm khác số NCC
+# giao, nêu từng SKU chênh lệch đúng như số đã ghi; không giá.
+supplier_messages:
+  [
+    sample_request,
+    supplier_reminder,
+    supplier_confirmation,
+    sample_revision_request,
+    production_progress,
+    discrepancy_claim,
+  ]
+# 1.3.0 (ticket ai-automation/10): bước 6, AI soạn tờ trình BGĐ (tóm tắt, rủi
+# ro, đề xuất có dẫn chứng; mã, tên, kết quả đánh giá, giá do code điền) trước
+# khi trình BGĐ duyệt; người không có quyền xem giá thấy giá bị ẩn.
+bod_submission: true
+# 1.7.0 (ticket ai-automation/14): bước 10, mỗi Hồ sơ PO chờ tạo PO có một PO
+# nháp do code soạn từ BM04 mới nhất, điều khoản NCC đã chốt ở bước 8, SKU và số
+# lượng; thành tiền, tổng, tiền cọc do code tính; ô thiếu là khoảng trống; giá
+# chỉ người có quyền xem giá thấy. Cung ứng nhập số PO và duyệt trên trang Hồ sơ
+# PO: PO thành chứng từ, điều khoản và đơn giá ghi vào hồ sơ, báo Kế toán.
+purchase_order: true
+# 1.8.0 (ticket ai-automation/15): bước 11 và 16 trên Hồ sơ PO. Khi PO đã tạo, AI
+# soạn đề nghị đặt cọc (tiền cọc = tổng PO × % cọc, do code tính; tài khoản thụ
+# hưởng lấy từ danh mục NCC), đọc PI của NCC và so tổng, tiền cọc, tiền tệ, dòng
+# hàng và tài khoản thụ hưởng; Cung ứng duyệt "đề nghị đặt cọc" trên trang Hồ sơ
+# PO. Kế toán chi ở ngân hàng, tải UNC lên; AI đọc UNC, code so số tiền, tiền tệ,
+# tài khoản; Kế toán nhập số đã chi (ô để trống, gợi ý bên cạnh) rồi duyệt "xác
+# nhận đã cọc": ghi khoản cọc. Bước 16 tương tự: đề nghị thanh toán (tổng PO trừ
+# tiền đã cọc), đối chiếu hóa đơn thương mại với PO từng dòng, xác nhận đã thanh
+# toán. Tài khoản khác danh mục là phát hiện đỏ, không tự chặn: người quyết.
+# 1.10.0 (ticket ai-automation/17): bước 13-15. Sản xuất: AI đọc lịch sản xuất,
+# code so ETD với ngày giao dự kiến; Cung ứng chuyển QC. QC: AI đọc báo cáo QC,
+# code gợi ý đạt/không đạt THEO SỐ (số lỗi so với số chấp nhận Ac), ô kết luận để
+# trống cho QC; số lỗi vượt thì soạn yêu cầu làm lại; QC đạt ghi số container.
+# Hàng về cảng: đề xuất khi giấy báo hàng đến được đọc; code so packing list với
+# PO theo SKU, số container giữa các chứng từ, hồ sơ hải quan còn thiếu gì;
+# Logistics nhập ngày hàng đến rồi duyệt.
+# 1.11.0 (ticket ai-automation/18): bước 17. AI soạn phiếu nhập kho từ dòng PO và
+# packing list; Kho nhập số đếm từng dòng (ô để trống, số NCC giao bên cạnh) rồi
+# duyệt: số đếm được ghi, phiếu thành chứng từ, hồ sơ hoàn tất. Số đếm khác số
+# giao: code soạn biên bản chênh lệch và thư khiếu nại NCC, người gửi.
+po_steps:
+  [
+    deposit_request,
+    deposit_payment,
+    final_payment_request,
+    final_payment,
+    production,
+    qc,
+    arrival,
+    warehouse,
+  ]
+# 1.9.0 (ticket ai-automation/16; ADR 0028): bước 12. Khi màu được duyệt, AI
+# chuẩn bị gói cho MKT (khung nội dung bao bì và sách HDSD từ BM04, ô bắt buộc
+# của nhãn mà BM04 không có để trống cho MKT); bản in thiết kế tải lên được AI
+# đọc, code so với BM04, SKU của PO và nội dung bắt buộc của nhãn (skill
+# label_rules); có điểm sai thì soạn yêu cầu sửa thiết kế, mỗi điểm một mục; mẫu
+# màu chưa duyệt có khung yêu cầu sửa màu. Duyệt màu, duyệt thiết kế, gửi lại sửa
+# vẫn là bước của Cung ứng; nội dung bao bì là của MKT.
+packaging: true

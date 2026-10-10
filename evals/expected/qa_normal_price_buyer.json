@@ -1,0 +1,7 @@
+{
+  "outcome": "answered",
+  "model_calls": 1,
+  "prompt_must_contain": [
+    "unit_price: 2.50"
+  ]
+}

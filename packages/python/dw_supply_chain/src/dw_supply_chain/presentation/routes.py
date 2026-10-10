@@ -13,7 +13,7 @@ import re
 import unicodedata
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal, Protocol, TypeVar
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -22,15 +22,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from dw_kernel.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Page
 from dw_platform.application.access_context import AccessContext
 from dw_supply_chain.action_duties import SupplyChainActionDuties
+from dw_supply_chain.application.case_query import AnswerCaseQuery, CaseQueryAnswer
 from dw_supply_chain.application.handlers import (
     AdvancePOCase,
     AdvancePOCaseResult,
     AnalyzeDelayImpact,
-    AnswerCaseQuery,
     AttentionItem,
     CaseActionApplied,
-    CaseQueryAnswer,
     CloseFollowUp,
+    CreatePO,
     CreatePOCase,
     FollowUpView,
     GetActionDuties,
@@ -47,8 +47,10 @@ from dw_supply_chain.application.handlers import (
     ListCaseTransitions,
     ListDelayImpactAnalyses,
     ListFollowUps,
+    ListPOCaseApprovals,
     ListPOCases,
     ListSupplierUpdates,
+    ReassignPOCasePic,
     SetActionDutiesOverride,
     SetApprovalMatrixOverride,
     SetBriefPolicyOverride,
@@ -61,13 +63,33 @@ from dw_supply_chain.application.ports import POCaseListFilter
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.brief_policy import SupplyChainBriefPolicy
 from dw_supply_chain.domain.brief_summary import BriefSummary, BriefSummaryStatus
+from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.case_query import CaseQueryKind, CaseQueryOutcome, GroundedField
-from dw_supply_chain.domain.daily_brief import BriefEntry, BriefGroup, BriefSignal, DailyBrief
+from dw_supply_chain.domain.daily_brief import (
+    ENTRIES_SHOWN,
+    BriefEntry,
+    BriefGroup,
+    BriefSignal,
+    DailyBrief,
+    ProductBriefEntry,
+)
 from dw_supply_chain.domain.delay_impact import DelayImpactAnalysis
 from dw_supply_chain.domain.follow_up import FollowUpKind
 from dw_supply_chain.domain.missing_update import MissingUpdateAssessment, MissingUpdateStatus
-from dw_supply_chain.domain.po_case import CaseAction, CaseState, CaseTransition, POCase, POCaseId
+from dw_supply_chain.domain.po_case import (
+    CaseAction,
+    CaseState,
+    CaseTransition,
+    OrderKind,
+    POCase,
+    POCaseId,
+)
 from dw_supply_chain.domain.portfolio import PortfolioSummary
+from dw_supply_chain.domain.product_development_case import (
+    ProductDevelopmentCase,
+    ProductDevState,
+    SampleResult,
+)
 from dw_supply_chain.domain.sla_evaluation import SLAEvaluation, SLAEvaluationStatus
 from dw_supply_chain.domain.supplier_update import (
     SupplierEventType,
@@ -76,6 +98,7 @@ from dw_supply_chain.domain.supplier_update import (
 )
 from dw_supply_chain.follow_up_policy import SupplyChainFollowUpPolicy
 from dw_supply_chain.sla_policy import SupplyChainSLAPolicy
+from dw_supply_chain.workflows.advance_case_graph import APPROVAL_TYPE_PREFIX
 
 # Declared here, satisfied by the composition root: this context needs a way
 # to resolve the caller's verified identity from a request, but must not
@@ -120,20 +143,71 @@ _SUPPLIER_NAME_MAX_LENGTH = 200
 
 
 class CreatePOCaseRequest(BaseModel):
+    """A case opened without stage 1 (a reorder, ADR 0017). No PIC field: the
+    caller is the PIC, and an unknown field is a 422. `category`, optional, is
+    a key of the tenant's Category list (`GET /product-categories`); a key not
+    in it is refused."""
+
     model_config = ConfigDict(extra="forbid")
 
     po_reference: str = Field(min_length=1, max_length=200)
     supplier_name: str = Field(min_length=1, max_length=_SUPPLIER_NAME_MAX_LENGTH, pattern=_NO_NUL)
+    order_kind: OrderKind
+    category: str | None = Field(default=None, min_length=1, max_length=100, pattern=_NO_NUL)
+
+
+class ReassignPicRequest(BaseModel):
+    """Hands a case to another PIC (ticket 06): who, and why. The new PIC
+    must be a member of the case's workspace; the reason is required."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pic_user_id: uuid.UUID
+    reason: str = Field(min_length=1, max_length=2000, pattern=_NO_NUL)
 
 
 class POCaseView(BaseModel):
     id: uuid.UUID
-    po_reference: str
+    # Null while the case awaits its PO (`order_requested`, ADR 0017).
+    po_reference: str | None
     supplier_name: str
     state: CaseState
     interrupted_state: CaseState | None
     created_at: datetime | None
     version: int
+    order_kind: OrderKind
+    # The product case ĐẶT HÀNG opened this case from, and the PIC and
+    # Category stamped from it; null on a case opened otherwise (no PIC on
+    # one opened before ticket 05).
+    product_dev_case_id: uuid.UUID | None
+    pic_user_id: uuid.UUID | None
+    category: str | None
+
+
+class ProductCaseRefView(BaseModel):
+    """A product-development case where it is named in passing (a brief
+    group, a command-bar answer): what identifies it and where it stands.
+    The case page's own view (`product_case_routes.ProductCaseView`) carries
+    the rest."""
+
+    id: uuid.UUID
+    proposal_code: str
+    product_name: str
+    # The Category key it was stamped with; the label is the tenant's list's.
+    category: str
+    pic_user_id: uuid.UUID
+    state: ProductDevState
+
+
+def _product_ref(case: ProductDevelopmentCase) -> ProductCaseRefView:
+    return ProductCaseRefView(
+        id=case.id.value,
+        proposal_code=case.proposal_code,
+        product_name=case.product_name,
+        category=case.category,
+        pic_user_id=case.pic_user_id,
+        state=case.state,
+    )
 
 
 def _view(case: POCase) -> POCaseView:
@@ -145,7 +219,67 @@ def _view(case: POCase) -> POCaseView:
         interrupted_state=case.interrupted_state,
         created_at=case.created_at,
         version=case.version,
+        order_kind=case.order_kind,
+        product_dev_case_id=case.product_dev_case_id,
+        pic_user_id=case.pic_user_id,
+        category=case.category,
     )
+
+
+class POCaseLineView(BaseModel):
+    """A planned line: a SKU of the product and how many (null until step
+    10 sets it, when the SKU's planned quantity was open)."""
+
+    sku_id: uuid.UUID
+    sku_code: str | None
+    variant_label: str | None
+    quantity: int | None
+
+
+class POCaseDetailView(POCaseView):
+    lines: list[POCaseLineView]
+    # Steps 13-15 (ticket ai-automation/17): null until the step that learns it.
+    etd: date | None
+    eta: date | None
+    container_number: str | None
+
+
+def _detail_view(case: POCase) -> POCaseDetailView:
+    return POCaseDetailView.model_validate(
+        {
+            **_view(case).model_dump(),
+            "lines": [
+                POCaseLineView(
+                    sku_id=line.sku_id,
+                    sku_code=line.sku_code,
+                    variant_label=line.variant_label,
+                    quantity=line.quantity,
+                )
+                for line in case.lines
+            ],
+            "etd": case.shipping.etd,
+            "eta": case.shipping.eta,
+            "container_number": case.shipping.container_number,
+        }
+    )
+
+
+class POLineQuantity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sku_id: uuid.UUID
+    quantity: int = Field(gt=0, le=10_000_000)
+
+
+class CreatePORequest(BaseModel):
+    """Step 10: the PO's reference and kind, and the quantity of any line
+    still open or to correct."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    po_reference: str = Field(min_length=1, max_length=200, pattern=_NO_NUL)
+    order_kind: OrderKind
+    lines: list[POLineQuantity] = Field(default_factory=list, max_length=500)
 
 
 class SubmitSupplierUpdateRequest(BaseModel):
@@ -251,6 +385,13 @@ class AdvancePOCaseRequest(BaseModel):
     action: CaseAction
     reason: str | None = Field(default=None, max_length=2000)
 
+    @field_validator("action")
+    @classmethod
+    def _a_plain_step(cls, action: CaseAction) -> CaseAction:
+        if action is CaseAction.CREATE_PO:
+            raise ValueError("create_po is taken at /po-cases/{case_id}/create-po")
+        return action
+
 
 class CaseActionResultView(BaseModel):
     status: Literal["applied", "pending_approval"]
@@ -269,7 +410,8 @@ def _case_action_result_view(result: AdvancePOCaseResult) -> CaseActionResultVie
 
 
 class CaseTransitionView(BaseModel):
-    from_state: CaseState
+    # null only for an imported case's first row (ticket onboarding/02).
+    from_state: CaseState | None
     to_state: CaseState
     reason: str | None
     occurred_at: datetime
@@ -284,6 +426,22 @@ def _case_transition_view(transition: CaseTransition) -> CaseTransitionView:
     )
 
 
+class CaseApprovalView(BaseModel):
+    id: uuid.UUID
+    # The step waiting on the decision (`approval_type` without its prefix).
+    action: str
+    requested_at: datetime | None
+
+
+class CaseApprovalsView(BaseModel):
+    # False when the caller may not read the approval inbox: not looked at,
+    # which is not the same as none pending.
+    visible: bool
+    # Every pending approval naming the case; `items` is the newest few.
+    total: int
+    items: list[CaseApprovalView]
+
+
 class SLAEvaluationView(BaseModel):
     status: SLAEvaluationStatus
     milestone: str | None
@@ -292,7 +450,7 @@ class SLAEvaluationView(BaseModel):
     threshold_days: int | None
 
 
-def _sla_evaluation_view(evaluation: SLAEvaluation) -> SLAEvaluationView:
+def sla_evaluation_view(evaluation: SLAEvaluation) -> SLAEvaluationView:
     return SLAEvaluationView(
         status=evaluation.status,
         milestone=evaluation.milestone,
@@ -313,7 +471,7 @@ class AttentionItemView(BaseModel):
 def _attention_item_view(item: AttentionItem) -> AttentionItemView:
     return AttentionItemView(
         case=_view(item.case),
-        sla=_sla_evaluation_view(item.sla) if item.sla is not None else None,
+        sla=sla_evaluation_view(item.sla) if item.sla is not None else None,
         missing_update=_missing_update_view(item.missing_update)
         if item.missing_update is not None
         else None,
@@ -385,18 +543,34 @@ class BriefEntryView(BaseModel):
     approval_action: str | None
 
 
+class ProductBriefEntryView(BaseModel):
+    case: ProductCaseRefView
+    # Days in its state (with `limit_days`, the stage-1 SLA it overran).
+    days: int | None
+    limit_days: int | None
+    # A sample group's round, closed today: its number and result. What R&D
+    # wrote on it stays on the case page.
+    round_no: int | None
+    sample_result: SampleResult | None
+
+
 class BriefGroupView(BaseModel):
     # Stable within one brief: `signal`, or `signal:qualifier`.
     key: str
     signal: BriefSignal
-    # The SLA milestone for `sla_breached`, the state for `waiting_on_us`.
+    # The SLA milestone for `sla_breached` and `product_sla_breached`, the
+    # state for `waiting_on_us`, the result for `sample_evaluated_today`.
     qualifier: str | None
     # The one state every case in the group is in, when a state defines the
     # group — what the PO case list can be filtered to for the whole group.
     state: CaseState | None
+    # The same for a stage-1 group, for the product case list.
+    product_state: ProductDevState | None
     total: int
-    # Longest-standing first, at most ten; `total` counts every case.
+    # Longest-standing first, at most ten; `total` counts every case. A
+    # stage-1 group's cases are `product_entries`, and `entries` is empty.
     entries: list[BriefEntryView]
+    product_entries: list[ProductBriefEntryView]
 
 
 class DailyBriefView(BaseModel):
@@ -406,8 +580,28 @@ class DailyBriefView(BaseModel):
     # False when the caller may not read the approval inbox: pending
     # approvals were not looked at, which is not the same as "none pending".
     approvals_visible: bool
+    # The same for product-development cases (stage 1); the two counts are
+    # 0 when they were not looked at.
+    product_cases_visible: bool
+    active_product_case_count: int
+    flagged_product_case_count: int
     # In the tenant's own `signal_order`; a client renders them as given.
     groups: list[BriefGroupView]
+    # How many cases a group lists at most. A group's `total` counts every
+    # one; for pending approvals and recent changes only the newest this
+    # many were read at all.
+    entries_shown: int
+
+
+def _product_brief_entry_view(entry: ProductBriefEntry) -> ProductBriefEntryView:
+    sample_round = entry.sample_round
+    return ProductBriefEntryView(
+        case=_product_ref(entry.case),
+        days=entry.days,
+        limit_days=entry.limit_days,
+        round_no=sample_round.round_no if sample_round is not None else None,
+        sample_result=sample_round.result if sample_round is not None else None,
+    )
 
 
 def _brief_entry_view(entry: BriefEntry) -> BriefEntryView:
@@ -426,8 +620,10 @@ def _brief_group_view(group: BriefGroup) -> BriefGroupView:
         signal=group.signal,
         qualifier=group.qualifier,
         state=group.state,
+        product_state=group.product_state,
         total=group.total,
         entries=[_brief_entry_view(entry) for entry in group.shown_entries],
+        product_entries=[_product_brief_entry_view(entry) for entry in group.shown_product_entries],
     )
 
 
@@ -437,7 +633,11 @@ def _daily_brief_view(brief: DailyBrief) -> DailyBriefView:
         active_case_count=brief.active_case_count,
         flagged_case_count=brief.flagged_case_count,
         approvals_visible=brief.approvals_visible,
+        product_cases_visible=brief.product_cases_visible,
+        active_product_case_count=brief.active_product_case_count,
+        flagged_product_case_count=brief.flagged_product_case_count,
         groups=[_brief_group_view(group) for group in brief.groups],
+        entries_shown=ENTRIES_SHOWN,
     )
 
 
@@ -515,14 +715,19 @@ class CitationView(BaseModel):
 
 class UnderstoodView(BaseModel):
     """What the answer applied, each value decided by code: a supplier is
-    always a stored name, never the model's mention; a PO reference is the
-    stored one once the case was found (the question's own spelling when it
-    was not)."""
+    always a stored name, never the model's mention; a PO reference or a
+    proposal code is the stored one once the case was found (the question's
+    own spelling when it was not); a Category is a key of the tenant's list
+    and a PIC a person of the workspace (or the asker, for "mine")."""
 
     state: CaseState | None
     supplier_name: str | None
     active_only: bool
     po_reference: str | None
+    product_state: ProductDevState | None
+    category: str | None
+    pic_user_id: uuid.UUID | None
+    proposal_code: str | None
 
 
 class CaseTableDataView(BaseModel):
@@ -536,6 +741,25 @@ class CaseTableDataView(BaseModel):
 class CaseLinkDataView(BaseModel):
     type: Literal["case_link"]
     case: POCaseView
+
+
+class ProductCaseTableDataView(BaseModel):
+    type: Literal["product_case_table"]
+    rows: list[ProductCaseRefView]
+    # More matched than the answer carries — the client offers the product
+    # case list for the same `understood` filter.
+    has_more: bool
+
+
+class ProductCaseLinkDataView(BaseModel):
+    type: Literal["product_case_link"]
+    case: ProductCaseRefView
+
+
+_DataView = Annotated[
+    CaseTableDataView | CaseLinkDataView | ProductCaseTableDataView | ProductCaseLinkDataView,
+    Field(discriminator="type"),
+]
 
 
 class AIWorkResponseView(BaseModel):
@@ -558,21 +782,38 @@ class AIWorkResponseView(BaseModel):
     # Fields the question did state that this kind of answer cannot apply
     # (a list cannot narrow to one PO) — the other reason a reading is refused.
     unusable_fields: list[GroundedField]
-    # Supplier names or PO references the question matched more than one
-    # of — shown to the person, never picked from.
+    # Supplier names, PO references, Category labels, people's names or
+    # proposal codes the question matched more than one of — shown to the
+    # person, never picked from.
     candidates: list[str]
-    data_view: Annotated[CaseTableDataView | CaseLinkDataView, Field(discriminator="type")] | None
+    data_view: _DataView | None
 
 
 def _ai_work_response_view(answer: CaseQueryAnswer) -> AIWorkResponseView:
     plan = answer.plan
-    data_view: CaseTableDataView | CaseLinkDataView | None = None
+    data_view: (
+        CaseTableDataView
+        | CaseLinkDataView
+        | ProductCaseTableDataView
+        | ProductCaseLinkDataView
+        | None
+    ) = None
     if answer.opened is not None:
         data_view = CaseLinkDataView(type="case_link", case=_view(answer.opened))
+    elif answer.opened_product is not None:
+        data_view = ProductCaseLinkDataView(
+            type="product_case_link", case=_product_ref(answer.opened_product)
+        )
     elif plan.outcome in (CaseQueryOutcome.LIST, CaseQueryOutcome.PO_AMBIGUOUS):
         data_view = CaseTableDataView(
             type="case_table",
             rows=[_view(case) for case in answer.cases],
+            has_more=answer.has_more,
+        )
+    elif plan.outcome in (CaseQueryOutcome.PRODUCT_LIST, CaseQueryOutcome.PRODUCT_AMBIGUOUS):
+        data_view = ProductCaseTableDataView(
+            type="product_case_table",
+            rows=[_product_ref(case) for case in answer.product_cases],
             has_more=answer.has_more,
         )
     return AIWorkResponseView(
@@ -583,6 +824,10 @@ def _ai_work_response_view(answer: CaseQueryAnswer) -> AIWorkResponseView:
             supplier_name=plan.supplier_name,
             active_only=plan.active_only,
             po_reference=plan.po_reference,
+            product_state=plan.product_state,
+            category=plan.category,
+            pic_user_id=plan.pic_user_id,
+            proposal_code=plan.proposal_code,
         ),
         citations=[CitationView(field=field, quote=quote) for field, quote in answer.citations],
         ignored_fields=list(answer.ignored),
@@ -593,13 +838,17 @@ def _ai_work_response_view(answer: CaseQueryAnswer) -> AIWorkResponseView:
 
 
 class FollowUpItemView(BaseModel):
-    """An open follow-up. `mine`: the caller holds a scope it was handed to,
-    so the caller is expected to act, and may close it."""
+    """An open follow-up. `mine`: it was handed to the caller (a stamped scope
+    they hold, or they are its stamped PIC), so the caller is expected to act,
+    and may close it. `case_kind` says which page `case_id` opens; `reference`
+    is the PO reference (null while the case awaits its PO) or the product
+    case's proposal code."""
 
     id: uuid.UUID
-    po_case_id: uuid.UUID
-    po_reference: str
-    supplier_name: str
+    case_kind: CaseKind
+    case_id: uuid.UUID
+    reference: str | None
+    supplier_name: str | None
     kind: FollowUpKind
     milestone: str | None
     days: int
@@ -617,8 +866,9 @@ def _follow_up_view(item: FollowUpView) -> FollowUpItemView:
     record = item.record
     return FollowUpItemView(
         id=record.id,
-        po_case_id=record.po_case_id,
-        po_reference=record.po_reference,
+        case_kind=record.case_kind,
+        case_id=record.case_id,
+        reference=record.reference,
         supplier_name=record.supplier_name,
         kind=record.kind,
         milestone=record.milestone,
@@ -660,6 +910,9 @@ def build_router(
     get_follow_up_policy: GetFollowUpPolicy,
     set_follow_up_policy_override: SetFollowUpPolicyOverride,
     *,
+    create_po: CreatePO,
+    reassign_pic: ReassignPOCasePic,
+    list_case_approvals: ListPOCaseApprovals,
     resolve_access_context: AccessContextResolver,
     resolve_idempotency: IdempotencyResolver,
 ) -> APIRouter:
@@ -682,7 +935,24 @@ def build_router(
         idempotency: require_idempotency,
     ) -> POCaseView:
         case = await create.handle(
-            context, po_reference=body.po_reference, supplier_name=body.supplier_name
+            context,
+            po_reference=body.po_reference,
+            supplier_name=body.supplier_name,
+            order_kind=body.order_kind,
+            category=body.category,
+        )
+        return await idempotency.record(_view(case))
+
+    @router.post("/po-cases/{case_id}/pic", response_model=POCaseView)
+    async def reassign_po_case_pic(
+        case_id: uuid.UUID,
+        body: ReassignPicRequest,
+        context: require_access_context,
+        idempotency: require_idempotency,
+    ) -> POCaseView:
+        """Hands the case to another PIC (TP Cung ứng's duty, ticket 06)."""
+        case = await reassign_pic.handle(
+            context, po_case_id=POCaseId(case_id), new_pic=body.pic_user_id, reason=body.reason
         )
         return await idempotency.record(_view(case))
 
@@ -805,10 +1075,28 @@ def build_router(
         answer = await answer_case_query.handle(context, body.question)
         return _ai_work_response_view(answer)
 
-    @router.get("/po-cases/{case_id}", response_model=POCaseView)
-    async def get_po_case(case_id: uuid.UUID, context: require_access_context) -> POCaseView:
+    @router.get("/po-cases/{case_id}", response_model=POCaseDetailView)
+    async def get_po_case(case_id: uuid.UUID, context: require_access_context) -> POCaseDetailView:
         case = await get.handle(context, POCaseId(case_id))
-        return _view(case)
+        return _detail_view(case)
+
+    @router.post("/po-cases/{case_id}/create-po", response_model=POCaseDetailView)
+    async def create_po_route(
+        case_id: uuid.UUID,
+        body: CreatePORequest,
+        context: require_access_context,
+        idempotency: require_idempotency,
+    ) -> POCaseDetailView:
+        """Step 10 on a case awaiting its PO. A reference already taken in
+        the tenant is a 409 naming it; a line still without a quantity, 409."""
+        case = await create_po.handle(
+            context,
+            po_case_id=POCaseId(case_id),
+            po_reference=body.po_reference,
+            order_kind=body.order_kind,
+            quantities={line.sku_id: line.quantity for line in body.lines},
+        )
+        return await idempotency.record(_detail_view(case))
 
     @router.post(
         "/po-cases/{case_id}/supplier-updates",
@@ -895,20 +1183,46 @@ def build_router(
 
     @router.get(
         "/po-cases/{case_id}/transitions",
-        response_model=list[CaseTransitionView],
+        response_model=Page[CaseTransitionView],
     )
     async def get_case_transitions(
+        case_id: uuid.UUID,
+        context: require_access_context,
+        limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+        cursor: str | None = Query(default=None, description="Opaque cursor from a previous page."),
+    ) -> Page[CaseTransitionView]:
+        """The case's timeline, newest first, a page at a time."""
+        page = await list_case_transitions.handle(
+            context, POCaseId(case_id), limit=limit, cursor=cursor
+        )
+        return page.map_items(_case_transition_view)
+
+    @router.get("/po-cases/{case_id}/approvals", response_model=CaseApprovalsView)
+    async def get_case_approvals(
         case_id: uuid.UUID, context: require_access_context
-    ) -> list[CaseTransitionView]:
-        transitions = await list_case_transitions.handle(context, POCaseId(case_id))
-        return [_case_transition_view(transition) for transition in transitions]
+    ) -> CaseApprovalsView:
+        """The pending approvals that name this case, filtered here rather
+        than by the client: the newest few, and how many there are."""
+        found = await list_case_approvals.handle(context, POCaseId(case_id))
+        return CaseApprovalsView(
+            visible=found.visible,
+            total=found.total,
+            items=[
+                CaseApprovalView(
+                    id=approval.id,
+                    action=approval.approval_type.removeprefix(APPROVAL_TYPE_PREFIX),
+                    requested_at=approval.created_at,
+                )
+                for approval in found.newest
+            ],
+        )
 
     @router.get("/po-cases/{case_id}/sla-evaluation", response_model=SLAEvaluationView)
     async def get_sla_evaluation_route(
         case_id: uuid.UUID, context: require_access_context
     ) -> SLAEvaluationView:
         evaluation = await get_sla_evaluation.handle(context, POCaseId(case_id))
-        return _sla_evaluation_view(evaluation)
+        return sla_evaluation_view(evaluation)
 
     @router.get("/sla-policy", response_model=SupplyChainSLAPolicy)
     async def get_sla_policy_route(context: require_access_context) -> SupplyChainSLAPolicy:

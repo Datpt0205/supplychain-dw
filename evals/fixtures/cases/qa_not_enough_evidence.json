@@ -1,0 +1,19 @@
+{
+  "profile": {
+    "attributes": {
+      "material": "Inox 304",
+      "colours": "Bạc"
+    },
+    "moq": 500,
+    "unit_price": "2.50"
+  },
+  "scopes": [
+    "supply_chain.product_case.read",
+    "supply_chain.po_case.read",
+    "supply_chain.document.read"
+  ],
+  "question": "NCC có chứng nhận FDA không?",
+  "model_writing": {
+    "sentences": []
+  }
+}

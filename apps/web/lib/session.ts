@@ -151,8 +151,12 @@ export function clientOptions(baseUrl: string): ApiClientOptions {
       // 401 = the session is no longer authenticated (token died mid-use).
       // Clear local state and bounce to the login screen instead of leaving the
       // user staring at a failed action. (403 = permission, handled per-call.)
+      // Only for a request that carried a token: one sent without any (the
+      // login screen's own calls) also answers 401 since the API split 401
+      // from 403, and bouncing it would reload the login page forever.
       if (
         res.status === 401 &&
+        headers.has("Authorization") &&
         typeof window !== "undefined" &&
         !redirectingOn401
       ) {

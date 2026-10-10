@@ -8,7 +8,7 @@ change both together.
 from __future__ import annotations
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 
 from dw_kernel.naming import NAMING_CONVENTION
 
@@ -98,9 +98,9 @@ external_identities = sa.Table(
 # to a user: whoever controls that chat proved nothing to an identity provider.
 CHANNEL_LINK_PROVIDERS: tuple[str, ...] = ("zalo",)
 
-# One-time nonces behind a channel link token (migration cf66605631d7). Identity
+# One-time nonces behind a channel link token (migration 02930a73bbdf). Identity
 # plane like `external_identities`: keyed by user, no tenant, no RLS — a link
-# belongs to the person, not to one of their workspaces (ADR 0012).
+# belongs to the person, not to one of their workspaces (ADR 0005).
 channel_link_nonces = sa.Table(
     "channel_link_nonces",
     metadata,
@@ -117,6 +117,40 @@ channel_link_nonces = sa.Table(
     sa.Column("used_at", sa.TIMESTAMP(timezone=True), nullable=True),
     sa.Column(
         "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+# One row per inbound chat message id, claimed before the message is acted on
+# (migration 9f2becb1bf80). Identity plane like the nonces above: the dedupe runs
+# before a tenant is known, so there is no tenant to narrow by.
+channel_inbound_messages = sa.Table(
+    "channel_inbound_messages",
+    metadata,
+    sa.Column("channel", sa.Text, primary_key=True),
+    sa.Column("external_message_id", sa.Text, primary_key=True),
+    sa.Column(
+        "user_id",
+        UUID(as_uuid=True),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    ),
+    sa.Column(
+        "received_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+    sa.Column("outcome", sa.Text, nullable=False, server_default="processing"),
+)
+
+# A webhook update the API accepted and the worker has not taken yet (channels
+# Z3). Identity plane like the table above: no tenant, no RLS.
+channel_inbound_updates = sa.Table(
+    "channel_inbound_updates",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("channel", sa.Text, nullable=False),
+    sa.Column("payload", JSONB, nullable=False),
+    sa.Column(
+        "received_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
 )
 
@@ -152,6 +186,23 @@ memberships = sa.Table(
     sa.UniqueConstraint("tenant_id", "workspace_id", "user_id", name="uq_memberships_scope_user"),
 )
 
+# The workspace a person chose for their chat commands (migration 9f2becb1bf80).
+# RLS by `app.principal_id`, not by tenant: the row is the person's, and the bot
+# reads it before a tenant is known. The FK to the membership keeps it naming a
+# workspace the person belongs to, and removes it with the membership.
+channel_preferences = sa.Table(
+    "channel_preferences",
+    metadata,
+    sa.Column("user_id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.ForeignKeyConstraint(
+        ["tenant_id", "workspace_id", "user_id"],
+        ["memberships.tenant_id", "memberships.workspace_id", "memberships.user_id"],
+        ondelete="CASCADE",
+    ),
+)
+
 entitlements = sa.Table(
     "entitlements",
     metadata,
@@ -180,6 +231,9 @@ approval_requests = sa.Table(
     ),
     sa.Column("decided_at", sa.TIMESTAMP(timezone=True), nullable=True),
     sa.Column("version", sa.Integer, nullable=False, server_default="1"),
+    # Its shape is checked by `ck_approval_requests_required_scope` (36dabf47619c,
+    # or its twin 5d3965984679 here: whichever ran first).
+    sa.Column("required_scope", sa.Text, nullable=True),
 )
 
 approval_decisions = sa.Table(
@@ -195,6 +249,47 @@ approval_decisions = sa.Table(
     sa.Column("outcome", sa.Text, nullable=False),
     sa.Column("comment", sa.Text, nullable=False, server_default=""),
     sa.Column("decided_at", sa.TIMESTAMP(timezone=True), nullable=False),
+    # `web` or `zalo` (CHECK, migration e399be8c0a2d): where the decision came from.
+    sa.Column("channel", sa.Text, nullable=False, server_default="web"),
+)
+
+# A person opened an approval on the portal (channels Z5, ADR 0007):
+# the approval's version and its subject's version at that moment.
+approval_view_receipts = sa.Table(
+    "approval_view_receipts",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("approval_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("user_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("approval_version", sa.Integer, nullable=False),
+    sa.Column("subject_version", sa.Text, nullable=True),
+    sa.Column(
+        "viewed_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+# The single-use code a view issued; only its HMAC is stored.
+approval_decision_codes = sa.Table(
+    "approval_decision_codes",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("approval_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("user_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("receipt_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("code_hash", sa.LargeBinary, nullable=False),
+    sa.Column("comment", sa.Text, nullable=False, server_default=""),
+    sa.Column("failed_attempts", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("expires_at", sa.TIMESTAMP(timezone=True), nullable=False),
+    sa.Column("used_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("revoked_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("revoked_reason", sa.Text, nullable=True),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
 )
 
 audit_events = sa.Table(
@@ -404,6 +499,10 @@ sod_waivers = sa.Table(
     sa.Column("revoked_at", sa.TIMESTAMP(timezone=True), nullable=True),
     sa.Column("revoked_by", UUID(as_uuid=True), nullable=True),
     sa.Column("revoke_reason", sa.Text, nullable=True),
+    # A second holder of the waiver scope (f381f1694395); until then it lifts nothing.
+    sa.Column("confirmed_by", UUID(as_uuid=True), nullable=True),
+    sa.Column("confirmed_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("confirm_reason", sa.Text, nullable=True),
 )
 
 # One person's in-app inbox (migration 855ae928c3fa). RLS narrows reads and
@@ -423,6 +522,87 @@ notifications = sa.Table(
         "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),
     sa.Column("read_at", sa.TIMESTAMP(timezone=True), nullable=True),
+)
+
+# A notification on its way out through a linked chat (migration 5a25154e0296,
+# ADR 0006). Rows are created only by `platform.deliver_notification`; the
+# application updates the delivery's own state and nothing else.
+channel_deliveries = sa.Table(
+    "channel_deliveries",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), sa.ForeignKey("workspaces.id"), nullable=False),
+    sa.Column("recipient_user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+    sa.Column("channel", sa.Text, nullable=False),
+    sa.Column("source_key", sa.Text, nullable=False),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("link", sa.Text, nullable=True),
+    sa.Column("status", sa.Text, nullable=False, server_default="pending"),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column(
+        "next_attempt_at",
+        sa.TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column("external_message_id", sa.Text, nullable=True),
+    sa.Column("last_error", sa.Text, nullable=True),
+    sa.Column(
+        "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+    sa.Column(
+        "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+# Who may be assigned a support grant (migration af8ee878b4ab, ADR 0024).
+# Identity plane like `platform_operators`: no tenant, written by the provisioner.
+support_staff = sa.Table(
+    "support_staff",
+    metadata,
+    sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), primary_key=True),
+    sa.Column("note", sa.Text, nullable=True),
+    sa.Column("added_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column(
+        "added_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
+# A customer-granted support access (migration af8ee878b4ab). The status and
+# step columns move only forward, by `platform.guard_support_grant()`; `code`
+# is assigned by that trigger.
+support_grants = sa.Table(
+    "support_grants",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("code", sa.Text, nullable=False),
+    sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id"), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), sa.ForeignKey("workspaces.id"), nullable=False),
+    sa.Column("resource_type", sa.Text, nullable=False),
+    sa.Column("resource_id", UUID(as_uuid=True), nullable=True),
+    sa.Column("resource_label", sa.Text, nullable=False),
+    sa.Column("scope_set_key", sa.Text, nullable=False),
+    sa.Column("scope_set_label", sa.Text, nullable=False),
+    sa.Column("scopes", ARRAY(sa.Text), nullable=False),
+    sa.Column("reason", sa.Text, nullable=False),
+    sa.Column("duration_hours", sa.Integer, nullable=False),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("requested_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column(
+        "requested_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+    sa.Column("granted_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column("granted_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("rejected_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column("rejected_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("reject_reason", sa.Text, nullable=True),
+    sa.Column("staff_user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column("assigned_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column("activated_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("expires_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    sa.Column("revoked_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True),
+    sa.Column("revoked_at", sa.TIMESTAMP(timezone=True), nullable=True),
 )
 
 # Tables whose rows belong to exactly one tenant → RLS enabled + forced.

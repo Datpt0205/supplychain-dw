@@ -1,0 +1,70 @@
+schema_version: "1.0"
+policy_id: supply_chain_bm04_schema
+policy_version: "1.0.0"
+
+# What a BM04 profile's `attributes` may hold (ADR 0026, E15; ticket
+# ai-automation/01). PLATFORM DEFAULT, neutral on purpose: the specification a
+# product of any company has. A tenant replaces it whole through
+# PUT /api/v1/supply-chain/bm04-schema (platform.policy_overrides); Elmich's own
+# BM04 fields arrive that way once QE-21 gives its real form.
+#
+# Price, currency, MOQ, lead time and Incoterm are NOT here: they are typed
+# columns of `product_profiles`, and price and currency sit behind
+# supply_chain.commercial.read|write. A field below may not take one of those
+# names (the loader refuses it).
+fields:
+  - key: product_name
+    label: Tên sản phẩm
+    kind: text
+    required: true
+    max_length: 200
+  - key: model_code
+    label: Mã model của NCC
+    kind: text
+    max_length: 100
+  - key: material
+    label: Chất liệu
+    kind: text
+    max_length: 500
+  - key: dimensions
+    label: Kích thước (D x R x C)
+    kind: text
+    max_length: 200
+  - key: net_weight_g
+    label: Trọng lượng tịnh
+    kind: number
+    unit: g
+  - key: capacity_ml
+    label: Dung tích
+    kind: number
+    unit: ml
+  - key: colours
+    label: Màu sắc
+    kind: text
+    max_length: 300
+  - key: variants
+    label: Biến thể (mỗi dòng một biến thể)
+    kind: text
+    max_length: 2000
+  - key: packaging
+    label: Quy cách đóng gói
+    kind: text
+    max_length: 1000
+  - key: units_per_carton
+    label: Số sản phẩm mỗi thùng
+    kind: integer
+  - key: origin_country
+    label: Xuất xứ
+    kind: text
+    max_length: 100
+  - key: food_contact
+    label: Tiếp xúc thực phẩm
+    kind: boolean
+  - key: certifications
+    label: Chứng nhận, tiêu chuẩn
+    kind: text
+    max_length: 1000
+  - key: notes
+    label: Ghi chú
+    kind: text
+    max_length: 2000

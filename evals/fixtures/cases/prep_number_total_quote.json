@@ -1,0 +1,30 @@
+{
+  "doc_type": "supplier_quotation",
+  "document_text": "BÁO GIÁ\nNồi 24cm - SL 100 - Đơn giá 150.000 - Thành tiền 15.000.000\nTổng cộng: 16.000.000\n",
+  "model_reading": {
+    "lines": [
+      {
+        "description": {
+          "value": "Nồi 24cm",
+          "quote": "Nồi 24cm - SL 100"
+        },
+        "quantity": {
+          "value": "100",
+          "quote": "SL 100"
+        },
+        "unit_price": {
+          "value": "150.000",
+          "quote": "Đơn giá 150.000"
+        },
+        "line_total": {
+          "value": "15.000.000",
+          "quote": "Thành tiền 15.000.000"
+        }
+      }
+    ],
+    "total": {
+      "value": "16.000.000",
+      "quote": "Tổng cộng: 16.000.000"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "question": "hồ sơ nhóm Ấm siêu tốc",
+  "model_answer": {
+    "kind": "list_product_cases",
+    "category_mention": "Ấm siêu tốc"
+  },
+  "known_categories": [
+    {
+      "key": "noi",
+      "label": "Nồi"
+    }
+  ]
+}

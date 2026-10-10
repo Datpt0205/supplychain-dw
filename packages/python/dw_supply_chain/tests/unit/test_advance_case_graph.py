@@ -23,9 +23,15 @@ from dw_agent_runtime.contracts import RunContext
 from dw_kernel.errors import ConflictError, DomainError, NotFoundError
 from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.pagination import Page, PageRequest
+from dw_kernel.ports import SystemClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
+from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.application.ports import POCaseListFilter
-from dw_supply_chain.domain.po_case import CaseState, CaseTransition, POCase, POCaseId
+from dw_supply_chain.domain.case_document import DocumentType
+from dw_supply_chain.domain.packaging_design import PreProductionTest, ProductionGate
+from dw_supply_chain.domain.po_case import CaseAction, CaseState, CaseTransition, POCase, POCaseId
+from dw_supply_chain.testing.po_papers import open_paper_gate
+from dw_supply_chain.testing.production_gate import open_production_gate
 from dw_supply_chain.workflows.advance_case_graph import (
     APPROVAL_TYPE_PREFIX,
     build_advance_case_graph,
@@ -38,17 +44,19 @@ class FakePOCaseRepository:
     def __init__(self, case: POCase) -> None:
         self.case = case
         self.saved: POCase | None = None
+        self.audits: list[AuditEvent] = []
 
-    async def add(self, context: AccessContext, case: POCase) -> None:
+    async def add(self, context: AccessContext, case: POCase, *, audit: AuditEvent) -> None:
         raise NotImplementedError("not exercised by this graph")
 
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
         return self.case if case_id.value == self.case.id.value else None
 
-    async def save(self, context: AccessContext, case: POCase) -> None:
+    async def save(self, context: AccessContext, case: POCase, *, audit: AuditEvent) -> None:
         self.saved = case
+        self.audits.append(audit)
 
-    async def get_current_state_entered_at(self, context: AccessContext, case_id: POCaseId) -> None:
+    async def get_sla_clock_started_at(self, context: AccessContext, case_id: POCaseId) -> None:
         raise NotImplementedError("not exercised by this graph")
 
     async def list_page(
@@ -57,11 +65,8 @@ class FakePOCaseRepository:
         raise NotImplementedError("not exercised by this graph")
 
     async def list_transitions(
-        self, context: AccessContext, case_id: POCaseId
-    ) -> list[CaseTransition]:
-        raise NotImplementedError("not exercised by this graph")
-
-    async def list_active(self, context: AccessContext) -> list[POCase]:
+        self, context: AccessContext, case_id: POCaseId, request: PageRequest
+    ) -> Page[CaseTransition]:
         raise NotImplementedError("not exercised by this graph")
 
     async def list_supplier_names(self, context: AccessContext) -> list[str]:
@@ -70,7 +75,7 @@ class FakePOCaseRepository:
     async def find_by_reference(self, context: AccessContext, po_reference: str) -> list[POCase]:
         raise NotImplementedError("not exercised by this graph")
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
         raise NotImplementedError("not exercised by this graph")
@@ -79,8 +84,8 @@ class FakePOCaseRepository:
         raise NotImplementedError("not exercised by this graph")
 
     async def list_latest_transitions_since(
-        self, context: AccessContext, since: datetime
-    ) -> list[tuple[POCaseId, CaseTransition]]:
+        self, context: AccessContext, since: datetime, *, limit: int
+    ) -> tuple[int, list[tuple[POCaseId, CaseTransition]]]:
         raise NotImplementedError("not exercised by this graph")
 
 
@@ -117,14 +122,40 @@ def _config(run_context: RunContext) -> dict[str, object]:
     return {"configurable": {"thread_id": str(run_context.run_id)}}
 
 
-def _compiled(repo: FakePOCaseRepository) -> Any:
+class _ClosedGate:
+    """Step 13's gate for a tenant that requires the test, on a case whose
+    test is not passed (slice PK)."""
+
+    async def for_case(self, context: AccessContext, po_case_id: uuid.UUID) -> ProductionGate:
+        return ProductionGate(required=True, test=PreProductionTest.FAILED)
+
+
+class _PaperMissing:
+    """The paper gate of a tenant that requires the deposit papers, on a case
+    that has none (ticket ai-automation/15)."""
+
+    async def paper_for(self, context: AccessContext, action: CaseAction) -> DocumentType | None:
+        return DocumentType.DEPOSIT_DOCS if action is CaseAction.CONFIRM_DEPOSIT else None
+
+    async def require(self, context: AccessContext, case_id: uuid.UUID, action: CaseAction) -> None:
+        if action is CaseAction.CONFIRM_DEPOSIT:
+            raise ConflictError("confirm_deposit cần deposit_docs trên hồ sơ này trước")
+
+
+def _compiled(repo: FakePOCaseRepository, gate: Any = None, papers: Any = None) -> Any:
     # Typed `Any` on purpose, matching `LangGraphWorkflowRunner._graph`'s own
     # return type: a `StateGraph` compiled with full generics makes mypy
     # check `ainvoke`'s `context=` kwarg against a graph-level context type
     # this module never parameterises (same reasoning `build_advance_case_
     # graph`'s own `# type: ignore[type-arg]` already documents), not a
     # real type hole in the graph or in `RunContext` itself.
-    return build_advance_case_graph(repo).compile(checkpointer=MemorySaver())
+    return build_advance_case_graph(
+        repo,
+        Uuid4Generator(),
+        SystemClock(),
+        gate or open_production_gate(),
+        papers or open_paper_gate(),
+    ).compile(checkpointer=MemorySaver())
 
 
 async def test_starting_a_run_pauses_before_anything_is_applied() -> None:
@@ -166,6 +197,18 @@ async def test_approving_the_resume_applies_the_transition() -> None:
     assert final_state["applied"] is True
     assert repo.saved is not None
     assert repo.saved.state is CaseState.WAITING_DEPOSIT
+    # Ticket P2: the step's audit event, under the requester's own context.
+    (audit,) = repo.audits
+    assert (audit.action, audit.resource_id) == (
+        "supply_chain.po_case.request_deposit",
+        str(case.id),
+    )
+    assert (audit.tenant_id.value, audit.workspace_id.value, audit.actor_id.value) == (
+        run_context.tenant_id,
+        run_context.workspace_id,
+        run_context.actor_id,
+    )
+    assert audit.details["run_id"] == str(run_context.run_id)
 
 
 async def test_rejecting_the_resume_applies_nothing() -> None:
@@ -188,6 +231,7 @@ async def test_rejecting_the_resume_applies_nothing() -> None:
 
     assert final_state["applied"] is False
     assert repo.saved is None
+    assert repo.audits == []
     assert case.state is CaseState.PO_CREATED
 
 
@@ -248,3 +292,53 @@ async def test_an_unknown_case_id_fails_the_apply_node() -> None:
         await graph.ainvoke(
             Command(resume={"approved": True, "comment": "ok"}), config, context=run_context
         )
+
+
+async def test_an_approved_start_production_still_asks_the_gate_when_applied() -> None:
+    """Slice PK: the graph's apply node is the second door to step 13. An
+    approval decided while the required test is not passed applies nothing."""
+    case = _case()
+    case.request_deposit()
+    case.confirm_deposit()
+    case.start_pre_production()
+    repo = FakePOCaseRepository(case)
+    graph = _compiled(repo, _ClosedGate())
+    run_context = _run_context(tenant_id=case.tenant_id.value, workspace_id=case.workspace_id.value)
+    config = _config(run_context)
+    await graph.ainvoke(
+        {"po_case_id": str(case.id), "action": "start_production", "reason": None},
+        config,
+        context=run_context,
+    )
+
+    with pytest.raises(ConflictError, match="test trước sản xuất"):
+        await graph.ainvoke(
+            Command(resume={"approved": True, "comment": "duyệt"}), config, context=run_context
+        )
+
+    assert repo.saved is None
+    assert case.state is CaseState.PRE_PRODUCTION
+
+
+async def test_an_approved_payment_step_still_asks_for_its_paper_when_applied() -> None:
+    """Ticket ai-automation/15: the graph's apply node is a door to every PO
+    step, so the paper the tenant requires is asked there too."""
+    case = _case()
+    case.request_deposit()
+    repo = FakePOCaseRepository(case)
+    graph = _compiled(repo, papers=_PaperMissing())
+    run_context = _run_context(tenant_id=case.tenant_id.value, workspace_id=case.workspace_id.value)
+    config = _config(run_context)
+    await graph.ainvoke(
+        {"po_case_id": str(case.id), "action": "confirm_deposit", "reason": None},
+        config,
+        context=run_context,
+    )
+
+    with pytest.raises(ConflictError, match="deposit_docs"):
+        await graph.ainvoke(
+            Command(resume={"approved": True, "comment": "duyệt"}), config, context=run_context
+        )
+
+    assert repo.saved is None
+    assert case.state is CaseState.WAITING_DEPOSIT

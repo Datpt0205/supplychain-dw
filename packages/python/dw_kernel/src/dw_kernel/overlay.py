@@ -64,6 +64,12 @@ class TenantOverlay[K, V]:
         """
         return iter(self._platform.values())
 
+    def tenant_values(self, tenant_id: UUID) -> Iterator[V]:
+        """Only that tenant's own layer, never another's: what a resolver that
+        picks among versions (a range, not one key) reads before falling back
+        to `platform_values`."""
+        return iter(self._tenants.get(tenant_id, {}).values())
+
     def _layer(self, tenant_id: UUID | None) -> dict[K, V]:
         if tenant_id is None:
             return self._platform

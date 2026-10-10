@@ -1,0 +1,34 @@
+schema_version: '1.0'
+template_id: supply_chain.design_revision_request
+version: 1.0.0
+title: YÊU CẦU SỬA THIẾT KẾ BAO BÌ
+doc_type: design_revision_request
+description: 'Bước 12: Cung ứng yêu cầu sửa bản in thiết kế; mỗi điều hệ thống tìm
+  thấy khi so bản in với BM04 và luật nhãn là một mục.'
+fields:
+- name: po_reference
+  label: Số PO
+  required: true
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: product_name
+  label: Tên sản phẩm
+  required: true
+- name: requested_on
+  label: Ngày yêu cầu
+  kind: date
+  required: true
+- name: items
+  label: Hạng mục cần sửa
+  kind: table
+  columns:
+  - name: subject
+    label: Nội dung
+  - name: finding
+    label: Hiện trạng
+  - name: requirement
+    label: Yêu cầu
+  required: true
+- name: notes
+  label: Ghi chú

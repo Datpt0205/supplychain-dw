@@ -1,0 +1,20 @@
+{
+  "scopes": [
+    "supply_chain.product_case.read",
+    "supply_chain.po_case.read",
+    "supply_chain.document.read"
+  ],
+  "question": "Biên bản ghi gì?",
+  "readings": [
+    {
+      "doc_type": "sample_evaluation",
+      "fields": {
+        "evaluator": "Phòng khác"
+      },
+      "in": "other_workspace"
+    }
+  ],
+  "model_writing": {
+    "sentences": []
+  }
+}

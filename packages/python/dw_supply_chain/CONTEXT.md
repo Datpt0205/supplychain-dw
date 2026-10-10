@@ -39,13 +39,16 @@ _Avoid_: "case" trơn; "đơn" (đơn là PO).
 **Hồ sơ PO** (`POCase`):
 Một đơn đặt hàng với NCC, từ lúc tạo PO tới khi nhập kho xong hoặc hủy. Hôm nay mang số
 PO, NCC, trạng thái, lịch sử chuyển trạng thái, cập nhật của NCC và phân tích ảnh hưởng
-trễ. Loại đơn, PIC, Category, các dòng PO và trạng thái Chờ tạo PO đến từ S5.
+trễ; từ S5 còn loại đơn, PIC, Category, các dòng PO và trạng thái Chờ tạo PO (số PO để
+trống tới bước 10). PIC và Category là dấu chép từ hồ sơ phát triển lúc ĐẶT HÀNG, không
+bao giờ đọc lại từ đó.
 _Avoid_: "PO" trơn khi muốn nói hồ sơ (PO là chứng từ, Hồ sơ PO là thứ hệ thống theo
 dõi); "đơn hàng" trong code.
 
 **Vòng mẫu** (`SampleRound`) (đề xuất):
 Một lần nhận mẫu từ NCC và R&D test nó. Vòng 1 bắt đầu ở bước 2; mỗi lần mẫu chỉnh
-sửa về (bước 5) mở vòng mới. Kết quả: Đạt, Cần chỉnh sửa, Hủy.
+sửa về (bước 5) mở vòng mới. Kết quả: Đạt, Cần chỉnh sửa, Hủy. Hủy hồ sơ khi mẫu đang
+test cũng đóng vòng đó với kết quả Hủy.
 
 **Phiếu yêu cầu chỉnh sửa mẫu** (`SampleRevisionRequest`) (từ S1):
 Chứng từ R&D lập ở bước 4 khi mẫu không đạt, gửi qua Cung ứng tới NCC. Bắt buộc để
@@ -75,7 +78,8 @@ tenant. Không phải mã hàng.
 **ĐẶT HÀNG** (bàn giao, `PlaceOrder`) (từ S5):
 Nút cuối giai đoạn 1. Trong một giao dịch: hồ sơ phát triển sang Đã đặt hàng, và một Hồ
 sơ PO mới ở trạng thái Chờ tạo PO mang PIC, Category, NCC và các SKU (ADR 0017). Bấm hai
-lần không tạo hai PO.
+lần không tạo hai PO: câu cập nhật có điều kiện, và UNIQUE một Hồ sơ PO mỗi hồ sơ phát
+triển khi QE-12 còn mở.
 _Avoid_: "đặt hàng" viết thường để chỉ bước 10 (bước 10 là Tạo PO).
 
 **Loại đơn** (`order_kind`) (từ S5):
@@ -87,15 +91,19 @@ Một SKU và số lượng trong Hồ sơ PO.
 
 **Category** (ngành hàng) (từ S1, S6):
 Nhóm sản phẩm của tenant, chọn ở bước 1, đóng dấu lên hồ sơ và chép sang Hồ sơ PO. SLA
-của các bước không có số cụ thể đọc theo Category (ADR 0019). Danh sách là dữ liệu của
-tenant (còn mở, QE-13).
+của các bước không có số cụ thể đọc theo Category (ADR 0019). Danh sách (khóa, nhãn) là
+dữ liệu của tenant trong policy SLA (`categories`); `propose` và Hồ sơ PO mở tay chỉ nhận
+một khóa có trong danh sách. Hồ sơ mở trước S6 giữ chữ tự do đã đóng dấu, đánh giá theo
+`default`. Danh sách của Elmich còn mở (QE-13).
 _Avoid_: "cate", "danh mục" (danh mục là danh sách tài liệu ở process.md mục 2).
 
 ### Người và quyền
 
 **PIC** (Người phụ trách, `pic_user_id`):
 Người tạo hồ sơ ở bước 1, đóng dấu lúc tạo và theo hồ sơ suốt 17 bước, chép sang Hồ sơ
-PO lúc ĐẶT HÀNG. Không bao giờ suy lại; đổi bằng hành động Đổi PIC có lý do và audit.
+PO lúc ĐẶT HÀNG. Không bao giờ suy lại; đổi bằng **Đổi PIC** (`reassign_pic`, từ S6):
+duty `supply_lead`, bắt buộc lý do, audit, người mới phải là thành viên workspace của
+hồ sơ; hồ sơ phát triển đã ĐẶT HÀNG hoặc hủy không đổi được (PIC sống ở Hồ sơ PO).
 Thay cách phân PIC theo Category trước đây.
 _Avoid_: "owner", "người tạo" khi muốn nói PIC sau khi đã đổi.
 
@@ -106,15 +114,15 @@ _Avoid_: "supplier" trong chữ tiếng Việt trên giao diện.
 
 **Duty** (nhiệm vụ, `supply_chain.duty.<duty>`):
 Quyền làm một nhóm hành động trên hồ sơ. Có trong code (`CaseDuty`): `ordering`
-(Cung ứng), `finance` (Kế toán), `qc`, `logistics`, `warehouse`, `exceptions`. Thêm ở
-giai đoạn 1: `rnd` (R&D, từ S1), `supply_lead` (TP Cung ứng, từ S3). Hành động nào
+(Cung ứng), `finance` (Kế toán), `qc`, `logistics`, `warehouse`, `exceptions`, và ở
+giai đoạn 1 `rnd` (R&D, từ S1), `supply_lead` (TP Cung ứng, từ S3). Hành động nào
 thuộc duty nào là policy tenant ghi đè được.
 _Avoid_: "vai" (vai là `sc_*`, gom scope và duty).
 
 **Vai** (`sc_*`):
 `sc_viewer`, `sc_operator`, `sc_finance`, `sc_qc`, `sc_logistics`, `sc_warehouse`,
-`sc_process_admin`; dự kiến thêm `sc_rnd` (S1), `sc_supply_lead` (S3), `sc_bod` (S2)
-(còn mở, QE-16). Không có `sc_accounting`: xem **Kế toán**.
+`sc_process_admin`, `sc_rnd` (S1), `sc_bod` (S2), `sc_supply_lead` (S3); danh mục còn
+mở (QE-16). Không có `sc_accounting`: xem **Kế toán**.
 
 **Kế toán**:
 Một vai, `sc_finance` (duty `finance`): xác nhận đặt cọc ở bước 11 và thanh toán ở
@@ -129,8 +137,9 @@ Duyệt mẫu ở bước 6 và ký ở bước 9, qua approval có `required_sc
 `supply_chain.approve.bod`. Không có duty.
 
 **TP Cung ứng** (Trưởng phòng Cung ứng):
-Xác nhận SP đã thống nhất với NCC ở bước 8 (duty `supply_lead`), nhận báo cáo mẫu hằng
-ngày ở bước 3, đổi PIC.
+Xác nhận SP đã thống nhất với NCC ở bước 8 (duty `supply_lead`), đổi PIC (từ S6), nhận
+leo thang và trễ SLA cùng PIC (scope `supply_chain.duty.supply_lead` trong policy
+follow-up 1.1.0, QE-18 tạm). Báo cáo mẫu hằng ngày ở bước 3 còn mở (QE-19).
 
 **Người quyết** (`required_scope`) (từ A):
 Scope đóng dấu lên một approval lúc tạo; chỉ người giữ nó (cùng `approvals.decide`)
@@ -166,17 +175,24 @@ _Avoid_: "evidence" khi nói chứng từ (evidence là trích dẫn nguyên vă
 NCC).
 
 **Mốc SLA** (milestone):
-Thời hạn của một trạng thái, đo từ lúc hồ sơ vào trạng thái đó. Có trong policy
-`supply_chain_sla@1.2.0`: `deposit`, `port_arrival`, `payment`, `warehouse_receipt`
-(đọc bởi `sla_evaluation.py`) và `bm04`, `supplier_confirmation` (có trong policy,
-chưa trạng thái nào đọc, gắn ở S6). Thêm ở S6: `sample_collection` (`sample_requested`)
-và `sample_testing` (`sample_testing`). Mốc chưa xác nhận không bật cảnh báo.
+Thời hạn của một trạng thái, đo từ lần chuyển gần nhất vào trạng thái đó (tiếp tục sau
+tạm dừng tính lại; đang tạm dừng thì không áp dụng, QE-14). Riêng `warehouse_receipt`
+(bước 17) trải hai trạng thái: đồng hồ bắt đầu lúc vào `payment_completed`, chạy tiếp qua
+`warehouse_receiving`, dừng khi `completed` (`sla_clock_start_state`). Policy
+`supply_chain_sla@2.0.0`, gắn trong `sla_evaluation.py`: Hồ sơ PO `deposit`,
+`port_arrival`, `payment`, `warehouse_receipt`; hồ sơ phát triển `sample_collection`
+(`sample_requested`), `sample_testing`, `bod_review` (`pending_bod_review`), `bm04`
+(`profile_in_progress`), `supplier_confirmation`, `item_coding`, `signoff`
+(`pending_signoff`). Số theo Category của hồ sơ (`by_category`), không có thì `default`.
+Mốc chưa xác nhận không bật cảnh báo.
 Cùng policy có khối `supplier_update` (nhắc sau 1d, leo thang sau 2d NCC im lặng): đó
 là nhịp cập nhật NCC, không phải mốc SLA.
 
-**Follow-up**:
-Một việc nhắc do worker mở khi đến hạn nhắc, cần leo thang hoặc vi phạm SLA; đóng khi
-tín hiệu hết. Người nhận đóng dấu lúc mở (theo scope, và PIC).
+**Follow-up** (Việc cần làm):
+Một việc nhắc do worker mở khi đến hạn nhắc, cần leo thang hoặc vi phạm SLA, trên Hồ sơ
+PO hoặc (từ S6) hồ sơ phát triển; đóng khi tín hiệu hết. Người nhận đóng dấu lúc mở:
+các scope của policy `supply_chain_follow_ups`, và PIC của hồ sơ nếu policy gọi `pic` và
+PIC còn là thành viên workspace của hồ sơ. Chỉ thấy trong workspace của hồ sơ.
 
 **Cập nhật NCC** (`SupplierUpdate`):
 Tin của NCC mà mô hình đọc thành loại sự kiện, kèm trích dẫn nguyên văn; tin thiếu trích
@@ -196,28 +212,40 @@ Một lần gửi một thông báo tới một người qua một kênh, có tr
 
 ### Trạng thái của Hồ sơ PO (`CaseState`)
 
-| Giá trị               | Nhãn                 | Ghi chú                                     |
-| --------------------- | -------------------- | ------------------------------------------- |
-| `order_requested`     | Chờ tạo PO           | (đề xuất) Mới, ticket S5; chưa có số PO     |
-| `po_created`          | Đã tạo PO            | Bước 10                                     |
-| `waiting_deposit`     | Chờ đặt cọc          | Bước 11; mốc `deposit`                      |
-| `deposit_confirmed`   | Đã xác nhận cọc      | Bước 11                                     |
-| `pre_production`      | Chuẩn bị sản xuất    | Bước 12, một trạng thái thô                 |
-| `production`          | Đang sản xuất        | Bước 13                                     |
-| `qc`                  | Kiểm tra chất lượng  | Bước 14                                     |
-| `in_transit`          | Đang vận chuyển      | Sau QC đạt; mốc `port_arrival`              |
-| `arrived_port`        | Đã đến cảng          | Bước 15                                     |
-| `waiting_payment`     | Chờ thanh toán       | Bước 16; mốc `payment`                      |
-| `payment_completed`   | Đã thanh toán        | Bước 16; mốc `warehouse_receipt`            |
-| `warehouse_receiving` | Đang nhập kho        | Bước 17                                     |
-| `completed`           | Hoàn tất             | Kết thúc                                    |
-| `waiting_external`    | Chờ bên ngoài        | Ngắt; `resume` về trạng thái trước          |
-| `blocked`             | Đang bị chặn         | Ngắt                                        |
-| `rework`              | Làm lại              | Chỉ vào từ QC không đạt, ra về `production` |
-| `manual_review`       | Cần xem xét thủ công | Ngắt                                        |
-| `cancelled`           | Đã hủy               | Kết thúc                                    |
+| Giá trị               | Nhãn                 | Ghi chú                                      |
+| --------------------- | -------------------- | -------------------------------------------- |
+| `order_requested`     | Chờ tạo PO           | Sau ĐẶT HÀNG; chưa có số PO; chỉ tạo PO, hủy |
+| `po_created`          | Đã tạo PO            | Bước 10                                      |
+| `waiting_deposit`     | Chờ đặt cọc          | Bước 11; mốc `deposit`                       |
+| `deposit_confirmed`   | Đã xác nhận cọc      | Bước 11                                      |
+| `pre_production`      | Chuẩn bị sản xuất    | Bước 12, một trạng thái thô                  |
+| `production`          | Đang sản xuất        | Bước 13                                      |
+| `qc`                  | Kiểm tra chất lượng  | Bước 14                                      |
+| `in_transit`          | Đang vận chuyển      | Sau QC đạt; mốc `port_arrival`               |
+| `arrived_port`        | Đã đến cảng          | Bước 15                                      |
+| `waiting_payment`     | Chờ thanh toán       | Bước 16; mốc `payment`                       |
+| `payment_completed`   | Đã thanh toán        | Bước 16; mốc `warehouse_receipt`             |
+| `warehouse_receiving` | Đang nhập kho        | Bước 17; mốc `warehouse_receipt` chạy tiếp   |
+| `completed`           | Hoàn tất             | Kết thúc                                     |
+| `waiting_external`    | Chờ bên ngoài        | Ngắt; `resume` về trạng thái trước           |
+| `blocked`             | Đang bị chặn         | Ngắt                                         |
+| `rework`              | Làm lại              | Chỉ vào từ QC không đạt, ra về `production`  |
+| `manual_review`       | Cần xem xét thủ công | Ngắt                                         |
+| `cancelled`           | Đã hủy               | Kết thúc                                     |
 
 ### Trạng thái của Hồ sơ phát triển sản phẩm (`ProductDevState`) (đề xuất)
+
+Từ S1, nhãn trong code có một chủ: `PRODUCT_DEV_STATE_LABEL` trong
+`apps/web/components/supply-chain/product-case-labels.tsx`; S2 đi tới
+`profile_in_progress` (cùng ba trạng thái ngắt và `cancelled`), S3 tới `item_coding`, S4
+tới `ready_to_order`, S5 tới `ordered` (ĐẶT HÀNG, lệnh riêng `PlaceOrder`).
+Hai bên lệch thì sửa cả hai trong cùng commit. Ở `pending_bod_review` người dùng chỉ hủy
+được; `bod_approve` và `bod_reject` do graph duyệt áp sau quyết định ở `/approvals`.
+`complete_profile` (R&D) cần Profile SP (BM04), `confirm_with_supplier` (TP Cung ứng)
+cần email xác nhận của NCC, mỗi file của chính hồ sơ và tải lên từ khi hồ sơ tới bước đó.
+Ở `item_coding` Cung ứng cấp (hoặc sửa) mã hàng, thêm và bỏ SKU, rồi trình ký; ở
+`pending_signoff` người dùng chỉ hủy được, `signoff_approve` và `signoff_reject` do graph
+trình ký áp sau từng bước ký ở `/approvals` (thứ tự ký là policy của tenant).
 
 | Giá trị                 | Nhãn                   | Bước, ghi chú                                   |
 | ----------------------- | ---------------------- | ----------------------------------------------- |

@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../../packages/python/dw_agent_runtime/src/dw_agent_runtime/approval_flow.py # decide 96-155, _enforce_strict_rules 46-61, channel="web" dòng 155
@@ -10,6 +10,8 @@ source:
 ---
 
 # E4. Quyết approval trên Zalo được, nhưng chỉ sau khi đã xem đúng phiên bản trên cổng, bằng một mã dùng một lần
+
+> Phần chung đã đưa về platform (`2ebd50f`) thành ADR 0007 của platform ([`0007-chat-decisions-after-a-portal-view.md`](0007-chat-decisions-after-a-portal-view.md)); code platform ở đây trích ADR 0007, ADR này giữ phần của Elmich.
 
 Bản trước của ADR này (cùng ngày) để mọi quyết định trên web, Zalo chỉ báo và dẫn
 liên kết. Đạt sửa ngày 5/10/2026: Zalo là kênh làm việc hai chiều, và người duyệt
@@ -124,3 +126,34 @@ Vé: `zalo-channel/issues/05` (Z5).
   trên điện thoại để lấy mã.
 - Tóm tắt trong tin và câu trả lời của bot đi qua máy chủ Zalo. Elmich xác nhận dữ liệu
   nào được đi qua (QE-20).
+
+## Sửa đổi 2026-10-06 (Đạt giao quyết, QO-7)
+
+- **Nhận xét viết trên cổng khi cấp mã.** Người duyệt phải mở cổng để thấy mã, nên trang
+  cấp mã có ô nhận xét (bắt buộc với loại nghiêm); mã gắn với nhận xét đó. Tin Zalo chỉ
+  mang `DUYỆT <mã>` hoặc `KHÔNG <mã> <lý do>`; quyết định ghi đúng nhận xét đã nhập trên
+  cổng (với `KHÔNG`, lý do trong tin được nối sau nhận xét).
+- **Mã 6 chữ số, hiệu lực 10 phút, dùng một lần; sai 5 lần thì khóa mã đó.** Thay 4 chữ
+  số và 15 phút ở trên; băm HMAC giữ nguyên.
+
+## Sửa đổi 2026-10-07 (Z5, lead theo ủy quyền của Đạt)
+
+Trạng thái: Accepted (tạm; xem lại khi chạy thật ở ticket 07).
+
+- **Cấp mã là một lần xem có nhận xét.** `POST /approvals/{id}/view` ghi biên nhận mỗi lần
+  mở; với `issue_code` ghi biên nhận mới và mã mới gắn nhận xét, thu hồi mã mở cũ cùng giao
+  dịch. Loại nghiêm cần nhận xét mới có mã.
+- **Văn phạm.** `DUYỆT <6 số>` đúng nguyên tin; `KHÔNG <6 số> <lý do>`; "không" chỉ là lệnh khi
+  theo sau là số. `TỪ CHỐI` thôi dùng.
+- **Sai 5 lần khóa mã:** mỗi lần sai tính cho mọi mã đang mở của người gửi (tin không nêu
+  approval), bộ đếm trên dòng mã; không có bảng đếm riêng. Lần sai không khớp mã nào chỉ log.
+- **Một câu cho mọi mã không khớp;** trạng thái mã của chính người gửi (hết hạn, đã dùng, đã
+  thay, bị khóa) mỗi trạng thái một câu.
+- **`decide(channel=, admission=)`.** `DecisionAdmission` theo từng quyết định (khác
+  `DecisionGuard` theo loại), sau mọi kiểm, trước mọi ghi, cùng giao dịch; quyết định được
+  admit ghi audit `approval.channel_decided` cùng giao dịch.
+- **Worker quyết** bằng `ApproveAndResumeService` của mình trên runner chứa graph của loại đó;
+  loại không có port phiên bản không bao giờ quyết qua chat.
+- **Khóa** `DW_APPROVAL_CODE_SECRET` (≥ 16 byte); trống thì không cấp mã và bot trả "chưa bật".
+- **Liên kết** `/approvals/<id>?workspace=<ws>` (`approval_link`); trang đổi workspace nếu là
+  thành viên, không thì "không tìm thấy".

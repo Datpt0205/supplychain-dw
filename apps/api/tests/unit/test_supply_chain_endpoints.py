@@ -9,9 +9,10 @@ repositories against a real database; this covers the HTTP surface on top.
 
 from __future__ import annotations
 
+import itertools
 import uuid
-from collections.abc import Mapping
-from dataclasses import replace
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -46,11 +47,12 @@ from dw_platform.application.identity import DbAccessContextFactory, MembershipA
 from dw_platform.domain.approval import ApprovalRequest, ApprovalStatus
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.action_duties import CaseDuty, load_supply_chain_action_duties
+from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.handlers import (
     AdvancePOCase,
     AnalyzeDelayImpact,
-    AnswerCaseQuery,
     CloseFollowUp,
+    CreatePO,
     CreatePOCase,
     GetActionDuties,
     GetApprovalMatrix,
@@ -66,8 +68,11 @@ from dw_supply_chain.application.handlers import (
     ListCaseTransitions,
     ListDelayImpactAnalyses,
     ListFollowUps,
+    ListPOCaseApprovals,
     ListPOCases,
+    ListProductCategories,
     ListSupplierUpdates,
+    ReassignPOCasePic,
     SetActionDutiesOverride,
     SetApprovalMatrixOverride,
     SetBriefPolicyOverride,
@@ -75,15 +80,18 @@ from dw_supply_chain.application.handlers import (
     SetSLAPolicyOverride,
     SubmitSupplierUpdate,
     SummarizeDailyBrief,
+    duty_scope,
 )
 from dw_supply_chain.application.ports import (
     PO_REFERENCE_PADDING,
     FollowUpRecord,
     POCaseListFilter,
 )
+from dw_supply_chain.application.product_cases import ListProductCases
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.brief_policy import SupplyChainBriefPolicy, load_supply_chain_brief_policy
 from dw_supply_chain.domain.brief_summary import BriefSummaryDraft
+from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.case_query import CaseQueryIntent, CaseQueryKind
 from dw_supply_chain.domain.delay_impact import (
     DelayImpactAnalysis,
@@ -98,6 +106,12 @@ from dw_supply_chain.domain.po_case import (
     CaseTransition,
     POCase,
     POCaseId,
+    POCaseLine,
+)
+from dw_supply_chain.domain.product_development_case import (
+    ProductDevelopmentCase,
+    ProductDevelopmentCaseId,
+    ProductDevState,
 )
 from dw_supply_chain.domain.supplier_update import (
     SupplierEventType,
@@ -107,11 +121,16 @@ from dw_supply_chain.domain.supplier_update import (
 )
 from dw_supply_chain.follow_up_policy import load_supply_chain_follow_up_policy
 from dw_supply_chain.sla_policy import (
+    ProductCategory,
     SLAConfirmationStatus,
     SLAMilestone,
     SupplierUpdateCadence,
     SupplyChainSLAPolicy,
 )
+from dw_supply_chain.testing.pages import history_page
+from dw_supply_chain.testing.po_papers import open_paper_gate
+from dw_supply_chain.testing.product_cases import InMemoryDirectory, InMemoryProductCases
+from dw_supply_chain.testing.production_gate import open_production_gate
 
 pytestmark = pytest.mark.unit
 
@@ -161,7 +180,9 @@ class FakePOCaseRepository:
         self.by_id: dict[uuid.UUID, POCase] = {}
         self.transitions: dict[uuid.UUID, list[CaseTransition]] = {}
 
-    async def add(self, context: AccessContext, case: POCase) -> None:
+    async def add(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         # Mirrors the real repository's own DB DEFAULT now(): the row this
         # writes gets a created_at the in-memory object handed to add()
         # doesn't carry yet, and GetMissingUpdateStatus depends on get()
@@ -176,10 +197,12 @@ class FakePOCaseRepository:
             return None
         return case
 
-    async def save(self, context: AccessContext, case: POCase) -> None:
+    async def save(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         self.by_id[case.id.value] = case
 
-    async def get_current_state_entered_at(
+    async def get_sla_clock_started_at(
         self, context: AccessContext, case_id: POCaseId
     ) -> datetime | None:
         return None
@@ -208,16 +231,9 @@ class FakePOCaseRepository:
         return build_page(cases[: request.fetch_limit], request=request, position_of=_case_position)
 
     async def list_transitions(
-        self, context: AccessContext, case_id: POCaseId
-    ) -> list[CaseTransition]:
-        return self.transitions.get(case_id.value, [])
-
-    async def list_active(self, context: AccessContext) -> list[POCase]:
-        return [
-            c
-            for c in self.by_id.values()
-            if c.tenant_id.value == context.tenant_id and c.state not in TERMINAL_STATES
-        ]
+        self, context: AccessContext, case_id: POCaseId, request: PageRequest
+    ) -> Page[CaseTransition]:
+        return history_page(self.transitions.get(case_id.value, []), request)
 
     async def list_supplier_names(self, context: AccessContext) -> list[str]:
         return sorted(
@@ -231,12 +247,13 @@ class FakePOCaseRepository:
                 c
                 for c in self.by_id.values()
                 if c.tenant_id.value == context.tenant_id
+                and c.po_reference is not None
                 and c.po_reference.strip(PO_REFERENCE_PADDING).lower() == wanted
             ),
-            key=lambda c: c.po_reference,
+            key=lambda c: c.po_reference or "",
         )
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
         return {}
@@ -250,8 +267,8 @@ class FakePOCaseRepository:
         ]
 
     async def list_latest_transitions_since(
-        self, context: AccessContext, since: datetime
-    ) -> list[tuple[POCaseId, CaseTransition]]:
+        self, context: AccessContext, since: datetime, *, limit: int
+    ) -> tuple[int, list[tuple[POCaseId, CaseTransition]]]:
         latest: list[tuple[POCaseId, CaseTransition]] = []
         for case_id, history in self.transitions.items():
             case = self.by_id.get(case_id)
@@ -260,7 +277,8 @@ class FakePOCaseRepository:
             inside = [t for t in history if t.occurred_at >= since]
             if inside:
                 latest.append((case.id, max(inside, key=lambda t: t.occurred_at)))
-        return latest
+        latest.sort(key=lambda pair: pair[1].occurred_at, reverse=True)
+        return len(latest), latest[:limit]
 
 
 def _case_position(case: POCase) -> CursorPosition:
@@ -272,7 +290,9 @@ class FakeSupplierUpdateRepository:
     def __init__(self) -> None:
         self.by_case: dict[uuid.UUID, list[SupplierUpdate]] = {}
 
-    async def add(self, context: AccessContext, update: SupplierUpdate) -> None:
+    async def add(
+        self, context: AccessContext, update: SupplierUpdate, *, audit: AuditEvent | None = None
+    ) -> None:
         self.by_case.setdefault(update.po_case_id.value, []).append(update)
 
     async def get(
@@ -345,7 +365,13 @@ class FakeDelayImpactAnalysisRepository:
     def __init__(self) -> None:
         self.by_case: dict[uuid.UUID, list[DelayImpactAnalysis]] = {}
 
-    async def add(self, context: AccessContext, analysis: DelayImpactAnalysis) -> None:
+    async def add(
+        self,
+        context: AccessContext,
+        analysis: DelayImpactAnalysis,
+        *,
+        audit: AuditEvent | None = None,
+    ) -> None:
         self.by_case.setdefault(analysis.po_case_id.value, []).append(analysis)
 
     async def list_for_case(
@@ -396,10 +422,11 @@ def _default_delay_extraction() -> DelayImpactExtraction:
 
 def _default_sla_policy() -> SupplyChainSLAPolicy:
     return SupplyChainSLAPolicy(
-        schema_version="1.0",
+        schema_version="2.0",
         policy_id="supply_chain_sla",
-        policy_version="1.0.0",
-        sla={},
+        policy_version="2.0.0",
+        categories=(ProductCategory(key="noi", label="Nồi"),),
+        default={},
         supplier_update=SupplierUpdateCadence(reminder_after="5d", escalation_after="10d"),
     )
 
@@ -456,24 +483,33 @@ class FakePolicyOverrideRepository:
 
 
 class FakePendingApprovals:
-    """Honors `PendingApprovalsPort`'s contract: the caller's tenant only,
-    pending only, the prefix matched literally, newest first, `limit` cut
+    """Honors `PendingApprovalsPort`'s contract: the caller's tenant and
+    workspace only, pending only, the prefix matched literally, newest first, `limit` cut
     after `total` is counted. Holds the platform's own `ApprovalRequest`, so
     a shape mismatch with the Protocol fails here, not in production."""
 
     def __init__(self, approvals: list[ApprovalRequest] | None = None) -> None:
         self.approvals = approvals or []
+        self.calls = 0
 
     async def list_pending_by_type_prefix(
-        self, context: AccessContext, *, prefix: str, limit: int
+        self,
+        context: AccessContext,
+        *,
+        prefix: str,
+        limit: int,
+        payload_match: tuple[str, str] | None = None,
     ) -> tuple[int, list[ApprovalRequest]]:
+        self.calls += 1
         matching = sorted(
             (
                 a
                 for a in self.approvals
                 if a.tenant_id.value == context.tenant_id
+                and a.workspace_id.value == context.workspace_id
                 and a.status is ApprovalStatus.PENDING
                 and a.approval_type.startswith(prefix)
+                and (payload_match is None or a.payload.get(payload_match[0]) == payload_match[1])
             ),
             key=lambda a: (a.created_at, a.id),
             reverse=True,
@@ -493,7 +529,7 @@ class FakeFollowUpRepository:
         self.rows = {r.id: r for r in records}
         self.audit: list[AuditEvent] = []
 
-    async def open(self, context: AccessContext, drafts: object) -> int:
+    async def open(self, context: AccessContext, drafts: object, *, audit: object) -> int:
         raise NotImplementedError("not exercised by the routes")
 
     async def list_open(self, context: AccessContext) -> list[FollowUpRecord]:
@@ -503,7 +539,7 @@ class FakeFollowUpRepository:
             reverse=True,
         )
 
-    async def resolve(self, context: AccessContext, follow_up_ids: object) -> None:
+    async def resolve(self, context: AccessContext, follow_ups: object, *, audit: object) -> int:
         raise NotImplementedError("not exercised by the routes")
 
     async def mark_notified(self, context: AccessContext, follow_up_id: uuid.UUID) -> None:
@@ -533,9 +569,10 @@ class FakeFollowUpRepository:
 def _follow_up(*, scopes: frozenset[str] = frozenset({RECORDS_SCOPE})) -> FollowUpRecord:
     return FollowUpRecord(
         id=uuid.uuid4(),
-        po_case_id=uuid.uuid4(),
+        case_kind=CaseKind.PO,
+        case_id=uuid.uuid4(),
         workspace_id=WORKSPACE,
-        po_reference="PO-2026-007",
+        reference="PO-2026-007",
         supplier_name="Kangaroo",
         kind=FollowUpKind.UPDATE_REMINDER,
         episode="2026-09-27T08:00:00+00:00",
@@ -543,6 +580,7 @@ def _follow_up(*, scopes: frozenset[str] = frozenset({RECORDS_SCOPE})) -> Follow
         days=1,
         limit_days=None,
         recipient_scopes=scopes,
+        recipient_user_id=None,
         status=FollowUpStatus.OPEN,
         opened_at=datetime.now(UTC),
         notified_at=None,
@@ -550,6 +588,50 @@ def _follow_up(*, scopes: frozenset[str] = frozenset({RECORDS_SCOPE})) -> Follow
         closed_by=None,
         close_note=None,
     )
+
+
+@dataclass
+class FakeHolders:
+    """`ScopeHoldersPort`: who in a workspace holds a scope, as given."""
+
+    by_scope: dict[str, list[uuid.UUID]] = field(default_factory=dict)
+
+    async def holding(
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, scopes: frozenset[str]
+    ) -> list[uuid.UUID]:
+        return sorted({p for scope in scopes for p in self.by_scope.get(scope, [])})
+
+
+@dataclass
+class FakeMembers:
+    """`WorkspaceMembersPort`: who belongs to which workspace."""
+
+    of: dict[uuid.UUID, set[uuid.UUID]] = field(default_factory=dict)
+
+    async def members(
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, user_ids: frozenset[uuid.UUID]
+    ) -> frozenset[uuid.UUID]:
+        return frozenset(user_ids & self.of.get(workspace_id, set()))
+
+
+@dataclass
+class FakeNotifier:
+    """The inbox: once per (person, source_key), as the real one is."""
+
+    sent: dict[tuple[uuid.UUID, str], tuple[str, str | None]] = field(default_factory=dict)
+
+    async def deliver(
+        self,
+        context: AccessContext,
+        *,
+        recipients: Sequence[uuid.UUID],
+        source_key: str,
+        title: str,
+        body: str,
+        link: str | None,
+    ) -> None:
+        for person in recipients:
+            self.sent.setdefault((person, source_key), (title, link))
 
 
 def make_container(
@@ -571,6 +653,10 @@ def make_container(
     brief_policy: SupplyChainBriefPolicy | None = None,
     summary_gateway: FakeModelGateway | _SchemaFailingGateway | None = None,
     follow_up_repo: FakeFollowUpRepository | None = None,
+    holders: FakeHolders | None = None,
+    notifier: FakeNotifier | None = None,
+    members: FakeMembers | None = None,
+    product_cases: InMemoryProductCases | None = None,
 ) -> ApiContainer:
     async def ok_probe() -> CheckState:
         return "ok"
@@ -595,9 +681,11 @@ def make_container(
     resolved_brief_policy = brief_policy or load_supply_chain_brief_policy(
         SUPPLY_CHAIN_BRIEF_POLICY
     )
+    product_cases = product_cases or InMemoryProductCases()
     get_daily_brief = GetDailyBrief(
         po_case_repo=repo,
         supplier_update_repo=resolved_supplier_update_repo,
+        product_case_repo=product_cases,
         policy_override_repo=resolved_policy_override_repo,
         platform_default_policy=resolved_sla_policy,
         platform_default_brief_policy=resolved_brief_policy,
@@ -620,7 +708,33 @@ def make_container(
             if idempotency_store is not None
             else None
         ),
-        supply_chain_create_po_case=CreatePOCase(repo=repo, authz=authz, ids=Uuid4Generator()),
+        supply_chain_create_po_case=CreatePOCase(
+            repo=repo,
+            authz=authz,
+            ids=Uuid4Generator(),
+            clock=SystemClock(),
+            policy_override_repo=resolved_policy_override_repo,
+            platform_default_sla_policy=resolved_sla_policy,
+        ),
+        supply_chain_reassign_po_case_pic=ReassignPOCasePic(
+            repo=repo,
+            members=members or FakeMembers(),
+            authz=authz,
+            ids=Uuid4Generator(),
+            clock=resolved_clock,
+        ),
+        supply_chain_create_po=CreatePO(
+            repo=repo,
+            authz=authz,
+            policy_override_repo=resolved_policy_override_repo,
+            platform_default_action_duties=load_supply_chain_action_duties(
+                SUPPLY_CHAIN_ACTION_DUTIES
+            ),
+            holders=holders or FakeHolders(),
+            notifier=notifier or FakeNotifier(),
+            ids=Uuid4Generator(),
+            clock=resolved_clock,
+        ),
         supply_chain_get_po_case=GetPOCase(repo=repo, authz=authz),
         supply_chain_list_po_cases=ListPOCases(repo=repo, authz=authz),
         supply_chain_submit_supplier_update=SubmitSupplierUpdate(
@@ -629,6 +743,7 @@ def make_container(
             gateway=resolved_gateway,
             authz=authz,
             ids=Uuid4Generator(),
+            clock=SystemClock(),
         ),
         supply_chain_list_supplier_updates=ListSupplierUpdates(
             po_case_repo=repo, supplier_update_repo=resolved_supplier_update_repo, authz=authz
@@ -640,6 +755,7 @@ def make_container(
             gateway=resolved_delay_impact_gateway,
             authz=authz,
             ids=Uuid4Generator(),
+            clock=SystemClock(),
         ),
         supply_chain_list_delay_impact_analyses=ListDelayImpactAnalyses(
             po_case_repo=repo, delay_impact_repo=resolved_delay_impact_repo, authz=authz
@@ -661,9 +777,17 @@ def make_container(
                 SUPPLY_CHAIN_ACTION_DUTIES
             ),
             runner=resolved_runner,
+            production_gate=open_production_gate(),
+            papers=open_paper_gate(),
             ids=Uuid4Generator(),
+            clock=SystemClock(),
         ),
         supply_chain_list_case_transitions=ListCaseTransitions(repo=repo, authz=authz),
+        supply_chain_list_case_approvals=ListPOCaseApprovals(
+            repo=repo,
+            pending_approvals=pending_approvals or FakePendingApprovals(),
+            authz=authz,
+        ),
         supply_chain_get_sla_evaluation=GetSLAEvaluation(
             po_case_repo=repo,
             policy_override_repo=resolved_policy_override_repo,
@@ -704,6 +828,14 @@ def make_container(
         supply_chain_answer_case_query=AnswerCaseQuery(
             po_case_repo=repo,
             list_cases=ListPOCases(repo=repo, authz=authz),
+            product_cases=product_cases,
+            list_product_cases=ListProductCases(repo=product_cases, authz=authz),
+            categories=ListProductCategories(
+                policy_override_repo=resolved_policy_override_repo,
+                platform_default_sla_policy=resolved_sla_policy,
+                authz=authz,
+            ),
+            directory=InMemoryDirectory(),
             gateway=resolved_case_query_gateway,
             authz=authz,
             ids=Uuid4Generator(),
@@ -760,6 +892,7 @@ def make_container(
         ),
         supply_chain_set_follow_up_policy_override=SetFollowUpPolicyOverride(
             policy_override_repo=resolved_policy_override_repo,
+            platform_default_policy=_SHIPPED_FOLLOW_UP_POLICY,
             authz=authz,
             ids=Uuid4Generator(),
             clock=resolved_clock,
@@ -800,7 +933,7 @@ async def test_creating_a_case_returns_it_with_tenant_scoped_fields() -> None:
         make_container(repo, frozenset({WRITE_SCOPE})),
         "POST",
         "/api/v1/supply-chain/po-cases",
-        json={"po_reference": "PO-0001", "supplier_name": "Elmich Co."},
+        json={"po_reference": "PO-0001", "supplier_name": "Elmich Co.", "order_kind": "reorder"},
     )
 
     assert response.status_code == 200
@@ -821,7 +954,7 @@ async def test_creating_a_case_is_denied_without_the_write_scope() -> None:
         make_container(repo, frozenset({READ_SCOPE})),
         "POST",
         "/api/v1/supply-chain/po-cases",
-        json={"po_reference": "PO-0001", "supplier_name": "Elmich Co."},
+        json={"po_reference": "PO-0001", "supplier_name": "Elmich Co.", "order_kind": "reorder"},
     )
     assert response.status_code == 403
     assert repo.by_id == {}
@@ -833,7 +966,7 @@ async def test_a_blank_po_reference_is_refused_before_the_handler_runs() -> None
         make_container(repo, frozenset({WRITE_SCOPE})),
         "POST",
         "/api/v1/supply-chain/po-cases",
-        json={"po_reference": "", "supplier_name": "Elmich Co."},
+        json={"po_reference": "", "supplier_name": "Elmich Co.", "order_kind": "reorder"},
     )
     assert response.status_code == 422
     assert repo.by_id == {}
@@ -846,7 +979,7 @@ async def test_reading_back_a_created_case() -> None:
         container,
         "POST",
         "/api/v1/supply-chain/po-cases",
-        json={"po_reference": "PO-0002", "supplier_name": "Elmich Co."},
+        json={"po_reference": "PO-0002", "supplier_name": "Elmich Co.", "order_kind": "reorder"},
     )
     case_id = created.json()["id"]
 
@@ -882,13 +1015,13 @@ async def test_listing_cases_returns_newest_first() -> None:
         container,
         "POST",
         "/api/v1/supply-chain/po-cases",
-        json={"po_reference": "PO-OLDER", "supplier_name": "Elmich Co."},
+        json={"po_reference": "PO-OLDER", "supplier_name": "Elmich Co.", "order_kind": "reorder"},
     )
     await _request(
         container,
         "POST",
         "/api/v1/supply-chain/po-cases",
-        json={"po_reference": "PO-NEWER", "supplier_name": "Elmich Co."},
+        json={"po_reference": "PO-NEWER", "supplier_name": "Elmich Co.", "order_kind": "reorder"},
     )
 
     response = await _request(container, "GET", "/api/v1/supply-chain/po-cases")
@@ -904,7 +1037,7 @@ async def _create_case_for(container: ApiContainer, *, reference: str, supplier:
         container,
         "POST",
         "/api/v1/supply-chain/po-cases",
-        json={"po_reference": reference, "supplier_name": supplier},
+        json={"po_reference": reference, "supplier_name": supplier, "order_kind": "reorder"},
     )
     case_id: str = created.json()["id"]
     return case_id
@@ -970,7 +1103,7 @@ async def test_creating_a_case_refuses_a_supplier_name_with_a_nul_byte() -> None
         make_container(repo, frozenset({READ_SCOPE, WRITE_SCOPE, *STEP_SCOPES})),
         "POST",
         "/api/v1/supply-chain/po-cases",
-        json={"po_reference": "PO-NUL", "supplier_name": "Acme\x00Co"},
+        json={"po_reference": "PO-NUL", "supplier_name": "Acme\x00Co", "order_kind": "reorder"},
     )
     assert response.status_code == 422
     assert repo.by_id == {}
@@ -1166,7 +1299,7 @@ async def _create_case(container: ApiContainer) -> str:
         container,
         "POST",
         "/api/v1/supply-chain/po-cases",
-        json={"po_reference": "PO-0003", "supplier_name": "Elmich Co."},
+        json={"po_reference": "PO-0003", "supplier_name": "Elmich Co.", "order_kind": "reorder"},
     )
     case_id: str = created.json()["id"]
     return case_id
@@ -1310,7 +1443,7 @@ async def test_a_replayed_create_returns_the_same_case_without_creating_a_second
     repo = FakePOCaseRepository()
     store = MemoryIdempotencyStore()
     container = make_container(repo, frozenset({WRITE_SCOPE}), idempotency_store=store)
-    body = {"po_reference": "PO-IDEMP-1", "supplier_name": "Elmich Co."}
+    body = {"po_reference": "PO-IDEMP-1", "supplier_name": "Elmich Co.", "order_kind": "reorder"}
 
     first = await _request(
         container, "POST", "/api/v1/supply-chain/po-cases", idempotency_key="key-1", json=body
@@ -1334,14 +1467,14 @@ async def test_reusing_a_create_key_with_a_different_body_conflicts() -> None:
         "POST",
         "/api/v1/supply-chain/po-cases",
         idempotency_key="key-2",
-        json={"po_reference": "PO-IDEMP-2", "supplier_name": "Elmich Co."},
+        json={"po_reference": "PO-IDEMP-2", "supplier_name": "Elmich Co.", "order_kind": "reorder"},
     )
     clashing = await _request(
         container,
         "POST",
         "/api/v1/supply-chain/po-cases",
         idempotency_key="key-2",
-        json={"po_reference": "PO-IDEMP-3", "supplier_name": "Elmich Co."},
+        json={"po_reference": "PO-IDEMP-3", "supplier_name": "Elmich Co.", "order_kind": "reorder"},
     )
 
     assert clashing.status_code == 409
@@ -1394,13 +1527,13 @@ async def test_without_the_header_nothing_is_stored_or_replayed() -> None:
         container,
         "POST",
         "/api/v1/supply-chain/po-cases",
-        json={"po_reference": "PO-IDEMP-4", "supplier_name": "Elmich Co."},
+        json={"po_reference": "PO-IDEMP-4", "supplier_name": "Elmich Co.", "order_kind": "reorder"},
     )
     await _request(
         container,
         "POST",
         "/api/v1/supply-chain/po-cases",
-        json={"po_reference": "PO-IDEMP-5", "supplier_name": "Elmich Co."},
+        json={"po_reference": "PO-IDEMP-5", "supplier_name": "Elmich Co.", "order_kind": "reorder"},
     )
 
     assert len(repo.by_id) == 2
@@ -1738,10 +1871,39 @@ async def test_reading_a_cases_transition_history() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert len(body) == 1
-    assert body[0]["from_state"] == "po_created"
-    assert body[0]["to_state"] == "cancelled"
-    assert body[0]["reason"] == "customer walked away"
+    assert body["next_cursor"] is None
+    assert len(body["items"]) == 1
+    assert body["items"][0]["from_state"] == "po_created"
+    assert body["items"][0]["to_state"] == "cancelled"
+    assert body["items"][0]["reason"] == "customer walked away"
+
+
+async def test_a_cases_transition_history_is_paged_newest_first() -> None:
+    repo = FakePOCaseRepository()
+    container = make_container(repo, frozenset({READ_SCOPE, WRITE_SCOPE, *STEP_SCOPES}))
+    case_id = await _create_case(container)
+    states = [CaseState.PO_CREATED, CaseState.WAITING_DEPOSIT, CaseState.DEPOSIT_CONFIRMED]
+    repo.transitions[uuid.UUID(case_id)] = [
+        CaseTransition(
+            from_state=before,
+            to_state=after,
+            reason=None,
+            occurred_at=datetime(2026, 1, day, tzinfo=UTC),
+        )
+        for day, (before, after) in enumerate(itertools.pairwise(states), start=1)
+    ]
+    url = f"/api/v1/supply-chain/po-cases/{case_id}/transitions"
+
+    first = (await _request(container, "GET", f"{url}?limit=1")).json()
+    second = (
+        await _request(container, "GET", f"{url}?limit=1&cursor={first['next_cursor']}")
+    ).json()
+
+    assert [t["to_state"] for t in first["items"]] == ["deposit_confirmed"]
+    assert [t["to_state"] for t in second["items"]] == ["waiting_deposit"]
+    assert second["next_cursor"] is None
+    too_many = await _request(container, "GET", f"{url}?limit=201")
+    assert too_many.status_code == 422
 
 
 async def test_reading_transition_history_for_an_unknown_case_is_404() -> None:
@@ -1806,10 +1968,11 @@ async def test_advancing_an_approval_required_action_starts_a_run_instead_of_app
 
 def _confirmed_sla_policy(milestone: str, duration_days: int) -> SupplyChainSLAPolicy:
     return SupplyChainSLAPolicy(
-        schema_version="1.0",
+        schema_version="2.0",
         policy_id="supply_chain_sla",
-        policy_version="1.0.0",
-        sla={
+        policy_version="2.0.0",
+        categories=(ProductCategory(key="noi", label="Nồi"),),
+        default={
             milestone: SLAMilestone(
                 duration=f"{duration_days}d", status=SLAConfirmationStatus.CONFIRMED
             )
@@ -1896,17 +2059,18 @@ async def test_reading_sla_policy_returns_the_platform_default_when_no_override_
     response = await _request(container, "GET", "/api/v1/supply-chain/sla-policy")
 
     assert response.status_code == 200
-    assert response.json()["sla"]["deposit"]["duration"] == "10d"
+    assert response.json()["default"]["deposit"]["duration"] == "10d"
 
 
 async def test_writing_a_tenant_override_then_reading_it_back() -> None:
     repo = FakePOCaseRepository()
     container = make_container(repo, frozenset({SLA_POLICY_READ_SCOPE, SLA_POLICY_WRITE_SCOPE}))
     override_body = {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "policy_id": "supply_chain_sla",
-        "policy_version": "1.0.0",
-        "sla": {
+        "policy_version": "2.0.0",
+        "categories": [{"key": "noi", "label": "Nồi"}],
+        "default": {
             "deposit": {
                 "duration": "5d",
                 "status": "confirmed",
@@ -1923,7 +2087,7 @@ async def test_writing_a_tenant_override_then_reading_it_back() -> None:
 
     get_response = await _request(container, "GET", "/api/v1/supply-chain/sla-policy")
     assert get_response.status_code == 200
-    assert get_response.json()["sla"]["deposit"]["duration"] == "5d"
+    assert get_response.json()["default"]["deposit"]["duration"] == "5d"
 
 
 async def test_a_tenant_override_changes_what_sla_evaluation_reports() -> None:
@@ -1960,10 +2124,11 @@ async def test_a_tenant_override_changes_what_sla_evaluation_reports() -> None:
         "PUT",
         "/api/v1/supply-chain/sla-policy",
         json={
-            "schema_version": "1.0",
+            "schema_version": "2.0",
             "policy_id": "supply_chain_sla",
-            "policy_version": "1.0.0",
-            "sla": {"deposit": {"duration": "2d", "status": "confirmed"}},
+            "policy_version": "2.0.0",
+            "categories": [{"key": "noi", "label": "Nồi"}],
+            "default": {"deposit": {"duration": "2d", "status": "confirmed"}},
             "supplier_update": {"reminder_after": "5d", "escalation_after": "10d"},
         },
     )
@@ -1984,10 +2149,11 @@ async def test_writing_an_sla_policy_override_is_denied_without_the_write_scope(
         "PUT",
         "/api/v1/supply-chain/sla-policy",
         json={
-            "schema_version": "1.0",
+            "schema_version": "2.0",
             "policy_id": "supply_chain_sla",
-            "policy_version": "1.0.0",
-            "sla": {},
+            "policy_version": "2.0.0",
+            "categories": [{"key": "noi", "label": "Nồi"}],
+            "default": {},
             "supplier_update": {"reminder_after": "5d", "escalation_after": "10d"},
         },
     )
@@ -2010,7 +2176,7 @@ async def test_writing_a_malformed_sla_policy_is_refused_before_the_handler_runs
         container,
         "PUT",
         "/api/v1/supply-chain/sla-policy",
-        json={"sla": {"deposit": {"duration": "not-a-duration", "status": "confirmed"}}},
+        json={"default": {"deposit": {"duration": "not-a-duration", "status": "confirmed"}}},
     )
     assert response.status_code == 422
 
@@ -2739,3 +2905,428 @@ async def test_writing_the_follow_up_policy_needs_its_write_scope() -> None:
         container, "PUT", "/api/v1/supply-chain/follow-up-policy", json=shipped
     )
     assert response.status_code == 403
+
+
+# --- a PO case awaiting its PO, and step 10 (stage-1 ticket 05) -------------------------
+
+_ORDERING = duty_scope(CaseDuty.ORDERING)
+_SKU = uuid.uuid4()
+
+
+def _awaiting(repo: FakePOCaseRepository, *, quantity: int | None = None) -> POCase:
+    case = POCase.requested(
+        id=POCaseId(uuid.uuid4()),
+        tenant_id=TenantId(TENANT),
+        workspace_id=WorkspaceId(WORKSPACE),
+        supplier_name="NCC Minh Long",
+        product_dev_case_id=uuid.uuid4(),
+        pic_user_id=uuid.uuid4(),
+        category="Nồi",
+        lines=(POCaseLine(sku_id=_SKU, quantity=quantity, sku_code="MH-1-RED"),),
+    )
+    case.created_at = datetime.now(UTC)
+    repo.by_id[case.id.value] = case
+    return case
+
+
+async def test_a_case_awaiting_its_po_reads_with_no_reference_its_stamps_and_lines() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo, quantity=12)
+
+    response = await _request(
+        make_container(repo, frozenset({READ_SCOPE})),
+        "GET",
+        f"/api/v1/supply-chain/po-cases/{case.id.value}",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["state"], body["po_reference"], body["order_kind"]) == (
+        "order_requested",
+        None,
+        "new",
+    )
+    assert (body["pic_user_id"], body["category"], body["product_dev_case_id"]) == (
+        str(case.pic_user_id),
+        "Nồi",
+        str(case.product_dev_case_id),
+    )
+    assert body["lines"] == [
+        {"sku_id": str(_SKU), "sku_code": "MH-1-RED", "variant_label": None, "quantity": 12}
+    ]
+
+
+async def test_create_po_sets_the_reference_and_kind_and_tells_ke_toan() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo)
+    accountant = uuid.uuid4()
+    notifier = FakeNotifier()
+
+    response = await _request(
+        make_container(
+            repo,
+            frozenset({READ_SCOPE, _ORDERING}),
+            idempotency_store=MemoryIdempotencyStore(),
+            holders=FakeHolders({duty_scope(CaseDuty.FINANCE): [accountant]}),
+            notifier=notifier,
+        ),
+        "POST",
+        f"/api/v1/supply-chain/po-cases/{case.id.value}/create-po",
+        idempotency_key=str(uuid.uuid4()),
+        json={
+            "po_reference": "PO-2026-0101",
+            "order_kind": "new",
+            "lines": [{"sku_id": str(_SKU), "quantity": 30}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["state"], body["po_reference"]) == ("po_created", "PO-2026-0101")
+    assert body["lines"][0]["quantity"] == 30
+    assert list(notifier.sent) == [(accountant, f"supply_chain.po_created:{case.id}")]
+
+
+async def test_create_po_with_a_line_still_open_is_409_and_without_the_duty_403() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo)
+    path = f"/api/v1/supply-chain/po-cases/{case.id.value}/create-po"
+    body = {"po_reference": "PO-1", "order_kind": "new"}
+
+    open_line = await _request(
+        make_container(repo, frozenset({_ORDERING}), idempotency_store=MemoryIdempotencyStore()),
+        "POST",
+        path,
+        idempotency_key=str(uuid.uuid4()),
+        json=body,
+    )
+    no_duty = await _request(
+        make_container(
+            repo,
+            frozenset({WRITE_SCOPE, duty_scope(CaseDuty.FINANCE)}),
+            idempotency_store=MemoryIdempotencyStore(),
+        ),
+        "POST",
+        path,
+        idempotency_key=str(uuid.uuid4()),
+        json=body,
+    )
+
+    assert open_line.status_code == 409
+    assert open_line.json()["details"]["missing_quantity"] == str(_SKU)
+    assert no_duty.status_code == 403
+    assert repo.by_id[case.id.value].state is CaseState.ORDER_REQUESTED
+
+
+async def test_the_step_route_refuses_create_po() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo, quantity=1)
+
+    response = await _request(
+        make_container(repo, frozenset({_ORDERING}), idempotency_store=MemoryIdempotencyStore()),
+        "POST",
+        f"/api/v1/supply-chain/po-cases/{case.id.value}/transitions",
+        idempotency_key=str(uuid.uuid4()),
+        json={"action": "create_po"},
+    )
+
+    assert response.status_code == 422
+    assert repo.by_id[case.id.value].state is CaseState.ORDER_REQUESTED
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"po_reference": "PO-9", "supplier_name": "NCC"},
+        {
+            "po_reference": "PO-9",
+            "supplier_name": "NCC",
+            "order_kind": "reorder",
+            "pic_user_id": str(uuid.uuid4()),
+        },
+        {"po_reference": "PO-9", "supplier_name": "NCC", "order_kind": "maybe"},
+    ],
+)
+async def test_creating_a_case_needs_its_kind_and_takes_no_pic(body: dict[str, object]) -> None:
+    repo = FakePOCaseRepository()
+
+    response = await _request(
+        make_container(repo, frozenset({WRITE_SCOPE})),
+        "POST",
+        "/api/v1/supply-chain/po-cases",
+        json=body,
+    )
+
+    assert response.status_code == 422
+    assert repo.by_id == {}
+
+
+# -- stage-1 ticket 06: the Category, the PIC, follow-ups of either kind ---------
+
+
+async def test_a_follow_up_names_its_case_kind_and_reference() -> None:
+    record = replace(_follow_up(), case_kind=CaseKind.PRODUCT, reference="DX-7", supplier_name=None)
+    response = await _request(
+        make_container(
+            FakePOCaseRepository(),
+            frozenset({READ_SCOPE, RECORDS_SCOPE}),
+            follow_up_repo=FakeFollowUpRepository(record),
+        ),
+        "GET",
+        "/api/v1/supply-chain/follow-ups",
+    )
+    assert response.status_code == 200
+    (item,) = response.json()
+    assert {k: item[k] for k in ("case_kind", "case_id", "reference", "supplier_name")} == {
+        "case_kind": "product",
+        "case_id": str(record.case_id),
+        "reference": "DX-7",
+        "supplier_name": None,
+    }
+    assert "po_case_id" not in item
+
+
+async def test_a_po_case_opened_by_hand_takes_a_listed_category_and_refuses_another() -> None:
+    repo = FakePOCaseRepository()
+    container = make_container(repo, frozenset({READ_SCOPE, WRITE_SCOPE}))
+    body = {"po_reference": "PO-C1", "supplier_name": "K", "order_kind": "reorder"}
+
+    listed = await _request(
+        container, "POST", "/api/v1/supply-chain/po-cases", json={**body, "category": "noi"}
+    )
+    unlisted = await _request(
+        container,
+        "POST",
+        "/api/v1/supply-chain/po-cases",
+        json={**body, "po_reference": "PO-C2", "category": "Nồi"},
+    )
+
+    assert listed.status_code == 200 and listed.json()["category"] == "noi"
+    assert unlisted.status_code == 422
+    assert [c.po_reference for c in repo.by_id.values()] == ["PO-C1"]
+
+
+async def test_tp_cung_ung_reassigns_a_po_cases_pic_over_http() -> None:
+    repo = FakePOCaseRepository()
+    new_pic = uuid.uuid4()
+    lead = frozenset({READ_SCOPE, WRITE_SCOPE, "supply_chain.duty.supply_lead"})
+    container = make_container(repo, lead, members=FakeMembers({WORKSPACE: {new_pic}}))
+    case_id = await _create_case(container)
+
+    refused = await _request(
+        make_container(
+            repo,
+            frozenset({READ_SCOPE, WRITE_SCOPE, *STEP_SCOPES} - {"supply_chain.duty.supply_lead"}),
+        ),
+        "POST",
+        f"/api/v1/supply-chain/po-cases/{case_id}/pic",
+        json={"pic_user_id": str(new_pic), "reason": "x"},
+    )
+    no_reason = await _request(
+        container,
+        "POST",
+        f"/api/v1/supply-chain/po-cases/{case_id}/pic",
+        json={"pic_user_id": str(new_pic)},
+    )
+    done = await _request(
+        container,
+        "POST",
+        f"/api/v1/supply-chain/po-cases/{case_id}/pic",
+        json={"pic_user_id": str(new_pic), "reason": "Chuyển bộ phận"},
+    )
+
+    assert (refused.status_code, no_reason.status_code, done.status_code) == (403, 422, 200)
+    assert done.json()["pic_user_id"] == str(new_pic)
+
+
+# -- stage 1 in the brief and the command bar (ticket 08) ---------------------------
+
+PRODUCT_READ_SCOPE = "supply_chain.product_case.read"
+
+
+def _product_case(code: str, state: ProductDevState) -> ProductDevelopmentCase:
+    return ProductDevelopmentCase(
+        id=ProductDevelopmentCaseId(uuid.uuid4()),
+        tenant_id=TenantId(TENANT),
+        workspace_id=WorkspaceId(WORKSPACE),
+        proposal_code=code,
+        product_name="Chảo 28",
+        category="chao",
+        pic_user_id=PRINCIPAL,
+        created_by=PRINCIPAL,
+        state=state,
+        created_at=datetime.now(UTC) - timedelta(days=1),
+    )
+
+
+async def test_daily_brief_carries_stage_one_groups_to_a_product_reader() -> None:
+    products = InMemoryProductCases()
+    case = _product_case("SP-028", ProductDevState.PENDING_BOD_REVIEW)
+    products.seed([case])
+
+    async def get(scopes: frozenset[str]) -> httpx.Response:
+        return await _request(
+            make_container(FakePOCaseRepository(), scopes, product_cases=products),
+            "GET",
+            "/api/v1/supply-chain/daily-brief",
+        )
+
+    without = (await get(frozenset({READ_SCOPE}))).json()
+    body = (await get(frozenset({READ_SCOPE, PRODUCT_READ_SCOPE}))).json()
+
+    assert without["product_cases_visible"] is False
+    assert all(group["product_entries"] == [] for group in without["groups"])
+    assert body["product_cases_visible"] is True
+    assert body["active_product_case_count"] == 1
+    (group,) = [g for g in body["groups"] if g["key"] == "product_awaiting_bod"]
+    assert group["entries"] == []
+    assert group["product_state"] == "pending_bod_review"
+    (entry,) = group["product_entries"]
+    assert entry["case"] == {
+        "id": str(case.id.value),
+        "proposal_code": "SP-028",
+        "product_name": "Chảo 28",
+        "category": "chao",
+        "pic_user_id": str(PRINCIPAL),
+        "state": "pending_bod_review",
+    }
+    assert entry["round_no"] is None and entry["sample_result"] is None
+
+
+async def test_a_question_about_a_product_case_comes_back_as_a_link_to_it() -> None:
+    products = InMemoryProductCases()
+    case = _product_case("SP-028", ProductDevState.SAMPLE_TESTING)
+    products.seed([case])
+    gateway = FakeModelGateway(
+        CaseQueryIntent(kind=CaseQueryKind.OPEN_PRODUCT_CASE, proposal_code_mention="SP-028")
+    )
+    container = make_container(
+        FakePOCaseRepository(),
+        frozenset({READ_SCOPE, PRODUCT_READ_SCOPE}),
+        case_query_gateway=gateway,
+        product_cases=products,
+    )
+
+    response = await _request(
+        container,
+        "POST",
+        "/api/v1/supply-chain/case-query",
+        json={"question": "hồ sơ SP-028 tới đâu rồi?"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outcome"] == "product_open"
+    assert body["understood"]["proposal_code"] == "SP-028"
+    assert body["data_view"] == {
+        "type": "product_case_link",
+        "case": {
+            "id": str(case.id.value),
+            "proposal_code": "SP-028",
+            "product_name": "Chảo 28",
+            "category": "chao",
+            "pic_user_id": str(PRINCIPAL),
+            "state": "sample_testing",
+        },
+    }
+
+
+async def test_a_product_question_without_the_product_read_scope_is_forbidden() -> None:
+    gateway = FakeModelGateway(CaseQueryIntent(kind=CaseQueryKind.LIST_PRODUCT_CASES))
+    container = make_container(
+        FakePOCaseRepository(), frozenset({READ_SCOPE}), case_query_gateway=gateway
+    )
+    response = await _request(
+        container, "POST", "/api/v1/supply-chain/case-query", json={"question": "các hồ sơ"}
+    )
+    assert response.status_code == 403
+
+
+# -- a case's pending approvals, filtered on the server -----------------------
+
+
+def _case_approval(case_id: str, *, tenant: uuid.UUID = TENANT) -> ApprovalRequest:
+    return ApprovalRequest(
+        id=uuid.uuid4(),
+        tenant_id=TenantId(tenant),
+        workspace_id=WorkspaceId(WORKSPACE),
+        approval_type="supply_chain.case_action.cancel",
+        requested_by=UserId(uuid.uuid4()),
+        reason="test",
+        payload={"po_case_id": case_id},
+        status=ApprovalStatus.PENDING,
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+
+async def test_a_cases_approvals_are_only_the_ones_naming_it() -> None:
+    repo = FakePOCaseRepository()
+    approvals = FakePendingApprovals()
+    container = make_container(
+        repo, frozenset({READ_SCOPE, WRITE_SCOPE, "approvals.read"}), pending_approvals=approvals
+    )
+    case_id = await _create_case(container)
+    other_id = await _create_case_for(container, reference="PO-OTHER", supplier="Other Co.")
+    mine = _case_approval(case_id)
+    approvals.approvals.extend(
+        [
+            mine,
+            _case_approval(other_id),
+            # Another tenant's approval naming this very case id.
+            _case_approval(case_id, tenant=uuid.uuid4()),
+        ]
+    )
+
+    response = await _request(
+        container, "GET", f"/api/v1/supply-chain/po-cases/{case_id}/approvals"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["visible"] is True
+    assert body["total"] == 1
+    assert [item["id"] for item in body["items"]] == [str(mine.id)]
+    assert body["items"][0]["action"] == "cancel"
+
+
+async def test_a_cases_approvals_are_not_looked_at_without_the_inbox_scope() -> None:
+    repo = FakePOCaseRepository()
+    approvals = FakePendingApprovals()
+    container = make_container(
+        repo, frozenset({READ_SCOPE, WRITE_SCOPE}), pending_approvals=approvals
+    )
+    case_id = await _create_case(container)
+    approvals.approvals.append(_case_approval(case_id))
+
+    response = await _request(
+        container, "GET", f"/api/v1/supply-chain/po-cases/{case_id}/approvals"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"visible": False, "total": 0, "items": []}
+    assert approvals.calls == 0
+
+
+async def test_a_cases_approvals_refuse_a_caller_without_the_case_read_scope() -> None:
+    repo = FakePOCaseRepository()
+    container = make_container(repo, frozenset({READ_SCOPE, WRITE_SCOPE}))
+    case_id = await _create_case(container)
+
+    response = await _request(
+        make_container(repo, frozenset({"approvals.read"})),
+        "GET",
+        f"/api/v1/supply-chain/po-cases/{case_id}/approvals",
+    )
+
+    assert response.status_code == 403
+
+
+async def test_another_tenants_case_has_no_approvals_to_show() -> None:
+    repo = FakePOCaseRepository()
+    container = make_container(repo, frozenset({READ_SCOPE, WRITE_SCOPE, "approvals.read"}))
+
+    response = await _request(
+        container, "GET", f"/api/v1/supply-chain/po-cases/{uuid.uuid4()}/approvals"
+    )
+
+    assert response.status_code == 404

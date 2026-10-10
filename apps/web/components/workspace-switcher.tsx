@@ -1,9 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Building2, Check, ChevronsUpDown, Layers } from "lucide-react";
-import { cn } from "@dw/ui";
+import { Button, Dropdown, Flex, Typography, type MenuProps } from "antd";
+import { ApartmentOutlined, SwapOutlined } from "@ant-design/icons";
 import { useAuth } from "../lib/auth/auth-context";
+
+function Label({ tenant, workspace }: { tenant: string; workspace: string }) {
+  return (
+    <Flex vertical className="min-w-0 text-left leading-tight">
+      <Typography.Text strong ellipsis className="text-xs">
+        {tenant}
+      </Typography.Text>
+      <Typography.Text type="secondary" ellipsis className="text-[11px]">
+        {workspace}
+      </Typography.Text>
+    </Flex>
+  );
+}
 
 /**
  * The active company + workspace, in the top navbar. When the signed-in user
@@ -13,76 +25,48 @@ import { useAuth } from "../lib/auth/auth-context";
  */
 export function WorkspaceSwitcher() {
   const { active, memberships, selectWorkspace } = useAuth();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onDocClick = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
-
   if (!active) return null;
-  const multiple = memberships.length > 1;
+
+  const current = (
+    <Flex align="center" gap={8} className="min-w-0">
+      <ApartmentOutlined aria-hidden />
+      <Label tenant={active.tenantName} workspace={active.workspaceName} />
+    </Flex>
+  );
+
+  if (memberships.length <= 1) {
+    return (
+      <div
+        className="min-w-0 max-w-[15rem]"
+        title={`${active.tenantName} · ${active.workspaceName}`}
+      >
+        {current}
+      </div>
+    );
+  }
+
+  const items: MenuProps["items"] = memberships.map((m) => ({
+    key: m.workspaceId,
+    label: <Label tenant={m.tenantName} workspace={m.workspaceName} />,
+  }));
 
   return (
-    <div ref={ref} className="relative min-w-0">
-      <button
-        type="button"
-        disabled={!multiple}
-        onClick={() => setOpen((v) => !v)}
-        title={`${active.tenantName} · ${active.workspaceName}`}
-        className={cn(
-          "flex w-full max-w-[15rem] items-center gap-2 rounded-lg border bg-card px-2.5 py-1.5 text-left",
-          multiple && "hover:bg-muted",
-        )}
+    <Dropdown
+      trigger={["click"]}
+      menu={{
+        items,
+        selectable: true,
+        selectedKeys: [active.workspaceId],
+        onClick: ({ key }) => selectWorkspace(key),
+      }}
+    >
+      <Button
+        className="h-auto min-w-0 max-w-[15rem] py-1"
+        aria-label={`Workspace: ${active.tenantName} · ${active.workspaceName}. Đổi workspace`}
       >
-        <Building2 className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 leading-tight">
-          <span className="block truncate text-xs font-semibold text-foreground">
-            {active.tenantName}
-          </span>
-          <span className="block truncate text-[11px] text-muted-foreground">
-            {active.workspaceName}
-          </span>
-        </span>
-        {multiple && (
-          <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
-        )}
-      </button>
-      {open && multiple && (
-        <ul className="absolute left-0 z-50 mt-1 max-h-72 w-64 overflow-auto rounded-md border bg-card shadow-lg">
-          {memberships.map((m) => (
-            <li key={m.workspaceId}>
-              <button
-                type="button"
-                onClick={() => {
-                  selectWorkspace(m.workspaceId);
-                  setOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted"
-              >
-                <Layers className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">
-                    {m.tenantName}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {m.workspaceName}
-                  </span>
-                </span>
-                {m.workspaceId === active.workspaceId && (
-                  <Check className="size-4 shrink-0 text-primary" />
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+        {current}
+        <SwapOutlined aria-hidden className="text-xs" />
+      </Button>
+    </Dropdown>
   );
 }

@@ -1,0 +1,52 @@
+{
+  "doc_type": "qc_report",
+  "document_text": "INSPECTION REPORT - PO-2026-0101\nDate: 05/11/2026\nLot size: 1700 pcs\nSample size: 125 pcs\nAQL: Major 2.5 / Minor 4.0\nCritical: 0 (Ac 0)\nMajor: 5 (Ac 7)\nMinor: 6 (Ac 10)\nDefects: trầy xước thân nồi\nResult: PASS\n",
+  "model_reading": {
+    "inspected_on": {
+      "value": "2026-11-05",
+      "quote": "Date: 05/11/2026"
+    },
+    "lot_size": {
+      "value": "1700",
+      "quote": "Lot size: 1700 pcs"
+    },
+    "sample_size": {
+      "value": "125",
+      "quote": "Sample size: 125 pcs"
+    },
+    "critical_found": {
+      "value": "0",
+      "quote": "Critical: 0 (Ac 0)"
+    },
+    "critical_accept": {
+      "value": "0",
+      "quote": "Critical: 0 (Ac 0)"
+    },
+    "major_found": {
+      "value": "5",
+      "quote": "Major: 5 (Ac 7)"
+    },
+    "major_accept": {
+      "value": "7",
+      "quote": "Major: 5 (Ac 7)"
+    },
+    "minor_found": {
+      "value": "6",
+      "quote": "Minor: 6 (Ac 10)"
+    },
+    "minor_accept": {
+      "value": "10",
+      "quote": "Minor: 6 (Ac 10)"
+    },
+    "stated_result": {
+      "value": "pass",
+      "quote": "Result: PASS"
+    },
+    "defects": [
+      {
+        "value": "trầy xước thân nồi",
+        "quote": "Defects: trầy xước thân nồi"
+      }
+    ]
+  }
+}

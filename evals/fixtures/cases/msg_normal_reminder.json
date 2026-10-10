@@ -1,0 +1,31 @@
+{
+  "purpose": "supplier_reminder",
+  "case": {
+    "state": "sample_requested"
+  },
+  "follow_up": {
+    "days": 12,
+    "limit_days": 10
+  },
+  "contact": {
+    "name": "Chị Lan",
+    "email": "lan@minhphat.vn"
+  },
+  "model_writing": {
+    "paragraphs": [
+      {
+        "text": "Mẫu Nồi inox 3 đáy 24cm của hồ sơ DX-2026-041 đã quá hạn 12 ngày so với hạn 10 ngày.",
+        "cites": [
+          "case",
+          "follow_up"
+        ]
+      },
+      {
+        "text": "Anh/chị vui lòng cho biết ngày gửi mẫu.",
+        "cites": [
+          "case"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "model_calls": 1,
+  "status": "extracted",
+  "fields": {
+    "major_found": "5",
+    "major_accept": "7",
+    "stated_result": "pass"
+  }
+}

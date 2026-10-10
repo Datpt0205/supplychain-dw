@@ -1,0 +1,13 @@
+{
+  "outcome": "proposed",
+  "draft_fields": {
+    "unit_price": null
+  },
+  "findings": [
+    "quotation_lines_ambiguous"
+  ],
+  "prompt_must_not_contain": [
+    "2,80",
+    "3,10"
+  ]
+}

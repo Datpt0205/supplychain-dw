@@ -73,6 +73,6 @@ TM3 dùng bảng `platform.support_staff` của `support-access` ticket 01.
 
 ## Danh sách ticket
 
-| #   | Ticket                                                                                                 | Status          | Blocked by                                                                          |
-| --- | ------------------------------------------------------------------------------------------------------ | --------------- | ----------------------------------------------------------------------------------- |
-| 01  | [Người dùng toàn tenant, sửa vai theo workspace, lời mời](issues/01-tenant-members-and-invitations.md) | ready-for-agent | .claude/plans/platform-runtime/support-access/issues/01-support-grants-lifecycle.md |
+| #   | Ticket                                                                                                 | Status   | Blocked by                                                                          |
+| --- | ------------------------------------------------------------------------------------------------------ | -------- | ----------------------------------------------------------------------------------- |
+| 01  | [Người dùng toàn tenant, sửa vai theo workspace, lời mời](issues/01-tenant-members-and-invitations.md) | resolved | .claude/plans/platform-runtime/support-access/issues/01-support-grants-lifecycle.md |

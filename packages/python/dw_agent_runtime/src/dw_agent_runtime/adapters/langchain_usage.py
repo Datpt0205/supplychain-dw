@@ -50,11 +50,6 @@ from dw_platform.application.access_context import AccessContext
 
 _LOG = logging.getLogger("dw_agent_runtime.langchain_usage")
 
-# The ledger's prompt columns describe a registry prompt; an agent loop has
-# none, and pretending otherwise would corrupt the prompt-cost breakdown.
-AGENT_LOOP_PROMPT = "agent_loop"
-AGENT_LOOP_PROMPT_VERSION = "0.0.0"
-
 # What the trackers inside one run have already put on the ledger, per model.
 # Set by the outermost tracker and mutated by the inner ones, so the outermost
 # can record the remainder instead of the whole run a second time.
@@ -82,10 +77,14 @@ class LangchainUsageMeter:
         *,
         profile_id: str,
         task: str,
-        prompt_id: str = AGENT_LOOP_PROMPT,
-        prompt_version: str = AGENT_LOOP_PROMPT_VERSION,
+        prompt_id: str,
+        prompt_version: str,
     ) -> AsyncIterator[list[UsageMetadataCallbackHandler]]:
         """Yield the callbacks to pass as ``config={"callbacks": ...}``.
+
+        The prompt is required: the ledger's prompt columns say which versioned
+        artifact the money was spent running, and a default would be a version
+        that names none.
 
         Recording happens in ``finally``: a run that times out or raises has
         still spent its tokens, and the truncated run is exactly the one whose

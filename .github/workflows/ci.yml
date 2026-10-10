@@ -42,8 +42,7 @@ jobs:
           DW_KEYCLOAK_ISSUER=http://localhost:8686/realms/dw \
           DW_PUBLIC_WEB_URL=http://localhost:23000 \
           NEXT_PUBLIC_API_BASE_URL=http://localhost:28000 \
-          NEXT_PUBLIC_CHAT_BASE_URL=http://localhost:28100 \
-            docker compose --env-file .env -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.dev.yml --profile full --profile models config -q
+            docker compose --env-file .env -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.dev.yml --profile full config -q
 
   # 2, 4, 5, 8. python quality + unit + architecture + eval smoke -------------
   python-quality:
@@ -71,6 +70,8 @@ jobs:
         run: uv run pytest -m unit --cov --cov-report=term --cov-report=xml
       - name: Repository invariants (RLS, unread fields, unhandled literals)
         run: uv run python scripts/verify_invariants.py
+      - name: Coding-agent harness hooks (commit gate, session baseline)
+        run: bash scripts/test_claude_hooks.sh
       - name: Architecture tests
         run: |
           uv run lint-imports
@@ -101,7 +102,7 @@ jobs:
   scaffold-smoke:
     # The skeleton's central claim is that a product can plug a bounded context
     # in and inherit everything. Nothing tested that claim: this repo ships no
-    # context on purpose, so the fourteen seams `scripts/new_context.py` wires
+    # context on purpose, so the fifteen seams `scripts/new_context.py` wires
     # had never been walked end to end. Walking them found one the documented
     # list missed — `apps/api/pyproject.toml` — which is what a claim nobody
     # executes looks like. A throwaway context, generated and discarded on every

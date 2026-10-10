@@ -69,6 +69,7 @@ from dw_agent_runtime.executor import ToolExecutor
 from dw_agent_runtime.model.budget import RunBudgetLedger
 from dw_agent_runtime.model.copy import RuntimeCopy
 from dw_agent_runtime.model.profiles import ModelProfileRegistry
+from dw_agent_runtime.model.prompts import PromptRegistry
 from dw_agent_runtime.tools import ToolRegistry
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.ports import PlatformUnitOfWorkFactory
@@ -124,9 +125,15 @@ class AgentSpec:
     # Prefixes the approval type a gated tool raises, so the approvals screen
     # can route a decision back to the context that owns it.
     approval_type_prefix: str
+    # The worker prompt: a registry artifact, pinned. Pass the worker
+    # definition's `agent_prompt_id`/`agent_prompt_version` - the pin the runner
+    # bills this loop under - rather than naming a version a second time.
+    prompt_id: str
+    prompt_version: str
+    prompts: PromptRegistry
     # Rendered per model call, not once at build: the prompt names today's date
     # and the screen in view, and the agent is compiled once per process.
-    render_prompt: Callable[[ModelRequest[Any]], str]
+    prompt_variables: Callable[[ModelRequest[Any]], dict[str, str]]
     # The process's one spend ledger — `RuntimeSeam.budget`, never a fresh one —
     # and the profile whose ceiling and price this worker's calls are held to.
     budget: RunBudgetLedger
@@ -169,7 +176,9 @@ def platform_middleware(spec: AgentSpec) -> list[AgentMiddleware[Any, Any]]:
     """
     offered = list(spec.offered)
     stack: list[AgentMiddleware[Any, Any]] = [
-        WorkerSystemPrompt(spec.render_prompt),
+        WorkerSystemPrompt(
+            spec.prompts, spec.prompt_id, spec.prompt_version, spec.prompt_variables
+        ),
         # Directly after the worker prompt: the prompt says what this worker is,
         # and recall appends what it happens to know about the record in view.
         # Both are system-message work, so keeping them adjacent means one place

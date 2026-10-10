@@ -40,7 +40,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/members": {
+    "/api/v1/admin/invitations": {
         parameters: {
             query?: never;
             header?: never;
@@ -48,6 +48,32 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        put?: never;
+        /**
+         * Invite Member
+         * @description Create the person (no sign-in yet) and their memberships. No email is
+         *     sent: the admin tells the person, who then signs in with that email.
+         */
+        post: operations["invite_member_api_v1_admin_invitations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Members
+         * @description Everyone in the caller's tenant, by name (Vietnamese collation), with
+         *     their roles in each workspace.
+         */
+        get: operations["list_members_api_v1_admin_members_get"];
         put?: never;
         /** Grant Member */
         post: operations["grant_member_api_v1_admin_members_post"];
@@ -69,6 +95,29 @@ export interface paths {
         post?: never;
         /** Revoke Member */
         delete: operations["revoke_member_api_v1_admin_members__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/members/{user_id}/memberships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Memberships
+         * @description Replace the person's non-administrative roles, workspace by workspace,
+         *     in one transaction. A workspace in the body without a membership gets one;
+         *     one left out keeps only its administrative roles, and goes without any.
+         *     Answers the person's memberships as they now are (empty: none left).
+         */
+        put: operations["set_memberships_api_v1_admin_members__user_id__memberships_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -153,6 +202,23 @@ export interface paths {
         put?: never;
         /** Waive Separation Of Duties Rule */
         post: operations["waive_separation_of_duties_rule_api_v1_admin_separation_of_duties__rule_key__waiver_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/separation-of-duties/{rule_key}/waiver/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Separation Of Duties Waiver */
+        post: operations["confirm_separation_of_duties_waiver_api_v1_admin_separation_of_duties__rule_key__waiver_confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -291,6 +357,23 @@ export interface paths {
         put?: never;
         /** Decide */
         post: operations["decide_api_v1_approvals__approval_id__decisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/approvals/{approval_id}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** View Approval */
+        post: operations["view_approval_api_v1_approvals__approval_id__view_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -545,6 +628,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/memory/candidates/{candidate_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Candidate */
+        get: operations["get_candidate_api_v1_memory_candidates__candidate_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/memory/items": {
         parameters: {
             query?: never;
@@ -643,6 +743,86 @@ export interface paths {
         post?: never;
         /** Remove Operator */
         delete: operations["remove_operator_api_v1_platform_operators__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/support-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Support Requests
+         * @description Every tenant's grants waiting for assignment (`pending_assignment`), oldest first.
+         */
+        get: operations["list_support_requests_api_v1_platform_support_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/support-requests/{grant_id}/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assign Support Request
+         * @description 409 `support_staff_required` when the person is not support staff, 409
+         *     `support_grant_wrong_status` when the grant is not waiting for assignment.
+         *     No conflict-of-interest check yet (ADR 0024).
+         */
+        post: operations["assign_support_request_api_v1_platform_support_requests__grant_id__assign_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/support-staff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Support Staff */
+        get: operations["list_support_staff_api_v1_platform_support_staff_get"];
+        put?: never;
+        /**
+         * Add Support Staff
+         * @description By the email of an identity that has signed in; idempotent.
+         */
+        post: operations["add_support_staff_api_v1_platform_support_staff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/support-staff/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Support Staff */
+        delete: operations["remove_support_staff_api_v1_platform_support_staff__user_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -882,6 +1062,124 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/support/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Catalog */
+        get: operations["catalog_api_v1_support_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Grants
+         * @description `support.grant`: every grant of this workspace. `support.request` only:
+         *     the caller's own requests.
+         */
+        get: operations["list_grants_api_v1_support_grants_get"];
+        put?: never;
+        /**
+         * Request Grant
+         * @description With `support.grant` the grant is made (`pending_assignment`); with only
+         *     `support.request` it waits for a granter (`pending_approval`).
+         */
+        post: operations["request_grant_api_v1_support_grants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/grants/{grant_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Grant */
+        post: operations["approve_grant_api_v1_support_grants__grant_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/grants/{grant_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Grant */
+        post: operations["reject_grant_api_v1_support_grants__grant_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/grants/{grant_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Grant
+         * @description Takes effect at the staff member's next request.
+         */
+        post: operations["revoke_grant_api_v1_support_grants__grant_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/my-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Grants
+         * @description The caller's grants, in force or ended in the last 30 days. Support
+         *     staff only (403 `support_staff_required`); no tenant header is read.
+         */
+        get: operations["my_grants_api_v1_support_my_grants_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/zalo/connect": {
         parameters: {
             query?: never;
@@ -933,6 +1231,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/zalo/workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Zalo Workspace */
+        get: operations["zalo_workspace_api_v1_zalo_workspace_get"];
+        /** Zalo Choose Workspace */
+        put: operations["zalo_choose_workspace_api_v1_zalo_workspace_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -944,10 +1260,19 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** AddSupportStaffRequest */
+        AddSupportStaffRequest: {
+            /** Email */
+            email: string;
+            /** Note */
+            note?: string | null;
+        };
         /** ApprovalView */
         ApprovalView: {
             /** Approval Type */
             approval_type: string;
+            /** Can Decide */
+            can_decide: boolean;
             /** Created At */
             created_at: string | null;
             /** Decided At */
@@ -963,6 +1288,10 @@ export interface components {
             };
             /** Reason */
             reason: string;
+            /** Requested By Me */
+            requested_by_me: boolean;
+            /** Required Scope */
+            required_scope: string | null;
             /** Requires Comment */
             requires_comment: boolean;
             /** Run Id */
@@ -970,10 +1299,67 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** ApprovalViewOutcome */
+        ApprovalViewOutcome: {
+            /** Code */
+            code: string | null;
+            /** Command Approve */
+            command_approve: string | null;
+            /** Command Reject */
+            command_reject: string | null;
+            /** Expires At */
+            expires_at: string | null;
+            /** Requires Comment */
+            requires_comment: boolean;
+            unavailable_reason: components["schemas"]["CodeUnavailable"] | null;
+            /**
+             * Viewed At
+             * Format: date-time
+             */
+            viewed_at: string;
+        };
         /** AssignOrgAdminRequest */
         AssignOrgAdminRequest: {
             /** Email */
             email: string;
+        };
+        /** AssignSupportRequest */
+        AssignSupportRequest: {
+            /**
+             * Staff User Id
+             * Format: uuid
+             */
+            staff_user_id: string;
+        };
+        /** AssignedSupportGrantView */
+        AssignedSupportGrantView: {
+            /**
+             * Activated At
+             * Format: date-time
+             */
+            activated_at: string;
+            /** Code */
+            code: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Grant Id
+             * Format: uuid
+             */
+            grant_id: string;
+            /**
+             * Staff User Id
+             * Format: uuid
+             */
+            staff_user_id: string;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
         };
         /**
          * AuditEventView
@@ -1061,6 +1447,11 @@ export interface components {
              * @default false
              */
             is_platform_operator: boolean;
+            /**
+             * Is Support Staff
+             * @default false
+             */
+            is_support_staff: boolean;
             /** Memberships */
             memberships: components["schemas"]["WorkspaceMembershipModel"][];
             /**
@@ -1084,6 +1475,12 @@ export interface components {
             /** Cancelled */
             cancelled: boolean;
         };
+        /**
+         * CodeUnavailable
+         * @description Why the portal offers no code. Each one is a sentence on the page.
+         * @enum {string}
+         */
+        CodeUnavailable: "not_pending" | "cannot_decide" | "requester" | "web_only" | "not_linked" | "comment_required" | "channel_off";
         /** CreateTenantRequest */
         CreateTenantRequest: {
             /** Name */
@@ -1333,6 +1730,15 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** InviteMemberRequest */
+        InviteMemberRequest: {
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email: string;
+            /** Memberships */
+            memberships: components["schemas"]["WorkspaceRolesBody"][];
+        };
         /** KnowledgeDocumentView */
         KnowledgeDocumentView: {
             /** Chunk Count */
@@ -1388,6 +1794,19 @@ export interface components {
              */
             workspace_id: string;
         };
+        /**
+         * MemberMembershipsView
+         * @description A person's memberships in this tenant after a change; empty when none is left.
+         */
+        MemberMembershipsView: {
+            /** Memberships */
+            memberships: components["schemas"]["MemberWorkspaceView"][];
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
         /** MemberRefView */
         MemberRefView: {
             /** Display Name */
@@ -1399,6 +1818,62 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+        };
+        /** MemberWorkspaceView */
+        MemberWorkspaceView: {
+            /** Role Keys */
+            role_keys: string[];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Workspace Name */
+            workspace_name: string;
+        };
+        /** MemoryCandidateView */
+        MemoryCandidateView: {
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /** Classification */
+            classification: string;
+            /** Confidence */
+            confidence: number;
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By Run Id
+             * Format: uuid
+             */
+            created_by_run_id: string;
+            /** Decision */
+            decision: string;
+            /** Fact Key */
+            fact_key: string | null;
+            /** Memory Id */
+            memory_id: string | null;
+            /** Memory Type */
+            memory_type: string;
+            /** Provenance Refs */
+            provenance_refs: {
+                [key: string]: unknown;
+            }[];
+            /** Structured Facts */
+            structured_facts: {
+                [key: string]: unknown;
+            };
+            /** Subject Refs */
+            subject_refs: string[];
+            /** Worker Id */
+            worker_id: string;
         };
         /** MemoryItemView */
         MemoryItemView: {
@@ -1429,6 +1904,52 @@ export interface components {
             valid_from: string;
             /** Worker Id */
             worker_id: string;
+        };
+        /**
+         * MySupportGrantModel
+         * @description A grant assigned to the caller: enough to open it, nothing the customer
+         *     wrote (no reason).
+         */
+        MySupportGrantModel: {
+            /** Activated At */
+            activated_at: string | null;
+            /** Code */
+            code: string;
+            /** Expires At */
+            expires_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Resource Id */
+            resource_id: string | null;
+            /** Resource Label */
+            resource_label: string;
+            /** Resource Type */
+            resource_type: string;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Scope Set Key */
+            scope_set_key: string;
+            /** Scope Set Label */
+            scope_set_label: string;
+            /** State */
+            state: string;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /** Tenant Name */
+            tenant_name: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Workspace Name */
+            workspace_name: string;
         };
         /** NewTenantView */
         NewTenantView: {
@@ -1609,6 +2130,11 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** RejectSupportGrantBody */
+        RejectSupportGrantBody: {
+            /** Reason */
+            reason: string;
+        };
         /** RenameTenantRequest */
         RenameTenantRequest: {
             /** Name */
@@ -1618,6 +2144,19 @@ export interface components {
         RenameWorkspaceBody: {
             /** Name */
             name: string;
+        };
+        /** RequestSupportGrantBody */
+        RequestSupportGrantBody: {
+            /** Duration Hours */
+            duration_hours: number;
+            /** Reason */
+            reason: string;
+            /** Resource Id */
+            resource_id?: string | null;
+            /** Resource Type */
+            resource_type: string;
+            /** Scope Set Key */
+            scope_set_key: string;
         };
         /** RoleView */
         RoleView: {
@@ -1661,6 +2200,11 @@ export interface components {
             /** Manager User Id */
             manager_user_id?: string | null;
         };
+        /** SetMembershipsRequest */
+        SetMembershipsRequest: {
+            /** Memberships */
+            memberships: components["schemas"]["WorkspaceRolesBody"][];
+        };
         /** SetPermissionSetsBody */
         SetPermissionSetsBody: {
             /** Permission Set Keys */
@@ -1682,6 +2226,10 @@ export interface components {
         };
         /** SodWaiverView */
         SodWaiverView: {
+            /** Confirmed At */
+            confirmed_at: string | null;
+            /** Confirmed By */
+            confirmed_by: string | null;
             /**
              * Granted At
              * Format: date-time
@@ -1694,6 +2242,153 @@ export interface components {
             granted_by: string;
             /** Reason */
             reason: string;
+        };
+        /** SupportGrantModel */
+        SupportGrantModel: {
+            /** Activated At */
+            activated_at: string | null;
+            /** Code */
+            code: string;
+            /** Duration Hours */
+            duration_hours: number;
+            /** Expires At */
+            expires_at: string | null;
+            /** Granted At */
+            granted_at: string | null;
+            /** Granted By */
+            granted_by: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Reason */
+            reason: string;
+            /** Reject Reason */
+            reject_reason: string | null;
+            /** Rejected At */
+            rejected_at: string | null;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Requested By */
+            requested_by: string | null;
+            /** Resource Id */
+            resource_id: string | null;
+            /** Resource Label */
+            resource_label: string;
+            /** Resource Type */
+            resource_type: string;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Scope Set Key */
+            scope_set_key: string;
+            /** Scope Set Label */
+            scope_set_label: string;
+            /** Staff User Id */
+            staff_user_id: string | null;
+            /** State */
+            state: string;
+            /** Status */
+            status: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /**
+         * SupportRequestView
+         * @description A grant waiting for a person: what the operator chooses by, no more.
+         */
+        SupportRequestView: {
+            /** Code */
+            code: string;
+            /** Duration Hours */
+            duration_hours: number;
+            /**
+             * Grant Id
+             * Format: uuid
+             */
+            grant_id: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Resource Label */
+            resource_label: string;
+            /** Resource Type */
+            resource_type: string;
+            /** Scope Set Key */
+            scope_set_key: string;
+            /** Scope Set Label */
+            scope_set_label: string;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /** Tenant Name */
+            tenant_name: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Workspace Name */
+            workspace_name: string;
+        };
+        /**
+         * SupportScopeSetView
+         * @description A grantable set: no scope list, only what a person chooses by.
+         */
+        SupportScopeSetView: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Resource Types */
+            resource_types: string[];
+        };
+        /** SupportStaffView */
+        SupportStaffView: {
+            /**
+             * Added At
+             * Format: date-time
+             */
+            added_at: string;
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email: string | null;
+            /** Note */
+            note: string | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /** TenantMemberView */
+        TenantMemberView: {
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email: string | null;
+            /** Memberships */
+            memberships: components["schemas"]["MemberWorkspaceView"][];
+            /** Status */
+            status: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
         };
         /** TenantSettingsView */
         TenantSettingsView: {
@@ -1803,6 +2498,19 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** ViewRequest */
+        ViewRequest: {
+            /**
+             * Comment
+             * @default
+             */
+            comment: string;
+            /**
+             * Issue Code
+             * @default false
+             */
+            issue_code: boolean;
+        };
         /** WaiverDecisionBody */
         WaiverDecisionBody: {
             /** Reason */
@@ -1820,6 +2528,8 @@ export interface components {
             permission_set_keys: string[];
             /** Role Keys */
             role_keys: string[];
+            /** Status */
+            status: string;
             /**
              * User Id
              * Format: uuid
@@ -1863,6 +2573,16 @@ export interface components {
              */
             workspace_id: string;
         };
+        /** WorkspaceRolesBody */
+        WorkspaceRolesBody: {
+            /** Role Keys */
+            role_keys: string[];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
         /** WorkspaceSummaryView */
         WorkspaceSummaryView: {
             /** Archived */
@@ -1895,6 +2615,26 @@ export interface components {
         ZaloStatusView: {
             /** Linked */
             linked: boolean;
+        };
+        /** ZaloWorkspaceChoice */
+        ZaloWorkspaceChoice: {
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /** ZaloWorkspaceView */
+        ZaloWorkspaceView: {
+            /** Tenant Id */
+            tenant_id: string | null;
+            /** Workspace Id */
+            workspace_id: string | null;
         };
     };
     responses: never;
@@ -1958,6 +2698,62 @@ export interface operations {
             };
         };
     };
+    invite_member_api_v1_admin_invitations_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberRefView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_members_api_v1_admin_members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantMemberView"][];
+                };
+            };
+        };
+    };
     grant_member_api_v1_admin_members_post: {
         parameters: {
             query?: never;
@@ -2016,6 +2812,44 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_memberships_api_v1_admin_members__user_id__memberships_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMembershipsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberMembershipsView"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -2122,6 +2956,39 @@ export interface operations {
         };
     };
     waive_separation_of_duties_rule_api_v1_admin_separation_of_duties__rule_key__waiver_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaiverDecisionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_separation_of_duties_waiver_api_v1_admin_separation_of_duties__rule_key__waiver_confirm_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -2446,6 +3313,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApprovalView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_approval_api_v1_approvals__approval_id__view_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                approval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ViewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalViewOutcome"];
                 };
             };
             /** @description Validation Error */
@@ -2891,6 +3793,37 @@ export interface operations {
             };
         };
     };
+    get_candidate_api_v1_memory_candidates__candidate_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryCandidateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_items_api_v1_memory_items_get: {
         parameters: {
             query?: {
@@ -3045,6 +3978,143 @@ export interface operations {
         };
     };
     remove_operator_api_v1_platform_operators__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_support_requests_api_v1_platform_support_requests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportRequestView"][];
+                };
+            };
+        };
+    };
+    assign_support_request_api_v1_platform_support_requests__grant_id__assign_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignSupportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignedSupportGrantView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_support_staff_api_v1_platform_support_staff_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportStaffView"][];
+                };
+            };
+        };
+    };
+    add_support_staff_api_v1_platform_support_staff_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddSupportStaffRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRefView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_support_staff_api_v1_platform_support_staff__user_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -3478,6 +4548,208 @@ export interface operations {
             };
         };
     };
+    catalog_api_v1_support_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportScopeSetView"][];
+                };
+            };
+        };
+    };
+    list_grants_api_v1_support_grants_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportGrantModel"][];
+                };
+            };
+        };
+    };
+    request_grant_api_v1_support_grants_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestSupportGrantBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportGrantModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_grant_api_v1_support_grants__grant_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportGrantModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_grant_api_v1_support_grants__grant_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectSupportGrantBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportGrantModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_grant_api_v1_support_grants__grant_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportGrantModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_grants_api_v1_support_my_grants_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MySupportGrantModel"][];
+                };
+            };
+        };
+    };
     zalo_connect_api_v1_zalo_connect_post: {
         parameters: {
             query?: never;
@@ -3532,6 +4804,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ZaloStatusView"];
+                };
+            };
+        };
+    };
+    zalo_workspace_api_v1_zalo_workspace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZaloWorkspaceView"];
+                };
+            };
+        };
+    };
+    zalo_choose_workspace_api_v1_zalo_workspace_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ZaloWorkspaceChoice"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZaloWorkspaceView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

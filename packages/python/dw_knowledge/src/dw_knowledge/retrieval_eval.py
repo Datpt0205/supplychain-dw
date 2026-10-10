@@ -3,7 +3,8 @@
 Pure metric computation over a golden set: a query and the set of document ids
 that *should* be retrieved. Decoupled from any store — pass a ``search`` callable
 (the knowledge gateway in prod, an in-memory fake in tests) so the harness runs
-in CI without infra and against live Qdrant+TEI in a smoke suite.
+in CI without infra and against live Qdrant and the configured embedding and
+rerank providers in a smoke suite.
 """
 
 from __future__ import annotations

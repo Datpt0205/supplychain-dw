@@ -2,82 +2,76 @@
 
 import { useCallback } from "react";
 import Link from "next/link";
-import { TowerControl } from "lucide-react";
-import type { PortfolioSummary } from "@dw/contracts";
 import {
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Skeleton,
+  Empty,
+  Flex,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  cn,
-} from "@dw/ui";
-import { EmptyState } from "../../../components/empty-state";
-import { PageHeading } from "../../../components/page-heading";
+  theme,
+  Typography,
+  type TableColumnsType,
+} from "antd";
+import type { PortfolioSummary } from "@dw/contracts";
+import { PageHeader, RegionState } from "@dw/ui";
+import { LoadError } from "../../../components/load-error";
 import { CaseQueryBar } from "../../../components/supply-chain/case-query-bar";
 import {
   CASE_STATE_LABEL,
-  CaseStateBadge,
+  CaseStateTag,
 } from "../../../components/supply-chain/case-state-badge";
+import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
 import { apiClient } from "../../../lib/session";
 import { poCasesHref } from "../../../lib/supply-chain/po-case-filter";
 import { useCachedResource } from "../../../lib/use-cached-resource";
 
 /**
- * The Control Tower's portfolio view: every
- * active case counted by the state it sits in and by supplier. Counts only —
- * the same SLA-breach and missing-update signals the Attention Queue flags
- * on, computed by `GET /control-tower/summary`, never a score. Which row is
- * the real bottleneck is the reader's call; rows arrive in the server's own
- * order and render as given.
+ * The Control Tower's portfolio view: every active PO case counted by the
+ * state it sits in and by supplier. Counts only — the same SLA-breach and
+ * missing-update signals the Attention Queue flags on, computed by
+ * `GET /control-tower/summary`, never a score. Which row is the real
+ * bottleneck is the reader's call; rows arrive in the server's own order and
+ * render as given.
  */
 export default function ControlTowerPage() {
   const {
     data: summary,
     loading,
     error,
+    reload,
   } = useCachedResource(
     "supply-chain:control-tower-summary",
     useCallback(() => apiClient().getPortfolioSummary(), []),
   );
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <PageHeading
-        icon={TowerControl}
+    <div className="mx-auto max-w-6xl">
+      <PageHeader
+        breadcrumb={supplyChainCrumbs("Control Tower")}
         title="Control Tower"
-        description="Toàn bộ case đang chạy, gom theo trạng thái và nhà cung cấp — chỉ đếm tín hiệu xác định, không chấm điểm."
+        subtitle="Mọi Hồ sơ PO đang chạy (bước 10–17), gom theo trạng thái và NCC: chỉ đếm tín hiệu xác định, không chấm điểm."
       />
-      <CaseQueryBar />
-      {loading ? (
-        <Skeleton className="h-96 w-full" />
-      ) : error != null || !summary ? (
-        // A failed load is never shown as an empty portfolio: "nothing is
-        // running" read off a 403 or an outage is an all-clear nobody gave.
-        <p className="text-sm text-destructive">
-          Không tải được dữ liệu Control Tower:{" "}
-          {error instanceof Error ? error.message : "lỗi không xác định"}
-        </p>
-      ) : summary.active_case_count === 0 ? (
-        <EmptyState
-          icon={TowerControl}
-          title="Chưa có case nào đang chạy"
-          description="Case đã hoàn tất hoặc đã hủy không được tính ở đây."
-        />
-      ) : (
-        <>
-          <Totals summary={summary} />
-          <ByState rows={summary.by_state} />
-          <BySupplier rows={summary.by_supplier} />
-        </>
-      )}
+      <Flex vertical gap="middle">
+        <CaseQueryBar />
+        {!summary ? (
+          // A failed load is never shown as an empty portfolio: "nothing is
+          // running" read off a 403 or an outage is an all-clear nobody gave.
+          <>
+            {error != null ? (
+              <LoadError error={error} onRetry={reload} />
+            ) : loading ? (
+              <RegionState kind="loading" />
+            ) : null}
+          </>
+        ) : summary.active_case_count === 0 ? (
+          <Empty description="Chưa có Hồ sơ PO nào đang chạy. Hồ sơ đã hoàn tất hoặc đã hủy không được tính ở đây." />
+        ) : (
+          <>
+            <Totals summary={summary} />
+            <ByState rows={summary.by_state} />
+            <BySupplier rows={summary.by_supplier} />
+          </>
+        )}
+      </Flex>
     </div>
   );
 }
@@ -86,9 +80,13 @@ function Totals({ summary }: { summary: PortfolioSummary }) {
   // Every tile counts CASES — a supplier with four quiet POs is four here,
   // one row in the supplier table below.
   const metrics = [
-    { label: "Case đang chạy", value: summary.active_case_count, alert: false },
     {
-      label: "Case trễ SLA",
+      label: "Hồ sơ đang chạy",
+      value: summary.active_case_count,
+      alert: false,
+    },
+    {
+      label: "Hồ sơ trễ SLA",
       value: summary.sla_breached_count,
       alert: true,
       // A milestone still pending business confirmation is never counted as
@@ -96,163 +94,185 @@ function Totals({ summary }: { summary: PortfolioSummary }) {
       hint: "Chỉ tính mốc SLA đã được xác nhận",
     },
     {
-      label: "Case chậm cập nhật",
+      label: "Hồ sơ chậm cập nhật",
       value: summary.update_overdue_count,
       alert: true,
     },
   ];
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      {metrics.map((metric) => (
-        <Card key={metric.label}>
-          <CardHeader className="pb-2">
-            <CardDescription>{metric.label}</CardDescription>
-            <CardTitle className="text-3xl">
-              <Count value={metric.value} alert={metric.alert} />
-            </CardTitle>
-            {metric.hint && (
-              <p className="text-xs text-muted-foreground">{metric.hint}</p>
-            )}
-          </CardHeader>
-        </Card>
-      ))}
+    <Flex vertical gap="small">
+      <div className="grid gap-3 sm:grid-cols-3">
+        {metrics.map((metric) => (
+          <Card key={metric.label} size="small">
+            <Flex vertical>
+              <Typography.Text type="secondary">{metric.label}</Typography.Text>
+              <Count value={metric.value} alert={metric.alert} large />
+              {metric.hint && (
+                <Typography.Text type="secondary">
+                  {metric.hint}
+                </Typography.Text>
+              )}
+            </Flex>
+          </Card>
+        ))}
+      </div>
       {(summary.sla_breached_count > 0 || summary.update_overdue_count > 0) && (
-        <p className="text-sm text-muted-foreground sm:col-span-3">
-          Từng case cụ thể nằm ở{" "}
-          <Link
-            href="/supply-chain/attention-queue"
-            className="font-medium text-foreground hover:underline"
-          >
-            Cần chú ý
-          </Link>
-          .
-        </p>
+        <Typography.Text>
+          Từng hồ sơ cụ thể nằm ở{" "}
+          <Link href="/supply-chain/attention-queue">Cần chú ý</Link>.
+        </Typography.Text>
       )}
-    </div>
+    </Flex>
   );
 }
 
 /** A count that only draws the eye when it is a problem worth reading. */
-function Count({ value, alert }: { value: number; alert: boolean }) {
+function Count({
+  value,
+  alert,
+  large,
+}: {
+  value: number;
+  alert: boolean;
+  large?: boolean;
+}) {
+  const { token } = theme.useToken();
   return (
-    <span className={cn(alert && value > 0 && "text-destructive")}>
+    <Typography.Text
+      strong={large}
+      style={{
+        color: alert && value > 0 ? token.colorErrorText : undefined,
+        fontSize: large ? token.fontSizeHeading3 : undefined,
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
       {value}
-    </span>
+    </Typography.Text>
   );
 }
 
-function ByState({ rows }: { rows: PortfolioSummary["by_state"] }) {
+type StateRow = PortfolioSummary["by_state"][number];
+type SupplierRow = PortfolioSummary["by_supplier"][number];
+
+function ByState({ rows }: { rows: StateRow[] }) {
+  const columns: TableColumnsType<StateRow> = [
+    {
+      title: "Trạng thái",
+      key: "state",
+      render: (_: unknown, row) => (
+        <Link
+          // Every row here counts ACTIVE cases only, so each link asks for
+          // exactly that set rather than relying on which states a row can
+          // hold.
+          href={poCasesHref({ state: row.state, activeOnly: true })}
+          // Starts with the visible tag text (WCAG 2.5.3): a screen reader
+          // hears which state, not only a count.
+          aria-label={`${CASE_STATE_LABEL[row.state]}: xem ${row.case_count} hồ sơ`}
+        >
+          <CaseStateTag state={row.state} />
+        </Link>
+      ),
+    },
+    {
+      title: "Số hồ sơ",
+      dataIndex: "case_count",
+      align: "right",
+      render: (value: number) => <Count value={value} alert={false} />,
+    },
+    {
+      title: "Trễ SLA",
+      dataIndex: "sla_breached_count",
+      align: "right",
+      render: (value: number) => <Count value={value} alert />,
+    },
+    {
+      title: "Chậm cập nhật",
+      dataIndex: "update_overdue_count",
+      align: "right",
+      render: (value: number) => <Count value={value} alert />,
+    },
+    {
+      title: "Lâu nhất ở bước này (ngày)",
+      dataIndex: "oldest_in_state_days",
+      align: "right",
+      render: (value: number) => <Count value={value} alert={false} />,
+    },
+  ];
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Theo trạng thái</CardTitle>
-        <CardDescription>
-          Case đang nằm ở từng bước, theo thứ tự quy trình.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Trạng thái</TableHead>
-              <TableHead className="text-right">Số case</TableHead>
-              <TableHead className="text-right">Trễ SLA</TableHead>
-              <TableHead className="text-right">Chậm cập nhật</TableHead>
-              <TableHead className="text-right">
-                Lâu nhất ở bước này (ngày)
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.state}>
-                <TableCell>
-                  <Link
-                    // Every row here counts ACTIVE cases only, so each
-                    // link asks for exactly that set rather than relying on
-                    // which states a row can hold.
-                    href={poCasesHref({ state: row.state, activeOnly: true })}
-                    // Starts with the visible badge text (WCAG 2.5.3): a
-                    // screen reader hears which state, not only a count.
-                    aria-label={`${CASE_STATE_LABEL[row.state]}: xem ${row.case_count} case`}
-                  >
-                    <CaseStateBadge state={row.state} />
-                  </Link>
-                </TableCell>
-                <TableCell className="text-right">{row.case_count}</TableCell>
-                <TableCell className="text-right">
-                  <Count value={row.sla_breached_count} alert />
-                </TableCell>
-                <TableCell className="text-right">
-                  <Count value={row.update_overdue_count} alert />
-                </TableCell>
-                <TableCell className="text-right">
-                  {row.oldest_in_state_days}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
+    <Card title="Theo trạng thái" size="small">
+      <Table<StateRow>
+        rowKey="state"
+        size="small"
+        pagination={false}
+        sticky
+        scroll={{ x: "max-content" }}
+        columns={columns}
+        dataSource={rows}
+        footer={() => "Hồ sơ đang nằm ở từng bước, theo thứ tự quy trình."}
+      />
     </Card>
   );
 }
 
-function BySupplier({ rows }: { rows: PortfolioSummary["by_supplier"] }) {
+function BySupplier({ rows }: { rows: SupplierRow[] }) {
+  const columns: TableColumnsType<SupplierRow> = [
+    {
+      title: "NCC",
+      key: "supplier",
+      render: (_: unknown, row) => (
+        <Link
+          href={poCasesHref({
+            supplierName: row.supplier_name,
+            activeOnly: true,
+          })}
+        >
+          {row.supplier_name}
+        </Link>
+      ),
+    },
+    {
+      title: "Số hồ sơ",
+      dataIndex: "case_count",
+      align: "right",
+      render: (value: number) => <Count value={value} alert={false} />,
+    },
+    {
+      title: "Chậm cập nhật",
+      dataIndex: "update_overdue_count",
+      align: "right",
+      render: (value: number) => <Count value={value} alert />,
+    },
+    {
+      title: "Cần leo thang",
+      dataIndex: "escalation_due_count",
+      align: "right",
+      render: (value: number) => <Count value={value} alert />,
+    },
+    {
+      title: "Trễ SLA",
+      dataIndex: "sla_breached_count",
+      align: "right",
+      render: (value: number) => <Count value={value} alert />,
+    },
+    {
+      title: "Im lặng lâu nhất (ngày)",
+      dataIndex: "longest_silence_days",
+      align: "right",
+      render: (value: number) => <Count value={value} alert={false} />,
+    },
+  ];
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Theo nhà cung cấp</CardTitle>
-        <CardDescription>
-          Nhà cung cấp có nhiều case chậm cập nhật nhất đứng đầu.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nhà cung cấp</TableHead>
-              <TableHead className="text-right">Số case</TableHead>
-              <TableHead className="text-right">Chậm cập nhật</TableHead>
-              <TableHead className="text-right">Cần leo thang</TableHead>
-              <TableHead className="text-right">Trễ SLA</TableHead>
-              <TableHead className="text-right">
-                Im lặng lâu nhất (ngày)
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.supplier_name}>
-                <TableCell className="font-medium">
-                  <Link
-                    href={poCasesHref({
-                      supplierName: row.supplier_name,
-                      activeOnly: true,
-                    })}
-                    className="hover:underline"
-                  >
-                    {row.supplier_name}
-                  </Link>
-                </TableCell>
-                <TableCell className="text-right">{row.case_count}</TableCell>
-                <TableCell className="text-right">
-                  <Count value={row.update_overdue_count} alert />
-                </TableCell>
-                <TableCell className="text-right">
-                  <Count value={row.escalation_due_count} alert />
-                </TableCell>
-                <TableCell className="text-right">
-                  <Count value={row.sla_breached_count} alert />
-                </TableCell>
-                <TableCell className="text-right">
-                  {row.longest_silence_days}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
+    <Card title="Theo NCC" size="small">
+      <Table<SupplierRow>
+        rowKey="supplier_name"
+        size="small"
+        pagination={false}
+        sticky
+        scroll={{ x: "max-content" }}
+        columns={columns}
+        dataSource={rows}
+        footer={() => "NCC có nhiều hồ sơ chậm cập nhật nhất đứng đầu."}
+      />
     </Card>
   );
 }

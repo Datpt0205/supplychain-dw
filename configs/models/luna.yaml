@@ -34,6 +34,11 @@ chat:
   reasoning_effort: medium
   price_per_million_input: 0.20
   price_per_million_output: 1.20
+  # The most one call on this route is sent. Context compaction reads it when
+  # this profile is its summariser and splits what it summarises to fit;
+  # without it compaction refuses to build. Well inside the model's window on
+  # purpose: a summary call is cheap work, not a place to spend the window.
+  max_input_tokens: 32000
 # Tried when the primary route fails twice (provider error, timeout or schema
 # mismatch): a different model through the same gateway.
 fallback:

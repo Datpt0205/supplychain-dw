@@ -1,0 +1,21 @@
+schema_version: "1.0"
+worker_id: supply_chain_step_preparation
+worker_version: "1.0.0"
+domain: supply_chain
+graph_version: "1.0.0"
+# AI prepares a step, a person approves the move (ADR 0025; ticket
+# ai-automation/05; workflows/step_preparation_graph.py). The graph makes no
+# model call of its own: the model work it uses is the extraction lane's
+# reading of the step's source documents (supply_chain_document_extraction).
+# The version fields below are nominal, as in supply_chain_advance_product_case.yaml,
+# kept for provenance uniformity across worker_runs rows; toolset_version is
+# omitted (no tool).
+prompt_bundle_version: "1.0.0"
+policy_version: "1.0.0"
+memory_policy_version: "1.0.0"
+default_model_profile: luna
+# worker: started by the lane supply_chain_step_preparation; web and zalo: the
+# channels a decision resumes it from.
+supported_channels: [worker, web, zalo]
+# It drafts and asks; a person decides every move.
+autonomy_level: A1

@@ -2,40 +2,57 @@
 
 import { useCallback, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, ListTodo, Loader2 } from "lucide-react";
+import {
+  Alert,
+  Button,
+  Card,
+  Empty,
+  Flex,
+  Input,
+  Segmented,
+  Skeleton,
+  Typography,
+} from "antd";
 import type { FollowUp, FollowUpKind } from "@dw/contracts";
-import { Badge, Button, Card, CardContent, Input, Skeleton } from "@dw/ui";
-import { ApiError } from "@dw/api-client";
-import { EmptyState } from "../../../components/empty-state";
-import { PageHeading } from "../../../components/page-heading";
+import { PageHeader, StatusTag, type StatusTone } from "@dw/ui";
+import { LoadError } from "../../../components/load-error";
+import { supplyChainCrumbs } from "../../../components/supply-chain/crumbs";
+import {
+  PoReferenceText,
+  poReferenceLabel,
+} from "../../../components/supply-chain/po-reference";
+import { milestoneLabel } from "../../../components/supply-chain/sla-status-badge";
+import { formatDateTimeFull } from "../../../lib/dates";
+import { errorMessage } from "../../../lib/error-message";
+import { useOnline } from "../../../lib/hooks/use-online";
 import { apiClient } from "../../../lib/session";
 import { useCachedResource } from "../../../lib/use-cached-resource";
 
-const KIND_LABEL: Record<FollowUpKind, string> = {
-  update_reminder: "Nhắc NCC",
-  update_escalation: "Leo thang",
-  sla_breach: "Trễ SLA",
-};
-
-const KIND_VARIANT: Record<FollowUpKind, "warning" | "destructive"> = {
-  update_reminder: "warning",
-  update_escalation: "destructive",
-  sla_breach: "destructive",
-};
-
-const MILESTONE_LABEL: Record<string, string> = {
-  deposit: "đặt cọc",
-  port_arrival: "về cảng",
-  payment: "thanh toán",
-  warehouse_receipt: "nhập kho",
+const KIND: Record<FollowUpKind, { label: string; tone: StatusTone }> = {
+  update_reminder: { label: "Nhắc NCC", tone: "warn" },
+  update_escalation: { label: "Leo thang", tone: "err" },
+  sla_breach: { label: "Trễ SLA", tone: "err" },
 };
 
 function what(item: FollowUp): string {
   if (item.kind === "sla_breach") {
-    const milestone = MILESTONE_LABEL[item.milestone ?? ""] ?? item.milestone;
-    return `${item.days} ngày ở bước ${milestone}, hạn ${item.limit_days} ngày`;
+    return `${item.days} ngày ở bước ${milestoneLabel(item.milestone)}, hạn ${item.limit_days} ngày`;
   }
-  return `${item.supplier_name} im lặng ${item.days} ngày`;
+  return `${item.supplier_name ?? "NCC"} im lặng ${item.days} ngày`;
+}
+
+/** Where a follow-up's case lives: a PO case, or a product case (ticket 06). */
+function caseHref(item: FollowUp): string {
+  return item.case_kind === "product"
+    ? `/supply-chain/product-cases/${item.case_id}`
+    : `/supply-chain/po-cases/${item.case_id}`;
+}
+
+/** The case named by its identifier: the PO number, or the proposal code. */
+function caseName(item: FollowUp): string {
+  return item.case_kind === "product"
+    ? `Hồ sơ phát triển ${item.reference ?? ""}`
+    : poReferenceLabel(item.reference);
 }
 
 /**
@@ -56,52 +73,50 @@ export default function FollowUpsPage() {
   const shown = showAll ? items : mine;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <PageHeading
-        icon={ListTodo}
+    <div className="mx-auto max-w-4xl">
+      <PageHeader
+        breadcrumb={supplyChainCrumbs("Việc cần làm")}
         title="Việc cần làm"
-        description="Nhắc NCC, leo thang và trễ SLA đã tới hạn. Việc tự đóng khi tín hiệu hết (NCC gửi cập nhật, case qua bước)."
+        subtitle="Nhắc NCC, leo thang và trễ SLA đã tới hạn. Việc tự đóng khi tín hiệu hết (NCC gửi cập nhật, hồ sơ qua bước)."
       />
-      <div className="flex gap-2">
-        <Button
-          variant={showAll ? "outline" : "default"}
-          onClick={() => setShowAll(false)}
-        >
-          Của tôi ({mine.length})
-        </Button>
-        <Button
-          variant={showAll ? "default" : "outline"}
-          onClick={() => setShowAll(true)}
-        >
-          Tất cả ({items.length})
-        </Button>
-      </div>
-      {loading ? (
-        <Skeleton className="h-64 w-full" />
-      ) : error != null || !data ? (
-        <p className="text-sm text-destructive">
-          Không tải được việc cần làm:{" "}
-          {error instanceof Error ? error.message : "lỗi không xác định"}
-        </p>
-      ) : shown.length === 0 ? (
-        <EmptyState
-          icon={CheckCircle2}
-          title="Không có việc nào"
-          description={
-            showAll
-              ? "Không case nào đang cần nhắc, leo thang hay trễ SLA."
-              : "Không có việc nào giao cho bạn."
-          }
+      <Flex vertical gap="middle">
+        <Segmented<"mine" | "all">
+          aria-label="Việc của ai"
+          value={showAll ? "all" : "mine"}
+          options={[
+            { value: "mine", label: `Của tôi (${mine.length})` },
+            { value: "all", label: `Tất cả (${items.length})` },
+          ]}
+          onChange={(value) => setShowAll(value === "all")}
         />
-      ) : (
-        <ul className="space-y-3">
-          {shown.map((item) => (
-            <li key={item.id}>
-              <FollowUpCard item={item} onClosed={reload} />
-            </li>
-          ))}
-        </ul>
-      )}
+        {loading && !data ? (
+          <Skeleton active paragraph={{ rows: 6 }} />
+        ) : error != null || !data ? (
+          // A failed load is never "nothing to do".
+          <LoadError error={error} onRetry={reload} />
+        ) : shown.length === 0 ? (
+          <Empty
+            description={
+              <Flex vertical>
+                <Typography.Text strong>Không có việc nào</Typography.Text>
+                <Typography.Text>
+                  {showAll
+                    ? "Không hồ sơ nào đang cần nhắc, leo thang hay trễ SLA."
+                    : "Không có việc nào giao cho bạn."}
+                </Typography.Text>
+              </Flex>
+            }
+          />
+        ) : (
+          <Flex vertical gap="small" role="list">
+            {shown.map((item) => (
+              <div key={item.id} role="listitem">
+                <FollowUpCard item={item} onClosed={reload} />
+              </div>
+            ))}
+          </Flex>
+        )}
+      </Flex>
     </div>
   );
 }
@@ -113,6 +128,7 @@ function FollowUpCard({
   item: FollowUp;
   onClosed: () => void;
 }) {
+  const online = useOnline();
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,48 +140,58 @@ function FollowUpCard({
       await apiClient().closeFollowUp(item.id, note);
       onClosed();
     } catch (e) {
-      setError(e instanceof ApiError ? e.body.message : "Không đóng được việc");
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Card>
-      <CardContent className="space-y-2 pt-4 text-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={KIND_VARIANT[item.kind]}>
-            {KIND_LABEL[item.kind]}
-          </Badge>
-          <Link
-            href={`/supply-chain/po-cases/${item.po_case_id}`}
-            className="font-medium hover:underline"
-          >
-            {item.po_reference}
+    <Card size="small">
+      <Flex vertical gap="small">
+        <Flex wrap gap="small" align="center">
+          <StatusTag tone={KIND[item.kind].tone}>
+            {KIND[item.kind].label}
+          </StatusTag>
+          <Link href={caseHref(item)}>
+            {item.case_kind === "product" ? (
+              <Typography.Text code>{item.reference}</Typography.Text>
+            ) : (
+              <PoReferenceText reference={item.reference} />
+            )}
           </Link>
-          <span className="text-muted-foreground">{what(item)}</span>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Mở lúc {new Date(item.opened_at).toLocaleString()}
+          <Typography.Text>{what(item)}</Typography.Text>
+        </Flex>
+        <Typography.Text type="secondary">
+          Mở lúc {formatDateTimeFull(item.opened_at)}
           {item.notified_at === null && " · chưa ai nhận được thông báo"}
-        </p>
+        </Typography.Text>
         {item.mine && (
-          <div className="flex flex-wrap items-center gap-2">
+          <Flex wrap gap="small" align="center">
             <Input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Ghi chú (không bắt buộc)"
+              placeholder="Ví dụ: đã gọi NCC, hẹn gửi lịch xuất hàng"
               className="max-w-sm"
-              aria-label={`Ghi chú cho ${item.po_reference}`}
+              aria-label={`Ghi chú cho ${caseName(item)}`}
             />
-            <Button onClick={() => void close()} disabled={busy}>
-              {busy && <Loader2 className="size-4 animate-spin" />}
+            <Button
+              type="primary"
+              loading={busy}
+              disabled={!online}
+              onClick={() => void close()}
+            >
               Đã xử lý
             </Button>
-          </div>
+            {!online && (
+              <Typography.Text>
+                Không có kết nối mạng. Kết nối lại rồi thử lại.
+              </Typography.Text>
+            )}
+          </Flex>
         )}
-        {error && <p className="text-destructive">{error}</p>}
-      </CardContent>
+        {error && <Alert type="error" showIcon title={error} />}
+      </Flex>
     </Card>
   );
 }

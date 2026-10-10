@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, CheckCheck } from "lucide-react";
+import { Badge, Button, Flex, Popover, Typography, theme } from "antd";
+import { BellOutlined, CheckOutlined } from "@ant-design/icons";
 import type { AppNotification, Inbox } from "@dw/contracts";
+import { formatDateTime } from "../lib/dates";
 import { apiClient } from "../lib/session";
 
 // How often the badge checks for something new while the app is open.
@@ -17,9 +19,9 @@ function internalPath(link: string | null): string | null {
 
 export function NotificationBell() {
   const router = useRouter();
+  const { token } = theme.useToken();
   const [inbox, setInbox] = useState<Inbox | null>(null);
   const [open, setOpen] = useState(false);
-  const panel = useRef<HTMLDivElement>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
     apiClient()
@@ -39,17 +41,6 @@ export function NotificationBell() {
       window.clearInterval(timer);
     };
   }, [load]);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (panel.current && !panel.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
 
   const follow = async (item: AppNotification) => {
     setOpen(false);
@@ -71,69 +62,78 @@ export function NotificationBell() {
   };
 
   const unread = inbox?.unread ?? 0;
+  const items = inbox?.items ?? [];
 
-  return (
-    <div className="relative" ref={panel}>
-      <button
-        type="button"
-        aria-label={
-          unread ? `Notifications, ${unread} unread` : "Notifications"
-        }
-        onClick={() => setOpen((value) => !value)}
-        className="relative flex size-10 items-center justify-center rounded-xl border bg-card text-foreground shadow-sm"
-      >
-        <Bell className="size-5" />
+  const panel = (
+    <div className="w-80 max-w-[85vw]">
+      <Flex justify="space-between" align="center" className="mb-2">
+        <Typography.Text strong>Thông báo</Typography.Text>
         {unread > 0 && (
-          <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-destructive px-1 text-center text-xs font-semibold text-destructive-foreground">
-            {unread > 99 ? "99+" : unread}
-          </span>
+          <Button
+            type="link"
+            size="small"
+            icon={<CheckOutlined aria-hidden />}
+            onClick={() => void readAll()}
+          >
+            Đánh dấu đã đọc hết
+          </Button>
         )}
-      </button>
-      {open && (
-        <div className="absolute right-0 z-40 mt-2 w-80 max-w-[90vw] rounded-xl border bg-popover shadow-lg">
-          <div className="flex items-center justify-between border-b px-3 py-2">
-            <span className="text-sm font-semibold">Notifications</span>
-            {unread > 0 && (
+      </Flex>
+      {items.length === 0 ? (
+        <Typography.Paragraph type="secondary" className="!my-6 text-center">
+          Chưa có thông báo nào.
+        </Typography.Paragraph>
+      ) : (
+        <ul className="m-0 max-h-96 list-none overflow-y-auto p-0">
+          {items.map((item) => (
+            <li key={item.id}>
               <button
                 type="button"
-                onClick={() => void readAll()}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => void follow(item)}
+                className="block w-full border-0 px-2 py-2 text-left"
+                style={{
+                  borderRadius: token.borderRadius,
+                  background:
+                    item.read_at === null
+                      ? token.colorPrimaryBg
+                      : "transparent",
+                  color: token.colorText,
+                }}
               >
-                <CheckCheck className="size-3.5" /> Mark all read
+                <Typography.Text strong className="block">
+                  {item.title}
+                </Typography.Text>
+                {item.body && (
+                  <Typography.Text type="secondary" className="block text-xs">
+                    {item.body}
+                  </Typography.Text>
+                )}
+                <Typography.Text type="secondary" className="block text-xs">
+                  {formatDateTime(item.created_at)}
+                </Typography.Text>
               </button>
-            )}
-          </div>
-          <ul className="max-h-96 overflow-y-auto">
-            {(inbox?.items ?? []).length === 0 ? (
-              <li className="px-3 py-6 text-center text-sm text-muted-foreground">
-                Nothing yet.
-              </li>
-            ) : (
-              inbox?.items.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => void follow(item)}
-                    className={`block w-full border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-muted ${
-                      item.read_at === null ? "bg-primary/5" : ""
-                    }`}
-                  >
-                    <span className="block font-medium">{item.title}</span>
-                    {item.body && (
-                      <span className="block text-xs text-muted-foreground">
-                        {item.body}
-                      </span>
-                    )}
-                    <span className="block text-xs text-muted-foreground">
-                      {new Date(item.created_at).toLocaleString()}
-                    </span>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
+  );
+
+  return (
+    <Popover
+      content={panel}
+      trigger="click"
+      placement="bottomRight"
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <Badge count={unread} overflowCount={99} size="small">
+        <Button
+          shape="circle"
+          icon={<BellOutlined aria-hidden />}
+          aria-label={unread ? `Thông báo, ${unread} chưa đọc` : "Thông báo"}
+        />
+      </Badge>
+    </Popover>
   );
 }

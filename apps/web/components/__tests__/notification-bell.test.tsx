@@ -55,7 +55,7 @@ describe("NotificationBell", () => {
     render(<NotificationBell />);
 
     const bell = await screen.findByRole("button", {
-      name: "Notifications, 1 unread",
+      name: "Thông báo, 1 chưa đọc",
     });
     fireEvent.click(bell);
     fireEvent.click(
@@ -74,7 +74,7 @@ describe("NotificationBell", () => {
       render(<NotificationBell />);
 
       fireEvent.click(
-        await screen.findByRole("button", { name: "Notifications, 1 unread" }),
+        await screen.findByRole("button", { name: "Thông báo, 1 chưa đọc" }),
       );
       fireEvent.click(
         await screen.findByText("Yêu cầu chờ bạn duyệt: hợp đồng HĐ-2026-007"),
@@ -91,9 +91,9 @@ describe("NotificationBell", () => {
     render(<NotificationBell />);
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Notifications, 1 unread" }),
+      await screen.findByRole("button", { name: "Thông báo, 1 chưa đọc" }),
     );
-    fireEvent.click(await screen.findByText("Mark all read"));
+    fireEvent.click(await screen.findByText("Đánh dấu đã đọc hết"));
 
     await waitFor(() => expect(markAllNotificationsRead).toHaveBeenCalled());
   });

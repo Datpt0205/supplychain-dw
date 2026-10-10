@@ -6,7 +6,7 @@ the "one Zalo per user, one user per Zalo" rule, the single-use token and the
 row shape live here once rather than in each caller.
 
 Both tables are identity plane with no RLS (see :mod:`identity_provisioning` and
-migration ``cf66605631d7``), so their statements need no tenant GUC; only the
+migration ``02930a73bbdf``), so their statements need no tenant GUC; only the
 audit and notification writes below bind one. Every caller binds this to
 a ``dw_app`` session factory: ``dw_app`` holds SELECT/INSERT/UPDATE/DELETE on
 ``external_identities`` through the baseline grant, and on
@@ -37,13 +37,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from hashlib import sha256
 from typing import Protocol
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from dw_kernel.channels import chat_reference
 from dw_platform.adapters.persistence import tables
 from dw_platform.adapters.persistence.notifications import DELIVER_NOTIFICATION
 
@@ -85,11 +85,6 @@ _MESSAGES: dict[str, tuple[str, str]] = {
 }
 
 
-def _chat_hash(zalo_id: str) -> str:
-    """A stable reference to a chat for the audit trail, not the address itself."""
-    return sha256(f"{_ZALO}:{zalo_id}".encode()).hexdigest()[:16]
-
-
 class _NoTenantToRecordInError(Exception):
     """The user has no membership, so a link would have no tenant to be audited in."""
 
@@ -116,6 +111,23 @@ class SqlZaloLink:
                 await session.execute(
                     sa.select(_identities.c.subject)
                     .where(_identities.c.provider == _ZALO, _identities.c.user_id == user_id)
+                    .limit(1)
+                )
+            ).first()
+        return row[0] if row else None
+
+    async def user_id_for(self, zalo_id: str) -> UUID | None:
+        """The user this chat is linked to, or None — read afresh for every message.
+
+        The chat-to-person step every inbound command starts from (ADR 0005
+        condition 2). Not cached: an unlink between two messages must refuse
+        the second.
+        """
+        async with self.session_factory() as session:
+            row = (
+                await session.execute(
+                    sa.select(_identities.c.user_id)
+                    .where(_identities.c.provider == _ZALO, _identities.c.subject == zalo_id)
                     .limit(1)
                 )
             ).first()
@@ -245,7 +257,7 @@ class SqlZaloLink:
                     resource_id=str(user_id),
                     details={
                         "channel": _ZALO,
-                        "chat_id_hash": _chat_hash(zalo_id),
+                        "chat_id_hash": chat_reference(_ZALO, zalo_id),
                         "actor": actor,
                         "event_id": str(event_id),
                     },

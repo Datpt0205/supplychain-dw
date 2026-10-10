@@ -21,8 +21,10 @@ from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from dw_kernel.ids import TenantId, WorkspaceId
+from dw_platform.adapters.persistence.repositories import SqlAuditRepository
 from dw_platform.adapters.persistence.tenant_session import TenantScope, tenant_session
 from dw_platform.application.access_context import AccessContext
+from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence import tables
 from dw_supply_chain.domain.po_case import POCaseId
 from dw_supply_chain.domain.supplier_update import (
@@ -60,7 +62,11 @@ class SqlSupplierUpdateRepository:
 
     session_factory: async_sessionmaker[AsyncSession]
 
-    async def add(self, context: AccessContext, update: SupplierUpdate) -> None:
+    async def add(
+        self, context: AccessContext, update: SupplierUpdate, *, audit: AuditEvent | None = None
+    ) -> None:
+        """The record and `audit` in one transaction. `audit` is optional here
+        only for fixtures; the port a command writes through requires it."""
         scope = TenantScope.from_access_context(context)
         async with tenant_session(self.session_factory, scope) as session:
             await session.execute(
@@ -80,6 +86,8 @@ class SqlSupplierUpdateRepository:
                     requires_confirmation=update.requires_confirmation,
                 )
             )
+            if audit is not None:
+                await SqlAuditRepository(session).append(audit)
 
     async def get(
         self, context: AccessContext, update_id: SupplierUpdateId

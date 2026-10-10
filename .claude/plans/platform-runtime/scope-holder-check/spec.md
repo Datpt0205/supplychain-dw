@@ -62,7 +62,7 @@ bên gọi là lane worker báo tin cho người giữ scope.
 
 ## Danh sách ticket
 
-| #   | Ticket                                                                                                               | Status          | Blocked by |
-| --- | -------------------------------------------------------------------------------------------------------------------- | --------------- | ---------- |
-| 01  | [`SqlScopeHolders.holds` theo id, không cần `AccessContext`](issues/01-holds-without-access-context.md)              | ready-for-agent | —          |
-| 02  | [`SqlScopeHolders.holding` nhận `tenant_id`, không cần `AccessContext`](issues/02-holding-without-access-context.md) | ready-for-agent | 01         |
+| #   | Ticket                                                                                                               | Status   | Blocked by |
+| --- | -------------------------------------------------------------------------------------------------------------------- | -------- | ---------- |
+| 01  | [`SqlScopeHolders.holds` theo id, không cần `AccessContext`](issues/01-holds-without-access-context.md)              | resolved | —          |
+| 02  | [`SqlScopeHolders.holding` nhận `tenant_id`, không cần `AccessContext`](issues/02-holding-without-access-context.md) | resolved | 01         |

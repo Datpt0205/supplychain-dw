@@ -1,5 +1,5 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-05
 source:
     - ../../apps/api/src/dw_api/settings.py # AuthMode dòng 30, auth_mode 74, OIDC 76-86, auto_provision 100-105

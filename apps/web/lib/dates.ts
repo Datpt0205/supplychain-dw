@@ -1,27 +1,69 @@
+import dayjs from "dayjs";
+import timezone from "dayjs/plugin/timezone";
+import utc from "dayjs/plugin/utc";
+
 /**
- * The one place a date is turned into text for the screen.
+ * The one place a date is turned into text for the screen (ui-quality §8).
  *
- * The app renders one date shape everywhere: DD/MM/YYYY, with a 24-hour clock
- * when the time matters. Written out rather than left to `Intl` because the
- * order, the separator and the clock are the requirement, not a locale
- * preference — `toLocaleString` prints US short forms on a US-locale browser
- * and the screens would disagree with each other.
+ * Every instant is shown in Vietnam's time, whatever the viewer's machine is
+ * set to: a deadline read in Los Angeles must name the same day it names in
+ * Hà Nội. Time first and 24-hour, the year always written: "09:00 14/10/2026"
+ * (the E-HSDT v3 handoff's order). It carries "giờ Việt Nam" on the value
+ * (`formatDateTimeFull`) or once in the column header that holds bare cells
+ * (`formatDateTime`, with `VN_TIME` in the header). Written out rather than
+ * left to a locale, because the order, the separator and the clock are the
+ * requirement, not a locale preference.
  */
 
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+export const VN_TIME_ZONE = "Asia/Ho_Chi_Minh";
+
+/** The zone's name as a screen writes it. */
+export const VN_TIME = "giờ Việt Nam";
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+function inVietnam(iso: string) {
+  return dayjs.utc(iso).tz(VN_TIME_ZONE);
 }
 
-/** "DD/MM/YYYY", or an em dash when there is no date. */
+/**
+ * "DD/MM/YYYY" in Vietnam's calendar, or an em dash when there is no date. A
+ * date-only value is a calendar day and is printed as written, never through
+ * a midnight that another zone would move.
+ */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const date = new Date(iso);
-  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+  if (DATE_ONLY.test(iso)) return dayjs(iso, "YYYY-MM-DD").format("DD/MM/YYYY");
+  return inVietnam(iso).format("DD/MM/YYYY");
 }
 
-/** "DD/MM/YYYY HH:mm", or an em dash when there is no date. */
+/** "HH:mm DD/MM/YYYY" in Vietnam, for a cell whose header says "giờ Việt
+ * Nam"; an em dash when there is no time. */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const date = new Date(iso);
-  return `${formatDate(iso)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return inVietnam(iso).format("HH:mm DD/MM/YYYY");
+}
+
+/** "HH:mm DD/MM/YYYY (giờ Việt Nam)": a time standing on its own. */
+export function formatDateTimeFull(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return `${formatDateTime(iso)} (${VN_TIME})`;
+}
+
+/** A date-only value (`YYYY-MM-DD`) as the day a `DatePicker` shows, or null.
+ * The day as written: no midnight, so no zone can move it. */
+export function calendarDay(
+  iso: string | null | undefined,
+): dayjs.Dayjs | null {
+  return iso && DATE_ONLY.test(iso) ? dayjs(iso, "YYYY-MM-DD") : null;
+}
+
+/** The day a `DatePicker` holds, as the server's `YYYY-MM-DD`, or null. */
+export function calendarDayIso(
+  day: dayjs.Dayjs | null | undefined,
+): string | null {
+  return day ? day.format("YYYY-MM-DD") : null;
 }

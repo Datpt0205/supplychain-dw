@@ -1,0 +1,12 @@
+{
+  "outcome": "done",
+  "asked_scopes": [
+    "supply_chain.product_case.write",
+    "supply_chain.duty.ordering",
+    "supply_chain.product_case.write"
+  ],
+  "written": true,
+  "pic": "caller",
+  "category": "chao",
+  "state": "proposed"
+}

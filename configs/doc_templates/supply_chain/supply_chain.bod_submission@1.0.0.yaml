@@ -1,0 +1,39 @@
+schema_version: '1.0'
+template_id: supply_chain.bod_submission
+version: 1.0.0
+title: TỜ TRÌNH BAN GIÁM ĐỐC
+doc_type: bod_submission
+description: 'Bước 6: trình BGĐ duyệt sản phẩm sau khi mẫu đạt.'
+fields:
+- name: proposal_code
+  label: Mã đề xuất
+  required: true
+- name: product_name
+  label: Tên sản phẩm
+  required: true
+- name: category
+  label: Nhóm sản phẩm (Category)
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: summary
+  label: Tóm tắt sản phẩm
+- name: evaluation_result
+  label: Kết quả đánh giá mẫu
+  required: true
+- name: unit_price
+  label: Đơn giá
+  kind: number
+- name: currency
+  label: Tiền tệ
+- name: moq
+  label: MOQ
+  kind: number
+- name: recommendation
+  label: Đề xuất
+  required: true
+- name: submitted_by
+  label: Người trình
+- name: submitted_on
+  label: Ngày trình
+  kind: date

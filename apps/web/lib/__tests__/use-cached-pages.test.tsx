@@ -1,12 +1,11 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { App } from "antd";
 import type { Page } from "@dw/contracts";
 
 vi.mock("../auth/auth-context", () => ({
   useAuth: () => ({ active: { workspaceId: "ws-A" } }),
 }));
-
-vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 import { useCachedPages } from "../use-cached-pages";
 
@@ -21,7 +20,9 @@ describe("useCachedPages", () => {
     const load = vi.fn(async (cursor: string | null) =>
       cursor === null ? page(["a", "b"], "c2") : page(["c", "d"], null),
     );
-    const { result } = renderHook(() => useCachedPages("k1", load));
+    const { result } = renderHook(() => useCachedPages("k1", load), {
+      wrapper: App,
+    });
 
     await waitFor(() => expect(result.current.items).toEqual(["a", "b"]));
     expect(result.current.hasMore).toBe(true);
@@ -41,7 +42,9 @@ describe("useCachedPages", () => {
       if (cursor === "c2") return page(["late"], "c3");
       return page([], null);
     });
-    const { result } = renderHook(() => useCachedPages("k2", load));
+    const { result } = renderHook(() => useCachedPages("k2", load), {
+      wrapper: App,
+    });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.items).toEqual([]);
@@ -63,7 +66,9 @@ describe("useCachedPages", () => {
     const load = vi.fn(async (cursor: string | null) =>
       cursor === null ? firstPage : page(["b"], null),
     );
-    const { result } = renderHook(() => useCachedPages("k3", load));
+    const { result } = renderHook(() => useCachedPages("k3", load), {
+      wrapper: App,
+    });
 
     await waitFor(() => expect(result.current.items).toEqual(["a"]));
     act(() => result.current.loadMore());
@@ -78,7 +83,9 @@ describe("useCachedPages", () => {
 
   it("never asks for a page it was not handed a cursor for", async () => {
     const load = vi.fn(async () => page(["only"], null));
-    const { result } = renderHook(() => useCachedPages("k4", load));
+    const { result } = renderHook(() => useCachedPages("k4", load), {
+      wrapper: App,
+    });
 
     await waitFor(() => expect(result.current.items).toEqual(["only"]));
     expect(result.current.hasMore).toBe(false);

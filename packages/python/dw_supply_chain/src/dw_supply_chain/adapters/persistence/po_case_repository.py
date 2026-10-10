@@ -11,6 +11,15 @@ name no `tenant_id` filter of their own: RLS is the one enforcement
 mechanism for a Postgres-backed store in this repo; `dw_platform.
 tenant_filter()` is for the stores that have no RLS to lean on (Qdrant), not
 a second check to bolt onto a query already governed by it.
+
+A case ĐẶT HÀNG opened carries planned lines (`po_case_lines`, tenant AND
+workspace scoped); `get` reads them back with each SKU's code and label, the
+lists do not. `insert_po_case` is the one INSERT of a case and its lines,
+shared with the product repository, which writes the case in ĐẶT HÀNG's own
+transaction. The PIC and Category are the stamped columns, never joined from
+the product case (ADR 0017; `test_no_po_case_read_joins_the_product_case`).
+A PO reference already taken in the tenant is a `ConflictError` by the
+constraint's name.
 """
 
 from __future__ import annotations
@@ -21,26 +30,41 @@ from datetime import datetime
 
 import sqlalchemy as sa
 from sqlalchemy.engine import CursorResult, Row
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from dw_kernel.errors import ConflictError
 from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.pagination import CursorPosition, Page, PageRequest, build_page
 from dw_platform.adapters.persistence.keyset import after_position, newest_first
+from dw_platform.adapters.persistence.repositories import SqlAuditRepository
 from dw_platform.adapters.persistence.tenant_session import TenantScope, tenant_session
 from dw_platform.application.access_context import AccessContext
+from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence import tables
+from dw_supply_chain.adapters.persistence.suppliers import resolve_supplier
 from dw_supply_chain.application.ports import PO_REFERENCE_PADDING, POCaseListFilter
+from dw_supply_chain.domain.case_import import IMPORT_ACTION, IMPORT_REASON
 from dw_supply_chain.domain.po_case import (
     TERMINAL_STATES,
     CaseState,
     CaseTransition,
+    OrderKind,
     POCase,
     POCaseId,
+    POCaseLine,
+    Shipping,
 )
+from dw_supply_chain.domain.sla_evaluation import SLA_CLOCK_STARTS_IN
+
+_lines = tables.po_case_lines
+PO_REFERENCE_CONSTRAINT = "uq_po_cases_tenant_id_po_reference"
 
 
-def _case_from_row(row: Row[tuple]) -> POCase:  # type: ignore[type-arg]
+def _case_from_row(
+    row: Row[tuple],  # type: ignore[type-arg]
+    lines: tuple[POCaseLine, ...] = (),
+) -> POCase:
     return POCase(
         id=POCaseId(row.id),
         tenant_id=TenantId(row.tenant_id),
@@ -51,12 +75,111 @@ def _case_from_row(row: Row[tuple]) -> POCase:  # type: ignore[type-arg]
         interrupted_state=CaseState(row.interrupted_state) if row.interrupted_state else None,
         created_at=row.created_at,
         version=row.version,
+        order_kind=OrderKind(row.order_kind),
+        product_dev_case_id=row.product_dev_case_id,
+        pic_user_id=row.pic_user_id,
+        category=row.category,
+        lines=lines,
+        shipping=Shipping(etd=row.etd, eta=row.eta, container_number=row.container_number),
+    )
+
+
+def _constraint(exc: IntegrityError) -> str | None:
+    name = getattr(getattr(exc.orig, "__cause__", None), "constraint_name", None)
+    return name if isinstance(name, str) else None
+
+
+def reference_refusal(exc: IntegrityError, case: POCase) -> ConflictError | None:
+    """A PO reference already taken in the tenant, named; None for any other
+    refusal, which the caller re-raises."""
+    if _constraint(exc) != PO_REFERENCE_CONSTRAINT:
+        return None
+    return ConflictError(
+        f"số PO {case.po_reference} đã có trong công ty",
+        details={"constraint": PO_REFERENCE_CONSTRAINT, "po_reference": case.po_reference or ""},
+    )
+
+
+async def insert_po_case(session: AsyncSession, context: AccessContext, case: POCase) -> datetime:
+    """The case's row and its lines, in the caller's transaction; returns when
+    the row was written. The supplier is resolved to the workspace's master
+    record first (created if new), and the case takes its stored name."""
+    supplier = await resolve_supplier(session, context, case.workspace_id.value, case.supplier_name)
+    case.supplier_name = supplier.name
+    created_at: datetime = (
+        await session.execute(
+            sa.insert(tables.po_cases)
+            .values(
+                id=case.id.value,
+                tenant_id=case.tenant_id.value,
+                workspace_id=case.workspace_id.value,
+                po_reference=case.po_reference,
+                supplier_id=supplier.id,
+                supplier_name=supplier.name,
+                state=case.state.value,
+                interrupted_state=(
+                    case.interrupted_state.value if case.interrupted_state else None
+                ),
+                version=case.version,
+                order_kind=case.order_kind.value,
+                product_dev_case_id=case.product_dev_case_id,
+                pic_user_id=case.pic_user_id,
+                category=case.category,
+                # Stated only by the import (ticket onboarding/02).
+                **({"created_at": case.created_at} if case.created_at else {}),
+            )
+            .returning(tables.po_cases.c.created_at)
+        )
+    ).scalar_one()
+    if case.lines:
+        await session.execute(
+            sa.insert(_lines),
+            [
+                {
+                    "id": uuid.uuid4(),
+                    "tenant_id": case.tenant_id.value,
+                    "workspace_id": case.workspace_id.value,
+                    "po_case_id": case.id.value,
+                    "sku_id": line.sku_id,
+                    "quantity": line.quantity,
+                }
+                for line in case.lines
+            ],
+        )
+    return created_at
+
+
+async def _lines_of(session: AsyncSession, case_id: POCaseId) -> tuple[POCaseLine, ...]:
+    """The case's lines, in the order they were written, each with its SKU's
+    code and label. RLS narrows both tables to the caller's workspace."""
+    skus = tables.skus
+    rows = (
+        await session.execute(
+            sa.select(_lines.c.sku_id, _lines.c.quantity, skus.c.sku_code, skus.c.variant_label)
+            .select_from(
+                _lines.outerjoin(
+                    skus,
+                    sa.and_(skus.c.tenant_id == _lines.c.tenant_id, skus.c.id == _lines.c.sku_id),
+                )
+            )
+            .where(_lines.c.po_case_id == case_id.value)
+            .order_by(_lines.c.created_at.asc(), skus.c.sku_code.asc())
+        )
+    ).all()
+    return tuple(
+        POCaseLine(
+            sku_id=row.sku_id,
+            quantity=row.quantity,
+            sku_code=row.sku_code,
+            variant_label=row.variant_label,
+        )
+        for row in rows
     )
 
 
 def _transition_from_row(row: Row[tuple]) -> CaseTransition:  # type: ignore[type-arg]
     return CaseTransition(
-        from_state=CaseState(row.from_state),
+        from_state=None if row.from_state is None else CaseState(row.from_state),
         to_state=CaseState(row.to_state),
         reason=row.reason,
         occurred_at=row.occurred_at,
@@ -64,11 +187,27 @@ def _transition_from_row(row: Row[tuple]) -> CaseTransition:  # type: ignore[typ
 
 
 def _is_active(state: sa.ColumnElement[str]) -> sa.ColumnElement[bool]:
-    """Not in a terminal state — the one SQL spelling of "active", shared by
-    `list_active` (what the Control Tower counts) and `list_page`'s
-    `active_only` (its drill-down), so the count and the list it links to
-    cannot come apart."""
+    """Not in a terminal state — the one SQL spelling of "active": `list_page`'s
+    `active_only`, which both the Control Tower's count (read a page at a
+    time by `handlers.assess_active_cases`) and its drill-down use, so the
+    count and the list it links to cannot come apart."""
     return state.notin_([terminal.value for terminal in TERMINAL_STATES])
+
+
+def _clock_start_state(state: sa.ColumnElement[str]) -> sa.ColumnElement[str]:
+    """`sla_clock_start_state`, in SQL: built from the domain's own table, so
+    the two cannot name different states."""
+    if not SLA_CLOCK_STARTS_IN:
+        return state
+    return sa.case(
+        {current.value: start.value for current, start in SLA_CLOCK_STARTS_IN.items()},
+        value=state,
+        else_=state,
+    )
+
+
+def _row_position(row: Row[tuple]) -> CursorPosition:  # type: ignore[type-arg]
+    return CursorPosition(sort_value=row.occurred_at, tiebreaker=row.id)
 
 
 def _case_position(case: POCase) -> CursorPosition:
@@ -112,24 +251,58 @@ class SqlPOCaseRepository:
             ],
         )
 
-    async def add(self, context: AccessContext, case: POCase) -> None:
+    async def add(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
+        """The case, its first transitions and `audit` in one transaction.
+        `audit` is optional here only for fixtures that seed a case; every
+        command goes through `POCaseRepositoryPort`, which requires it."""
         scope = TenantScope.from_access_context(context)
-        async with tenant_session(self.session_factory, scope) as session:
-            await session.execute(
-                sa.insert(tables.po_cases).values(
-                    id=case.id.value,
-                    tenant_id=case.tenant_id.value,
-                    workspace_id=case.workspace_id.value,
-                    po_reference=case.po_reference,
-                    supplier_name=case.supplier_name,
-                    state=case.state.value,
-                    interrupted_state=(
-                        case.interrupted_state.value if case.interrupted_state else None
-                    ),
-                    version=case.version,
+        try:
+            async with tenant_session(self.session_factory, scope) as session:
+                created_at = await insert_po_case(session, context, case)
+                await self._insert_pending_transitions(session, case)
+                if audit is not None:
+                    await SqlAuditRepository(session).append(audit)
+        except IntegrityError as exc:
+            refusal = reference_refusal(exc, case)
+            if refusal is None:
+                raise
+            raise refusal from exc
+        case.created_at = created_at
+
+    async def add_imported(
+        self, context: AccessContext, case: POCase, *, entered_at: datetime, audit: AuditEvent
+    ) -> None:
+        """An open case brought in at its current state (ticket onboarding/02):
+        the row (created when the sheet says), its ONE history row (`import`,
+        no `from_state`, dated when the case entered the state) and the audit,
+        in one transaction. The database refuses a second start row and a
+        start row after any other (`uq_..._one_start`, `refuse_late_start`)."""
+        scope = TenantScope.from_access_context(context)
+        try:
+            async with tenant_session(self.session_factory, scope) as session:
+                created_at = await insert_po_case(session, context, case)
+                await session.execute(
+                    sa.insert(tables.po_case_state_transitions).values(
+                        id=uuid.uuid4(),
+                        tenant_id=case.tenant_id.value,
+                        workspace_id=case.workspace_id.value,
+                        po_case_id=case.id.value,
+                        from_state=None,
+                        to_state=case.state.value,
+                        action=IMPORT_ACTION,
+                        reason=IMPORT_REASON,
+                        occurred_at=entered_at,
+                    )
                 )
-            )
-            await self._insert_pending_transitions(session, case)
+                await SqlAuditRepository(session).append(audit)
+        except IntegrityError as exc:
+            refusal = reference_refusal(exc, case)
+            if refusal is None:
+                raise
+            raise refusal from exc
+        case.created_at = created_at
 
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
         scope = TenantScope.from_access_context(context)
@@ -138,9 +311,23 @@ class SqlPOCaseRepository:
                 sa.select(tables.po_cases).where(tables.po_cases.c.id == case_id.value)
             )
             row = result.first()
-            return _case_from_row(row) if row else None
+            if row is None:
+                return None
+            return _case_from_row(row, await _lines_of(session, case_id))
 
-    async def save(self, context: AccessContext, case: POCase) -> None:
+    async def case_workspace(self, context: AccessContext, case_id: uuid.UUID) -> uuid.UUID | None:
+        """The workspace of the caller's tenant's case, or None: what
+        `case_documents`' `CaseLookupPort` asks of the PO kind."""
+        scope = TenantScope.from_access_context(context)
+        async with tenant_session(self.session_factory, scope) as session:
+            found: uuid.UUID | None = await session.scalar(
+                sa.select(tables.po_cases.c.workspace_id).where(tables.po_cases.c.id == case_id)
+            )
+        return found
+
+    async def save(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         """Persists the aggregate's current state.
 
         `WHERE version = case.version - 1` is the optimistic-concurrency
@@ -153,44 +340,82 @@ class SqlPOCaseRepository:
         paper over a genuine conflict.
         """
         scope = TenantScope.from_access_context(context)
-        async with tenant_session(self.session_factory, scope) as session:
-            result = await session.execute(
-                sa.update(tables.po_cases)
-                .where(
-                    tables.po_cases.c.id == case.id.value,
-                    tables.po_cases.c.version == case.version - 1,
-                )
-                .values(
-                    po_reference=case.po_reference,
-                    supplier_name=case.supplier_name,
-                    state=case.state.value,
-                    interrupted_state=(
-                        case.interrupted_state.value if case.interrupted_state else None
-                    ),
-                    version=case.version,
-                )
-            )
-            assert isinstance(result, CursorResult)
-            if result.rowcount != 1:
-                raise ConflictError(
-                    "PO case was modified concurrently",
-                    details={"case_id": str(case.id)},
-                )
-            await self._insert_pending_transitions(session, case)
+        try:
+            async with tenant_session(self.session_factory, scope) as session:
+                await self.save_in(session, case)
+                if audit is not None:
+                    await SqlAuditRepository(session).append(audit)
+        except IntegrityError as exc:
+            refusal = reference_refusal(exc, case)
+            if refusal is None:
+                raise
+            raise refusal from exc
 
-    async def get_current_state_entered_at(
+    async def save_in(self, session: AsyncSession, case: POCase) -> None:
+        """`save`'s writes in the caller's transaction (an approved PO draft
+        writes its document and terms in the same one, ticket
+        ai-automation/14): the optimistic UPDATE, the line quantities the
+        step set and the history rows."""
+        quantities = case.pop_pending_line_quantities()
+        result = await session.execute(
+            sa.update(tables.po_cases)
+            .where(
+                tables.po_cases.c.id == case.id.value,
+                tables.po_cases.c.version == case.version - 1,
+            )
+            .values(
+                # The supplier is set when the case is created and
+                # never changed by a step, so a save does not write it.
+                po_reference=case.po_reference,
+                state=case.state.value,
+                interrupted_state=(
+                    case.interrupted_state.value if case.interrupted_state else None
+                ),
+                version=case.version,
+                order_kind=case.order_kind.value,
+                pic_user_id=case.pic_user_id,
+            )
+        )
+        assert isinstance(result, CursorResult)
+        if result.rowcount != 1:
+            raise ConflictError(
+                "PO case was modified concurrently",
+                details={"case_id": str(case.id)},
+            )
+        for sku_id, quantity in quantities.items():
+            await session.execute(
+                sa.update(_lines)
+                .where(_lines.c.po_case_id == case.id.value, _lines.c.sku_id == sku_id)
+                .values(quantity=quantity)
+            )
+        await self._insert_pending_transitions(session, case)
+
+    async def write_shipping_in(
+        self, session: AsyncSession, case_id: POCaseId, shipping: Shipping
+    ) -> None:
+        """Steps 13-15's dates and container, in the caller's transaction (an
+        approved PO step, ticket ai-automation/17): only the ones given."""
+        values = {
+            name: value
+            for name, value in (
+                ("etd", shipping.etd),
+                ("eta", shipping.eta),
+                ("container_number", shipping.container_number),
+            )
+            if value is not None
+        }
+        if values:
+            await session.execute(
+                sa.update(tables.po_cases)
+                .where(tables.po_cases.c.id == case_id.value)
+                .values(**values)
+            )
+
+    async def get_sla_clock_started_at(
         self, context: AccessContext, case_id: POCaseId
     ) -> datetime | None:
-        scope = TenantScope.from_access_context(context)
-        async with tenant_session(self.session_factory, scope) as session:
-            result = await session.execute(
-                sa.select(tables.po_case_state_transitions.c.occurred_at)
-                .where(tables.po_case_state_transitions.c.po_case_id == case_id.value)
-                .order_by(tables.po_case_state_transitions.c.occurred_at.desc())
-                .limit(1)
-            )
-            row = result.first()
-            return row.occurred_at if row else None
+        found = await self.bulk_sla_clock_started_at(context, [case_id])
+        return found.get(case_id.value)
 
     async def list_page(
         self, context: AccessContext, request: PageRequest, case_filter: POCaseListFilter
@@ -218,39 +443,40 @@ class SqlPOCaseRepository:
         )
 
     async def list_transitions(
-        self, context: AccessContext, case_id: POCaseId
-    ) -> list[CaseTransition]:
+        self, context: AccessContext, case_id: POCaseId, request: PageRequest
+    ) -> Page[CaseTransition]:
+        """Newest first, by `ix_po_case_state_transitions_case_page` (tenant,
+        workspace, case, occurred_at, id): RLS supplies the first two."""
+        transitions = tables.po_case_state_transitions
         scope = TenantScope.from_access_context(context)
         async with tenant_session(self.session_factory, scope) as session:
-            result = await session.execute(
-                sa.select(
-                    tables.po_case_state_transitions.c.from_state,
-                    tables.po_case_state_transitions.c.to_state,
-                    tables.po_case_state_transitions.c.reason,
-                    tables.po_case_state_transitions.c.occurred_at,
+            rows = (
+                await session.execute(
+                    sa.select(
+                        transitions.c.id,
+                        transitions.c.from_state,
+                        transitions.c.to_state,
+                        transitions.c.reason,
+                        transitions.c.occurred_at,
+                    )
+                    .where(
+                        transitions.c.po_case_id == case_id.value,
+                        after_position(transitions.c.occurred_at, transitions.c.id, request.after),
+                    )
+                    .order_by(*newest_first(transitions.c.occurred_at, transitions.c.id))
+                    .limit(request.fetch_limit)
                 )
-                .where(tables.po_case_state_transitions.c.po_case_id == case_id.value)
-                .order_by(tables.po_case_state_transitions.c.occurred_at.asc())
-            )
-            return [_transition_from_row(row) for row in result]
-
-    async def list_active(self, context: AccessContext) -> list[POCase]:
-        scope = TenantScope.from_access_context(context)
-        async with tenant_session(self.session_factory, scope) as session:
-            result = await session.execute(
-                sa.select(tables.po_cases)
-                .where(_is_active(tables.po_cases.c.state))
-                .order_by(tables.po_cases.c.created_at.asc())
-            )
-            return [_case_from_row(row) for row in result]
+            ).all()
+        return build_page(rows, request=request, position_of=_row_position).map_items(
+            _transition_from_row
+        )
 
     async def list_supplier_names(self, context: AccessContext) -> list[str]:
+        """The workspace's suppliers (the master record), by stored name."""
         scope = TenantScope.from_access_context(context)
         async with tenant_session(self.session_factory, scope) as session:
             result = await session.execute(
-                sa.select(tables.po_cases.c.supplier_name)
-                .distinct()
-                .order_by(tables.po_cases.c.supplier_name)
+                sa.select(tables.suppliers.c.name).order_by(tables.suppliers.c.name)
             )
             return list(result.scalars())
 
@@ -269,23 +495,37 @@ class SqlPOCaseRepository:
             )
             return [_case_from_row(row) for row in result]
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
+        """The latest entry of each case into the state its SLA clock starts
+        in (`sla_clock_start_state` of its current state, as SQL)."""
         if not case_ids:
             return {}
         scope = TenantScope.from_access_context(context)
         ids = [case_id.value for case_id in case_ids]
+        transitions, cases = tables.po_case_state_transitions, tables.po_cases
         async with tenant_session(self.session_factory, scope) as session:
             result = await session.execute(
                 sa.select(
-                    tables.po_case_state_transitions.c.po_case_id,
-                    sa.func.max(tables.po_case_state_transitions.c.occurred_at).label(
-                        "occurred_at"
-                    ),
+                    transitions.c.po_case_id,
+                    sa.func.max(transitions.c.occurred_at).label("occurred_at"),
                 )
-                .where(tables.po_case_state_transitions.c.po_case_id.in_(ids))
-                .group_by(tables.po_case_state_transitions.c.po_case_id)
+                .select_from(
+                    transitions.join(
+                        cases,
+                        sa.and_(
+                            cases.c.tenant_id == transitions.c.tenant_id,
+                            cases.c.workspace_id == transitions.c.workspace_id,
+                            cases.c.id == transitions.c.po_case_id,
+                        ),
+                    )
+                )
+                .where(
+                    transitions.c.po_case_id.in_(ids),
+                    transitions.c.to_state == _clock_start_state(cases.c.state),
+                )
+                .group_by(transitions.c.po_case_id)
             )
             return {row.po_case_id: row.occurred_at for row in result}
 
@@ -301,27 +541,40 @@ class SqlPOCaseRepository:
             return [_case_from_row(row) for row in result]
 
     async def list_latest_transitions_since(
-        self, context: AccessContext, since: datetime
-    ) -> list[tuple[POCaseId, CaseTransition]]:
+        self, context: AccessContext, since: datetime, *, limit: int
+    ) -> tuple[int, list[tuple[POCaseId, CaseTransition]]]:
         scope = TenantScope.from_access_context(context)
         transitions = tables.po_case_state_transitions
-        async with tenant_session(self.session_factory, scope) as session:
-            # `ix_po_case_state_transitions_tenant_occurred_at` carries the
-            # window: RLS supplies tenant_id, the range bounds occurred_at.
-            result = await session.execute(
-                sa.select(
-                    transitions.c.po_case_id,
-                    transitions.c.from_state,
-                    transitions.c.to_state,
-                    transitions.c.reason,
-                    transitions.c.occurred_at,
-                )
-                .distinct(transitions.c.po_case_id)
-                .where(transitions.c.occurred_at >= since)
-                .order_by(
-                    transitions.c.po_case_id,
-                    transitions.c.occurred_at.desc(),
-                    transitions.c.id.desc(),
-                )
+        # `ix_po_case_state_transitions_tenant_occurred_at` carries the
+        # window: RLS supplies tenant_id and workspace_id, the range bounds
+        # occurred_at. Each moved case once, at its latest transition.
+        latest = (
+            sa.select(
+                transitions.c.po_case_id,
+                transitions.c.from_state,
+                transitions.c.to_state,
+                transitions.c.reason,
+                transitions.c.occurred_at,
+                transitions.c.id,
             )
-            return [(POCaseId(row.po_case_id), _transition_from_row(row)) for row in result]
+            .distinct(transitions.c.po_case_id)
+            .where(transitions.c.occurred_at >= since)
+            .order_by(
+                transitions.c.po_case_id,
+                transitions.c.occurred_at.desc(),
+                transitions.c.id.desc(),
+            )
+            .subquery()
+        )
+        async with tenant_session(self.session_factory, scope) as session:
+            total = (
+                await session.execute(sa.select(sa.func.count()).select_from(latest))
+            ).scalar_one()
+            rows = (
+                await session.execute(
+                    sa.select(latest)
+                    .order_by(latest.c.occurred_at.desc(), latest.c.id.desc())
+                    .limit(limit)
+                )
+            ).all()
+        return total, [(POCaseId(row.po_case_id), _transition_from_row(row)) for row in rows]

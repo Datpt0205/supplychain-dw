@@ -1,0 +1,44 @@
+schema_version: '1.0'
+template_id: supply_chain.pre_production_test_report
+version: 1.0.0
+title: BIÊN BẢN TEST TRƯỚC SẢN XUẤT
+doc_type: pre_production_test_report
+description: 'Bước 12: R&D test mẫu trước sản xuất theo từng tiêu chí của nhóm sản
+  phẩm; bảng do hệ thống so số đo với chuẩn, kết luận là bước Đạt / Không đạt R&D
+  chọn.'
+fields:
+- name: po_reference
+  label: Số PO
+  required: true
+- name: product_name
+  label: Tên sản phẩm
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: test_attempt
+  label: Lần test
+  kind: number
+- name: tested_on
+  label: Ngày test
+  kind: date
+  required: true
+- name: tester
+  label: Người test
+- name: criteria
+  label: Tiêu chí test
+  kind: table
+  columns:
+  - name: criterion
+    label: Tiêu chí
+  - name: standard
+    label: Chuẩn
+  - name: measured
+    label: Đo được
+  - name: result
+    label: Kết quả
+  required: true
+- name: conclusion
+  label: Kết luận
+  required: true
+- name: notes
+  label: Ghi chú

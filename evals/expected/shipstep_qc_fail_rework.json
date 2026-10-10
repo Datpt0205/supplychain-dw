@@ -1,0 +1,9 @@
+{
+  "drafts": 1,
+  "decision": "applied",
+  "case_state": "rework",
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "outcome": "proposed",
+  "model_calls": 1,
+  "draft_fields": {
+    "unit_price": null,
+    "currency": null,
+    "moq": null
+  },
+  "scripted": {
+    "draft_fields": {
+      "material": null
+    }
+  },
+  "prompt_must_not_contain": [
+    "2,50",
+    "2.50"
+  ]
+}

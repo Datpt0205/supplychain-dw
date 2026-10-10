@@ -1,0 +1,12 @@
+{
+  "drafts": 1,
+  "proposed": true,
+  "decision": "applied",
+  "case_state": "completed",
+  "receipts": 2,
+  "reports": 0,
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "model_calls": 1,
+  "body_must_not_contain": [
+    "thiếu 50"
+  ],
+  "scripted": {
+    "dropped": 1
+  }
+}

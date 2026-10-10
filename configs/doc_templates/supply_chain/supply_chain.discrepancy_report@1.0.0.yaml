@@ -1,0 +1,39 @@
+schema_version: '1.0'
+template_id: supply_chain.discrepancy_report
+version: 1.0.0
+title: BIÊN BẢN CHÊNH LỆCH HÀNG NHẬP KHO
+doc_type: discrepancy_report
+description: 'Bước 17: từng dòng có số đếm khác số giao (hoặc số đặt khi packing list
+  không ghi), do hệ thống chép từ số Kho đã ghi; căn cứ khiếu nại nhà cung cấp.'
+fields:
+- name: po_reference
+  label: Số PO
+  required: true
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: prepared_on
+  label: Ngày lập biên bản
+  kind: date
+  required: true
+- name: items
+  label: Dòng chênh lệch
+  kind: table
+  columns:
+  - name: sku_code
+    label: Mã SKU
+  - name: ordered
+    label: Số đặt (PO)
+    kind: number
+  - name: shipped
+    label: Số giao (packing list)
+    kind: number
+  - name: counted
+    label: Số đếm
+    kind: number
+  - name: difference
+    label: Chênh lệch
+    kind: number
+  required: true
+- name: notes
+  label: Ghi chú

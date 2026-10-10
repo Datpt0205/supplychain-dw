@@ -1,0 +1,27 @@
+{
+  "step": "sample_testing",
+  "documents": [
+    {
+      "doc_type": "sample_evaluation",
+      "text": "Kết quả: Không đạt",
+      "version": 1,
+      "reading": {
+        "result": {
+          "value": "fail",
+          "quote": "Kết quả: Không đạt"
+        }
+      }
+    },
+    {
+      "doc_type": "sample_evaluation",
+      "text": "Kết quả: Đạt (vòng lại)",
+      "version": 2,
+      "reading": {
+        "result": {
+          "value": "pass",
+          "quote": "Kết quả: Đạt"
+        }
+      }
+    }
+  ]
+}

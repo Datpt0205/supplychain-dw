@@ -1,0 +1,6 @@
+{
+  "outcome": "not_enough_evidence",
+  "prompt_must_not_contain": [
+    "Phòng thí nghiệm A"
+  ]
+}

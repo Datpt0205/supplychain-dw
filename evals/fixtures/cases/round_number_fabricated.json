@@ -1,0 +1,46 @@
+{
+  "step": "sample_round",
+  "measurements": [
+    {
+      "criterion": "base_thickness",
+      "value": "2.5"
+    },
+    {
+      "criterion": "wall_thickness",
+      "value": "0.6"
+    },
+    {
+      "criterion": "induction",
+      "value": "pass"
+    },
+    {
+      "criterion": "appearance",
+      "value": "pass"
+    }
+  ],
+  "writing": {
+    "notes": [
+      {
+        "text": "Mẫu đạt 99% yêu cầu.",
+        "cites": [
+          "case"
+        ]
+      },
+      {
+        "text": "Độ dày đáy đo được 2.5 mm, thấp hơn chuẩn 3 mm.",
+        "cites": [
+          "criterion:base_thickness"
+        ]
+      }
+    ],
+    "requirements": [
+      {
+        "criterion": "base_thickness",
+        "text": "Tăng độ dày đáy lên 4 mm.",
+        "cites": [
+          "criterion:base_thickness"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "command": "step",
+  "caller": {
+    "tenant": "A",
+    "workspace": "W1",
+    "scopes": [
+      "supply_chain.product_case.read",
+      "supply_chain.duty.rnd"
+    ]
+  },
+  "stored_case": {
+    "tenant": "A",
+    "workspace": "W1",
+    "state": "sample_testing",
+    "supplier_name": "NCC Mẫu",
+    "sample_round": 1
+  },
+  "request": {
+    "action": "pass_sample"
+  }
+}

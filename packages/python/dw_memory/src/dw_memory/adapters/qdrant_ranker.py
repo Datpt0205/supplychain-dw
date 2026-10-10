@@ -23,12 +23,18 @@ Indexing is best-effort by design: it runs on the worker after a memory is
 already committed, so a Qdrant that is down must not roll back a fact the system
 has decided to keep. The memory is still correct and still recalled; only its
 position in a long list is unranked until something reindexes it.
+
+Deleting is not best-effort, and raises: retention, supersession and tenant
+offboarding each decide what a failure means for them, and an adapter that
+swallowed it would make the offboarding lane report a tenant gone whose
+embeddings are still here.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from qdrant_client import AsyncQdrantClient, models
@@ -48,7 +54,7 @@ _FILTER_FIELDS = ("tenant_id", "workspace_id", "worker_id")
 
 @dataclass
 class QdrantMemoryRanker:
-    """Implements `dw_memory.ranking.MemoryRankerPort`."""
+    """Implements `dw_memory.ranking.MemoryRankerPort` and `MemoryVectorPurgePort`."""
 
     client: AsyncQdrantClient
     embedder: EmbeddingPort
@@ -142,20 +148,26 @@ class QdrantMemoryRanker:
         tenant_id: uuid.UUID,
         workspace_id: uuid.UUID,
         worker_id: str,
-        limit: int,
+        candidate_ids: Sequence[uuid.UUID],
     ) -> tuple[uuid.UUID, ...]:
-        """Memory ids most like the question, best first.
+        """The recalled ids, most like the question first.
+
+        Only `candidate_ids` are searched: the id condition sits beside the
+        tenant, workspace and worker conditions rather than replacing them, so a
+        caller handing over a foreign id still gets nothing back for it.
 
         Raises on failure rather than returning nothing: an empty tuple is a
         real answer meaning "no opinion about any of these", and a caller cannot
         tell that apart from an outage. `MemoryService` catches and falls back,
         which is where that decision belongs.
         """
+        if not candidate_ids:
+            return ()
         [vector] = await self.embedder.embed([query])
         found = await self.client.query_points(
             collection_name=self.collection,
             query=vector,
-            limit=limit,
+            limit=len(candidate_ids),
             with_payload=False,
             query_filter=models.Filter(
                 must=[
@@ -168,7 +180,40 @@ class QdrantMemoryRanker:
                     models.FieldCondition(
                         key="worker_id", match=models.MatchValue(value=worker_id)
                     ),
+                    models.HasIdCondition(has_id=[str(i) for i in candidate_ids]),
                 ]
             ),
         )
         return tuple(uuid.UUID(str(point.id)) for point in found.points)
+
+    async def delete(self, memory_ids: Sequence[uuid.UUID]) -> None:
+        """Delete these memories' points. Raises on failure; see the port."""
+        if not memory_ids or not await self.client.collection_exists(self.collection):
+            return
+        await self.client.delete(
+            collection_name=self.collection,
+            points_selector=models.PointIdsList(points=[str(i) for i in memory_ids]),
+            wait=True,
+        )
+
+    async def delete_by_tenant(self, tenant_id: uuid.UUID) -> None:
+        """Delete every point of one tenant. Raises on failure; see the port.
+
+        A collection that was never created holds nothing to delete, which is
+        a finished purge rather than an error.
+        """
+        if not await self.client.collection_exists(self.collection):
+            return
+        await self.client.delete(
+            collection_name=self.collection,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="tenant_id", match=models.MatchValue(value=str(tenant_id))
+                        )
+                    ]
+                )
+            ),
+            wait=True,
+        )

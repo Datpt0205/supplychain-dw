@@ -32,22 +32,43 @@ under which two `/start` with the same token in flight would both pass.
   chat for two users (`UNIQUE (issuer, subject)`); the partial unique index below
   refuses two chats for one user, so two links racing for one person cannot both
   land. The link store clears both sides first, so a relink never trips either.
+
+**Twin.** The platform took this change back as its own revision `02930a73bbdf`
+(same names, same grants), which merging `platform/main` brings here on a
+second branch alembic may run before or after this one. So every statement is
+idempotent, written as the platform's copy writes it (objects created only if
+missing, functions and triggers `CREATE OR REPLACE`, the REVOKE/GRANT pair
+landing on the same state however often it runs), and downgrade is a no-op
+while the twin is still applied: whichever of the pair is downgraded last
+removes the objects. The platform revision does the same, mirrored.
 """
 
 from __future__ import annotations
 
-from alembic import op
+from alembic import context, op
+from alembic.script import ScriptDirectory
 
 revision = "cf66605631d7"
 down_revision = "bc3f0c1279fd"
 branch_labels = None
 depends_on = None
 
+# The platform revision that carries the same change (see docstring).
+_TWIN = "02930a73bbdf"
+
+
+def _twin_applied() -> bool:
+    script = ScriptDirectory.from_config(context.config)
+    heads = op.get_context().get_current_heads()
+    return any(
+        rev.revision == _TWIN for head in heads for rev in script.iterate_revisions(head, "base")
+    )
+
 
 def upgrade() -> None:
     op.execute(
         """
-        CREATE TABLE platform.channel_link_nonces (
+        CREATE TABLE IF NOT EXISTS platform.channel_link_nonces (
             jti text NOT NULL,
             channel text NOT NULL,
             user_id uuid NOT NULL,
@@ -66,15 +87,16 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE INDEX ix_channel_link_nonces_user_id ON platform.channel_link_nonces (user_id)"
+        "CREATE INDEX IF NOT EXISTS ix_channel_link_nonces_user_id"
+        " ON platform.channel_link_nonces (user_id)"
     )
     # The retention sweep deletes by expiry.
     op.execute(
-        "CREATE INDEX ix_channel_link_nonces_expires_at"
+        "CREATE INDEX IF NOT EXISTS ix_channel_link_nonces_expires_at"
         " ON platform.channel_link_nonces (expires_at)"
     )
     op.execute(
-        "CREATE UNIQUE INDEX uq_external_identities_user_id_provider"
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_external_identities_user_id_provider"
         " ON platform.external_identities (user_id, provider) WHERE provider IN ('zalo')"
     )
     op.execute(
@@ -95,5 +117,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if _twin_applied():
+        return
     op.execute("DROP INDEX IF EXISTS platform.uq_external_identities_user_id_provider")
     op.execute("DROP TABLE IF EXISTS platform.channel_link_nonces")

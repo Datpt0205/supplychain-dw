@@ -7,18 +7,19 @@ a feature is checked. Detail lives in the area file; history lives in git.
 
 ## Areas
 
-| Area                                      | File                                | State                    |
-| ----------------------------------------- | ----------------------------------- | ------------------------ |
-| Supply chain (Elmich), this product       | `.claude/plans/supply-chain.md`     | Port running; 25 tickets |
-| Ops hardening (inherited from `codebase`) | `.claude/plans/ops-hardening.md`    | Done; numbers owed       |
-| Agent runtime, memory (inherited)         | `.claude/plans/platform-runtime.md` | Done but for named gaps  |
-| Web UI shell, Ant Design v6 (inherited)   | `.claude/plans/web-ui.md`           | Shell done; 03–09 next   |
+| Area                                       | File                                | State                     |
+| ------------------------------------------ | ----------------------------------- | ------------------------- |
+| Supply chain (Elmich), this product        | `.claude/plans/supply-chain.md`     | 1–17 run; AI layer done   |
+| Ops hardening (inherited from `codebase`)  | `.claude/plans/ops-hardening.md`    | Done; numbers owed        |
+| Agent runtime, memory (inherited)          | `.claude/plans/platform-runtime.md` | Done but for named gaps   |
+| Web UI shell, Ant Design v6 (inherited)    | `.claude/plans/web-ui.md`           | antd everywhere, CSP done |
+| Chat channels, Zalo (upstreamed from here) | `.claude/plans/channels.md`         | Upstreamed; live run owed |
 
 Inherited areas came with the platform seed (`codebase` `main`, `bf553f4`) and
 change here only when work in this repo touches them; their upstream copy is
 the reference after each `git merge platform/main`.
 
-## Now (2026-10-05)
+## Now (2026-10-10)
 
 - **This is the Elmich product repo** (`supplychain-dw`), built on the
   platform seed. Everything is built here; generic pieces stay in platform
@@ -29,11 +30,13 @@ the reference after each `git merge platform/main`.
 - **Zalo is two-way** (Đạt, 2026-10-05): chat proposal at step 1 (Z4),
   approvals at steps 6 and 9 by a one-time code seen on the portal (Z5, ADR
   0014 revised), read-only questions (Z6).
-- **Done in the first build session (2026-10-05):** port P, ENV, login and
-  `/settings` (U), Zalo link (Z1). `make ci` green.
-- **Next:** stage 1 in order S1 → S7 (with A and D); Z4 once S1 is in, then Z5
-  (needs S2, Z2) and Z6. Full table in `supply-chain.md`, "Slices". The PoC
-  slide brief the code must match: `docs/products/elmich/poc-slides-brief.md`.
+- **Done 2026-10-05/08** on `feat/elmich-a-d-s1`: P, ENV, U, Z1–Z6, A, D, S1–S8,
+  W, P2–P4, PK, H, HR1–HR6; steps 1–17 run end to end (slice log in the area file).
+- **AI layer (Đạt, 2026-10-09):** AI prepares each step, a person approves
+  (ADR 0025–0029). AI-01–AI-21, ON-01–02, UAT-1 resolved 2026-10-10 (AI-21: OCR by
+  Docling + EasyOCR, worker image build owed). Integration owed (`make
+test-integration` first). `luna` gate live on dataset 1.17.0: 17/21, misses read
+  in AI-06 (fixes owed to 1.19.0 and code); `qwen` owed. Next: UAT-2 with Elmich.
 - **Run locally:** `make infra-up`, `make db-migrate`, seed
   (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
   then `scripts/keycloak_dev_users.py`), `make dev`, open http://localhost:3200.
@@ -46,14 +49,14 @@ the reference after each `git merge platform/main`.
 - **Elmich:** QE-01–QE-20 in `supply-chain.md` (SLA numbers and clocks,
   documents per step, revision loop, sign-off order, item code and SKU format,
   categories, PIC reassignment, Zalo events, what case data may pass through
-  Zalo).
-- **Đạt, product:** QO-1–QO-7 in `supply-chain.md` (sales-dev database and the
-  re-pointed migrations; review ADR 0011–0023; realm SMTP; login branding;
-  upstream timing; deferring step 14's container loading; the comment a strict
-  approval needs in Zalo, code length and expiry).
+  Zalo); QE-21–QE-24 (real templates, sample criteria, payment terms, import files).
+- **Đạt, product:** none open; QO-1–QO-8 (2026-10-06) and QA-1–QA-12
+  (2026-10-09, AI layer) decided, see `supply-chain.md`.
 - **Đạt, inherited from the platform:**
-    - a plan quota on direct model calls; the model profile and key for
-      uat/production; whether CI runs the web vitest and Playwright suites;
+    - a plan quota on direct model calls; the model profile, model key and
+      rerank key for uat/production; whether CI runs the web vitest and
+      Playwright suites; how many independent documents a memory needs to be
+      written without review (`auto_write_sources`, 2 since 2026-10-06);
     - spend guard thresholds per plan; a retention term for offboarding
       bundles; how many superseded document versions to keep;
     - backfill ADRs: code cites ADR-001..003, which this repo never had.
@@ -69,6 +72,7 @@ the reference after each `git merge platform/main`.
    secrets, CORS, outbound URLs, and a scan of every new image.
 5. `mattpocock-skills` (`/ask-matt`): grilling to `/implement` and
    `/code-review`; `CLAUDE.md` "Agent skills" places layers 1–4 inside it.
+   Installed per checkout, not by the repo: check with `claude plugin list`.
 
 `.claude/rules/failure-modes.md` holds the counts behind layers 1–3; UI work
 also answers to `.claude/rules/ui-quality.md`. No layer replaces running the

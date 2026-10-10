@@ -35,6 +35,6 @@ Ticket 01 `resolved`; test âm của ticket xanh và mutation của nó ghi tron
 
 ## Danh sách ticket
 
-| #   | Ticket                                                        | Status          | Blocked by                                                        |
-| --- | ------------------------------------------------------------- | --------------- | ----------------------------------------------------------------- |
-| 01  | [`required_scope` trên approval](issues/01-required-scope.md) | ready-for-agent | .claude/plans/supply-chain/port/issues/01-port-dw-supply-chain.md |
+| #   | Ticket                                                        | Status   | Blocked by                                                        |
+| --- | ------------------------------------------------------------- | -------- | ----------------------------------------------------------------- |
+| 01  | [`required_scope` trên approval](issues/01-required-scope.md) | resolved | .claude/plans/supply-chain/port/issues/01-port-dw-supply-chain.md |

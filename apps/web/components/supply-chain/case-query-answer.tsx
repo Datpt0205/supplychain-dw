@@ -4,18 +4,18 @@ import type {
   DataView,
   GroundedField,
   POCase,
+  ProductCaseRef,
 } from "@dw/contracts";
-import {
-  Badge,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@dw/ui";
+import { Flex, Table, Typography, type TableColumnsType } from "antd";
+import { StatusTag } from "@dw/ui";
 import { poCasesHref } from "../../lib/supply-chain/po-case-filter";
-import { CASE_STATE_LABEL, CaseStateBadge } from "./case-state-badge";
+import { productCasesHref } from "../../lib/supply-chain/product-case-filter";
+import { CASE_STATE_LABEL, CaseStateTag } from "./case-state-badge";
+import { poReferenceLabel } from "./po-reference";
+import {
+  PRODUCT_DEV_STATE_LABEL,
+  ProductDevStateTag,
+} from "./product-case-labels";
 
 /**
  * Renders one command-bar answer — structured data, never model markup.
@@ -29,16 +29,20 @@ import { CASE_STATE_LABEL, CaseStateBadge } from "./case-state-badge";
  */
 export function CaseQueryAnswer({ answer }: { answer: AIWorkResponse }) {
   return (
-    <div className="space-y-3">
-      <p className="text-sm font-medium">{summary(answer)}</p>
+    <Flex vertical gap="small">
+      <Typography.Text strong>{summary(answer)}</Typography.Text>
       <Understood answer={answer} />
       {answer.outcome === "supplier_ambiguous" && (
         <SupplierCandidates answer={answer} />
       )}
+      {(answer.outcome === "category_ambiguous" ||
+        answer.outcome === "pic_ambiguous") && (
+        <NamedCandidates answer={answer} />
+      )}
       {answer.data_view && (
         <DataViewBlock view={answer.data_view} answer={answer} />
       )}
-    </div>
+    </Flex>
   );
 }
 
@@ -47,6 +51,11 @@ const FIELD_LABEL: Record<GroundedField, string> = {
   po_reference: "mã PO",
   state: "trạng thái",
   active_only: "chỉ case đang chạy",
+  proposal_code: "mã đề xuất",
+  product_state: "trạng thái hồ sơ phát triển",
+  category: "Category",
+  pic: "người phụ trách",
+  mine: "hồ sơ của bạn",
 };
 
 function fieldList(fields: GroundedField[]): string {
@@ -64,17 +73,39 @@ function isFiltered(answer: AIWorkResponse): boolean {
   return (
     understood.state !== null ||
     understood.supplier_name !== null ||
-    understood.active_only
+    understood.active_only ||
+    understood.product_state !== null ||
+    understood.category !== null ||
+    understood.pic_user_id !== null
   );
+}
+
+/** The product case list narrowed exactly as the answer was. */
+function productListHref(answer: AIWorkResponse): string {
+  const { understood } = answer;
+  return productCasesHref({
+    state: understood.product_state ?? undefined,
+    pic: understood.pic_user_id ?? undefined,
+    category: understood.category ?? undefined,
+  });
 }
 
 /** One sentence per outcome — composed from the answer, not written by a
  * model. */
 function summary(answer: AIWorkResponse): string {
   const rows =
-    answer.data_view?.type === "case_table" ? answer.data_view.rows : [];
+    answer.data_view?.type === "case_table" ||
+    answer.data_view?.type === "product_case_table"
+      ? answer.data_view.rows
+      : [];
+  const hasMore =
+    (answer.data_view?.type === "case_table" ||
+      answer.data_view?.type === "product_case_table") &&
+    answer.data_view.has_more;
   const supplier = quoteFor(answer, "supplier");
   const po = answer.understood.po_reference ?? quoteFor(answer, "po_reference");
+  const code =
+    answer.understood.proposal_code ?? quoteFor(answer, "proposal_code");
   switch (answer.outcome) {
     case "list": {
       const filtered = isFiltered(answer);
@@ -85,11 +116,36 @@ function summary(answer: AIWorkResponse): string {
           ? "Chưa có PO case nào."
           : `Chưa áp dụng bộ lọc nào — đây là ${rows.length} case mới nhất.`;
       if (rows.length === 0) return "Không có case nào khớp.";
-      return answer.data_view?.type === "case_table" &&
-        answer.data_view.has_more
+      return hasMore
         ? `Hiển thị ${rows.length} case đầu tiên khớp câu hỏi.`
         : `${rows.length} case khớp câu hỏi.`;
     }
+    case "product_list": {
+      if (!isFiltered(answer))
+        return rows.length === 0
+          ? "Chưa có hồ sơ phát triển nào."
+          : `Chưa áp dụng bộ lọc nào — đây là ${rows.length} hồ sơ mới nhất.`;
+      if (rows.length === 0) return "Không có hồ sơ phát triển nào khớp.";
+      return hasMore
+        ? `Hiển thị ${rows.length} hồ sơ đầu tiên khớp câu hỏi.`
+        : `${rows.length} hồ sơ khớp câu hỏi.`;
+    }
+    case "product_open":
+      return `Hồ sơ ${code ?? ""}`.trim() + ":";
+    case "proposal_code_missing":
+      return "Câu hỏi chưa nêu mã đề xuất nào.";
+    case "category_not_found":
+      return `Không có Category “${quoteFor(answer, "category") ?? ""}” trong danh sách.`;
+    case "category_ambiguous":
+      return `“${quoteFor(answer, "category") ?? ""}” khớp nhiều Category — hỏi rõ hơn:`;
+    case "pic_not_found":
+      return `Không tìm thấy người “${quoteFor(answer, "pic") ?? ""}” trong workspace.`;
+    case "pic_ambiguous":
+      return `“${quoteFor(answer, "pic") ?? ""}” khớp nhiều người — hỏi rõ hơn:`;
+    case "product_not_found":
+      return `Không tìm thấy hồ sơ phát triển “${code ?? ""}”.`;
+    case "product_ambiguous":
+      return `Có nhiều hồ sơ khớp “${code ?? ""}” — chọn một:`;
     case "open":
       return `Case ${po ?? ""}`.trim() + ":";
     case "not_understood": {
@@ -106,7 +162,7 @@ function summary(answer: AIWorkResponse): string {
         );
       return reasons.length > 0
         ? `Chưa hiểu câu hỏi: ${reasons.join("; ")}.`
-        : "Chưa hiểu câu hỏi này. Thử hỏi về PO theo nhà cung cấp, trạng thái hoặc mã PO.";
+        : "Chưa hiểu câu hỏi này. Thử hỏi về PO theo nhà cung cấp, trạng thái hoặc mã PO, hoặc về hồ sơ phát triển theo trạng thái, Category, PIC hoặc mã đề xuất.";
     }
     case "supplier_not_found":
       return `Không tìm thấy nhà cung cấp “${supplier ?? ""}”.`;
@@ -128,7 +184,13 @@ function summary(answer: AIWorkResponse): string {
 /** "Hiểu là: …" — each applied value next to the question's own words it
  * came from, so a person can see why a filter applied. */
 function Understood({ answer }: { answer: AIWorkResponse }) {
-  if (answer.outcome !== "list" && answer.outcome !== "open") return null;
+  if (
+    answer.outcome !== "list" &&
+    answer.outcome !== "open" &&
+    answer.outcome !== "product_list" &&
+    answer.outcome !== "product_open"
+  )
+    return null;
   const { understood } = answer;
   const parts: { label: string; quote: string | null }[] = [];
   if (understood.supplier_name)
@@ -146,21 +208,34 @@ function Understood({ answer }: { answer: AIWorkResponse }) {
       label: "Chỉ case đang chạy",
       quote: quoteFor(answer, "active_only"),
     });
+  // A Category and a PIC are shown by the question's own words: what code
+  // resolved them to is the filter the list link carries.
+  if (understood.category)
+    parts.push({ label: "Category", quote: quoteFor(answer, "category") });
+  if (understood.pic_user_id) {
+    const mine = quoteFor(answer, "mine");
+    parts.push(
+      mine
+        ? { label: "Hồ sơ của bạn", quote: mine }
+        : { label: "Người phụ trách", quote: quoteFor(answer, "pic") },
+    );
+  }
+  if (understood.product_state)
+    parts.push({
+      label: `Trạng thái: ${PRODUCT_DEV_STATE_LABEL[understood.product_state]}`,
+      quote: quoteFor(answer, "product_state"),
+    });
   if (parts.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-      <span>Hiểu là:</span>
+    <Flex wrap gap="small" align="center">
+      <Typography.Text type="secondary">Hiểu là:</Typography.Text>
       {parts.map((part) => (
-        <Badge key={part.label} variant="secondary">
+        <StatusTag key={part.label} tone="gray">
           {part.label}
-          {part.quote && (
-            <span className="ml-1 font-normal opacity-70">
-              (từ “{part.quote}”)
-            </span>
-          )}
-        </Badge>
+          {part.quote && ` (từ “${part.quote}”)`}
+        </StatusTag>
       ))}
-    </div>
+    </Flex>
   );
 }
 
@@ -176,7 +251,7 @@ function SupplierCandidates({ answer }: { answer: AIWorkResponse }) {
   const shown = answer.candidates.slice(0, MAX_CANDIDATES_SHOWN);
   const hidden = answer.candidates.length - shown.length;
   return (
-    <ul className="flex flex-wrap items-center gap-2">
+    <ul className="m-0 flex list-none flex-wrap items-center gap-3 p-0">
       {shown.map((name) => (
         <li key={name}>
           <Link
@@ -185,18 +260,34 @@ function SupplierCandidates({ answer }: { answer: AIWorkResponse }) {
               state: understood.state ?? undefined,
               activeOnly: understood.active_only,
             })}
-            className="text-sm font-medium hover:underline"
           >
             {name}
           </Link>
         </li>
       ))}
       {hidden > 0 && (
-        <li className="text-sm text-muted-foreground">
-          và {hidden} nhà cung cấp khác — hỏi cụ thể hơn để thu hẹp.
+        <li>
+          <Typography.Text type="secondary">
+            và {hidden} nhà cung cấp khác — hỏi cụ thể hơn để thu hẹp.
+          </Typography.Text>
         </li>
       )}
     </ul>
+  );
+}
+
+/** Category labels or people's names the question matched more than one of:
+ * shown, never picked from. */
+function NamedCandidates({ answer }: { answer: AIWorkResponse }) {
+  const shown = answer.candidates.slice(0, MAX_CANDIDATES_SHOWN);
+  return (
+    <Flex wrap gap="small">
+      {shown.map((name, index) => (
+        <StatusTag key={`${name}-${index}`} tone="gray">
+          {name}
+        </StatusTag>
+      ))}
+    </Flex>
   );
 }
 
@@ -227,13 +318,33 @@ function DataViewBlock({
       );
     case "case_link":
       return (
-        <Link
-          href={`/supply-chain/po-cases/${view.case.id}`}
-          className="flex items-center gap-2 text-sm font-medium hover:underline"
-        >
-          Mở case {view.case.po_reference}
-          <CaseStateBadge state={view.case.state} />
-        </Link>
+        <Flex gap="small" align="center">
+          <Link href={`/supply-chain/po-cases/${view.case.id}`}>
+            Mở case {poReferenceLabel(view.case.po_reference)}
+          </Link>
+          <CaseStateTag state={view.case.state} />
+        </Flex>
+      );
+    case "product_case_table":
+      return (
+        <ProductRows
+          rows={view.rows}
+          fullList={
+            answer.outcome === "product_list" ? productListHref(answer) : null
+          }
+          hasMore={view.has_more}
+          filtered={isFiltered(answer)}
+        />
+      );
+    case "product_case_link":
+      return (
+        <Flex gap="small" align="center" wrap>
+          <Link href={`/supply-chain/product-cases/${view.case.id}`}>
+            Mở hồ sơ {view.case.proposal_code}
+          </Link>
+          <Typography.Text>{view.case.product_name}</Typography.Text>
+          <ProductDevStateTag state={view.case.state} />
+        </Flex>
       );
     default: {
       const unreachable: never = view;
@@ -253,42 +364,38 @@ function CaseRows({
   hasMore: boolean;
   filtered: boolean;
 }) {
+  const columns: TableColumnsType<POCase> = [
+    {
+      title: "Hồ sơ PO",
+      key: "case",
+      render: (_: unknown, row) => (
+        <Link href={`/supply-chain/po-cases/${row.id}`}>
+          {poReferenceLabel(row.po_reference)}
+        </Link>
+      ),
+    },
+    { title: "NCC", dataIndex: "supplier_name" },
+    {
+      title: "Trạng thái",
+      key: "state",
+      render: (_: unknown, row) => <CaseStateTag state={row.state} />,
+    },
+  ];
   return (
-    <div className="space-y-2">
+    <Flex vertical gap="small" align="start">
       {rows.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>PO reference</TableHead>
-              <TableHead>Nhà cung cấp</TableHead>
-              <TableHead>Trạng thái</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="font-medium">
-                  <Link
-                    href={`/supply-chain/po-cases/${row.id}`}
-                    className="hover:underline"
-                  >
-                    {row.po_reference}
-                  </Link>
-                </TableCell>
-                <TableCell>{row.supplier_name}</TableCell>
-                <TableCell>
-                  <CaseStateBadge state={row.state} />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <Table<POCase>
+          rowKey="id"
+          size="small"
+          pagination={false}
+          scroll={{ x: "max-content" }}
+          columns={columns}
+          dataSource={rows}
+          className="w-full"
+        />
       )}
       {fullList && (
-        <Link
-          href={fullList}
-          className="text-sm font-medium text-primary hover:underline"
-        >
+        <Link href={fullList}>
           {hasMore && filtered
             ? "Xem tất cả case khớp"
             : hasMore
@@ -296,6 +403,64 @@ function CaseRows({
               : "Mở trong danh sách PO cases"}
         </Link>
       )}
-    </div>
+    </Flex>
+  );
+}
+
+function ProductRows({
+  rows,
+  fullList,
+  hasMore,
+  filtered,
+}: {
+  rows: ProductCaseRef[];
+  fullList: string | null;
+  hasMore: boolean;
+  filtered: boolean;
+}) {
+  const columns: TableColumnsType<ProductCaseRef> = [
+    {
+      title: "Hồ sơ",
+      key: "case",
+      render: (_: unknown, row) => (
+        <Link href={`/supply-chain/product-cases/${row.id}`}>
+          {row.proposal_code}
+        </Link>
+      ),
+    },
+    {
+      title: "Sản phẩm",
+      dataIndex: "product_name",
+      ellipsis: { showTitle: true },
+    },
+    {
+      title: "Trạng thái",
+      key: "state",
+      render: (_: unknown, row) => <ProductDevStateTag state={row.state} />,
+    },
+  ];
+  return (
+    <Flex vertical gap="small" align="start">
+      {rows.length > 0 && (
+        <Table<ProductCaseRef>
+          rowKey="id"
+          size="small"
+          pagination={false}
+          scroll={{ x: "max-content" }}
+          columns={columns}
+          dataSource={rows}
+          className="w-full"
+        />
+      )}
+      {fullList && (
+        <Link href={fullList}>
+          {hasMore && filtered
+            ? "Xem tất cả hồ sơ khớp"
+            : hasMore
+              ? "Xem tất cả hồ sơ phát triển"
+              : "Mở trong danh sách hồ sơ phát triển"}
+        </Link>
+      )}
+    </Flex>
   );
 }

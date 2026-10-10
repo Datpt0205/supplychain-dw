@@ -1,0 +1,27 @@
+{
+  "profile": {
+    "unit_price": "2.50",
+    "currency": "USD",
+    "incoterm": "FOB"
+  },
+  "confirmation": {
+    "unit_price": {
+      "value": "2.50",
+      "quote": "Đơn giá: 2,50 USD"
+    },
+    "currency": {
+      "value": "USD",
+      "quote": "Đơn giá: 2,50 USD"
+    },
+    "moq": {
+      "value": "500",
+      "quote": "MOQ: 500"
+    }
+  },
+  "terms": {
+    "payment_terms": "30% cọc, 70% trước giao",
+    "deposit_percent": "30",
+    "expected_delivery_date": "2026-12-01"
+  },
+  "decide": {}
+}

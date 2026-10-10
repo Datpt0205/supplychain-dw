@@ -8,6 +8,8 @@ set -uo pipefail
 
 root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$root" || exit 0
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+read_hook_input
 
 branch=$(git branch --show-current 2>/dev/null || echo "not a git repo")
 dirty=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
@@ -76,11 +78,23 @@ else
   head_rev="$heads"
 fi
 
-# Where this session started. The Stop hook compares HEAD against it to tell
-# whether anything was committed, and therefore whether there is something this
-# session learned that the plan (the index or an area file) should now say.
+# Where this session started: HEAD, and the content of every path already
+# uncommitted. The Stop hook compares against it to tell this session's work
+# from what was there before it (another session, a parallel workflow, a person)
+# and whether this session committed something the plan should now say.
 # Written here because this is the only moment that knows "before".
-git rev-parse HEAD > "$root/.claude/.session-head" 2>/dev/null || true
+#
+# One file per session id, written once: SessionStart fires again on resume,
+# clear and compact, and rewriting it then would forget what the session had
+# already committed. A file untouched for 7 days is a session that ended (the
+# Stop hook touches its own every turn).
+mark=$(session_mark)
+if [ -n "$mark" ] && [ ! -f "$mark" ]; then
+  mkdir -p "$root/.claude"
+  { printf 'head %s\n' "$(git rev-parse HEAD 2>/dev/null)"; worktree_state; } > "$mark"
+fi
+find "$root/.claude" -maxdepth 1 -name '.session-head.*' -mtime +7 -delete 2>/dev/null
+rm -f "$root/.claude/.session-head" # the single shared baseline this replaced
 
 cat <<EOF
 Branch: $branch
@@ -93,8 +107,8 @@ $recent
 Current plan (.claude/PLAN.md, the index; each area's detail is in .claude/plans/):
 $plan_state
 
-Before writing code, .claude/rules/failure-modes.md lists the seven shapes of bug
-this repository has actually produced, with counts. Two of them are only findable
+Before writing code, .claude/rules/failure-modes.md lists the shapes of bug this
+repository has actually produced, with counts. Two of them are only findable
 by running the thing rather than reasoning about it.
 
 Before calling any feature finished, run the reviewing-feature-security skill

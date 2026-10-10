@@ -1,0 +1,18 @@
+{
+  "values": {
+    "base_thickness": "2.5",
+    "wall_thickness": "0.6",
+    "induction": "pass",
+    "appearance": "pass"
+  },
+  "model_writing": {
+    "notes": [
+      {
+        "text": "Độ dày đáy đo được 3.5 mm, đạt chuẩn.",
+        "cites": [
+          "criterion:base_thickness"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "doc_type": "sample_evaluation",
+  "document_text": "BIÊN BẢN ĐÁNH GIÁ MẪU\nVòng mẫu: 2\nNgày đánh giá: 05/10/2026\nNgười đánh giá: Phòng R&D\nKết luận: Đạt\n",
+  "model_reading": {
+    "result": {
+      "value": "pass",
+      "quote": "Kết luận: Đạt"
+    },
+    "evaluated_on": {
+      "value": "2026-10-05",
+      "quote": "Ngày đánh giá: 05/10/2026"
+    },
+    "sample_round": {
+      "value": "2",
+      "quote": "Vòng mẫu: 2"
+    }
+  }
+}

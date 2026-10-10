@@ -9,21 +9,32 @@ covers against a real database.
 
 from __future__ import annotations
 
+import inspect
 import uuid
-from collections.abc import Mapping
-from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
+from dw_agent_runtime.allowance import DailyAllowance
 from dw_agent_runtime.contracts import RunContext
+from dw_agent_runtime.model.budget import RunBudgetLedger
+from dw_agent_runtime.model.single_call import SingleCallModelGateway
 from dw_agent_runtime.ports import ModelOutputInvalidError, ModelRequest, OutputT
-from dw_kernel.errors import ConflictError, DomainError, NotFoundError, PermissionDeniedError
+from dw_kernel.errors import (
+    ConflictError,
+    DomainError,
+    NotFoundError,
+    PermissionDeniedError,
+    QuotaExceededError,
+)
 from dw_kernel.ids import TenantId, UserId, WorkspaceId
 from dw_kernel.pagination import CursorPosition, Page, PageRequest, build_page
-from dw_kernel.ports import FixedClock, Uuid4Generator
+from dw_kernel.ports import FixedClock, SystemClock, Uuid4Generator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.domain.approval import ApprovalRequest
@@ -33,12 +44,16 @@ from dw_supply_chain.action_duties import (
     SupplyChainActionDuties,
     load_supply_chain_action_duties,
 )
+from dw_supply_chain.adapters.persistence import po_case_repository
+from dw_supply_chain.application import handlers as handlers_module
+from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.handlers import (
     AdvancePOCase,
     AnalyzeDelayImpact,
-    AnswerCaseQuery,
     CaseActionApplied,
     CaseActionPendingApproval,
+    CloseFollowUp,
+    CreatePO,
     CreatePOCase,
     GetActionDuties,
     GetApprovalMatrix,
@@ -48,38 +63,60 @@ from dw_supply_chain.application.handlers import (
     GetMissingUpdateStatus,
     GetPOCase,
     GetPortfolioSummary,
+    GetProductActionDuties,
     GetSLAEvaluation,
     GetSLAPolicy,
     ListCaseTransitions,
     ListDelayImpactAnalyses,
+    ListFollowUps,
     ListPOCases,
+    ListProductCategories,
     ListSupplierUpdates,
+    ReassignPOCasePic,
     SetActionDutiesOverride,
     SetApprovalMatrixOverride,
     SetBriefPolicyOverride,
+    SetProductActionDutiesOverride,
     SetSLAPolicyOverride,
     SubmitSupplierUpdate,
     SummarizeDailyBrief,
+    duty_scope,
 )
-from dw_supply_chain.application.ports import PO_REFERENCE_PADDING, POCaseListFilter
+from dw_supply_chain.application.po_papers import PaperGateResolver
+from dw_supply_chain.application.ports import (
+    PO_REFERENCE_PADDING,
+    FollowUpRecord,
+    POCaseListFilter,
+)
+from dw_supply_chain.application.product_cases import ListProductCases
 from dw_supply_chain.approval_matrix import SupplyChainApprovalMatrix
 from dw_supply_chain.brief_policy import SupplyChainBriefPolicy
 from dw_supply_chain.domain.brief_summary import BriefSummaryDraft, BriefSummaryStatus
+from dw_supply_chain.domain.case_document import (
+    CaseDocument,
+    CaseDocumentId,
+    CaseKind,
+    DocumentType,
+)
 from dw_supply_chain.domain.case_query import CaseQueryOutcome, GroundedField
-from dw_supply_chain.domain.daily_brief import BriefSignal
+from dw_supply_chain.domain.daily_brief import ENTRIES_SHOWN, BriefSignal
 from dw_supply_chain.domain.delay_impact import (
     DelayImpactAnalysis,
     DelayImpactExtraction,
     MitigationOption,
 )
+from dw_supply_chain.domain.follow_up import FollowUpKind, FollowUpStatus
 from dw_supply_chain.domain.missing_update import MissingUpdateStatus
+from dw_supply_chain.domain.packaging_design import PreProductionTest, ProductionGate
 from dw_supply_chain.domain.po_case import (
     TERMINAL_STATES,
     CaseAction,
     CaseState,
     CaseTransition,
+    OrderKind,
     POCase,
     POCaseId,
+    POCaseLine,
 )
 from dw_supply_chain.domain.sla_evaluation import SLAEvaluationStatus
 from dw_supply_chain.domain.supplier_update import (
@@ -88,12 +125,21 @@ from dw_supply_chain.domain.supplier_update import (
     SupplierUpdateExtraction,
     SupplierUpdateId,
 )
+from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE
+from dw_supply_chain.product_action_duties import load_supply_chain_product_action_duties
 from dw_supply_chain.sla_policy import (
+    ProductCategory,
     SLAConfirmationStatus,
     SLAMilestone,
     SupplierUpdateCadence,
     SupplyChainSLAPolicy,
 )
+from dw_supply_chain.testing.pages import history_page
+from dw_supply_chain.testing.po_papers import open_paper_gate
+from dw_supply_chain.testing.po_steps import ELMICH_PO_DOCUMENTS
+from dw_supply_chain.testing.product_cases import InMemoryDirectory, InMemoryProductCases
+from dw_supply_chain.testing.production_gate import open_production_gate
+from dw_supply_chain.testing.step_preparation import InMemoryDocuments
 
 pytestmark = pytest.mark.unit
 
@@ -107,7 +153,10 @@ _SHIPPED_ACTION_DUTIES = (
     Path(__file__).resolve().parents[5]
     / "configs"
     / "policies"
-    / "supply_chain_action_duties@1.0.0.yaml"
+    / "supply_chain_action_duties@1.3.0.yaml"
+)
+_SHIPPED_PRODUCT_ACTION_DUTIES = (
+    Path(__file__).resolve().parents[5] / "configs" / "policies" / PRODUCT_ACTION_DUTIES_POLICY_FILE
 )
 _SUPPLIER_UPDATE_SCOPES = frozenset(
     {"supply_chain.supplier_update.read", "supply_chain.supplier_update.write"}
@@ -126,9 +175,14 @@ class FakePOCaseRepository:
         # path, which test_po_case_repository.py already covers for real.
         self.current_state_entered_at: dict[uuid.UUID, datetime] = {}
         self.transitions: dict[uuid.UUID, list[CaseTransition]] = {}
+        self.audits: list[AuditEvent] = []
 
-    async def add(self, context: AccessContext, case: POCase) -> None:
+    async def add(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         self.by_id[case.id.value] = case
+        if audit is not None:
+            self.audits.append(audit)
 
     async def get(self, context: AccessContext, case_id: POCaseId) -> POCase | None:
         case = self.by_id.get(case_id.value)
@@ -136,10 +190,14 @@ class FakePOCaseRepository:
             return None
         return case
 
-    async def save(self, context: AccessContext, case: POCase) -> None:
+    async def save(
+        self, context: AccessContext, case: POCase, *, audit: AuditEvent | None = None
+    ) -> None:
         self.by_id[case.id.value] = case
+        if audit is not None:
+            self.audits.append(audit)
 
-    async def get_current_state_entered_at(
+    async def get_sla_clock_started_at(
         self, context: AccessContext, case_id: POCaseId
     ) -> datetime | None:
         return self.current_state_entered_at.get(case_id.value)
@@ -168,16 +226,9 @@ class FakePOCaseRepository:
         return build_page(cases[: request.fetch_limit], request=request, position_of=_case_position)
 
     async def list_transitions(
-        self, context: AccessContext, case_id: POCaseId
-    ) -> list[CaseTransition]:
-        return self.transitions.get(case_id.value, [])
-
-    async def list_active(self, context: AccessContext) -> list[POCase]:
-        return [
-            c
-            for c in self.by_id.values()
-            if c.tenant_id.value == context.tenant_id and c.state not in TERMINAL_STATES
-        ]
+        self, context: AccessContext, case_id: POCaseId, request: PageRequest
+    ) -> Page[CaseTransition]:
+        return history_page(self.transitions.get(case_id.value, []), request)
 
     async def list_supplier_names(self, context: AccessContext) -> list[str]:
         return sorted(
@@ -191,12 +242,14 @@ class FakePOCaseRepository:
                 c
                 for c in self.by_id.values()
                 if c.tenant_id.value == context.tenant_id
+                # As the SQL: a case without a reference never matches.
+                and c.po_reference is not None
                 and c.po_reference.strip(PO_REFERENCE_PADDING).lower() == wanted
             ),
-            key=lambda c: c.po_reference,
+            key=lambda c: c.po_reference or "",
         )
 
-    async def bulk_current_state_entered_at(
+    async def bulk_sla_clock_started_at(
         self, context: AccessContext, case_ids: list[POCaseId]
     ) -> dict[uuid.UUID, datetime]:
         return {
@@ -214,8 +267,8 @@ class FakePOCaseRepository:
         ]
 
     async def list_latest_transitions_since(
-        self, context: AccessContext, since: datetime
-    ) -> list[tuple[POCaseId, CaseTransition]]:
+        self, context: AccessContext, since: datetime, *, limit: int
+    ) -> tuple[int, list[tuple[POCaseId, CaseTransition]]]:
         # Honors the real contract: the caller's tenant only, each case's
         # latest transition inside the window, one per case.
         latest: list[tuple[POCaseId, CaseTransition]] = []
@@ -226,7 +279,8 @@ class FakePOCaseRepository:
             inside = [t for t in history if t.occurred_at >= since]
             if inside:
                 latest.append((case.id, max(inside, key=lambda t: t.occurred_at)))
-        return latest
+        latest.sort(key=lambda pair: pair[1].occurred_at, reverse=True)
+        return len(latest), latest[:limit]
 
 
 def _case_position(case: POCase) -> CursorPosition:
@@ -257,10 +311,17 @@ async def test_create_opens_a_case_with_tenant_and_workspace_from_context() -> N
     repo = FakePOCaseRepository()
     case_id = uuid.uuid4()
     handler = CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(case_id)
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(case_id),
+        clock=SystemClock(),
     )
 
-    case = await handler.handle(_context(), po_reference="PO-0001", supplier_name="Elmich Co.")
+    case = await handler.handle(
+        _context(), po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
 
     assert case.id.value == case_id
     assert case.tenant_id.value == TENANT
@@ -271,21 +332,75 @@ async def test_create_opens_a_case_with_tenant_and_workspace_from_context() -> N
 async def test_create_refuses_without_the_write_scope() -> None:
     repo = FakePOCaseRepository()
     handler = CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
     )
     context = _context(scopes=frozenset({"supply_chain.po_case.read"}))
 
     with pytest.raises(PermissionDeniedError):
-        await handler.handle(context, po_reference="PO-0001", supplier_name="Elmich Co.")
+        await handler.handle(
+            context,
+            po_reference="PO-0001",
+            supplier_name="Elmich Co.",
+            order_kind=OrderKind.REORDER,
+        )
     assert repo.by_id == {}
+    assert repo.audits == []
+
+
+async def test_create_writes_one_audit_event_from_the_verified_context() -> None:
+    """Ticket P2: the case and its audit event go to the repository together;
+    tenant, workspace and actor are the caller's, never the request's."""
+    repo = FakePOCaseRepository()
+    context = _context()
+    case = await CreatePOCase(
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=FixedClock(_NOW),
+    ).handle(
+        context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
+
+    (audit,) = repo.audits
+    assert (audit.action, audit.resource_type, audit.resource_id) == (
+        "supply_chain.po_case.create",
+        "po_case",
+        str(case.id),
+    )
+    assert (audit.tenant_id.value, audit.workspace_id.value, audit.actor_id.value) == (
+        TENANT,
+        WORKSPACE,
+        context.principal_id,
+    )
+    assert audit.occurred_at == _NOW
+    assert audit.details == {
+        "state": "po_created",
+        "po_reference": "PO-0001",
+        "order_kind": "reorder",
+        "category": None,
+    }
 
 
 async def test_get_returns_the_case_it_was_created_with() -> None:
     repo = FakePOCaseRepository()
     context = _context()
     created = await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
-    ).handle(context, po_reference="PO-0001", supplier_name="Elmich Co.")
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
+    ).handle(
+        context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
 
     fetched = await GetPOCase(repo=repo, authz=ScopeAuthorizationService()).handle(
         context, created.id
@@ -315,12 +430,26 @@ async def test_list_returns_cases_newest_first() -> None:
     repo = FakePOCaseRepository()
     context = _context()
     older = await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
-    ).handle(context, po_reference="PO-0001", supplier_name="Elmich Co.")
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
+    ).handle(
+        context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
     older.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     newer = await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
-    ).handle(context, po_reference="PO-0002", supplier_name="Elmich Co.")
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
+    ).handle(
+        context, po_reference="PO-0002", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
     newer.created_at = datetime(2026, 2, 1, tzinfo=UTC)
 
     page = await ListPOCases(repo=repo, authz=ScopeAuthorizationService()).handle(
@@ -342,12 +471,27 @@ async def test_list_only_returns_the_callers_tenant() -> None:
         plan_id="professional",
     )
     case = await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
-    ).handle(mine, po_reference="PO-0001", supplier_name="Elmich Co.")
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
+    ).handle(mine, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER)
     case.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=_FixedIdGenerator(uuid.uuid4())
-    ).handle(other, po_reference="PO-9999", supplier_name="Someone Else Co.")
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=_FixedIdGenerator(uuid.uuid4()),
+        clock=SystemClock(),
+    ).handle(
+        other,
+        po_reference="PO-9999",
+        supplier_name="Someone Else Co.",
+        order_kind=OrderKind.REORDER,
+    )
 
     page = await ListPOCases(repo=repo, authz=ScopeAuthorizationService()).handle(
         mine, POCaseListFilter(), limit=50, cursor=None
@@ -462,9 +606,14 @@ def test_a_supplier_literally_named_none_does_not_fingerprint_like_no_filter() -
 class FakeSupplierUpdateRepository:
     def __init__(self) -> None:
         self.by_case: dict[uuid.UUID, list[SupplierUpdate]] = {}
+        self.audits: list[AuditEvent] = []
 
-    async def add(self, context: AccessContext, update: SupplierUpdate) -> None:
+    async def add(
+        self, context: AccessContext, update: SupplierUpdate, *, audit: AuditEvent | None = None
+    ) -> None:
         self.by_case.setdefault(update.po_case_id.value, []).append(update)
+        if audit is not None:
+            self.audits.append(audit)
 
     async def get(
         self, context: AccessContext, update_id: SupplierUpdateId
@@ -531,8 +680,15 @@ def _extraction(**overrides: object) -> SupplierUpdateExtraction:
 
 async def _seeded_case(repo: FakePOCaseRepository, context: AccessContext) -> POCase:
     case = await CreatePOCase(
-        repo=repo, authz=ScopeAuthorizationService(), ids=Uuid4Generator()
-    ).handle(context, po_reference="PO-0001", supplier_name="Elmich Co.")
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=SystemClock(),
+    ).handle(
+        context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
     return case
 
 
@@ -549,6 +705,7 @@ async def test_submit_reads_the_case_first_and_persists_the_extraction() -> None
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     update = await handler.handle(
@@ -560,6 +717,23 @@ async def test_submit_reads_the_case_first_and_persists_the_extraction() -> None
     assert not update.requires_confirmation
     assert supplier_update_repo.by_case[case.id.value] == [update]
     assert len(gateway.calls) == 1
+    # Ticket P2: one audit event with the record, and none of the message.
+    (audit,) = supplier_update_repo.audits
+    assert (audit.action, audit.resource_type, audit.resource_id) == (
+        "supply_chain.supplier_update.submit",
+        "supplier_update",
+        str(update.id),
+    )
+    assert (audit.tenant_id.value, audit.workspace_id.value, audit.actor_id.value) == (
+        TENANT,
+        WORKSPACE,
+        context.principal_id,
+    )
+    assert audit.details == {
+        "po_case_id": str(case.id),
+        "event_type": "production_delay",
+        "requires_confirmation": False,
+    }
 
 
 async def test_submit_computes_requires_confirmation_from_the_real_domain_rule() -> None:
@@ -579,6 +753,7 @@ async def test_submit_computes_requires_confirmation_from_the_real_domain_rule()
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     update = await handler.handle(context, po_case_id=case.id, raw_text="delayed by 7 days")
@@ -595,6 +770,7 @@ async def test_submit_refuses_for_an_unknown_case_without_calling_the_model() ->
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     with pytest.raises(NotFoundError):
@@ -606,6 +782,7 @@ async def test_submit_refuses_for_an_unknown_case_without_calling_the_model() ->
     # The expensive/external call never happens for a case that does not exist.
     assert gateway.calls == []
     assert supplier_update_repo.by_case == {}
+    assert supplier_update_repo.audits == []
 
 
 async def test_submit_refuses_without_the_write_scope() -> None:
@@ -620,6 +797,7 @@ async def test_submit_refuses_without_the_write_scope() -> None:
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     denied_context = _context(scopes=_BOTH_SCOPES)  # no supplier_update.write
@@ -640,6 +818,7 @@ async def test_list_returns_updates_newest_first_via_the_repository() -> None:
         gateway=FakeModelGateway(_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     first = await submit.handle(context, po_case_id=case.id, raw_text="update one")
     second = await submit.handle(context, po_case_id=case.id, raw_text="update two")
@@ -670,9 +849,18 @@ async def test_list_refuses_for_an_unknown_case() -> None:
 class FakeDelayImpactAnalysisRepository:
     def __init__(self) -> None:
         self.by_case: dict[uuid.UUID, list[DelayImpactAnalysis]] = {}
+        self.audits: list[AuditEvent] = []
 
-    async def add(self, context: AccessContext, analysis: DelayImpactAnalysis) -> None:
+    async def add(
+        self,
+        context: AccessContext,
+        analysis: DelayImpactAnalysis,
+        *,
+        audit: AuditEvent | None = None,
+    ) -> None:
         self.by_case.setdefault(analysis.po_case_id.value, []).append(analysis)
+        if audit is not None:
+            self.audits.append(audit)
 
     async def list_for_case(
         self, context: AccessContext, po_case_id: POCaseId
@@ -711,7 +899,11 @@ def _advance_case_to(case: POCase, target: CaseState) -> None:
     if target is CaseState.PO_CREATED:
         return
     for method_name, reached in _HAPPY_PATH_METHODS:
-        getattr(case, method_name)()
+        method = getattr(case, method_name)
+        if method_name == "start_production":
+            method(ProductionGate(required=False, test=PreProductionTest.PENDING))
+        else:
+            method()
         if reached is target:
             return
     raise AssertionError(f"{target} is not reachable via the happy path")
@@ -726,8 +918,15 @@ async def _seeded_case_with_delay_update(
     delay_days: int | None = 7,
 ) -> tuple[POCase, SupplierUpdate]:
     case = await CreatePOCase(
-        repo=po_case_repo, authz=ScopeAuthorizationService(), ids=Uuid4Generator()
-    ).handle(context, po_reference="PO-0001", supplier_name="Elmich Co.")
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=po_case_repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=SystemClock(),
+    ).handle(
+        context, po_reference="PO-0001", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
     _advance_case_to(case, state)
     await po_case_repo.save(context, case)
     gateway = FakeModelGateway(_extraction(delay_days=delay_days))
@@ -737,6 +936,7 @@ async def _seeded_case_with_delay_update(
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     ).handle(context, po_case_id=case.id, raw_text="we will be delayed by 7 days")
     return case, update
 
@@ -754,6 +954,7 @@ async def test_analyze_persists_impacted_milestones_and_the_models_extraction() 
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
 
     analysis = await handler.handle(context, po_case_id=case.id, supplier_update_id=update.id)
@@ -771,6 +972,23 @@ async def test_analyze_persists_impacted_milestones_and_the_models_extraction() 
     assert all(e.estimated_delay_days == 7 for e in analysis.impacted_milestones)
     assert analysis.extraction.assumptions == _delay_extraction().assumptions
     assert delay_impact_repo.by_case[case.id.value] == [analysis]
+    # Ticket P2: one audit event with the record.
+    (audit,) = delay_impact_repo.audits
+    assert (audit.action, audit.resource_type, audit.resource_id) == (
+        "supply_chain.delay_impact.analyze",
+        "delay_impact_analysis",
+        str(analysis.id),
+    )
+    assert (audit.tenant_id.value, audit.workspace_id.value, audit.actor_id.value) == (
+        TENANT,
+        WORKSPACE,
+        context.principal_id,
+    )
+    assert audit.details == {
+        "po_case_id": str(case.id),
+        "supplier_update_id": str(update.id),
+        "delay_days": 7,
+    }
 
 
 async def test_analyze_refuses_for_an_unknown_case() -> None:
@@ -781,6 +999,7 @@ async def test_analyze_refuses_for_an_unknown_case() -> None:
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     with pytest.raises(NotFoundError):
         await handler.handle(
@@ -795,8 +1014,15 @@ async def test_analyze_refuses_when_the_update_belongs_to_a_different_case() -> 
     context = _context(scopes=_BOTH_SCOPES | _SUPPLIER_UPDATE_SCOPES | _DELAY_IMPACT_SCOPES)
     _, update = await _seeded_case_with_delay_update(po_case_repo, supplier_update_repo, context)
     other_case = await CreatePOCase(
-        repo=po_case_repo, authz=ScopeAuthorizationService(), ids=Uuid4Generator()
-    ).handle(context, po_reference="PO-0002", supplier_name="Elmich Co.")
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=po_case_repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=SystemClock(),
+    ).handle(
+        context, po_reference="PO-0002", supplier_name="Elmich Co.", order_kind=OrderKind.REORDER
+    )
 
     handler = AnalyzeDelayImpact(
         po_case_repo=po_case_repo,
@@ -805,6 +1031,7 @@ async def test_analyze_refuses_when_the_update_belongs_to_a_different_case() -> 
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     with pytest.raises(NotFoundError):
         # update belongs to the FIRST case, named against other_case here.
@@ -825,6 +1052,7 @@ async def test_analyze_refuses_an_update_with_no_delay_to_analyze() -> None:
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     with pytest.raises(DomainError, match="no delay"):
         await handler.handle(context, po_case_id=case.id, supplier_update_id=update.id)
@@ -844,6 +1072,7 @@ async def test_analyze_refuses_a_case_with_no_downstream_milestones_left() -> No
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     with pytest.raises(DomainError, match="no downstream milestones"):
         await handler.handle(context, po_case_id=case.id, supplier_update_id=update.id)
@@ -862,6 +1091,7 @@ async def test_analyze_refuses_without_the_write_scope() -> None:
         gateway=gateway,
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     denied_context = _context(
         scopes=_BOTH_SCOPES | _SUPPLIER_UPDATE_SCOPES
@@ -884,6 +1114,7 @@ async def test_list_delay_impact_analyses_newest_first() -> None:
         gateway=FakeModelGateway(_delay_extraction()),
         authz=ScopeAuthorizationService(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
     first = await analyze.handle(context, po_case_id=case.id, supplier_update_id=update.id)
     second = await analyze.handle(context, po_case_id=case.id, supplier_update_id=update.id)
@@ -1104,6 +1335,7 @@ def _advance_po_case_handler(
     platform_default_approval_matrix: SupplyChainApprovalMatrix | None = None,
     platform_default_action_duties: SupplyChainActionDuties | None = None,
     runner: FakeWorkflowRunnerPort | None = None,
+    papers: PaperGateResolver | None = None,
 ) -> AdvancePOCase:
     return AdvancePOCase(
         repo=po_case_repo,
@@ -1113,8 +1345,56 @@ def _advance_po_case_handler(
         platform_default_action_duties=platform_default_action_duties
         or load_supply_chain_action_duties(_SHIPPED_ACTION_DUTIES),
         runner=runner or FakeWorkflowRunnerPort(),
+        production_gate=open_production_gate(),
+        papers=papers or open_paper_gate(),
         ids=Uuid4Generator(),
+        clock=SystemClock(),
     )
+
+
+async def test_a_step_whose_paper_the_tenant_requires_waits_for_it_on_the_case() -> None:
+    # Ticket ai-automation/15 (QE-02): Elmich confirms the deposit only once
+    # the deposit papers are on THIS case; another case's papers do not count.
+    po_case_repo = FakePOCaseRepository()
+    context = _context()
+    case = await _seeded_case(po_case_repo, context)
+    documents = InMemoryDocuments()
+    papers = PaperGateResolver(
+        documents=documents,
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default=ELMICH_PO_DOCUMENTS,
+    )
+    handler = _advance_po_case_handler(po_case_repo, papers=papers)
+    await handler.handle(context, po_case_id=case.id, action=CaseAction.REQUEST_DEPOSIT)
+
+    def paper(case_id: uuid.UUID) -> CaseDocument:
+        return CaseDocument(
+            id=CaseDocumentId(uuid.uuid4()),
+            tenant_id=context.tenant_id,
+            workspace_id=context.workspace_id,
+            case_kind=CaseKind.PO,
+            case_id=case_id,
+            doc_type=DocumentType.DEPOSIT_DOCS,
+            object_key="k",
+            filename="coc.pdf",
+            content_type="application/pdf",
+            size_bytes=1,
+            sha256="0" * 64,
+            version=1,
+            uploaded_by=uuid.uuid4(),
+            uploaded_at=datetime.now(UTC),
+        )
+
+    documents.rows.append(paper(uuid.uuid4()))
+    with pytest.raises(ConflictError) as refused:
+        await handler.handle(context, po_case_id=case.id, action=CaseAction.CONFIRM_DEPOSIT)
+    assert refused.value.details["missing_document_type"] == "deposit_docs"
+    assert po_case_repo.by_id[case.id.value].state is CaseState.WAITING_DEPOSIT
+
+    documents.rows.append(paper(case.id.value))
+    result = await handler.handle(context, po_case_id=case.id, action=CaseAction.CONFIRM_DEPOSIT)
+    assert isinstance(result, CaseActionApplied)
+    assert result.case.state is CaseState.DEPOSIT_CONFIRMED
 
 
 async def test_advance_dispatches_a_no_reason_action_and_persists_it() -> None:
@@ -1128,6 +1408,16 @@ async def test_advance_dispatches_a_no_reason_action_and_persists_it() -> None:
     assert isinstance(result, CaseActionApplied)
     assert result.case.state is CaseState.WAITING_DEPOSIT
     assert po_case_repo.by_id[case.id.value].state is CaseState.WAITING_DEPOSIT
+    # Ticket P2: the step's audit event goes to the same save as the step.
+    step_audits = [a for a in po_case_repo.audits if a.action != "supply_chain.po_case.create"]
+    assert [(a.action, a.resource_id, a.actor_id.value, a.details) for a in step_audits] == [
+        (
+            "supply_chain.po_case.request_deposit",
+            str(case.id),
+            context.principal_id,
+            {"from_state": "po_created", "to_state": "waiting_deposit", "reason": None},
+        )
+    ]
 
 
 async def test_advance_dispatches_a_reason_required_action() -> None:
@@ -1244,6 +1534,22 @@ async def test_advance_refuses_without_the_write_scope() -> None:
     with pytest.raises(PermissionDeniedError):
         await handler.handle(denied_context, po_case_id=case.id, action=CaseAction.REQUEST_DEPOSIT)
     assert po_case_repo.by_id[case.id.value].state is CaseState.PO_CREATED
+    assert [a.action for a in po_case_repo.audits] == ["supply_chain.po_case.create"]
+
+
+async def test_advance_audits_nothing_when_the_step_waits_for_approval() -> None:
+    """Nothing is applied yet, so nothing is recorded as done: the graph's
+    apply node writes the step's event once a decision lands."""
+    po_case_repo = FakePOCaseRepository()
+    context = _context()
+    case = await _seeded_case(po_case_repo, context)
+    matrix = _approval_matrix(approval_required_actions=frozenset({CaseAction.CANCEL}))
+
+    await _advance_po_case_handler(po_case_repo, platform_default_approval_matrix=matrix).handle(
+        context, po_case_id=case.id, action=CaseAction.CANCEL, reason="customer walked away"
+    )
+
+    assert [a.action for a in po_case_repo.audits] == ["supply_chain.po_case.create"]
 
 
 # -- ListCaseTransitions --------------------------------------------------------
@@ -1270,17 +1576,19 @@ async def test_list_transitions_returns_the_cases_own_history() -> None:
     po_case_repo.transitions[case.id.value] = expected
 
     result = await ListCaseTransitions(repo=po_case_repo, authz=ScopeAuthorizationService()).handle(
-        context, case.id
+        context, case.id, limit=1, cursor=None
     )
 
-    assert result == expected
+    # Newest first, a page at a time.
+    assert result.items == (expected[1],)
+    assert result.next_cursor is not None
 
 
 async def test_list_transitions_raises_not_found_for_an_unknown_case() -> None:
     po_case_repo = FakePOCaseRepository()
     handler = ListCaseTransitions(repo=po_case_repo, authz=ScopeAuthorizationService())
     with pytest.raises(NotFoundError):
-        await handler.handle(_context(), POCaseId(uuid.uuid4()))
+        await handler.handle(_context(), POCaseId(uuid.uuid4()), limit=10, cursor=None)
 
 
 async def test_list_transitions_refuses_without_the_read_scope() -> None:
@@ -1291,7 +1599,7 @@ async def test_list_transitions_refuses_without_the_read_scope() -> None:
     handler = ListCaseTransitions(repo=po_case_repo, authz=ScopeAuthorizationService())
     denied_context = _context(scopes=frozenset())
     with pytest.raises(PermissionDeniedError):
-        await handler.handle(denied_context, case.id)
+        await handler.handle(denied_context, case.id, limit=10, cursor=None)
 
 
 # -- GetSLAPolicy / SetSLAPolicyOverride / GetSLAEvaluation -----------------
@@ -1317,12 +1625,19 @@ class FakePolicyOverrideRepository:
         self.audit_events.append(audit)
 
 
-def _sla_policy(**milestones: SLAMilestone) -> SupplyChainSLAPolicy:
+def _sla_policy(
+    *, by_category: dict[str, dict[str, SLAMilestone]] | None = None, **milestones: SLAMilestone
+) -> SupplyChainSLAPolicy:
     return SupplyChainSLAPolicy(
-        schema_version="1.0",
+        schema_version="2.0",
         policy_id="supply_chain_sla",
-        policy_version="1.0.0",
-        sla=milestones,
+        policy_version="2.0.0",
+        categories=(
+            ProductCategory(key="noi", label="Nồi"),
+            ProductCategory(key="chao", label="Chảo"),
+        ),
+        default=milestones,
+        by_category=by_category or {},
         supplier_update=SupplierUpdateCadence(reminder_after="5d", escalation_after="10d"),
     )
 
@@ -1774,7 +2089,7 @@ async def test_get_sla_policy_returns_the_platform_default_when_no_override_exis
     context = _context(scopes=frozenset({"supply_chain.sla_policy.read"}))
 
     policy = await handler.handle(context)
-    assert policy.sla["deposit"].duration_days == 10
+    assert policy.default["deposit"].duration_days == 10
 
 
 async def test_get_sla_policy_returns_the_tenants_own_override_when_set() -> None:
@@ -1791,7 +2106,7 @@ async def test_get_sla_policy_returns_the_tenants_own_override_when_set() -> Non
         authz=ScopeAuthorizationService(),
     )
     policy = await handler.handle(context)
-    assert policy.sla["deposit"].duration_days == 3
+    assert policy.default["deposit"].duration_days == 3
 
 
 async def test_get_sla_policy_refuses_without_the_read_scope() -> None:
@@ -1818,7 +2133,7 @@ async def test_set_sla_policy_override_persists_it_for_the_callers_own_tenant() 
     await handler.handle(context, submitted)
 
     stored = policy_override_repo.by_tenant_and_policy[(TENANT, "supply_chain_sla")]
-    assert SupplyChainSLAPolicy.model_validate(stored).sla["deposit"].duration_days == 7
+    assert SupplyChainSLAPolicy.model_validate(stored).default["deposit"].duration_days == 7
 
     (audit,) = policy_override_repo.audit_events
     assert audit.tenant_id.value == TENANT
@@ -1864,7 +2179,7 @@ async def test_a_written_override_is_immediately_visible_to_get_sla_policy() -> 
     await set_handler.handle(context, _sla_policy(deposit=_confirmed_milestone(9)))
     policy = await get_handler.handle(context)
 
-    assert policy.sla["deposit"].duration_days == 9
+    assert policy.default["deposit"].duration_days == 9
 
 
 # -- GetApprovalMatrix / SetApprovalMatrixOverride ---------------------------
@@ -2007,9 +2322,18 @@ class _IntentGateway:
 
 def _answer_case_query(repo: FakePOCaseRepository, gateway: _IntentGateway) -> AnswerCaseQuery:
     authz = ScopeAuthorizationService()
+    products = InMemoryProductCases()
     return AnswerCaseQuery(
         po_case_repo=repo,
         list_cases=ListPOCases(repo=repo, authz=authz),
+        product_cases=products,
+        list_product_cases=ListProductCases(repo=products, authz=authz),
+        categories=ListProductCategories(
+            policy_override_repo=FakePolicyOverrideRepository(),
+            platform_default_sla_policy=_sla_policy(),
+            authz=authz,
+        ),
+        directory=InMemoryDirectory(),
         gateway=gateway,
         authz=authz,
         ids=Uuid4Generator(),
@@ -2262,27 +2586,41 @@ def _brief_policy(order: tuple[BriefSignal, ...] = tuple(BriefSignal)) -> Supply
 
 
 class FakePendingApprovals:
-    """Honors the port's contract (tenant, pending, literal prefix, newest
-    first, `limit` after `total`) and records whether it was asked at all."""
+    """Honors the port's contract (tenant and workspace, pending, literal
+    prefix, newest first, `limit` after `total`) and records whether it was
+    asked at all."""
 
     def __init__(self, approvals: list[ApprovalRequest] | None = None) -> None:
         self.approvals = approvals or []
         self.calls = 0
 
     async def list_pending_by_type_prefix(
-        self, context: AccessContext, *, prefix: str, limit: int
+        self,
+        context: AccessContext,
+        *,
+        prefix: str,
+        limit: int,
+        payload_match: tuple[str, str] | None = None,
     ) -> tuple[int, list[ApprovalRequest]]:
         self.calls += 1
         matching = sorted(
             (
                 a
                 for a in self.approvals
-                if a.tenant_id.value == context.tenant_id and a.approval_type.startswith(prefix)
+                if a.tenant_id.value == context.tenant_id
+                and a.workspace_id.value == context.workspace_id
+                and a.approval_type.startswith(prefix)
+                and (payload_match is None or a.payload.get(payload_match[0]) == payload_match[1])
             ),
             key=lambda a: (a.created_at, a.id),
             reverse=True,
         )
         return len(matching), matching[:limit]
+
+    async def pending_by_payload(
+        self, context: AccessContext, *, approval_type: str, key: str, value: str
+    ) -> ApprovalRequest | None:
+        raise NotImplementedError("not exercised by the daily brief")
 
 
 def _approval(
@@ -2310,6 +2648,7 @@ def _daily_brief_handler(
     return GetDailyBrief(
         po_case_repo=po_case_repo,
         supplier_update_repo=supplier_update_repo or FakeSupplierUpdateRepository(),
+        product_case_repo=InMemoryProductCases(),
         policy_override_repo=policy_override_repo or FakePolicyOverrideRepository(),
         platform_default_policy=_sla_policy(),
         platform_default_brief_policy=_brief_policy(),
@@ -2795,3 +3134,740 @@ async def test_action_duties_handlers_refuse_without_their_scopes() -> None:
             clock=FixedClock(_NOW),
         ).handle(_context(scopes=frozenset({"supply_chain.action_duties.read"})), shipped)
     assert overrides.by_tenant_and_policy == {}
+
+
+async def test_product_action_duties_handlers_refuse_without_their_scopes() -> None:
+    # Setting this mapping decides who may take every product step, so the
+    # refusal is pinned where the write happens, not only at the route.
+    overrides = FakePolicyOverrideRepository()
+    shipped = load_supply_chain_product_action_duties(_SHIPPED_PRODUCT_ACTION_DUTIES)
+    with pytest.raises(PermissionDeniedError):
+        await GetProductActionDuties(
+            policy_override_repo=overrides,
+            platform_default_duties=shipped,
+            authz=ScopeAuthorizationService(),
+        ).handle(_context(scopes=frozenset()))
+    with pytest.raises(PermissionDeniedError):
+        await SetProductActionDutiesOverride(
+            policy_override_repo=overrides,
+            authz=ScopeAuthorizationService(),
+            ids=Uuid4Generator(),
+            clock=FixedClock(_NOW),
+        ).handle(_context(scopes=frozenset({"supply_chain.action_duties.read"})), shipped)
+    assert overrides.by_tenant_and_policy == {}
+
+
+# --- step 10 and the PIC of a PO case (stage-1 ticket 05) -------------------------------
+
+_S5_NOW = datetime(2026, 10, 7, 8, tzinfo=UTC)
+_DUTIES = load_supply_chain_action_duties(_SHIPPED_ACTION_DUTIES)
+ORDERING = duty_scope(CaseDuty.ORDERING)
+FINANCE = duty_scope(CaseDuty.FINANCE)
+SKU = uuid.uuid4()
+
+
+@dataclass
+class _S5Holders:
+    by_scope: dict[str, list[uuid.UUID]] = field(default_factory=dict)
+
+    async def holding(
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, scopes: frozenset[str]
+    ) -> list[uuid.UUID]:
+        return sorted({p for scope in scopes for p in self.by_scope.get(scope, [])})
+
+
+@dataclass
+class _S5Notifier:
+    sent: dict[tuple[uuid.UUID, str], tuple[str, str | None]] = field(default_factory=dict)
+
+    async def deliver(
+        self,
+        context: AccessContext,
+        *,
+        recipients: Sequence[uuid.UUID],
+        source_key: str,
+        title: str,
+        body: str,
+        link: str | None,
+    ) -> None:
+        for person in recipients:
+            self.sent.setdefault((person, source_key), (title, link))
+
+
+def _awaiting(repo: FakePOCaseRepository, *, quantity: int | None = None) -> POCase:
+    case = POCase.requested(
+        id=POCaseId(uuid.uuid4()),
+        tenant_id=TenantId(TENANT),
+        workspace_id=WorkspaceId(WORKSPACE),
+        supplier_name="NCC Minh Long",
+        product_dev_case_id=uuid.uuid4(),
+        pic_user_id=uuid.uuid4(),
+        category="Nồi",
+        lines=(POCaseLine(sku_id=SKU, quantity=quantity),),
+    )
+    repo.by_id[case.id.value] = case
+    return case
+
+
+def _create_po(
+    repo: FakePOCaseRepository,
+    holders: _S5Holders | None = None,
+    notifier: _S5Notifier | None = None,
+) -> CreatePO:
+    return CreatePO(
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_action_duties=_DUTIES,
+        holders=holders or _S5Holders(),
+        notifier=notifier or _S5Notifier(),
+        ids=Uuid4Generator(),
+        clock=FixedClock(_S5_NOW),
+    )
+
+
+async def test_create_po_sets_the_reference_audits_and_tells_ke_toan() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo)
+    accountant = uuid.uuid4()
+    notifier = _S5Notifier()
+    caller = _context(scopes=frozenset({ORDERING}))
+
+    # The caller holds the finance duty as well: told nothing of their own step.
+    holders = _S5Holders({FINANCE: [accountant, caller.principal_id]})
+    done = await _create_po(repo, holders, notifier).handle(
+        caller,
+        po_case_id=case.id,
+        po_reference=" PO-2026-0101 ",
+        order_kind=OrderKind.NEW,
+        quantities={SKU: 40},
+    )
+
+    assert (done.state, done.po_reference) == (CaseState.PO_CREATED, "PO-2026-0101")
+    assert done.lines[0].quantity == 40
+    (audit,) = repo.audits
+    assert (audit.action, audit.resource_type, audit.resource_id) == (
+        "supply_chain.po_case.create_po",
+        "po_case",
+        str(case.id),
+    )
+    assert audit.details["po_reference"] == "PO-2026-0101"
+    key = f"supply_chain.po_created:{case.id}"
+    assert notifier.sent == {
+        (accountant, key): ("Đã tạo PO PO-2026-0101", f"/supply-chain/po-cases/{case.id}")
+    }
+
+
+@pytest.mark.parametrize(
+    "scopes", [frozenset(), frozenset({FINANCE, "supply_chain.po_case.write"})]
+)
+async def test_create_po_needs_its_duty_before_the_case_is_read(scopes: frozenset[str]) -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo, quantity=5)
+
+    with pytest.raises(PermissionDeniedError):
+        await _create_po(repo).handle(
+            _context(scopes=scopes),
+            po_case_id=case.id,
+            po_reference="PO-1",
+            order_kind=OrderKind.NEW,
+        )
+    assert repo.by_id[case.id.value].state is CaseState.ORDER_REQUESTED
+
+
+async def test_create_po_on_another_tenants_case_is_not_found() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo, quantity=5)
+    other = AccessContext(
+        tenant_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        principal_id=uuid.uuid4(),
+        roles=frozenset({"member"}),
+        scopes=frozenset({ORDERING}),
+        plan_id="professional",
+    )
+    with pytest.raises(NotFoundError):
+        await _create_po(repo).handle(
+            other, po_case_id=case.id, po_reference="PO-1", order_kind=OrderKind.NEW
+        )
+
+
+async def test_create_po_with_a_line_still_open_is_a_409_and_tells_nobody() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo)
+    notifier = _S5Notifier()
+
+    with pytest.raises(ConflictError):
+        await _create_po(repo, _S5Holders({FINANCE: [uuid.uuid4()]}), notifier).handle(
+            _context(scopes=frozenset({ORDERING})),
+            po_case_id=case.id,
+            po_reference="PO-1",
+            order_kind=OrderKind.NEW,
+        )
+    assert notifier.sent == {}
+    assert repo.audits == []
+
+
+async def test_create_po_case_stamps_its_caller_as_pic_and_takes_the_kind() -> None:
+    repo = FakePOCaseRepository()
+    caller = _context(scopes=frozenset({"supply_chain.po_case.write"}))
+
+    case = await CreatePOCase(
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=SystemClock(),
+    ).handle(caller, po_reference="PO-R-1", supplier_name="NCC", order_kind=OrderKind.REORDER)
+
+    assert (case.pic_user_id, case.order_kind, case.state) == (
+        caller.principal_id,
+        OrderKind.REORDER,
+        CaseState.PO_CREATED,
+    )
+    assert case.product_dev_case_id is None
+    # Nothing a caller passes could name another PIC.
+    assert "pic_user_id" not in inspect.signature(CreatePOCase.handle).parameters
+
+
+async def test_a_plain_po_step_cannot_be_create_po() -> None:
+    repo = FakePOCaseRepository()
+    case = _awaiting(repo, quantity=5)
+
+    with pytest.raises(DomainError, match="create_po"):
+        await _advance_po_case_handler(repo).handle(
+            _context(scopes=frozenset({ORDERING})),
+            po_case_id=case.id,
+            action=CaseAction.CREATE_PO,
+        )
+    assert repo.by_id[case.id.value].state is CaseState.ORDER_REQUESTED
+
+
+def test_no_po_case_read_joins_the_product_case() -> None:
+    """The PIC and Category are stamped on the PO case at ĐẶT HÀNG; reading
+    them back from the product case would make a later change of PIC there
+    move the PO case's too (ADR 0017). The PO repository names no
+    product-case table at all."""
+    source = inspect.getsource(po_case_repository)
+    assert "product_dev_cases" not in source
+    assert "pic_user_id=row.pic_user_id" in source
+
+
+# -- the Category on a PO case opened by hand (stage-1 ticket 06) -------------
+
+
+def _create_handler(repo: FakePOCaseRepository) -> CreatePOCase:
+    return CreatePOCase(
+        repo=repo,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=SystemClock(),
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+    )
+
+
+async def test_a_po_case_opened_by_hand_takes_an_optional_category_of_the_list() -> None:
+    repo = FakePOCaseRepository()
+    handler = _create_handler(repo)
+
+    with_one = await handler.handle(
+        _context(),
+        po_reference="PO-1",
+        supplier_name="K",
+        order_kind=OrderKind.REORDER,
+        category="chao",
+    )
+    without = await handler.handle(
+        _context(), po_reference="PO-2", supplier_name="K", order_kind=OrderKind.REORDER
+    )
+
+    assert (with_one.category, without.category) == ("chao", None)
+
+
+async def test_a_po_case_opened_by_hand_refuses_a_category_not_in_the_list() -> None:
+    repo = FakePOCaseRepository()
+    with pytest.raises(DomainError, match="Category"):
+        await _create_handler(repo).handle(
+            _context(),
+            po_reference="PO-1",
+            supplier_name="K",
+            order_kind=OrderKind.REORDER,
+            category="Nồi",
+        )
+    assert repo.by_id == {}
+
+
+async def test_a_po_cases_sla_follows_its_category() -> None:
+    """Ticket 06: Category A uses A's number, one without uses `default`."""
+    po_case_repo = FakePOCaseRepository()
+    context = _context(scopes=frozenset({"supply_chain.po_case.read"}))
+    policy = _sla_policy(
+        by_category={"chao": {"deposit": _confirmed_milestone(2)}},
+        deposit=_confirmed_milestone(10),
+    )
+    statuses = {}
+    for category in ("chao", "noi", None):
+        case = POCase(
+            id=POCaseId(uuid.uuid4()),
+            tenant_id=TenantId(TENANT),
+            workspace_id=WorkspaceId(WORKSPACE),
+            po_reference=f"PO-{category}",
+            supplier_name="K",
+            state=CaseState.WAITING_DEPOSIT,
+            created_at=_NOW - timedelta(days=30),
+            category=category,
+        )
+        await po_case_repo.add(context, case)
+        po_case_repo.current_state_entered_at[case.id.value] = _NOW - timedelta(days=3)
+        evaluation = await GetSLAEvaluation(
+            po_case_repo=po_case_repo,
+            policy_override_repo=FakePolicyOverrideRepository(),
+            platform_default_policy=policy,
+            authz=ScopeAuthorizationService(),
+            clock=FixedClock(_NOW),
+        ).handle(context, case.id)
+        statuses[category] = (evaluation.threshold_days, evaluation.status)
+
+    assert statuses == {
+        "chao": (2, SLAEvaluationStatus.BREACHED),
+        "noi": (10, SLAEvaluationStatus.ON_TRACK),
+        None: (10, SLAEvaluationStatus.ON_TRACK),
+    }
+
+
+async def test_an_override_of_tenant_b_does_not_change_tenant_as_sla() -> None:
+    po_case_repo = FakePOCaseRepository()
+    overrides = FakePolicyOverrideRepository()
+    other = AccessContext(
+        tenant_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        principal_id=uuid.uuid4(),
+        roles=frozenset(),
+        scopes=frozenset({"supply_chain.sla_policy.write"}),
+        plan_id="professional",
+    )
+    await overrides.put(
+        other,
+        "supply_chain_sla",
+        _sla_policy(deposit=_confirmed_milestone(1)).model_dump(mode="json"),
+        audit=_audit_event(other),
+    )
+    context = _context(scopes=frozenset({"supply_chain.po_case.read"}))
+    case = POCase(
+        id=POCaseId(uuid.uuid4()),
+        tenant_id=TenantId(TENANT),
+        workspace_id=WorkspaceId(WORKSPACE),
+        po_reference="PO-A",
+        supplier_name="K",
+        state=CaseState.WAITING_DEPOSIT,
+        created_at=_NOW - timedelta(days=30),
+    )
+    await po_case_repo.add(context, case)
+    po_case_repo.current_state_entered_at[case.id.value] = _NOW - timedelta(days=3)
+
+    evaluation = await GetSLAEvaluation(
+        po_case_repo=po_case_repo,
+        policy_override_repo=overrides,
+        platform_default_policy=_sla_policy(deposit=_confirmed_milestone(10)),
+        authz=ScopeAuthorizationService(),
+        clock=FixedClock(_NOW),
+    ).handle(context, case.id)
+
+    assert (evaluation.threshold_days, evaluation.status) == (10, SLAEvaluationStatus.ON_TRACK)
+
+
+async def test_the_category_list_is_read_with_the_product_case_read_scope() -> None:
+    handler = ListProductCategories(
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_sla_policy=_sla_policy(),
+        authz=ScopeAuthorizationService(),
+    )
+    listed = await handler.handle(_context(scopes=frozenset({"supply_chain.product_case.read"})))
+    assert [(c.key, c.label) for c in listed] == [("noi", "Nồi"), ("chao", "Chảo")]
+    with pytest.raises(PermissionDeniedError):
+        await handler.handle(_context(scopes=frozenset({"supply_chain.po_case.read"})))
+
+
+# -- reassign_pic on a PO case (stage-1 ticket 06) ----------------------------
+
+_SUPPLY_LEAD = duty_scope(CaseDuty.SUPPLY_LEAD)
+
+
+@dataclass
+class _Members:
+    of: dict[uuid.UUID, set[uuid.UUID]] = field(default_factory=dict)
+
+    async def members(
+        self, tenant_id: uuid.UUID, workspace_id: uuid.UUID, user_ids: frozenset[uuid.UUID]
+    ) -> frozenset[uuid.UUID]:
+        return frozenset(user_ids & self.of.get(workspace_id, set()))
+
+
+async def _po_case_with_pic(
+    repo: FakePOCaseRepository, pic: uuid.UUID, state: CaseState = CaseState.PRODUCTION
+) -> POCase:
+    case = POCase(
+        id=POCaseId(uuid.uuid4()),
+        tenant_id=TenantId(TENANT),
+        workspace_id=WorkspaceId(WORKSPACE),
+        po_reference="PO-PIC",
+        supplier_name="K",
+        state=state,
+        created_at=_NOW,
+        pic_user_id=pic,
+    )
+    await repo.add(_context(), case)
+    return case
+
+
+def _reassign(repo: FakePOCaseRepository, members: _Members) -> ReassignPOCasePic:
+    return ReassignPOCasePic(
+        repo=repo,
+        members=members,
+        authz=ScopeAuthorizationService(),
+        ids=Uuid4Generator(),
+        clock=FixedClock(_NOW),
+    )
+
+
+async def test_tp_cung_ung_reassigns_a_po_cases_pic_with_a_reason_and_an_audit() -> None:
+    repo = FakePOCaseRepository()
+    old, new = uuid.uuid4(), uuid.uuid4()
+    case = await _po_case_with_pic(repo, old)
+
+    changed = await _reassign(repo, _Members({WORKSPACE: {new}})).handle(
+        _context(scopes=frozenset({_SUPPLY_LEAD})),
+        po_case_id=case.id,
+        new_pic=new,
+        reason="Anh Tuấn chuyển bộ phận",
+    )
+
+    assert changed.pic_user_id == new == repo.by_id[case.id.value].pic_user_id
+    (audit,) = repo.audits
+    assert audit.action == "supply_chain.po_case.reassign_pic"
+    assert audit.details == {
+        "from_pic_user_id": str(old),
+        "to_pic_user_id": str(new),
+        "reason": "Anh Tuấn chuyển bộ phận",
+    }
+
+
+async def test_reassigning_a_po_case_needs_the_duty_a_reason_and_a_member() -> None:
+    repo = FakePOCaseRepository()
+    old, new, outsider = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    case = await _po_case_with_pic(repo, old)
+    handler = _reassign(repo, _Members({WORKSPACE: {new}}))
+
+    with pytest.raises(PermissionDeniedError):
+        await handler.handle(
+            _context(scopes=frozenset({"supply_chain.duty.ordering"})),
+            po_case_id=case.id,
+            new_pic=new,
+            reason="x",
+        )
+    with pytest.raises(DomainError, match="reason"):
+        await handler.handle(
+            _context(scopes=frozenset({_SUPPLY_LEAD})), po_case_id=case.id, new_pic=new, reason=" "
+        )
+    with pytest.raises(DomainError, match="member"):
+        await handler.handle(
+            _context(scopes=frozenset({_SUPPLY_LEAD})),
+            po_case_id=case.id,
+            new_pic=outsider,
+            reason="x",
+        )
+    assert repo.by_id[case.id.value].pic_user_id == old
+    assert repo.audits == []
+
+
+async def test_a_finished_po_case_keeps_its_pic() -> None:
+    repo = FakePOCaseRepository()
+    old, new = uuid.uuid4(), uuid.uuid4()
+    case = await _po_case_with_pic(repo, old, state=CaseState.COMPLETED)
+    with pytest.raises(ConflictError):
+        await _reassign(repo, _Members({WORKSPACE: {new}})).handle(
+            _context(scopes=frozenset({_SUPPLY_LEAD})), po_case_id=case.id, new_pic=new, reason="x"
+        )
+    assert repo.by_id[case.id.value].pic_user_id == old
+
+
+# -- follow-ups handed to the stamped PIC (stage-1 ticket 06) ------------------
+
+
+@dataclass
+class _FollowUps:
+    rows: dict[uuid.UUID, FollowUpRecord] = field(default_factory=dict)
+    audits: list[AuditEvent] = field(default_factory=list)
+
+    async def list_open(self, context: AccessContext) -> list[FollowUpRecord]:
+        return [r for r in self.rows.values() if r.workspace_id == context.workspace_id]
+
+    async def get(self, context: AccessContext, follow_up_id: uuid.UUID) -> FollowUpRecord | None:
+        row = self.rows.get(follow_up_id)
+        return row if row is not None and row.workspace_id == context.workspace_id else None
+
+    async def close_done(
+        self,
+        context: AccessContext,
+        follow_up_id: uuid.UUID,
+        *,
+        note: str | None,
+        audit: AuditEvent,
+    ) -> bool:
+        row = self.rows[follow_up_id]
+        if row.status is not FollowUpStatus.OPEN:
+            return False
+        self.rows[follow_up_id] = replace(row, status=FollowUpStatus.DONE)
+        self.audits.append(audit)
+        return True
+
+    async def open(self, context: AccessContext, drafts: object, *, audit: object) -> int:
+        raise NotImplementedError("not exercised by the read and close handlers")
+
+    async def resolve(self, context: AccessContext, follow_ups: object, *, audit: object) -> int:
+        raise NotImplementedError("not exercised by the read and close handlers")
+
+    async def mark_notified(self, context: AccessContext, follow_up_id: uuid.UUID) -> None:
+        raise NotImplementedError("not exercised by the read and close handlers")
+
+
+def _follow_up(pic: uuid.UUID | None) -> FollowUpRecord:
+    return FollowUpRecord(
+        id=uuid.uuid4(),
+        case_kind=CaseKind.PRODUCT,
+        case_id=uuid.uuid4(),
+        workspace_id=WORKSPACE,
+        reference="DX-1",
+        supplier_name=None,
+        kind=FollowUpKind.SLA_BREACH,
+        episode="bm04@x",
+        milestone="bm04",
+        days=5,
+        limit_days=4,
+        recipient_scopes=frozenset({"supply_chain.sla_policy.write"}),
+        recipient_user_id=pic,
+        status=FollowUpStatus.OPEN,
+        opened_at=_NOW,
+        notified_at=None,
+        closed_at=None,
+        closed_by=None,
+        close_note=None,
+    )
+
+
+async def test_the_stamped_pic_sees_the_follow_up_as_theirs_and_may_close_it() -> None:
+    pic = uuid.uuid4()
+    repo = _FollowUps()
+    row = _follow_up(pic)
+    repo.rows[row.id] = row
+    pic_context = _context(scopes=frozenset({"supply_chain.po_case.read"})).model_copy(
+        update={"principal_id": pic}
+    )
+    other = _context(scopes=frozenset({"supply_chain.po_case.read"}))
+
+    (mine,) = await ListFollowUps(repo, ScopeAuthorizationService()).handle(pic_context)
+    (not_mine,) = await ListFollowUps(repo, ScopeAuthorizationService()).handle(other)
+    assert (mine.mine, not_mine.mine) == (True, False)
+
+    close = CloseFollowUp(repo, ScopeAuthorizationService(), Uuid4Generator(), FixedClock(_NOW))
+    with pytest.raises(PermissionDeniedError):
+        await close.handle(other, row.id, None)
+    await close.handle(pic_context, row.id, "đã gọi NCC")
+    assert repo.rows[row.id].status is FollowUpStatus.DONE
+    (audit,) = repo.audits
+    assert audit.details == {
+        "case_kind": "product",
+        "case_id": str(row.case_id),
+        "kind": "sla_breach",
+    }
+
+
+# -- The plan day on the one-call door (ticket P2) ------------------------------
+
+
+@dataclass(frozen=True)
+class _PlanDay:
+    """A plan and what the tenant has used of it today."""
+
+    runs_limit: int | None = None
+    spend_limit: Decimal | None = None
+    runs_used: int = 0
+    spent: Decimal = Decimal(0)
+
+    def runs_per_day(self, plan_id: str) -> int | None:
+        return self.runs_limit
+
+    def spend_usd_per_day(self, plan_id: str) -> Decimal | None:
+        return self.spend_limit
+
+    async def started_since(self, tenant_id: uuid.UUID, since: datetime) -> int:
+        return self.runs_used
+
+    async def spend_today(self, tenant_id: uuid.UUID, day: date) -> Decimal:
+        return self.spent
+
+
+_SPENT_DAYS = [
+    pytest.param(_PlanDay(runs_limit=3, runs_used=3), "runs_per_day", id="runs"),
+    pytest.param(
+        _PlanDay(spend_limit=Decimal(2), spent=Decimal("2.01")), "spend_usd_per_day", id="spend"
+    ),
+]
+
+
+def _one_call(inner: FakeModelGateway, day: _PlanDay) -> SingleCallModelGateway:
+    """The gateway the composition root hands these handlers (`ModelStack.
+    one_call`), around a fake model that records whether it was reached."""
+    return SingleCallModelGateway(
+        inner=inner,
+        ledger=RunBudgetLedger(),
+        allowance=DailyAllowance(allowance=day, runs=day, spend=day, clock=FixedClock(_NOW)),
+    )
+
+
+@pytest.mark.parametrize(("day", "quota"), _SPENT_DAYS)
+async def test_submit_is_refused_before_the_model_once_the_plan_day_is_spent(
+    day: _PlanDay, quota: str
+) -> None:
+    po_case_repo = FakePOCaseRepository()
+    context = _context(scopes=_BOTH_SCOPES | _SUPPLIER_UPDATE_SCOPES)
+    case = await _seeded_case(po_case_repo, context)
+    inner = FakeModelGateway(_extraction())
+    supplier_update_repo = FakeSupplierUpdateRepository()
+
+    with pytest.raises(QuotaExceededError) as raised:
+        await SubmitSupplierUpdate(
+            po_case_repo=po_case_repo,
+            supplier_update_repo=supplier_update_repo,
+            gateway=_one_call(inner, day),
+            authz=ScopeAuthorizationService(),
+            ids=Uuid4Generator(),
+            clock=FixedClock(_NOW),
+        ).handle(context, po_case_id=case.id, raw_text="delayed by 7 days")
+
+    assert raised.value.details["quota"] == quota
+    assert inner.calls == []
+    assert supplier_update_repo.by_case == {}
+    assert supplier_update_repo.audits == []
+
+
+@pytest.mark.parametrize(("day", "quota"), _SPENT_DAYS)
+async def test_analyze_is_refused_before_the_model_once_the_plan_day_is_spent(
+    day: _PlanDay, quota: str
+) -> None:
+    po_case_repo, supplier_update_repo = FakePOCaseRepository(), FakeSupplierUpdateRepository()
+    context = _context(scopes=_BOTH_SCOPES | _SUPPLIER_UPDATE_SCOPES | _DELAY_IMPACT_SCOPES)
+    case, update = await _seeded_case_with_delay_update(po_case_repo, supplier_update_repo, context)
+    inner = FakeModelGateway(_delay_extraction())
+    delay_impact_repo = FakeDelayImpactAnalysisRepository()
+
+    with pytest.raises(QuotaExceededError) as raised:
+        await AnalyzeDelayImpact(
+            po_case_repo=po_case_repo,
+            supplier_update_repo=supplier_update_repo,
+            delay_impact_repo=delay_impact_repo,
+            gateway=_one_call(inner, day),
+            authz=ScopeAuthorizationService(),
+            ids=Uuid4Generator(),
+            clock=FixedClock(_NOW),
+        ).handle(context, po_case_id=case.id, supplier_update_id=update.id)
+
+    assert raised.value.details["quota"] == quota
+    assert inner.calls == []
+    assert delay_impact_repo.by_case == {}
+    assert delay_impact_repo.audits == []
+
+
+# -- unbounded reads: a whole set is read a page at a time -------------------
+
+
+class _CountingPOCases(FakePOCaseRepository):
+    """Records how many case ids each bulk read was handed: the parameters
+    a real statement would bind."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.bulk_sizes: list[int] = []
+
+    async def bulk_sla_clock_started_at(
+        self, context: AccessContext, case_ids: list[POCaseId]
+    ) -> dict[uuid.UUID, datetime]:
+        self.bulk_sizes.append(len(case_ids))
+        return await super().bulk_sla_clock_started_at(context, case_ids)
+
+
+async def test_active_cases_are_assessed_a_page_at_a_time_with_bounded_bulk_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every active case of the caller's tenant is assessed exactly once, and
+    no bulk read is handed more ids than a page holds — however many cases
+    the tenant has (asyncpg refuses more than 32 767 parameters)."""
+    monkeypatch.setattr(handlers_module, "ACTIVE_CASES_PAGE", 2)
+    repo = _CountingPOCases()
+    context = _context(scopes=_BRIEF_READ)
+    mine = [
+        _case_with_created_at(
+            context, created_at=_NOW - timedelta(days=day), state=CaseState.PRODUCTION
+        )
+        for day in range(1, 6)
+    ]
+    for case in mine:
+        await repo.add(context, case)
+    done = _case_with_created_at(context, created_at=_NOW, state=CaseState.PRODUCTION)
+    done.cancel("duplicate")
+    await repo.add(context, done)
+    other = AccessContext(
+        tenant_id=uuid.uuid4(),
+        workspace_id=WORKSPACE,
+        principal_id=context.principal_id,
+        roles=context.roles,
+        scopes=context.scopes,
+        plan_id=context.plan_id,
+    )
+    await repo.add(
+        other,
+        replace(
+            _case_with_created_at(other, created_at=_NOW, state=CaseState.PRODUCTION),
+            tenant_id=TenantId(other.tenant_id),
+        ),
+    )
+
+    healths = await handlers_module.assess_active_cases(
+        context,
+        po_case_repo=repo,
+        supplier_update_repo=FakeSupplierUpdateRepository(),
+        policy_override_repo=FakePolicyOverrideRepository(),
+        platform_default_policy=_sla_policy(),
+        clock=FixedClock(_NOW),
+    )
+
+    assert sorted(h.case.id.value for h in healths) == sorted(c.id.value for c in mine)
+    assert repo.bulk_sizes == [2, 2, 1]
+
+
+async def test_the_brief_reads_only_the_newest_changes_and_still_counts_every_one() -> None:
+    repo = FakePOCaseRepository()
+    context = _context(scopes=_BRIEF_READ)
+    moved = ENTRIES_SHOWN + 3
+    for hour in range(moved):
+        case = _case_with_created_at(
+            context, created_at=_NOW - timedelta(days=2), state=CaseState.PRODUCTION
+        )
+        await repo.add(context, case)
+        repo.transitions[case.id.value] = [
+            CaseTransition(
+                from_state=CaseState.QC,
+                to_state=CaseState.PRODUCTION,
+                reason=None,
+                occurred_at=_NOW - timedelta(hours=hour + 1),
+            )
+        ]
+
+    brief = await _daily_brief_handler(repo).handle(context)
+
+    group = brief.group("changed_recently")
+    assert group is not None
+    assert group.total == moved
+    assert len(group.entries) == ENTRIES_SHOWN

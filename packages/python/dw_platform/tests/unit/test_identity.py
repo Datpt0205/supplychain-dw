@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from dw_kernel.errors import PermissionDeniedError, TenantContextMissingError
+from dw_kernel.errors import PermissionDeniedError, TenantContextMissingError, UnauthenticatedError
 from dw_platform.adapters.identity.dev_token import DevTokenVerifier
 from dw_platform.application.identity import (
     DbAccessContextFactory,
@@ -88,7 +88,7 @@ async def test_dev_token_roundtrip() -> None:
 async def test_dev_token_bad_signature_rejected() -> None:
     token = DevTokenVerifier("unit-test-secret-0123456789abcdef").issue("dev|an.nguyen")
     other = DevTokenVerifier("another-secret-0123456789abcdefgh")
-    with pytest.raises(PermissionDeniedError):
+    with pytest.raises(UnauthenticatedError):
         await other.verify(token)
 
 
@@ -97,7 +97,7 @@ async def test_dev_token_expired_rejected() -> None:
 
     verifier = DevTokenVerifier("unit-test-secret-0123456789abcdef")
     token = verifier.issue("dev|an.nguyen", ttl=timedelta(seconds=-10))
-    with pytest.raises(PermissionDeniedError):
+    with pytest.raises(UnauthenticatedError):
         await verifier.verify(token)
 
 

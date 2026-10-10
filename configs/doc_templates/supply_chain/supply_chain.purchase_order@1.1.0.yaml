@@ -1,0 +1,59 @@
+schema_version: '1.0'
+template_id: supply_chain.purchase_order
+version: 1.1.0
+title: ĐƠN ĐẶT HÀNG
+doc_type: purchase_order
+description: 'Bước 10: đơn đặt hàng gửi nhà cung cấp; thành tiền, tổng và tiền cọc
+  do hệ thống tính.'
+fields:
+- name: po_reference
+  label: Số PO
+  required: true
+- name: po_date
+  label: Ngày đặt hàng
+  kind: date
+  required: true
+- name: supplier_name
+  label: Nhà cung cấp
+  required: true
+- name: supplier_contact
+  label: Người liên hệ
+- name: currency
+  label: Tiền tệ
+  required: true
+- name: incoterm
+  label: Incoterm
+- name: payment_terms
+  label: Điều khoản thanh toán
+- name: deposit_percent
+  label: '% đặt cọc'
+  kind: number
+- name: delivery_date
+  label: Ngày giao dự kiến
+  kind: date
+- name: lines
+  label: Dòng hàng
+  kind: table
+  columns:
+  - name: sku_code
+    label: SKU
+  - name: description
+    label: Mô tả
+  - name: quantity
+    label: Số lượng
+    kind: number
+  - name: unit_price
+    label: Đơn giá
+    kind: number
+  - name: line_total
+    label: Thành tiền
+    kind: number
+  required: true
+- name: order_total
+  label: Tổng cộng
+  kind: number
+- name: deposit_amount
+  label: Tiền đặt cọc
+  kind: number
+- name: notes
+  label: Ghi chú

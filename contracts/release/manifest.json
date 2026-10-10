@@ -16,23 +16,137 @@
       "checksum": "dcfeed6e919c29bac34362aea015040597fcec5657dbc8fe82a86866fc9ec1db",
       "copy_id": "platform.runtime",
       "version": "1.5.0"
+    },
+    {
+      "checksum": "f7cd2b502af52c5a650162e7392e1ee3b3b841387f44e6726afaf7bad67fe5f7",
+      "copy_id": "platform.runtime",
+      "version": "1.6.0"
+    }
+  ],
+  "doc_templates": [
+    {
+      "checksum": "9a1339a0a6a9cdb38fccd6cb4927fc9ecee97529fd20f69b3d3537c1ed807646",
+      "doc_type": "bod_submission",
+      "template_id": "supply_chain.bod_submission",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "417f98a8762e28c0a5a7433f5fc03a4085a81e21ac74bac6e38fc55aa45d9c47",
+      "doc_type": "colour_revision_request",
+      "template_id": "supply_chain.colour_revision_request",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "6a78fd9d7a408b76869ef3bf5f5b36dcd344a494459350a7ed3affcc430079ce",
+      "doc_type": "deposit_docs",
+      "template_id": "supply_chain.deposit_request",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "7578f1b6dcef50e80924f10f8585e0ef6ea8563d02984bb68f63049993ed9945",
+      "doc_type": "design_revision_request",
+      "template_id": "supply_chain.design_revision_request",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "2beb53f487f61f0821cd01c9a580b9b7445a28cf8cd815ee2358e3105e659b5f",
+      "doc_type": "discrepancy_report",
+      "template_id": "supply_chain.discrepancy_report",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "49ac37dacc33d38d11c66dbf6a0fe8dfacba5b1fa70e63d0d9e5e419bd4836a8",
+      "doc_type": "official_item_code",
+      "template_id": "supply_chain.official_item_code",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "a6c19e1243f1356baa08c07e2b891aa3024fe6011f6ca29289848e8af948c592",
+      "doc_type": "packaging_content",
+      "template_id": "supply_chain.packaging_content",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "a0591a525013f4b90f3de3b4f5138299962567c4647b5dffe96f16d88e8ea74a",
+      "doc_type": "payment_docs",
+      "template_id": "supply_chain.payment_request",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "44a43f8ad2053ff24508490be0c13b7e0b634e1d2761c8d7b4f4ccfd564b9203",
+      "doc_type": "pre_production_test_report",
+      "template_id": "supply_chain.pre_production_test_report",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "cf22e9e64073c0a2c26e9bcf1f85279d4a7d7f9efbe2635e83f2410e72bf11c0",
+      "doc_type": "product_profile_bm04",
+      "template_id": "supply_chain.product_profile_bm04",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "71704e66390f3dea90c17e3537865071f1894ed5b584ee245f8cebee67b86f9d",
+      "doc_type": "purchase_order",
+      "template_id": "supply_chain.purchase_order",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "aafa6b71cc6cc6c3bf6b6c3ca166dbe2e970f6be5d7f1c73a220b1220041d0d2",
+      "doc_type": "purchase_order",
+      "template_id": "supply_chain.purchase_order",
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "86da484446e6ac945f02c1efda0433026dfe53b95378f32dee92cc0af78a72e7",
+      "doc_type": "rework_request",
+      "template_id": "supply_chain.rework_request",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "476590861c0b78147cd067f2dea0c2b4a4e391315e67318cba9c927b628959c5",
+      "doc_type": "sample_evaluation",
+      "template_id": "supply_chain.sample_evaluation",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "6bd92549760d2fe7257335f6cb75a6f4dd19a14911f2da4ee24dc6c56fbb8599",
+      "doc_type": "sample_revision_request",
+      "template_id": "supply_chain.sample_revision_request",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "0a1ca375d3d1024b18d9d9b4c8b763f774dcd81783e87497e02f7d0ccda9dbf2",
+      "doc_type": "user_manual",
+      "template_id": "supply_chain.user_manual",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "81f51d84bf1926cb8d1393ab95ebaf758b0ad6f13cac41d11cf2bc4e31d2f485",
+      "doc_type": "warehouse_receipt",
+      "template_id": "supply_chain.warehouse_receipt",
+      "version": "1.0.0"
     }
   ],
   "eval_datasets": [
     {
-      "checksum": "ce36d6b3e5531666e296c86cd5b907f91734079ddfe99d3924b72a601d9c00e6",
+      "checksum": "2c3569c4af18d9543cbb0223b5dd1c59bf2e4932260ec193975baa1ac38d9d9d",
       "dataset_id": "platform_smoke",
-      "version": "1.0.0"
+      "version": "1.2.0"
     },
     {
-      "checksum": "08d74cc5b32038ce12c38e694cec00b636618f7c0436776066b011aa03a8ff08",
+      "checksum": "274ac7da2d0b159e4f9ccbd264e724b93964f42492377625000439794efd054a",
       "dataset_id": "supply_chain_smoke",
-      "version": "1.1.0"
+      "version": "1.9.0"
+    },
+    {
+      "checksum": "9d19528f85e32211e336d2dd3d0720e3b77fa8ff2375789470be29e9c22260d6",
+      "dataset_id": "supply_chain_preparation",
+      "version": "1.18.0"
     }
   ],
-  "git_sha": "bf553f44dd95c564fcb9f603ca3fbc4275c65e33",
+  "git_sha": "67b8472139126e06eefc248e7fd942c7b65d9b33",
   "knowledge_index_version": "2026-07-25.structure-1",
-  "memory_policy_version": "1.0.0",
+  "memory_policy_version": "2.0.0",
   "platform_version": "0.1.0",
   "policies": [
     {
@@ -41,13 +155,18 @@
       "version": "1.1.0"
     },
     {
-      "checksum": "5eefabcbed58080bf1cfeb524bbe9d8ce395b4adee9bbb9de4e357534d04a03e",
+      "checksum": "c0ec53bf9f752948ddcb910c88cfb61f04020ee4c1e437aae74f77623fcaf075",
       "policy_id": "retention",
-      "version": "1.4.0"
+      "version": "1.7.0"
     },
     {
-      "checksum": "c6d6f1a09275a46b91150dadbf20c39fc46079ce76332898015398fbf8dacead",
+      "checksum": "1170a4b986648effca5146a145100ac10f350240d56fa8eb7383821b0c89524c",
       "policy_id": "supply_chain_action_duties",
+      "version": "1.3.0"
+    },
+    {
+      "checksum": "3cbd7b84146f4eaec46f23058a7df8a6ca7b6766883ad34a597227d3f1dfd5c0",
+      "policy_id": "supply_chain_ai_time_saved",
       "version": "1.0.0"
     },
     {
@@ -56,19 +175,69 @@
       "version": "1.0.0"
     },
     {
-      "checksum": "8b904a49ab3b86ccd57ea75fe72c5dda421762bb0c42f2f94fad674685f3c92c",
+      "checksum": "614fe77f8435f8ab5df035fc761dbe9747aaee5deb2d324b8cde9a2037eca952",
+      "policy_id": "supply_chain_bm04_schema",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "8a7bf667086d70714ffe91755a38a25042515c8f9bd5d0b8f5694f10ebff5f39",
       "policy_id": "supply_chain_brief",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
-      "checksum": "b79ab17ad8165863a22d39d0bc3b289a7f1660901d6c53cfc6fe34f0b0ad3cc6",
+      "checksum": "2874eb49fef659491ad1f32a20a8458a2663cb8ee5320bd8adc270a482f63f46",
       "policy_id": "supply_chain_follow_ups",
+      "version": "1.2.0"
+    },
+    {
+      "checksum": "02a97577c23cceb16e559f809af094ec10e84d6183ae56c7bf2d6b566f949e34",
+      "policy_id": "supply_chain_item_code_rule",
       "version": "1.0.0"
     },
     {
-      "checksum": "0af032494e02432aadb3a92c52166053a0a775b863fc9422a822390b07c41b8b",
+      "checksum": "ce22265b4ac5faaba1581551c8504dc49895ed3c7144608507df11e89aa09120",
+      "policy_id": "supply_chain_model_routes",
+      "version": "1.18.0"
+    },
+    {
+      "checksum": "fb57e4fe3e35213910345f6e33370f3c47b30bd270bced3e7172baf3567d45a5",
+      "policy_id": "supply_chain_packaging",
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "317f54cca1e45250747c213778f567bb5f52ca718e3a4aeb4d12d9fc17b2f702",
+      "policy_id": "supply_chain_po_documents",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "82de2f5186783dd701634f265dfbd5815e51d13bfcd722a2f7b8c75c0a331352",
+      "policy_id": "supply_chain_product_action_duties",
+      "version": "1.3.0"
+    },
+    {
+      "checksum": "c429bd62ec9d3fe5f80effae569d2048b631434f7a8262bbd9643ce6343fccc4",
+      "policy_id": "supply_chain_product_approvals",
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "df64543fbda0709c1635daea05a18acd1548a11dac9c287904f53b47c6cb51c2",
+      "policy_id": "supply_chain_sample_criteria",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "8915ffde7fce0313d8655cb16ac7e2f7cb2010519f9d3d7358bb6dae24e936bf",
       "policy_id": "supply_chain_sla",
-      "version": "1.2.0"
+      "version": "2.0.0"
+    },
+    {
+      "checksum": "97560308dfe29f48f2a3d6a0fca7bf25c5844de160ef51d22abd01d01eda068c",
+      "policy_id": "supply_chain_step_preparation",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "417c136989ae38386d8f89a7a10c1173835d86d632e9a4157e0768037d76f155",
+      "policy_id": "supply_chain_supplier_messages",
+      "version": "1.3.0"
     },
     {
       "checksum": "6cd61b8265d8ce82fdd5047dbec29a09cf5ce6b705226bb97fc24b7e19bf3be5",
@@ -78,37 +247,441 @@
   ],
   "prompt_bundles": [
     {
-      "checksum": "d09bde4799b114aa013b9af9c82681cf225b4055bf2e2935870d45b78285bf63",
+      "checksum": "b5dee5fc2c33cf58c88dad2853961f1aae2372dafb70080158098a45fb57a042",
       "prompt_id": "platform.untrusted_demo",
+      "skills": [],
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "880f611cd2661510a94a3f8ba3e0326245c316f33ab5e35a974d5c72980b2398",
+      "prompt_id": "supply_chain.answer_case_question",
+      "skills": [],
       "version": "1.0.0"
     },
     {
-      "checksum": "ef053a58ea28421c616ee0ee1e2c4e4f94a6b66a47d3ae192193558320ede7b9",
+      "checksum": "8ee1d853affd0e0f53167f3180f4d65a68cfa82ed8a266329b91aaf68281471c",
       "prompt_id": "supply_chain.case_query_understanding",
-      "version": "1.0.0"
+      "skills": [],
+      "version": "1.2.0"
     },
     {
-      "checksum": "51e58dd4c4a0329f370a688dcffd48cd9ca0e468f4bfadd9c236c5a69b9a544e",
+      "checksum": "d335357d511063e6e4f1824a587b5452dbc274d40f156f5198dbf9e480b98c33",
       "prompt_id": "supply_chain.daily_brief_summary",
-      "version": "1.0.0"
+      "skills": [],
+      "version": "1.2.0"
     },
     {
-      "checksum": "cf05a993c4810ad65a18a98dba7e630ab957825ae38c221b3119e4bad22d1a99",
+      "checksum": "d5a609e6e97d5efe604127dcef9983264439fa8354c8d4cc4b7653b259df8498",
       "prompt_id": "supply_chain.delay_impact_analysis",
+      "skills": [],
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "0e2856cdfeba5a3241cc55f84e1cf49a462e2670ab10d5a6dfe5f0e45ca078e6",
+      "prompt_id": "supply_chain.draft_bm04",
+      "skills": [
+        "supply_chain.bm04_guide@^1.1.0"
+      ],
       "version": "1.0.0"
     },
     {
-      "checksum": "90d333b46afa559861b9083509c72465b1f0587be52b6b1313afe529d9e315b7",
-      "prompt_id": "supply_chain.supplier_update_understanding",
+      "checksum": "15a32bea8e852f1366ec4dad25ae90b44aa18339a5ca0799713f0040195fbb86",
+      "prompt_id": "supply_chain.draft_bod_submission",
+      "skills": [
+        "supply_chain.process_part_a@^1.2.0"
+      ],
       "version": "1.0.0"
+    },
+    {
+      "checksum": "e8735d96798409db90df1b9a8a7a3f2e03e322977ce334f403cd464cfaf54f59",
+      "prompt_id": "supply_chain.draft_sample_evaluation",
+      "skills": [
+        "supply_chain.sample_evaluation@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "47fd8d44daf3db03598d891b547cb159a8e70c4f2ea4a678b06faf1fdcb435d4",
+      "prompt_id": "supply_chain.draft_supplier_message",
+      "skills": [
+        "supply_chain.supplier_email_style@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "364df529cdc7cddb8b2910a600478552a240e8ea8cae3f4a3b548507ad4456e5",
+      "prompt_id": "supply_chain.draft_supplier_message",
+      "skills": [
+        "supply_chain.supplier_email_style@^1.1.0"
+      ],
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "4e551ba9541d2b03b2ded16faa5422dcd1565b29845bdc853521ab7b92c325d3",
+      "prompt_id": "supply_chain.draft_supplier_message",
+      "skills": [
+        "supply_chain.supplier_email_style@^1.1.0"
+      ],
+      "version": "1.2.0"
+    },
+    {
+      "checksum": "937e1eaafc5cdbd6e00fe9a6280e9d47c3ddde0375f36a8ce273050f02c305e5",
+      "prompt_id": "supply_chain.draft_supplier_message",
+      "skills": [
+        "supply_chain.supplier_email_style@^1.1.0"
+      ],
+      "version": "1.3.0"
+    },
+    {
+      "checksum": "0fec0a2f588077058f0157ae96f5a7e631417347c6e073d432f8240e279ad546",
+      "prompt_id": "supply_chain.extract_arrival_notice",
+      "skills": [
+        "supply_chain.customs_file@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "80f1c2d9ae11c0288a07945fcf6cfe2a2fbadc14c99ed61eb40972fc038bf2d8",
+      "prompt_id": "supply_chain.extract_bank_transfer_receipt",
+      "skills": [
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "44277ac76de24769091c89675ed06b3a202623cb590935dd6ed524c1f11f64d7",
+      "prompt_id": "supply_chain.extract_bill_of_lading",
+      "skills": [
+        "supply_chain.customs_file@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "ce85ee454c7289a4cc04d085fe83d1b14d0199c22e10e7cf56d079dec4e0bec0",
+      "prompt_id": "supply_chain.extract_certificate_of_origin",
+      "skills": [
+        "supply_chain.customs_file@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "d3f6b9d663e0ab5d8ce88af78969a505e97cb0132a1eb0f95fecb133ce7c395d",
+      "prompt_id": "supply_chain.extract_commercial_invoice",
+      "skills": [
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "a0ba7f3dcd537865dbb982fcd39883d3a3ec3906303874371bf51308f7389085",
+      "prompt_id": "supply_chain.extract_packaging_design",
+      "skills": [
+        "supply_chain.label_rules@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "6a802e0098dbe4eaae6ad9b67fe56ea946820a9c960d221c80b96f0c03a6a78a",
+      "prompt_id": "supply_chain.extract_packing_list",
+      "skills": [
+        "supply_chain.customs_file@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "8257241e226ba44472e76249ce536591822bec26eed2bfbc354b241ff96c26e2",
+      "prompt_id": "supply_chain.extract_product_profile_bm04",
+      "skills": [],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "b799090a6e9fc11161f0238e7536304c367ad5a7b076cfb78f1ba98132bf5389",
+      "prompt_id": "supply_chain.extract_product_profile_bm04",
+      "skills": [
+        "supply_chain.bm04_guide@^1.0.0"
+      ],
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "1869787c36aeeb565c98d557cc0acc181930c25d7785f49bb2de62570d2ec153",
+      "prompt_id": "supply_chain.extract_production_schedule",
+      "skills": [
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "9f310aa469fa67988c274e8a0a55a941efc5c6d6cdc1e59442425043662cf1ec",
+      "prompt_id": "supply_chain.extract_proforma_invoice",
+      "skills": [
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "821ac1e13f8a77e347c91ab7eefb9f4511f949e489188869a5662b6c3b9a4159",
+      "prompt_id": "supply_chain.extract_proposal_list",
+      "skills": [
+        "supply_chain.process_part_a@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "ebf374a516ed65a5e74499bbdb4e3b8347a3c0f473579f998e2b0df392c42299",
+      "prompt_id": "supply_chain.extract_qc_report",
+      "skills": [
+        "supply_chain.qc_aql@^1.1.0"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "1e6c3342a9e4ad0940f43fb365951ad870726dae59c389e5a30b20d72588948b",
+      "prompt_id": "supply_chain.extract_sample_evaluation",
+      "skills": [],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "e508623ed1ab8cf781a76ff15cf2ccec38a0f65da8c780e441b22d0c4e714ebd",
+      "prompt_id": "supply_chain.extract_sample_evaluation",
+      "skills": [
+        "supply_chain.process_part_a@^1.0.0",
+        "supply_chain.sample_evaluation@^1.0.0"
+      ],
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "f790d236134346e15289f04dde7acc194ec674bb21a195e295c0932437cdb342",
+      "prompt_id": "supply_chain.extract_supplier_confirmation_email",
+      "skills": [],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "a4757149bf824a527b5a922fbaed534ed2957224c11959fdb832e0411e15b6dc",
+      "prompt_id": "supply_chain.extract_supplier_confirmation_email",
+      "skills": [
+        "supply_chain.process_part_a@^1.0.0",
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "0c6f09cbd9d5ed163a3c4f45755ef26053783c55a686b9b374296abac6d00e3a",
+      "prompt_id": "supply_chain.extract_supplier_confirmation_email",
+      "skills": [
+        "supply_chain.process_part_a@^1.0.0",
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.2.0"
+    },
+    {
+      "checksum": "6f145f1ae5aa568d39c31387d0d3153b84c4cdfe9ea22e8f5f4740ec16c37e7b",
+      "prompt_id": "supply_chain.extract_supplier_confirmation_email",
+      "skills": [
+        "supply_chain.process_part_a@^1.0.0",
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.3.0"
+    },
+    {
+      "checksum": "e7c696eb3302c7a88a15e3c4868ff4a5ca6e026e9fe7d53eada9084d69d9e6f6",
+      "prompt_id": "supply_chain.extract_supplier_quotation",
+      "skills": [],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "14cd19c6f41bf9147b88a93b6807425e78e6a42db2c55d8f5dd68cf35dd484aa",
+      "prompt_id": "supply_chain.extract_supplier_quotation",
+      "skills": [
+        "supply_chain.step_documents@^1.0.0"
+      ],
+      "version": "1.1.0"
+    },
+    {
+      "checksum": "8f2c6c7bd6a516d246ea3b2d5a4128e7ae9ba40768c10a59073b8cf9509da17e",
+      "prompt_id": "supply_chain.product_proposal_understanding",
+      "skills": [],
+      "version": "1.2.0"
+    },
+    {
+      "checksum": "90b4b90e8a700f65f6ec5f5343b6b3dde009ed9d7e4b8dc1c53101c0ba1bd7b8",
+      "prompt_id": "supply_chain.summarize_weekly_report",
+      "skills": [],
+      "version": "1.0.0"
+    },
+    {
+      "checksum": "7ad599bcc06f15bfcdb97ac3257271f7c9d4f8a0f45ec750b22269cad0de21f9",
+      "prompt_id": "supply_chain.supplier_update_understanding",
+      "skills": [],
+      "version": "1.1.0"
     }
   ],
   "rubrics": [],
   "schema_version": "1.0",
+  "skills": [
+    {
+      "applies_to": [
+        "supply_chain.extract_product_profile_bm04"
+      ],
+      "checksum": "6545622fa0cc973bde5c4dc8b4cf5a6a5a116ab5fb11a5a9e9d23bb06900acfd",
+      "skill_id": "supply_chain.bm04_guide",
+      "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_product_profile_bm04",
+        "supply_chain.draft_bm04"
+      ],
+      "checksum": "e3adc796f40552f9d53220caae7e369fd902a58ccbe26ff496d55759b942cb35",
+      "skill_id": "supply_chain.bm04_guide",
+      "version": "1.1.0"
+    },
+    {
+      "applies_to": [],
+      "checksum": "81cd95d37d6fbe53d8dd6a064252d9b93c4145bbae8e7e94a70636794dc7e73d",
+      "skill_id": "supply_chain.customs_file",
+      "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_packing_list",
+        "supply_chain.extract_bill_of_lading",
+        "supply_chain.extract_arrival_notice",
+        "supply_chain.extract_certificate_of_origin"
+      ],
+      "checksum": "3b584a7ce861c29f20a068f20fd963a50659f59d60d91ebc507d70ae45135ec5",
+      "skill_id": "supply_chain.customs_file",
+      "version": "1.1.0"
+    },
+    {
+      "applies_to": [],
+      "checksum": "1564526886c19de2fb4aa56e22b66f47cb149cdbd4ee3ccbf63e2419d2cd8d2f",
+      "skill_id": "supply_chain.label_rules",
+      "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_packaging_design"
+      ],
+      "checksum": "658f2836889b67b05631e8535dffedf4215679760d25dfbbc0a01fdfb67d6c12",
+      "skill_id": "supply_chain.label_rules",
+      "version": "1.1.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_sample_evaluation",
+        "supply_chain.extract_supplier_confirmation_email"
+      ],
+      "checksum": "aa6f480ccc6bd377e7a4e5bcd4f44df3630480551ace267788e4db6bad3e810d",
+      "skill_id": "supply_chain.process_part_a",
+      "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_sample_evaluation",
+        "supply_chain.extract_supplier_confirmation_email",
+        "supply_chain.extract_proposal_list"
+      ],
+      "checksum": "32292534d681ef5c0879f5751ab5a4409729d8617836978eb9c47279f78ca249",
+      "skill_id": "supply_chain.process_part_a",
+      "version": "1.1.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_sample_evaluation",
+        "supply_chain.extract_supplier_confirmation_email",
+        "supply_chain.extract_proposal_list",
+        "supply_chain.draft_bod_submission"
+      ],
+      "checksum": "24d7d37b91af8e108a5bf56c5262985c1e2bf0bb178ad4259a91ee5e8c01c27c",
+      "skill_id": "supply_chain.process_part_a",
+      "version": "1.2.0"
+    },
+    {
+      "applies_to": [],
+      "checksum": "72ed91a7b06e51851e9fdc58e1cdbacad4e96995e137028ea0c2da77092ffd8b",
+      "skill_id": "supply_chain.qc_aql",
+      "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_qc_report"
+      ],
+      "checksum": "7d102733cf7e42c371bd8566be96ee1241fde7158352d0d8a3cfc9c202983405",
+      "skill_id": "supply_chain.qc_aql",
+      "version": "1.1.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_sample_evaluation"
+      ],
+      "checksum": "d1fdb3cbfe3de665c06f45cdbd0aab1b8877a1fbf3532a4d3ce37d47dec61398",
+      "skill_id": "supply_chain.sample_evaluation",
+      "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_sample_evaluation",
+        "supply_chain.draft_sample_evaluation"
+      ],
+      "checksum": "b83b9b412f8e00e099f57e5341078dcd9c6ecac6c2713da5481c0a191040a0d1",
+      "skill_id": "supply_chain.sample_evaluation",
+      "version": "1.1.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_supplier_confirmation_email",
+        "supply_chain.extract_supplier_quotation"
+      ],
+      "checksum": "6a4f8c9b180dcaac46e559ce2d395fdf9826732594a36764afe782b4e1ff80ec",
+      "skill_id": "supply_chain.step_documents",
+      "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_supplier_confirmation_email",
+        "supply_chain.extract_supplier_quotation",
+        "supply_chain.extract_proforma_invoice",
+        "supply_chain.extract_commercial_invoice",
+        "supply_chain.extract_bank_transfer_receipt"
+      ],
+      "checksum": "a7f98237d118469bf5af88674648066406683f7f8427db1abe0b9f305728d3ee",
+      "skill_id": "supply_chain.step_documents",
+      "version": "1.1.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.extract_supplier_confirmation_email",
+        "supply_chain.extract_supplier_quotation",
+        "supply_chain.extract_proforma_invoice",
+        "supply_chain.extract_commercial_invoice",
+        "supply_chain.extract_bank_transfer_receipt",
+        "supply_chain.extract_production_schedule"
+      ],
+      "checksum": "b25599a180e4862b1b8c4e0a2fb808057de7d356e40cb93455fc36ef57310114",
+      "skill_id": "supply_chain.step_documents",
+      "version": "1.2.0"
+    },
+    {
+      "applies_to": [],
+      "checksum": "9bc530702c945604112de521bac3104f9ab6ba37eaa6de193ad48770555f027b",
+      "skill_id": "supply_chain.supplier_email_style",
+      "version": "1.0.0"
+    },
+    {
+      "applies_to": [
+        "supply_chain.draft_supplier_message"
+      ],
+      "checksum": "f5be0c068e1d169f7a83d9c990d3d32a7e9194cd1453599c932760b1f205a48b",
+      "skill_id": "supply_chain.supplier_email_style",
+      "version": "1.1.0"
+    }
+  ],
   "tool_specs": [],
   "toolsets": [],
   "workers": [
     {
+      "agent_prompt_id": null,
+      "agent_prompt_version": null,
       "autonomy_level": "A2",
       "graph_version": "1.0.0",
       "memory_policy_version": "1.0.0",
@@ -116,6 +689,42 @@
       "prompt_bundle_version": "1.0.0",
       "toolset_version": null,
       "worker_id": "supply_chain_advance_case",
+      "worker_version": "1.0.0"
+    },
+    {
+      "agent_prompt_id": null,
+      "agent_prompt_version": null,
+      "autonomy_level": "A2",
+      "graph_version": "1.0.0",
+      "memory_policy_version": "1.0.0",
+      "policy_version": "1.0.0",
+      "prompt_bundle_version": "1.0.0",
+      "toolset_version": null,
+      "worker_id": "supply_chain_advance_product_case",
+      "worker_version": "1.0.0"
+    },
+    {
+      "agent_prompt_id": null,
+      "agent_prompt_version": null,
+      "autonomy_level": "A2",
+      "graph_version": "1.0.0",
+      "memory_policy_version": "1.0.0",
+      "policy_version": "1.0.0",
+      "prompt_bundle_version": "1.0.0",
+      "toolset_version": null,
+      "worker_id": "supply_chain_product_signoff",
+      "worker_version": "1.0.0"
+    },
+    {
+      "agent_prompt_id": null,
+      "agent_prompt_version": null,
+      "autonomy_level": "A1",
+      "graph_version": "1.0.0",
+      "memory_policy_version": "1.0.0",
+      "policy_version": "1.0.0",
+      "prompt_bundle_version": "1.0.0",
+      "toolset_version": null,
+      "worker_id": "supply_chain_step_preparation",
       "worker_version": "1.0.0"
     }
   ]

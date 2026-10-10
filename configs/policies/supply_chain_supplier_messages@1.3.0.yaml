@@ -1,0 +1,40 @@
+schema_version: "1.0"
+policy_id: supply_chain_supplier_messages
+policy_version: "1.3.0"
+# The templates of a message to a supplier (ADR 0029, E18; ticket
+# ai-automation/07). Code writes the subject, the greeting, the reply-by line
+# and the closing from these; the model writes only the body paragraphs, each
+# citing the evidence it rests on, and code keeps a paragraph only when it
+# checks out. Which purposes a tenant's AI drafts at all is the tenant's step
+# preparation policy (`supplier_messages`); the platform drafts none.
+#
+# Placeholders: {reference} (proposal code or PO reference), {product}
+# (product name, or the supplier's name for a PO), {recipient} (the supplier
+# contact's name, or the supplier's), {reply_by} (dd/mm/yyyy, computed).
+greeting: "Kính gửi {recipient},"
+closing: "Trân trọng,"
+reply_line: "Mong anh/chị phản hồi trước ngày {reply_by}."
+templates:
+  sample_request:
+    subject: "[{reference}] Đề nghị gửi mẫu: {product}"
+    reply_within_days: 7
+  supplier_reminder:
+    subject: "[{reference}] Nhắc cập nhật tiến độ: {product}"
+    reply_within_days: 2
+  supplier_confirmation:
+    subject: "[{reference}] Xác nhận sản phẩm: {product}"
+    reply_within_days: 3
+  # 1.1.0 (ticket ai-automation/09): the approved revision request, attached.
+  sample_revision_request:
+    subject: "[{reference}] Yêu cầu chỉnh sửa mẫu: {product}"
+    reply_within_days: 5
+  # 1.2.0 (ticket ai-automation/17): the weekly chase of a PO in production,
+  # from the supplier's own schedule.
+  production_progress:
+    subject: "[{reference}] Cập nhật tiến độ sản xuất: {product}"
+    reply_within_days: 3
+  # 1.3.0 (ticket ai-automation/18): the claim when the warehouse's count
+  # differs from what the supplier shipped.
+  discrepancy_claim:
+    subject: "[{reference}] Khiếu nại chênh lệch hàng nhập kho: {product}"
+    reply_within_days: 5

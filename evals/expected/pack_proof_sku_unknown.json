@@ -1,0 +1,7 @@
+{
+  "findings": [
+    "sku_unknown:EL-77777-01",
+    "sku_missing:EL-00001-02",
+    "barcode_invalid:barcode"
+  ]
+}

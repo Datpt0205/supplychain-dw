@@ -12,7 +12,7 @@ record a decision instead.
 ## Adding a bounded context (the plug-in points)
 
 Run `make new-context NAME=<name>` rather than working the list by hand:
-`scripts/new_context.py` owns all fourteen places, and the `scaffold-smoke` CI
+`scripts/new_context.py` owns all fifteen places, and the `scaffold-smoke` CI
 job generates a throwaway context on every push so a seam that moves fails there
 instead of in someone's first week. The list below is what it does, kept because
 a generator whose steps nobody can read is a different kind of unchecked claim.
@@ -32,7 +32,9 @@ a generator whose steps nobody can read is a different kind of unchecked claim.
    a toolset under `configs/toolsets`, and policies under `configs/policies`.
 5. Add an eval dataset under `evals/datasets/` with FULL security coverage
    (prompt injection, cross-tenant attack, missing evidence) and graders keyed
-   `<name>.<gate>` in `dw_evals`.
+   `<name>.<gate>` in the context's own `dw_<name>.testing` package, registered
+   at the marked seam in `scripts/run_evals.py` (the eval composition root).
+   `dw_evals` never imports a context; import-linter forbids it.
 6. Add Alembic migrations continuing from the baseline (`0001`).
 7. Update `scripts/verify_architecture.py` (`IMPORT_TO_DIST`) and the Dockerfile
    COPY lists.
@@ -118,11 +120,15 @@ lockfiles; never `latest`.
 Ant Design v6 (`antd`) is the component library, decided 2026-09-28 in place
 of shadcn/ui; the measurements behind it are in `.claude/plans/web-ui.md`.
 
-- **One component system.** New UI uses `antd`, `@ant-design/icons`, and
-  `@ant-design/nextjs-registry` for server-rendered styles. No new shadcn/ui
-  component is added; an existing one is replaced when its page is next
-  touched, not in one sweep. ProComponents waits for a stable release that
-  supports v6 (its v6 line was still beta on 2026-09-27).
+- **One component system.** UI uses `antd`, `@ant-design/icons`, and
+  `@ant-design/nextjs-registry` for server-rendered styles, and nothing else:
+  on 2026-10-08 Đạt asked for antd everywhere, and shadcn/ui, Radix, sonner,
+  lucide and class-variance-authority left the platform in one sweep (the
+  page-by-page rule before it is retired). `apps/web/lib/__tests__/antd-only.test.ts`
+  fails on an import or a manifest entry that brings one back, in `apps/web`
+  and in `@dw/ui`; ESLint says the same in the app. Notices go through
+  `App.useApp()`. ProComponents waits for a stable release that supports v6
+  (its v6 line was still beta on 2026-09-27).
 - **Tailwind is for layout only** (flex, grid, spacing). Colour, type and
   radius come from the antd theme.
 - **One owner of the tokens:** the antd theme (`ConfigProvider`, `vi_VN`
@@ -195,6 +201,9 @@ kind of change nobody makes and everybody works around.
 
 ## Agent and tool rules
 
+- Every value a prompt interpolates is untrusted: `PromptRegistry` wraps it in
+  an escaped `<input name="...">` block. A template opts a variable out with
+  `raw_variables` and a reason, only for a value code builds (ADR 0010).
 - Graph state is typed and versioned; LLM output is always validated into a
   Pydantic schema.
 - Workflow nodes contain no provider SDK and no SQL, and never import a concrete
@@ -203,6 +212,11 @@ kind of change nobody makes and everybody works around.
   approval policy, timeout and idempotency. The executor authorizes, validates,
   executes, validates the output and audits.
 - All side effects use idempotency keys.
+- A background lane audits as itself, never as a person:
+  `dw_platform.domain.audit.lane_audit_event`, whose actor is
+  `system_actor(<lane>)`, a fixed id from the lane's worker registry name, and
+  whose `details.actor` reads `system:<lane>`. From a cross-tenant drain, write
+  with `lane_audit.append_across_tenants` (ADR 0011).
 - A tenant's plan quota is enforced where a run begins — in the runner, not in
   an API dependency. The API is not the only door: a worker reacting to an
   inbound event starts runs no request ever touched. The limit comes from the
@@ -213,7 +227,12 @@ kind of change nobody makes and everybody works around.
   provider's own features takes that provider's client and says so in its type.
   A provider adapter that does not fit gets an anti-corruption layer, not a
   widened port.
-- Approval pauses and resumes a durable, checkpointed run.
+- Approval pauses and resumes a durable, checkpointed run. An approval with no
+  run announces its decision instead: `ApproveAndResumeService.decide` writes one
+  outbox event `<approval_type>.decided` in the decision's transaction, and the
+  context that opened it registers the handler. A condition one type puts on
+  who may decide it is a `decision_guards` entry at the composition root, like
+  `strict_approval_prefixes`, never a branch in `decide`.
 
 ## Data model rules
 
@@ -309,6 +328,14 @@ security/dependency scan, eval smoke, container build and a compose smoke test.
 Matt Pocock's engineering skills are installed as a project plugin
 (`mattpocock-skills@claude-plugins-official`, pinned by the marketplace to one
 commit). `/ask-matt` routes to the right one.
+The install is per checkout: `.claude/settings.json` only enables the plugin, so
+a fresh clone, or a product merged from this platform, has none of its commands
+until someone runs
+`claude plugin install mattpocock-skills@claude-plugins-official --scope project`
+there. `claude plugin list` says which: "✔ enabled" is installed, "✘ failed to
+load" is enabled but not installed, and then `/ask-matt`, `/implement` and the
+plugin's `code-review` do not exist while the repository's own hooks and skills
+still run.
 
 ### Issue tracker
 

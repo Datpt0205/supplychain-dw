@@ -36,6 +36,17 @@ COPY apps/worker apps/worker
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable --package dw-worker --extra parsers
 
+# OCR weights, baked (supply-chain ticket ai-automation/21): Docling's layout
+# and table models and EasyOCR's detector and `latin_g2` recogniser (the one
+# `vi` reads with). A deployed worker never downloads a model at run time: it
+# refuses to start without DW_WORKER_OCR_ARTIFACTS_PATH, and with it Docling
+# loads every model from there with downloads off.
+RUN /app/.venv/bin/python -c "from pathlib import Path; \
+from docling.utils.model_downloader import download_models; \
+download_models(Path('/app/models/ocr'), with_layout=True, with_tableformer=True, \
+with_code_formula=False, with_picture_classifier=False, with_rapidocr=False, \
+with_easyocr=True, easyocr_languages=['vi'])"
+
 # ---------------------------------------------------------------------------
 # Stage 2 â€” runtime
 # ---------------------------------------------------------------------------
@@ -62,6 +73,7 @@ RUN groupadd --gid 1001 dw && useradd --uid 1001 --gid dw --create-home dw
 
 WORKDIR /app
 COPY --from=builder --chown=dw:dw /app/.venv /app/.venv
+COPY --from=builder --chown=dw:dw /app/models/ocr /app/models/ocr
 
 # Versioned runtime artifacts the research wiring loads from DW_REPO_ROOT: the
 # worker config, the prompt bundle, the model profiles and the fixed corpus a
@@ -69,6 +81,9 @@ COPY --from=builder --chown=dw:dw /app/.venv /app/.venv
 # register, which is by design but would be a surprising way to find out.
 COPY --chown=dw:dw configs /app/configs
 COPY --chown=dw:dw evals/fixtures /app/evals/fixtures
+# The release every run this process starts records (the BGĐ review
+# reconcile starts runs); a deployed worker refuses to start without it.
+COPY --chown=dw:dw contracts/release /app/contracts/release
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
@@ -76,7 +91,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     DW_REPO_ROOT=/app \
     DW_WORKER_HEARTBEAT_FILE=/home/dw/heartbeat \
     HF_HOME=/home/dw/.cache/huggingface \
-    EASYOCR_MODULE_PATH=/home/dw/.EasyOCR
+    EASYOCR_MODULE_PATH=/home/dw/.EasyOCR \
+    DW_WORKER_OCR_ARTIFACTS_PATH=/app/models/ocr
 
 USER dw
 

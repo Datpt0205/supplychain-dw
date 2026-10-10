@@ -1,0 +1,11 @@
+{
+  "figures": {
+    "proposed": 0,
+    "qc_reworks": 0
+  },
+  "prompt_must_not_contain": [
+    "DX-KHAC-001",
+    "PO-KHAC-001"
+  ],
+  "kept": 0
+}

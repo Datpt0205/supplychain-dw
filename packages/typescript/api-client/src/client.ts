@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   approvalSchema,
+  approvalViewOutcomeSchema,
   auditEventSchema,
   demoUserSchema,
   devSessionSchema,
@@ -15,13 +16,47 @@ import {
   timelineEventSchema,
   workspaceMemberSchema,
   poCaseSchema,
+  poCaseDetailSchema,
   supplierUpdateSchema,
   delayImpactAnalysisSchema,
   slaEvaluationSchema,
   missingUpdateStatusSchema,
   caseTransitionSchema,
+  caseApprovalsSchema,
+  slaPolicySchema,
+  packagingPolicySchema,
+  bm04SchemaSchema,
+  productProfileSchema,
+  poCommercialSchema,
+  poPaymentSchema,
+  documentDraftSchema,
+  stepProposalSchema,
+  supplierMessageSchema,
+  proposalListSummarySchema,
+  proposalListDetailSchema,
+  sampleChecklistSchema,
+  preProductionChecklistSchema,
+  caseAnswerSchema,
+  weeklyReportSchema,
+  weeklySummarySchema,
+  supplierScoreSchema,
+  aiAcceptanceSchema,
+  importReportSchema,
+  purchaseOrderProposalSchema,
+  poStepProposalSchema,
+  packagingProofSchema,
   attentionItemSchema,
   followUpSchema,
+  caseDocumentSchema,
+  packagingDesignSchema,
+  packagingStateSchema,
+  productCaseSchema,
+  productCategorySchema,
+  productCaseDetailSchema,
+  productCaseStepSchema,
+  orderPlacedSchema,
+  productCaseTransitionSchema,
+  productActionDutiesSchema,
   portfolioSummarySchema,
   aiWorkResponseSchema,
   dailyBriefSchema,
@@ -42,6 +77,7 @@ import {
   type Inbox,
   type HierarchyMember,
   type Approval,
+  type ApprovalViewOutcome,
   type AuditEvent,
   type DemoUser,
   type DevSessionInfo,
@@ -56,13 +92,78 @@ import {
   type TimelineEvent,
   type WorkspaceMember,
   type POCase,
+  type POCaseDetail,
+  type POCaseLine,
+  type CreatePOInput,
+  type OrderKind,
   type SupplierUpdate,
   type DelayImpactAnalysis,
   type SLAEvaluation,
   type MissingUpdateStatus,
   type CaseTransition,
+  type CaseApprovals,
+  type SLAPolicy,
+  type PackagingPolicy,
+  type Bm04Field,
+  type Bm04Schema,
+  type Incoterm,
+  type PaymentKind,
+  type PricedLine,
+  type ProductProfile,
+  type POCommercial,
+  type POPayment,
+  type RedactableAmount,
+  type DocumentDraft,
+  type StepProposal,
+  type ProposalResultField,
+  type SupplierMessage,
+  type SupplierMessagePurpose,
+  type SupplierMessageStatus,
+  type ProposalListSummary,
+  type ProposalListDetail,
+  type ProposalRow,
+  type SampleChecklist,
+  type SampleChecklistRow,
+  type SampleVerdict,
+  type PreProductionChecklist,
+  type CaseAnswer,
+  type WeeklyReport,
+  type WeeklySummary,
+  type SupplierScore,
+  type AiAcceptance,
+  type ImportReport,
+  type ImportRow,
+  type ImportRowStatus,
+  type ImportSheet,
+  type PurchaseOrderProposal,
+  type POStepProposal,
+  type POStepResult,
+  type PackagingProof,
+  type DraftField,
+  type DraftStatus,
+  type TemplateFieldKind,
   type AttentionItem,
   type FollowUp,
+  type CaseDocument,
+  type DocumentType,
+  type PackagingAction,
+  type PackagingDesign,
+  type PackagingState,
+  type PackagingStepOption,
+  type PreProductionTest,
+  type ReviewStatus,
+  type ProductCase,
+  type ProductCategory,
+  type ProductCaseDetail,
+  type ProductCaseStep,
+  type OrderPlaced,
+  type PendingReview,
+  type ProductCaseTransition,
+  type ProductActionDuties,
+  type ProductCaseListFilter,
+  type ProductCaseStepInput,
+  type SampleRound,
+  type ProductActionOption,
   type PortfolioSummary,
   type AIWorkResponse,
   type DataView,
@@ -138,6 +239,13 @@ const zaloConnectSchema = z.object({
 });
 export type ZaloConnect = z.infer<typeof zaloConnectSchema>;
 
+/** The workspace the caller's Zalo commands act in; both null until chosen. */
+const zaloWorkspaceSchema = z.object({
+  tenant_id: z.string().nullable(),
+  workspace_id: z.string().nullable(),
+});
+export type ZaloWorkspace = z.infer<typeof zaloWorkspaceSchema>;
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -193,9 +301,66 @@ type ListPOCasesQuery = NonNullable<
   SupplyChainOperations["list_po_cases_api_v1_supply_chain_po_cases_get"]["parameters"]["query"]
 >;
 
+/** `GET /product-cases`' query parameters, from the route's generated types. */
+type ListProductCasesQuery = NonNullable<
+  SupplyChainOperations["list_product_cases_api_v1_supply_chain_product_cases_get"]["parameters"]["query"]
+>;
+
+/** `POST /product-cases/{id}/transitions`' body, from the route's generated types. */
+type ProductCaseStepBody =
+  SupplyChainOperations["create_product_case_transition_api_v1_supply_chain_product_cases__case_id__transitions_post"]["requestBody"]["content"]["application/json"];
+
+/** `POST /product-cases`' body, from the route's generated types. */
+type ProposeProductCaseBody =
+  SupplyChainOperations["propose_product_case_api_v1_supply_chain_product_cases_post"]["requestBody"]["content"]["application/json"];
+
+/** `POST /po-cases/{id}/create-po`'s body (step 10), from the route's types. */
+type CreatePOBody =
+  SupplyChainOperations["create_po_route_api_v1_supply_chain_po_cases__case_id__create_po_post"]["requestBody"]["content"]["application/json"];
+
 /** `POST /case-query`'s body, from the route's own generated types. */
 type CaseQueryBody =
   SupplyChainOperations["answer_case_query_route_api_v1_supply_chain_case_query_post"]["requestBody"]["content"]["application/json"];
+
+/** `POST /po-cases/{id}/packaging-design/steps`' body (slice PK). */
+type TakePackagingStepBody =
+  SupplyChainOperations["take_packaging_step_api_v1_supply_chain_po_cases__case_id__packaging_design_steps_post"]["requestBody"]["content"]["application/json"];
+// Customer-granted support access, the operators' side (ADR 0024).
+const supportStaffSchema = z.object({
+  user_id: z.string(),
+  email: z.string().nullable(),
+  display_name: z.string(),
+  note: z.string().nullable(),
+  added_at: z.string(),
+});
+export type SupportStaff = z.infer<typeof supportStaffSchema>;
+
+const supportRequestSchema = z.object({
+  grant_id: z.string(),
+  code: z.string(),
+  tenant_id: z.string(),
+  tenant_name: z.string(),
+  workspace_id: z.string(),
+  workspace_name: z.string(),
+  resource_type: z.string(),
+  resource_label: z.string(),
+  scope_set_key: z.string(),
+  scope_set_label: z.string(),
+  duration_hours: z.number(),
+  reason: z.string(),
+  requested_at: z.string(),
+});
+export type SupportRequest = z.infer<typeof supportRequestSchema>;
+
+const assignedSupportGrantSchema = z.object({
+  grant_id: z.string(),
+  code: z.string(),
+  tenant_id: z.string(),
+  staff_user_id: z.string(),
+  activated_at: z.string(),
+  expires_at: z.string(),
+});
+export type AssignedSupportGrant = z.infer<typeof assignedSupportGrantSchema>;
 
 /** True only when A and B are the same type, both ways. */
 type SameType<A, B> = [A] extends [B]
@@ -238,6 +403,219 @@ const _aiWorkResponseMirrorsTheRoute: [
 ] = [true, true, true, true, true, true];
 void _aiWorkResponseMirrorsTheRoute;
 
+// Slice PK: the document types (one list, `DocumentType` in `dw_supply_chain`)
+// and step 12's views.
+const _packagingMirrorsTheRoute: [
+  SameType<DocumentType, SupplyChainGenerated["DocumentType"]>,
+  SameType<PackagingDesign, SupplyChainGenerated["PackagingDesignView"]>,
+  SameType<
+    keyof PackagingDesign,
+    keyof SupplyChainGenerated["PackagingDesignView"]
+  >,
+  SameType<
+    keyof PackagingDesign["steps"][number],
+    keyof SupplyChainGenerated["PackagingStepOptionView"]
+  >,
+  SameType<
+    keyof PackagingDesign["history"][number],
+    keyof SupplyChainGenerated["PackagingEventView"]
+  >,
+  SameType<PackagingState, SupplyChainGenerated["PackagingStateView"]>,
+] = [true, true, true, true, true, true];
+void _packagingMirrorsTheRoute;
+
+// Ticket ai-automation/01: BM04 as fields and the PO case's commercial data.
+const _commercialMirrorsTheRoute: [
+  SameType<Incoterm, SupplyChainGenerated["Incoterm"]>,
+  SameType<PaymentKind, SupplyChainGenerated["PaymentKind"]>,
+  SameType<RedactableAmount, SupplyChainGenerated["RedactableAmount"]>,
+  SameType<Bm04Schema, SupplyChainGenerated["SupplyChainBm04Schema"]>,
+  SameType<keyof Bm04Field, keyof SupplyChainGenerated["Bm04Field"]>,
+  SameType<ProductProfile, SupplyChainGenerated["ProductProfileView"]>,
+  SameType<
+    keyof ProductProfile,
+    keyof SupplyChainGenerated["ProductProfileView"]
+  >,
+  SameType<POCommercial, SupplyChainGenerated["POCommercialView"]>,
+  SameType<keyof POCommercial, keyof SupplyChainGenerated["POCommercialView"]>,
+  SameType<keyof PricedLine, keyof SupplyChainGenerated["PricedLineView"]>,
+  SameType<keyof POPayment, keyof SupplyChainGenerated["POPaymentView"]>,
+] = [true, true, true, true, true, true, true, true, true, true, true];
+void _commercialMirrorsTheRoute;
+
+/** `POST /product-cases/{id}/profile`'s body. */
+export type SaveProductProfileBody =
+  SupplyChainOperations["save_product_profile_api_v1_supply_chain_product_cases__case_id__profile_post"]["requestBody"]["content"]["application/json"];
+/** `PUT /po-cases/{id}/commercial`'s body. */
+export type SetPOCommercialBody =
+  SupplyChainOperations["set_po_commercial_api_v1_supply_chain_po_cases__case_id__commercial_put"]["requestBody"]["content"]["application/json"];
+/** `POST /po-cases/{id}/payments`'s body. */
+export type RecordPaymentBody =
+  SupplyChainOperations["record_po_payment_api_v1_supply_chain_po_cases__case_id__payments_post"]["requestBody"]["content"]["application/json"];
+
+// Ticket ai-automation/03: document drafts.
+const _draftsMirrorTheRoute: [
+  SameType<DocumentDraft, SupplyChainGenerated["DraftView"]>,
+  SameType<keyof DocumentDraft, keyof SupplyChainGenerated["DraftView"]>,
+  SameType<
+    keyof DocumentDraft["fields"][number],
+    keyof SupplyChainGenerated["DraftFieldView"]
+  >,
+  SameType<DraftStatus, SupplyChainGenerated["DraftStatus"]>,
+  SameType<TemplateFieldKind, SupplyChainGenerated["TemplateFieldKind"]>,
+] = [true, true, true, true, true];
+void _draftsMirrorTheRoute;
+
+// Ticket ai-automation/05: step proposals.
+const _stepProposalMirrorsTheRoute: [
+  SameType<StepProposal, SupplyChainGenerated["StepProposalView"]>,
+  SameType<keyof StepProposal, keyof SupplyChainGenerated["StepProposalView"]>,
+  SameType<
+    keyof ProposalResultField,
+    keyof SupplyChainGenerated["ResultFieldView"]
+  >,
+] = [true, true, true];
+void _stepProposalMirrorsTheRoute;
+
+// Ticket ai-automation/07: messages to a supplier.
+const _supplierMessagesMirrorTheRoute: [
+  SameType<SupplierMessage, SupplyChainGenerated["SupplierMessageView"]>,
+  SameType<
+    keyof SupplierMessage,
+    keyof SupplyChainGenerated["SupplierMessageView"]
+  >,
+  SameType<SupplierMessagePurpose, SupplyChainGenerated["MessagePurpose"]>,
+  SameType<SupplierMessageStatus, SupplyChainGenerated["MessageStatus"]>,
+] = [true, true, true, true];
+void _supplierMessagesMirrorTheRoute;
+
+// Ticket ai-automation/08: step 1 from a list.
+const _proposalListsMirrorTheRoute: [
+  SameType<
+    ProposalListSummary,
+    SupplyChainGenerated["ProposalListSummaryView"]
+  >,
+  SameType<
+    keyof ProposalListDetail,
+    keyof SupplyChainGenerated["ProposalListDetailView"]
+  >,
+  SameType<keyof ProposalRow, keyof SupplyChainGenerated["ProposalRowView"]>,
+] = [true, true, true];
+void _proposalListsMirrorTheRoute;
+
+// Ticket ai-automation/09: a sample round's checklist.
+const _sampleChecklistMirrorsTheRoute: [
+  SameType<
+    keyof SampleChecklist,
+    keyof SupplyChainGenerated["SampleChecklistView"]
+  >,
+  SameType<
+    keyof SampleChecklistRow,
+    keyof SupplyChainGenerated["ChecklistRowView"]
+  >,
+  SameType<SampleVerdict, SupplyChainGenerated["Verdict"]>,
+] = [true, true, true];
+void _sampleChecklistMirrorsTheRoute;
+
+// Ticket ai-automation/17, item 2: the pre-production test's checklist.
+const _preProductionChecklistMirrorsTheRoute: [
+  SameType<
+    keyof PreProductionChecklist,
+    keyof SupplyChainGenerated["PreProductionChecklistView"]
+  >,
+] = [true];
+void _preProductionChecklistMirrorsTheRoute;
+
+// Ticket ai-automation/19: the case assistant's answer.
+const _caseAnswerMirrorsTheRoute: [
+  SameType<keyof CaseAnswer, keyof SupplyChainGenerated["CaseAnswerView"]>,
+  SameType<
+    keyof CaseAnswer["sentences"][number],
+    keyof SupplyChainGenerated["AnswerSentenceView"]
+  >,
+] = [true, true];
+void _caseAnswerMirrorsTheRoute;
+
+// Ticket ai-automation/20: reports.
+const _reportsMirrorTheRoute: [
+  SameType<keyof WeeklyReport, keyof SupplyChainGenerated["WeeklyReportView"]>,
+  SameType<
+    keyof WeeklyReport["figures"][number],
+    keyof SupplyChainGenerated["FigureView"]
+  >,
+  SameType<
+    keyof WeeklySummary,
+    keyof SupplyChainGenerated["WeeklySummaryView"]
+  >,
+  SameType<
+    keyof SupplierScore,
+    keyof SupplyChainGenerated["SupplierScoreView"]
+  >,
+  SameType<keyof AiAcceptance, keyof SupplyChainGenerated["AiAcceptanceView"]>,
+  SameType<
+    keyof AiAcceptance["rows"][number],
+    keyof SupplyChainGenerated["AcceptanceRowView"]
+  >,
+] = [true, true, true, true, true, true];
+void _reportsMirrorTheRoute;
+
+// Ticket ai-automation/14: step 10's PO draft.
+const _purchaseOrderMirrorsTheRoute: [
+  SameType<
+    keyof PurchaseOrderProposal,
+    keyof SupplyChainGenerated["PurchaseOrderProposalView"]
+  >,
+] = [true];
+void _purchaseOrderMirrorsTheRoute;
+
+/** `POST /po-cases/{id}/purchase-order/approval`'s body. */
+export type ApprovePurchaseOrderBody =
+  SupplyChainOperations["approve_purchase_order_api_v1_supply_chain_po_cases__case_id__purchase_order_approval_post"]["requestBody"]["content"]["application/json"];
+
+// Tickets ai-automation/15-18: a PO case's steps prepared by code.
+const _poStepMirrorsTheRoute: [
+  SameType<
+    keyof POStepProposal,
+    keyof SupplyChainGenerated["POStepProposalView"]
+  >,
+  SameType<keyof POStepResult, keyof SupplyChainGenerated["POStepResultView"]>,
+  SameType<
+    POStepProposal["step"],
+    SupplyChainGenerated["POStepProposalView"]["step"]
+  >,
+] = [true, true, true];
+void _poStepMirrorsTheRoute;
+
+// Ticket ai-automation/16: step 12's proof check.
+const _packagingProofMirrorsTheRoute: [
+  SameType<
+    keyof PackagingProof,
+    keyof SupplyChainGenerated["PackagingProofView"]
+  >,
+] = [true];
+void _packagingProofMirrorsTheRoute;
+
+/** `POST /po-cases/{id}/step-proposal/approval`'s body. */
+export type ApprovePOStepBody =
+  SupplyChainOperations["approve_po_step_api_v1_supply_chain_po_cases__case_id__step_proposal_approval_post"]["requestBody"]["content"]["application/json"];
+
+// Ticket onboarding/01: the one-time import.
+const _importMirrorsTheRoute: [
+  SameType<keyof ImportReport, keyof SupplyChainGenerated["ImportReportView"]>,
+  SameType<keyof ImportRow, keyof SupplyChainGenerated["ImportRowView"]>,
+  SameType<ImportSheet, SupplyChainGenerated["ImportSheet"]>,
+  SameType<ImportRowStatus, SupplyChainGenerated["RowStatus"]>,
+] = [true, true, true, true];
+void _importMirrorsTheRoute;
+
+/** `POST /proposal-lists/{id}/rows/{index}/proposal`'s body. */
+export type ProposeRowBody =
+  SupplyChainOperations["propose_from_list_api_v1_supply_chain_proposal_lists__list_id__rows__index__proposal_post"]["requestBody"]["content"]["application/json"];
+
+/** `POST /product-cases/{id}/step-proposal/decision`'s body. */
+export type StepDecisionBody =
+  SupplyChainOperations["decide_step_proposal_api_v1_supply_chain_product_cases__case_id__step_proposal_decision_post"]["requestBody"]["content"]["application/json"];
+
 const _dailyBriefMirrorsTheRoute: [
   SameType<DailyBrief, SupplyChainGenerated["DailyBriefView"]>,
   SameType<keyof DailyBrief, keyof SupplyChainGenerated["DailyBriefView"]>,
@@ -251,6 +629,34 @@ const _dailyBriefMirrorsTheRoute: [
   >,
 ] = [true, true, true, true];
 void _dailyBriefMirrorsTheRoute;
+
+const _caseApprovalsMirrorsTheRoute: [
+  SameType<CaseApprovals, SupplyChainGenerated["CaseApprovalsView"]>,
+  SameType<
+    keyof CaseApprovals["items"][number],
+    keyof SupplyChainGenerated["CaseApprovalView"]
+  >,
+] = [true, true];
+void _caseApprovalsMirrorsTheRoute;
+
+// The settings screen's two policies: every field of each, as the routes have them.
+const _policiesMirrorTheRoutes: [
+  SameType<keyof SLAPolicy, keyof SupplyChainGenerated["SupplyChainSLAPolicy"]>,
+  SameType<
+    keyof SLAPolicy["default"][string],
+    keyof SupplyChainGenerated["SLAMilestone"]
+  >,
+  SameType<
+    SLAPolicy["default"][string]["status"],
+    SupplyChainGenerated["SLAConfirmationStatus"]
+  >,
+  SameType<
+    keyof SLAPolicy["supplier_update"],
+    keyof SupplyChainGenerated["SupplierUpdateCadence"]
+  >,
+  SameType<PackagingPolicy, SupplyChainGenerated["SupplyChainPackagingPolicy"]>,
+] = [true, true, true, true, true];
+void _policiesMirrorTheRoutes;
 
 const _briefSummaryMirrorsTheRoute: [
   SameType<DailyBriefSummary, SupplyChainGenerated["DailyBriefSummaryView"]>,
@@ -292,10 +698,18 @@ const _meMirrorsTheRoute: [
 ] = [true, true];
 void _meMirrorsTheRoute;
 
+// The view route's answer, field for field: a reason added on the server and
+// not here would fail the zod parse at runtime instead of this compile.
+const _approvalViewMirrorsTheRoute: [
+  SameType<ApprovalViewOutcome, Generated["ApprovalViewOutcome"]>,
+] = [true];
+void _approvalViewMirrorsTheRoute;
+
 const _zaloMirrorsTheRoute: [
   SameType<ZaloStatus, Generated["ZaloStatusView"]>,
   SameType<keyof ZaloConnect, keyof Generated["ZaloConnectView"]>,
-] = [true, true];
+  SameType<ZaloWorkspace, Generated["ZaloWorkspaceView"]>,
+] = [true, true, true];
 void _zaloMirrorsTheRoute;
 
 const _followUpMirrorsTheRoute: [
@@ -303,6 +717,55 @@ const _followUpMirrorsTheRoute: [
   SameType<keyof FollowUp, keyof SupplyChainGenerated["FollowUpItemView"]>,
 ] = [true, true];
 void _followUpMirrorsTheRoute;
+
+const _caseDocumentMirrorsTheRoute: [
+  SameType<CaseDocument, SupplyChainGenerated["CaseDocumentView"]>,
+  SameType<keyof CaseDocument, keyof SupplyChainGenerated["CaseDocumentView"]>,
+] = [true, true];
+void _caseDocumentMirrorsTheRoute;
+
+const _productCaseMirrorsTheRoute: [
+  SameType<ProductCase, SupplyChainGenerated["ProductCaseView"]>,
+  SameType<ProductCategory, SupplyChainGenerated["ProductCategoryView"]>,
+  SameType<ProductCaseDetail, SupplyChainGenerated["ProductCaseDetailView"]>,
+  SameType<ProductCaseStep, SupplyChainGenerated["ProductCaseStepView"]>,
+  SameType<SampleRound, SupplyChainGenerated["SampleRoundView"]>,
+  SameType<
+    ProductActionOption,
+    SupplyChainGenerated["ProductActionOptionView"]
+  >,
+  SameType<
+    ProductCaseTransition,
+    SupplyChainGenerated["ProductCaseTransitionView"]
+  >,
+  // The duty map is keyed by action on both sides; zod types it as a partial
+  // record of the enum and OpenAPI as a string map, so only the keys compare.
+  SameType<
+    keyof ProductActionDuties,
+    keyof SupplyChainGenerated["SupplyChainProductActionDuties"]
+  >,
+] = [true, true, true, true, true, true, true, true];
+void _productCaseMirrorsTheRoute;
+
+const _poCaseMirrorsTheRoute: [
+  SameType<POCase, SupplyChainGenerated["POCaseView"]>,
+  SameType<keyof POCase, keyof SupplyChainGenerated["POCaseView"]>,
+  SameType<POCaseDetail, SupplyChainGenerated["POCaseDetailView"]>,
+  SameType<keyof POCaseDetail, keyof SupplyChainGenerated["POCaseDetailView"]>,
+  SameType<POCaseLine, SupplyChainGenerated["POCaseLineView"]>,
+  SameType<OrderKind, SupplyChainGenerated["OrderKind"]>,
+  SameType<OrderPlaced, SupplyChainGenerated["OrderPlacedView"]>,
+  SameType<keyof OrderPlaced, keyof SupplyChainGenerated["OrderPlacedView"]>,
+] = [true, true, true, true, true, true, true, true];
+void _poCaseMirrorsTheRoute;
+const _supportOperatorsMirrorTheRoutes: [
+  SameType<SupportStaff, Generated["SupportStaffView"]>,
+  SameType<keyof SupportStaff, keyof Generated["SupportStaffView"]>,
+  SameType<SupportRequest, Generated["SupportRequestView"]>,
+  SameType<keyof SupportRequest, keyof Generated["SupportRequestView"]>,
+  SameType<AssignedSupportGrant, Generated["AssignedSupportGrantView"]>,
+] = [true, true, true, true, true];
+void _supportOperatorsMirrorTheRoutes;
 
 export class ApiClient {
   constructor(private readonly options: ApiClientOptions) {}
@@ -607,7 +1070,21 @@ export class ApiClient {
     );
   }
 
-  /** Close the tenant's waiver. 409 while members still hold both sides. */
+  /** Confirm a waiver another admin proposed; until then it lifts nothing.
+   * 409 if the caller proposed it, 404 if none is waiting. */
+  confirmSeparationOfDutiesWaiver(
+    ruleKey: string,
+    reason: string,
+  ): Promise<void> {
+    return this.requestNoContent(
+      "POST",
+      `/api/v1/admin/separation-of-duties/${encodeURIComponent(ruleKey)}/waiver/confirm`,
+      { body: { reason } },
+    );
+  }
+
+  /** Close the tenant's waiver, or withdraw one still waiting for
+   * confirmation. 409 while members still hold both sides. */
   revokeSeparationOfDutiesWaiver(
     ruleKey: string,
     reason: string,
@@ -721,6 +1198,52 @@ export class ApiClient {
     );
   }
 
+  listSupportStaff(): Promise<SupportStaff[]> {
+    return this.request(
+      "GET",
+      "/api/v1/platform/support-staff",
+      z.array(supportStaffSchema),
+    );
+  }
+
+  addSupportStaff(email: string, note?: string): Promise<PlatformUserRef> {
+    return this.request(
+      "POST",
+      "/api/v1/platform/support-staff",
+      userRefSchema,
+      {
+        body: { email, note: note ?? null },
+      },
+    );
+  }
+
+  removeSupportStaff(userId: string): Promise<void> {
+    return this.requestNoContent(
+      "DELETE",
+      `/api/v1/platform/support-staff/${userId}`,
+    );
+  }
+
+  listSupportRequests(): Promise<SupportRequest[]> {
+    return this.request(
+      "GET",
+      "/api/v1/platform/support-requests",
+      z.array(supportRequestSchema),
+    );
+  }
+
+  assignSupportRequest(
+    grantId: string,
+    staffUserId: string,
+  ): Promise<AssignedSupportGrant> {
+    return this.request(
+      "POST",
+      `/api/v1/platform/support-requests/${grantId}/assign`,
+      assignedSupportGrantSchema,
+      { body: { staff_user_id: staffUserId } },
+    );
+  }
+
   // ---- feedback -----------------------------------------------------------
 
   /**
@@ -805,6 +1328,31 @@ export class ApiClient {
       "GET",
       `/api/v1/approvals${pageQueryString(params)}`,
       pageSchema(approvalSchema),
+    );
+  }
+
+  getApproval(approvalId: string): Promise<Approval> {
+    return this.request(
+      "GET",
+      `/api/v1/approvals/${approvalId}`,
+      approvalSchema,
+    );
+  }
+
+  /**
+   * Record that the viewer opened this approval and, with `issue_code`, get a
+   * single-use code to decide it on Zalo (ADR 0014). The comment is the one
+   * the decision will carry; a strict type requires it.
+   */
+  viewApproval(
+    approvalId: string,
+    body: { comment?: string; issue_code?: boolean } = {},
+  ): Promise<ApprovalViewOutcome> {
+    return this.request(
+      "POST",
+      `/api/v1/approvals/${approvalId}/view`,
+      approvalViewOutcomeSchema,
+      { body },
     );
   }
 
@@ -976,6 +1524,20 @@ export class ApiClient {
     return this.requestNoContent("POST", "/api/v1/zalo/disconnect");
   }
 
+  getZaloWorkspace(): Promise<ZaloWorkspace> {
+    return this.request("GET", "/api/v1/zalo/workspace", zaloWorkspaceSchema);
+  }
+
+  /** 404 `not_found` when the pair is not one of the caller's own memberships. */
+  setZaloWorkspace(
+    tenantId: string,
+    workspaceId: string,
+  ): Promise<ZaloWorkspace> {
+    return this.request("PUT", "/api/v1/zalo/workspace", zaloWorkspaceSchema, {
+      body: { tenant_id: tenantId, workspace_id: workspaceId },
+    });
+  }
+
   // ---- supply chain ---------------------------------------------------
 
   listPOCases(
@@ -1003,11 +1565,35 @@ export class ApiClient {
     );
   }
 
-  getPOCase(caseId: string): Promise<POCase> {
+  getPOCase(caseId: string): Promise<POCaseDetail> {
     return this.request(
       "GET",
       `/api/v1/supply-chain/po-cases/${caseId}`,
-      poCaseSchema,
+      poCaseDetailSchema,
+    );
+  }
+
+  /** Step 10 on a case awaiting its PO: its reference, its kind and the
+   * quantity of any line still open or to correct. A reference taken in the
+   * tenant is a 409 naming its constraint. The key is minted once per press. */
+  createPO(
+    caseId: string,
+    input: CreatePOInput,
+    idempotencyKey: string,
+  ): Promise<POCaseDetail> {
+    const body: CreatePOBody = {
+      po_reference: input.poReference.trim(),
+      order_kind: input.orderKind,
+      lines: (input.lines ?? []).map((line) => ({
+        sku_id: line.skuId,
+        quantity: line.quantity,
+      })),
+    };
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/create-po`,
+      poCaseDetailSchema,
+      { body, idempotencyKey },
     );
   }
 
@@ -1043,15 +1629,767 @@ export class ApiClient {
     );
   }
 
-  listCaseTransitions(caseId: string): Promise<CaseTransition[]> {
+  /** One page of the case's timeline, newest first. */
+  listCaseTransitions(
+    caseId: string,
+    params: PageParams = {},
+  ): Promise<Page<CaseTransition>> {
     return this.request(
       "GET",
-      `/api/v1/supply-chain/po-cases/${caseId}/transitions`,
-      z.array(caseTransitionSchema),
+      `/api/v1/supply-chain/po-cases/${caseId}/transitions${pageQueryString(params)}`,
+      pageSchema(caseTransitionSchema),
     );
   }
 
-  /** The tenant's open follow-ups, newest first; the caller's own marked. */
+  /** The tenant's effective SLA policy: its own override, else the platform's. */
+  getSLAPolicy(): Promise<SLAPolicy> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/sla-policy",
+      slaPolicySchema,
+    );
+  }
+
+  /** Replace the tenant's SLA policy, whole (needs `sla_policy.write`). */
+  setSLAPolicy(policy: SLAPolicy): Promise<SLAPolicy> {
+    return this.request(
+      "PUT",
+      "/api/v1/supply-chain/sla-policy",
+      slaPolicySchema,
+      {
+        body: policy,
+      },
+    );
+  }
+
+  /** Step 13's rule for the tenant: its own override, else the platform's. */
+  getPackagingPolicy(): Promise<PackagingPolicy> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/packaging-policy",
+      packagingPolicySchema,
+    );
+  }
+
+  /** Replace the tenant's step-13 rule, whole (needs `action_duties.write`). */
+  setPackagingPolicy(policy: PackagingPolicy): Promise<PackagingPolicy> {
+    return this.request(
+      "PUT",
+      "/api/v1/supply-chain/packaging-policy",
+      packagingPolicySchema,
+      { body: policy },
+    );
+  }
+
+  /** A product case's BM04: the latest version (prices redacted without
+   * `commercial.read`) and the tenant's schema. */
+  getProductProfile(caseId: string): Promise<ProductProfile> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/profile`,
+      productProfileSchema,
+    );
+  }
+
+  /** Saves a new BM04 version; `prices` absent keeps the last price. */
+  saveProductProfile(
+    caseId: string,
+    body: SaveProductProfileBody,
+    idempotencyKey: string,
+  ): Promise<ProductProfile> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/profile`,
+      productProfileSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** The tenant's BM04 schema: its own override, else the platform's. */
+  getBm04Schema(): Promise<Bm04Schema> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/bm04-schema",
+      bm04SchemaSchema,
+    );
+  }
+
+  /** A PO case's terms, priced lines, computed total and payments. */
+  getPOCommercial(caseId: string): Promise<POCommercial> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/commercial`,
+      poCommercialSchema,
+    );
+  }
+
+  /** Replaces a PO case's terms and line prices (needs `commercial.write`). */
+  setPOCommercial(
+    caseId: string,
+    body: SetPOCommercialBody,
+    idempotencyKey: string,
+  ): Promise<POCommercial> {
+    return this.request(
+      "PUT",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/commercial`,
+      poCommercialSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Records a new version of the case's deposit or final payment. */
+  recordPOPayment(
+    caseId: string,
+    body: RecordPaymentBody,
+    idempotencyKey: string,
+  ): Promise<POPayment> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/payments`,
+      poPaymentSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** The pending approvals naming one PO case, filtered by the server. */
+  listPOCaseApprovals(caseId: string): Promise<CaseApprovals> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${caseId}/approvals`,
+      caseApprovalsSchema,
+    );
+  }
+
+  /** Step 12's sub-flow on a PO case: its state, each step with whether the
+   * caller may take it, the tenant's step-13 rule and the history. */
+  getPackagingDesign(caseId: string): Promise<PackagingDesign> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/packaging-design`,
+      packagingDesignSchema,
+    );
+  }
+
+  /** Takes one step of step 12's sub-flow; a test step names its report:
+   * an uploaded one, or the record AI drafted (filed by the step). */
+  takePackagingStep(
+    caseId: string,
+    input: {
+      action: PackagingAction;
+      reason?: string;
+      documentId?: string;
+      draftId?: string;
+    },
+    idempotencyKey: string,
+  ): Promise<PackagingState> {
+    const body: TakePackagingStepBody = {
+      action: input.action,
+      reason: input.reason?.trim() || null,
+      document_id: input.documentId ?? null,
+      draft_id: input.draftId ?? null,
+    };
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/packaging-design/steps`,
+      packagingStateSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** A PO case's documents, by type and newest version first. */
+  listCaseDocuments(caseId: string): Promise<CaseDocument[]> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/documents`,
+      z.array(caseDocumentSchema),
+    );
+  }
+
+  /**
+   * Attach a file to a PO case as the next version of `docType`. Multipart,
+   * so no Content-Type header: the browser sets the boundary. The
+   * `idempotencyKey` is minted once per press and reused on a retry of the
+   * same file, so a retry never adds a second version.
+   */
+  uploadCaseDocument(
+    caseId: string,
+    input: { docType: DocumentType; file: File; idempotencyKey: string },
+  ): Promise<CaseDocument> {
+    return this.uploadDocument(
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/documents`,
+      input,
+    );
+  }
+
+  private async uploadDocument(
+    path: string,
+    input: { docType: DocumentType; file: File; idempotencyKey: string },
+  ): Promise<CaseDocument> {
+    const form = new FormData();
+    form.append("doc_type", input.docType);
+    form.append("file", input.file, input.file.name);
+    return this.postForm(path, form, input.idempotencyKey, caseDocumentSchema);
+  }
+
+  /** A multipart POST with the session's token and an idempotency key. */
+  private async postForm<T>(
+    path: string,
+    form: FormData,
+    idempotencyKey: string,
+    schema: z.ZodType<T>,
+  ): Promise<T> {
+    const fetchImpl = this.options.fetchImpl ?? fetch;
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "Idempotency-Key": idempotencyKey,
+    };
+    const token = await this.options.getAccessToken?.();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const response = await fetchImpl(`${this.options.baseUrl}${path}`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+    const json: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const parsed = errorResponseSchema.safeParse(json);
+      throw new ApiError(
+        response.status,
+        parsed.success
+          ? parsed.data
+          : {
+              code: "internal",
+              message: `HTTP ${response.status}`,
+              details: {},
+            },
+      );
+    }
+    return schema.parse(json);
+  }
+
+  /** A sample round's criteria, R&D's newest values and code's verdicts. */
+  getSampleChecklist(caseId: string): Promise<SampleChecklist> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/sample-checklist`,
+      sampleChecklistSchema,
+    );
+  }
+
+  /** R&D enters one value for one criterion of the round. */
+  recordSampleMeasurement(
+    caseId: string,
+    body: { criterion: string; value: string; note: string | null },
+    idempotencyKey: string,
+  ): Promise<SampleChecklist> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/sample-measurements`,
+      sampleChecklistSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Step 12's pre-production test: the criteria, R&D's values of this
+   * attempt, code's verdicts and its suggestion. */
+  getPreProductionChecklist(caseId: string): Promise<PreProductionChecklist> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/pre-production-checklist`,
+      preProductionChecklistSchema,
+    );
+  }
+
+  /** R&D enters one value of the pre-production test. */
+  recordPreProductionMeasurement(
+    caseId: string,
+    body: { criterion: string; value: string; note: string | null },
+    idempotencyKey: string,
+  ): Promise<PreProductionChecklist> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/pre-production-measurements`,
+      preProductionChecklistSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** A question about one case, answered from its own records with what
+   * each sentence cites (ticket ai-automation/19). Read-only: no key. */
+  askAboutCase(
+    caseKind: "po" | "product",
+    caseId: string,
+    question: string,
+  ): Promise<CaseAnswer> {
+    const segment = caseKind === "po" ? "po-cases" : "product-cases";
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/${segment}/${encodeURIComponent(caseId)}/questions`,
+      caseAnswerSchema,
+      { body: { question } },
+    );
+  }
+
+  /** The week's figures for BGĐ, each naming its cases (ticket ai-automation/20). */
+  getWeeklyReport(day?: string): Promise<WeeklyReport> {
+    const query = day ? `?day=${encodeURIComponent(day)}` : "";
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/reports/weekly${query}`,
+      weeklyReportSchema,
+    );
+  }
+
+  /** The AI's summary of the week: only sentences whose numbers are the
+   * figures they cite. Read-only: no key. */
+  summarizeWeeklyReport(day?: string): Promise<WeeklySummary> {
+    const query = day ? `?day=${encodeURIComponent(day)}` : "";
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/reports/weekly/summary${query}`,
+      weeklySummarySchema,
+    );
+  }
+
+  /** Per supplier, counted by code. */
+  getSupplierScorecard(): Promise<SupplierScore[]> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/reports/suppliers",
+      z.array(supplierScoreSchema),
+    );
+  }
+
+  /** How the drafts the lanes wrote ended, and an estimate of minutes saved. */
+  getAiAcceptance(days?: number): Promise<AiAcceptance> {
+    const query = days ? `?days=${days}` : "";
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/reports/ai-acceptance${query}`,
+      aiAcceptanceSchema,
+    );
+  }
+
+  /** Step 1 from a list: the file is stored; AI reads it in the background. */
+  uploadProposalList(
+    file: File,
+    idempotencyKey: string,
+  ): Promise<ProposalListDetail> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return this.postForm(
+      "/api/v1/supply-chain/proposal-lists",
+      form,
+      idempotencyKey,
+      proposalListDetailSchema,
+    );
+  }
+
+  /** The PO case's latest PO draft and what code finds in it now (ticket
+   * ai-automation/14). */
+  getPurchaseOrderProposal(caseId: string): Promise<PurchaseOrderProposal> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/purchase-order`,
+      purchaseOrderProposalSchema,
+    );
+  }
+
+  /** Cung ứng approves the PO draft it saw, with the PO number: the PO is
+   * created, the draft becomes its document, terms and prices are set. */
+  approvePurchaseOrder(
+    caseId: string,
+    body: ApprovePurchaseOrderBody,
+    idempotencyKey: string,
+  ): Promise<PurchaseOrderProposal> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/purchase-order/approval`,
+      purchaseOrderProposalSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** The PO case's current step as code prepared it (tickets
+   * ai-automation/15-18): its draft, what code finds, AI's suggestions. */
+  getPOStepProposal(caseId: string): Promise<POStepProposal> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/step-proposal`,
+      poStepProposalSchema,
+    );
+  }
+
+  /** The person whose duty the step is approves the draft they saw with
+   * the results they typed. */
+  approvePOStep(
+    caseId: string,
+    body: ApprovePOStepBody,
+    idempotencyKey: string,
+  ): Promise<POStepProposal> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/step-proposal/approval`,
+      poStepProposalSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** The newest packaging design proof of the case and what code finds in
+   * it against the label rules, the BM04 and the PO's SKUs (ticket
+   * ai-automation/16). */
+  getPackagingProof(caseId: string): Promise<PackagingProof> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/packaging-proof`,
+      packagingProofSchema,
+    );
+  }
+
+  /** The import template (Excel), for whoever may run the import. */
+  async downloadImportTemplate(): Promise<Blob> {
+    const response = await this.rawRequest(
+      "GET",
+      "/api/v1/supply-chain/imports/template",
+    );
+    return response.blob();
+  }
+
+  /** The one-time import, settled row by row: a dry run writes nothing;
+   * applying writes each row through its own handler. */
+  runImport(
+    file: File,
+    mode: "dry-run" | "apply",
+    idempotencyKey: string,
+  ): Promise<ImportReport> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return this.postForm(
+      mode === "apply"
+        ? "/api/v1/supply-chain/imports"
+        : "/api/v1/supply-chain/imports/dry-run",
+      form,
+      idempotencyKey,
+      importReportSchema,
+    );
+  }
+
+  /** The workspace's recent proposal lists, newest first. */
+  listProposalLists(): Promise<ProposalListSummary[]> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/proposal-lists",
+      z.array(proposalListSummarySchema),
+    );
+  }
+
+  /** A list as AI read it: each row's cited fields, suggestions, findings. */
+  getProposalList(listId: string): Promise<ProposalListDetail> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/proposal-lists/${encodeURIComponent(listId)}`,
+      proposalListDetailSchema,
+    );
+  }
+
+  /** The PIC proposes one row with the values they checked. */
+  proposeFromList(
+    listId: string,
+    index: number,
+    body: ProposeRowBody,
+    idempotencyKey: string,
+  ): Promise<ProposalListDetail> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/proposal-lists/${encodeURIComponent(listId)}/rows/${index}/proposal`,
+      proposalListDetailSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** The PIC drops one row, optionally saying why. */
+  dropFromList(
+    listId: string,
+    index: number,
+    reason: string | null,
+    idempotencyKey: string,
+  ): Promise<ProposalListDetail> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/proposal-lists/${encodeURIComponent(listId)}/rows/${index}/dismissal`,
+      proposalListDetailSchema,
+      { body: { reason }, idempotencyKey },
+    );
+  }
+
+  /** A product-development case's documents, by type and newest version first. */
+  listProductCaseDocuments(caseId: string): Promise<CaseDocument[]> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/documents`,
+      z.array(caseDocumentSchema),
+    );
+  }
+
+  /** Attach a file to a product-development case; as `uploadCaseDocument`. */
+  uploadProductCaseDocument(
+    caseId: string,
+    input: { docType: DocumentType; file: File; idempotencyKey: string },
+  ): Promise<CaseDocument> {
+    return this.uploadDocument(
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/documents`,
+      input,
+    );
+  }
+
+  /** The latest version of each draft of a case (`po` or `product`). */
+  listCaseDrafts(
+    caseKind: "po" | "product",
+    caseId: string,
+  ): Promise<DocumentDraft[]> {
+    const segment = caseKind === "po" ? "po-cases" : "product-cases";
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/${segment}/${encodeURIComponent(caseId)}/drafts`,
+      z.array(documentDraftSchema),
+    );
+  }
+
+  /** One version of a draft, prices hidden per the caller's scope. */
+  getDraft(draftId: string): Promise<DocumentDraft> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/drafts/${encodeURIComponent(draftId)}`,
+      documentDraftSchema,
+    );
+  }
+
+  /** A person's edit of a draft: the named fields replaced, a new version. */
+  reviseDraft(
+    draftId: string,
+    values: Record<string, unknown>,
+    idempotencyKey: string,
+  ): Promise<DocumentDraft> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/drafts/${encodeURIComponent(draftId)}/revisions`,
+      documentDraftSchema,
+      { body: { values }, idempotencyKey },
+    );
+  }
+
+  /** Rejects a draft version, with its reason. */
+  rejectDraft(
+    draftId: string,
+    reason: string,
+    idempotencyKey: string,
+  ): Promise<DocumentDraft> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/drafts/${encodeURIComponent(draftId)}/rejection`,
+      documentDraftSchema,
+      { body: { reason }, idempotencyKey },
+    );
+  }
+
+  /** What AI prepared for the case's current step, and its pending
+   * proposal (ticket ai-automation/05). */
+  getStepProposal(caseId: string): Promise<StepProposal> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/step-proposal`,
+      stepProposalSchema,
+    );
+  }
+
+  /** Approve or not the case's pending proposal; a physical step's result is
+   * typed here. The platform decides and the case moves when approved. */
+  decideStepProposal(
+    caseId: string,
+    body: StepDecisionBody,
+    idempotencyKey: string,
+  ): Promise<StepProposal> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/step-proposal/decision`,
+      stepProposalSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** The case's messages to its supplier, AI-drafted, newest first. */
+  listSupplierMessages(
+    caseKind: "po" | "product",
+    caseId: string,
+  ): Promise<SupplierMessage[]> {
+    const segment = caseKind === "po" ? "po-cases" : "product-cases";
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/${segment}/${encodeURIComponent(caseId)}/supplier-messages`,
+      z.array(supplierMessageSchema),
+    );
+  }
+
+  /** "Đã gửi": the person sent this text (its hash) from their own mailbox. */
+  markSupplierMessageSent(
+    messageId: string,
+    contentSha256: string,
+    idempotencyKey: string,
+  ): Promise<SupplierMessage> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/supplier-messages/${encodeURIComponent(messageId)}/sent`,
+      supplierMessageSchema,
+      { body: { content_sha256: contentSha256 }, idempotencyKey },
+    );
+  }
+
+  /** The draft as its template prints it (DOCX), prices hidden per scope. */
+  async downloadDraft(draftId: string): Promise<Blob> {
+    const response = await this.rawRequest(
+      "GET",
+      `/api/v1/supply-chain/drafts/${encodeURIComponent(draftId)}/file`,
+    );
+    return response.blob();
+  }
+
+  /** One document's bytes, read with the session's token (read scope). */
+  async downloadCaseDocument(documentId: string): Promise<Blob> {
+    const response = await this.rawRequest(
+      "GET",
+      `/api/v1/supply-chain/documents/${encodeURIComponent(documentId)}/content`,
+    );
+    return response.blob();
+  }
+
+  // ---- product-development cases (stage 1) ---------------------------------
+
+  /** The workspace's product cases, newest first, narrowed by state or PIC. */
+  listProductCases(
+    params: PageParams & ProductCaseListFilter = {},
+  ): Promise<Page<ProductCase>> {
+    const query: ListProductCasesQuery = {
+      limit: params.limit,
+      cursor: params.cursor || undefined,
+      state: params.state,
+      pic_user_id: params.picUserId,
+      category: params.category,
+    };
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== null) search.set(key, String(value));
+    }
+    const rendered = search.toString();
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases${rendered ? `?${rendered}` : ""}`,
+      pageSchema(productCaseSchema),
+    );
+  }
+
+  getProductCase(caseId: string): Promise<ProductCaseDetail> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}`,
+      productCaseDetailSchema,
+    );
+  }
+
+  /** Step 1. The caller becomes the PIC; there is no field to name another. */
+  proposeProductCase(
+    input: { proposalCode: string; productName: string; category: string },
+    idempotencyKey: string,
+  ): Promise<ProductCase> {
+    const body: ProposeProductCaseBody = {
+      proposal_code: input.proposalCode,
+      product_name: input.productName,
+      category: input.category,
+    };
+    return this.request(
+      "POST",
+      "/api/v1/supply-chain/product-cases",
+      productCaseSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** One step on a product case. The key is minted once per press. */
+  takeProductCaseStep(
+    caseId: string,
+    input: ProductCaseStepInput,
+    idempotencyKey: string,
+  ): Promise<ProductCaseStep> {
+    const body: ProductCaseStepBody = {
+      action: input.action,
+      reason: input.reason?.trim() ? input.reason.trim() : null,
+      supplier_name: input.supplierName?.trim()
+        ? input.supplierName.trim()
+        : null,
+      document_id: input.documentId ?? null,
+      item_code: input.itemCode?.trim() ? input.itemCode.trim() : null,
+      sku: input.sku
+        ? {
+            sku_code: input.sku.skuCode.trim(),
+            variant_label: input.sku.variantLabel.trim(),
+            planned_quantity: input.sku.plannedQuantity ?? null,
+          }
+        : null,
+      sku_id: input.skuId ?? null,
+    };
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/transitions`,
+      productCaseStepSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** ĐẶT HÀNG: the case is ordered and a PO case opens awaiting its PO. A
+   * second press is a 409; the same key replayed returns the first answer. */
+  placeProductOrder(
+    caseId: string,
+    idempotencyKey: string,
+  ): Promise<OrderPlaced> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/order`,
+      orderPlacedSchema,
+      { idempotencyKey },
+    );
+  }
+
+  /** One page of the case's history, newest first. */
+  listProductCaseTransitions(
+    caseId: string,
+    params: PageParams = {},
+  ): Promise<Page<ProductCaseTransition>> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/transitions${pageQueryString(params)}`,
+      pageSchema(productCaseTransitionSchema),
+    );
+  }
+
+  /** Which duty each product step needs, for the caller's tenant. */
+  getProductActionDuties(): Promise<ProductActionDuties> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/product-action-duties",
+      productActionDutiesSchema,
+    );
+  }
+
+  /** The tenant's Category list, in its own order (ticket 06): what the
+   * propose form offers, and the labels of the keys a case is stamped with. */
+  listProductCategories(): Promise<ProductCategory[]> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/product-categories",
+      z.array(productCategorySchema),
+    );
+  }
+
+  /** The workspace's open follow-ups, newest first; the caller's own marked. */
   listFollowUps(): Promise<FollowUp[]> {
     return this.request(
       "GET",
@@ -1124,7 +2462,46 @@ export class ApiClient {
 }
 
 export type {
+  PurchaseOrderProposal,
+  PackagingProof,
+  POStepProposal,
+  POStepResult,
+  ImportReport,
+  ImportRow,
+  ImportRowStatus,
+  ImportSheet,
+  DocumentDraft,
+  StepProposal,
+  ProposalListSummary,
+  ProposalListDetail,
+  ProposalRow,
+  SampleChecklist,
+  SampleChecklistRow,
+  SampleVerdict,
+  PreProductionChecklist,
+  CaseAnswer,
+  WeeklyReport,
+  WeeklySummary,
+  SupplierScore,
+  AiAcceptance,
+  SupplierMessage,
+  SupplierMessagePurpose,
+  SupplierMessageStatus,
+  ProposalResultField,
+  DraftField,
+  DraftStatus,
+  TemplateFieldKind,
+  Bm04Field,
+  Bm04Schema,
+  Incoterm,
+  PaymentKind,
+  PricedLine,
+  ProductProfile,
+  POCommercial,
+  POPayment,
+  RedactableAmount,
   Approval,
+  ApprovalViewOutcome,
   AuditEvent,
   Page,
   PageParams,
@@ -1132,13 +2509,39 @@ export type {
   TimelineEvent,
   WorkspaceMember,
   POCase,
+  POCaseDetail,
+  POCaseLine,
+  CreatePOInput,
+  OrderKind,
   SupplierUpdate,
   DelayImpactAnalysis,
   SLAEvaluation,
   MissingUpdateStatus,
   CaseTransition,
+  CaseApprovals,
+  SLAPolicy,
+  PackagingPolicy,
   AttentionItem,
   PortfolioSummary,
   POCaseListFilter,
   AIWorkResponse,
+  CaseDocument,
+  DocumentType,
+  PackagingAction,
+  PackagingDesign,
+  PackagingState,
+  PackagingStepOption,
+  PreProductionTest,
+  ReviewStatus,
+  ProductCase,
+  ProductCaseDetail,
+  ProductCaseStep,
+  OrderPlaced,
+  PendingReview,
+  ProductCaseTransition,
+  ProductActionDuties,
+  ProductCaseListFilter,
+  ProductCaseStepInput,
+  SampleRound,
+  ProductActionOption,
 };

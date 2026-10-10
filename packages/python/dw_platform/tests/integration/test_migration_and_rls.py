@@ -26,11 +26,21 @@ NOW = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
 # Every table the runtime role may read that is governed by a tenant policy.
 # Read from the catalogue rather than listed, so a table added by a later
 # migration is covered without anyone remembering to add it here.
+# `has_table_privilege` only after the policy rows are chosen: its arguments are
+# `pg_class` columns, so the planner may push it below the join and call it on
+# every relation, `pg_toast`'s included, which `dw_app` may not resolve
+# ("permission denied for schema pg_toast"). Which plan it picks depends on the
+# catalog's statistics, so the bare query passed or failed with test order.
+# `OFFSET 0` keeps the subquery a fence the planner does not flatten.
 _TENANT_SCOPED_TABLES = """
-    SELECT DISTINCT schemaname, tablename
-    FROM pg_policies
-    WHERE policyname LIKE 'tenant_isolation_%'
-      AND has_table_privilege('dw_app', format('%I.%I', schemaname, tablename), 'SELECT')
+    SELECT schemaname, tablename
+    FROM (
+        SELECT DISTINCT schemaname, tablename
+        FROM pg_policies
+        WHERE policyname LIKE 'tenant_isolation_%'
+        OFFSET 0
+    ) AS policies
+    WHERE has_table_privilege('dw_app', format('%I.%I', schemaname, tablename), 'SELECT')
     ORDER BY schemaname, tablename
 """
 

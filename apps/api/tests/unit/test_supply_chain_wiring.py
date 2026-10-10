@@ -94,3 +94,126 @@ def test_supply_chain_model_calls_run_on_the_configured_profile() -> None:
 def test_a_profile_nobody_registered_refuses_to_start() -> None:
     with pytest.raises(NotFoundError, match="model profile not registered"):
         build_container(_settings(model_profile="no_such_profile"))
+
+
+def test_case_documents_are_wired_from_their_settings() -> None:
+    """The cap and the bucket are read where they decide something: the
+    upload handler refuses past the cap, and every handler talks to the bucket
+    the worker also reads (offboarding, the orphan sweep)."""
+    settings = ApiSettings(
+        profile="test",
+        database_url="postgresql+asyncpg://wiring:wiring@localhost:5432/wiring",
+        auth_mode="dev",
+        dev_secret="wiring-test-secret-0123456789abcdef",
+        s3_endpoint_url="http://localhost:9000",
+        s3_access_key="wiring",
+        s3_secret_key="wiring",
+        model_provider="mock",
+        case_documents_bucket="docs-under-test",
+        case_document_max_bytes=4321,
+    )
+    container = build_container(settings)
+
+    upload = container.supply_chain_upload_case_document
+    download = container.supply_chain_download_case_document
+    assert upload is not None and download is not None
+    assert container.supply_chain_list_case_documents is not None
+    assert upload.max_bytes == 4321
+    assert getattr(upload.storage, "bucket", None) == "docs-under-test"
+    assert getattr(download.storage, "bucket", None) == "docs-under-test"
+
+
+def test_product_cases_are_wired_with_their_own_duty_policy_and_both_case_kinds() -> None:
+    """The product steps read the product duty policy, not the PO one (five
+    action names are shared), and a document of either kind finds its case."""
+    from dw_supply_chain.domain.case_document import CaseKind
+    from dw_supply_chain.product_action_duties import PRODUCT_ACTION_DUTIES_POLICY_ID
+
+    settings = ApiSettings(
+        profile="test",
+        database_url="postgresql+asyncpg://wiring:wiring@localhost:5432/wiring",
+        auth_mode="dev",
+        dev_secret="wiring-test-secret-0123456789abcdef",
+        s3_endpoint_url="http://localhost:9000",
+        s3_access_key="wiring",
+        s3_secret_key="wiring",
+        model_provider="mock",
+    )
+    container = build_container(settings)
+
+    advance = container.supply_chain_advance_product_case
+    propose = container.supply_chain_propose_product_case
+    assert advance is not None and propose is not None
+    for handler in (advance, propose):
+        assert handler.platform_default_duties.policy_id == PRODUCT_ACTION_DUTIES_POLICY_ID
+    upload = container.supply_chain_upload_case_document
+    assert upload is not None
+    assert set(upload.cases) == set(CaseKind)
+    for name in (
+        "supply_chain_get_product_case",
+        "supply_chain_list_product_cases",
+        "supply_chain_list_product_case_transitions",
+        "supply_chain_get_product_action_duties",
+        "supply_chain_set_product_action_duties_override",
+    ):
+        assert getattr(container, name) is not None, name
+
+
+def test_bgd_review_is_wired_strict_hosted_and_raised_by_the_step() -> None:
+    """Step 6 (ticket 02): the review's approval type is strict (requester
+    cannot decide, a comment is required), this process hosts its graph so
+    a decision resumes here, and the step command raises it on the same
+    runner the approval flow resumes with, under the shipped policy."""
+    from dw_supply_chain.application.product_reviews import EnsureProductApproval
+    from dw_supply_chain.workflows import advance_product_case_graph as graph
+
+    container = build_container(_settings())
+
+    flow = container.approval_flow
+    assert flow is not None
+    assert flow.is_strict(graph.BOD_REVIEW_APPROVAL_TYPE)
+    # The PO prefix survived the second `|=`.
+    assert flow.is_strict("supply_chain.case_action.request_deposit")
+    assert container.runner is not None
+    assert container.runner.hosts(
+        worker_id=graph.WORKER_ID,
+        worker_version=graph.WORKER_VERSION,
+        graph_version=graph.GRAPH_VERSION,
+    )
+    advance = container.supply_chain_advance_product_case
+    assert advance is not None
+    assert isinstance(advance.reviews, EnsureProductApproval)
+    assert advance.reviews.runner is container.runner
+    assert advance.reviews.platform_default_approvals.bod_review.required_scope == (
+        "supply_chain.approve.bod"
+    )
+    get = container.supply_chain_get_product_case
+    assert get is not None
+    assert get.approvals is advance.reviews.approvals
+
+
+def test_the_signoff_is_wired_strict_and_hosted() -> None:
+    """Step 9 (ticket 04): the sign-off's type is strict under the same
+    prefix, and this process hosts its graph, so a decision on any sign-off
+    step resumes here; its first step is stamped from the shipped policy."""
+    from dw_supply_chain.application.product_reviews import EnsureProductApproval
+    from dw_supply_chain.workflows import product_signoff_graph as graph
+
+    container = build_container(_settings())
+
+    assert container.approval_flow is not None
+    assert container.approval_flow.is_strict(graph.SIGNOFF_APPROVAL_TYPE)
+    assert container.runner is not None
+    assert container.runner.hosts(
+        worker_id=graph.WORKER_ID,
+        worker_version=graph.WORKER_VERSION,
+        graph_version=graph.GRAPH_VERSION,
+    )
+    advance = container.supply_chain_advance_product_case
+    assert advance is not None
+    assert isinstance(advance.reviews, EnsureProductApproval)
+    shipped = advance.reviews.platform_default_approvals.signoff
+    assert [s.required_scope for s in shipped] == [
+        "supply_chain.approve.bod",
+        "supply_chain.approve.accounting",
+    ]

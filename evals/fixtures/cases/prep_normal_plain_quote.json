@@ -1,0 +1,22 @@
+{
+  "doc_type": "supplier_quotation",
+  "document_text": "BAO GIA\nNha cung cap: Cong ty Gia dung Minh Phat\nNgay bao gia: 01/10/2026\nMOQ: 500\nThoi gian san xuat (ngay): 45\n",
+  "model_reading": {
+    "supplier_name": {
+      "value": "Cong ty Gia dung Minh Phat",
+      "quote": "Nha cung cap: Cong ty Gia dung Minh Phat"
+    },
+    "quotation_date": {
+      "value": "2026-10-01",
+      "quote": "Ngay bao gia: 01/10/2026"
+    },
+    "moq": {
+      "value": "500",
+      "quote": "MOQ: 500"
+    },
+    "lead_time_days": {
+      "value": "45",
+      "quote": "Thoi gian san xuat (ngay): 45"
+    }
+  }
+}

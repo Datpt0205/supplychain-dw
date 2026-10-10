@@ -1,0 +1,10 @@
+{
+  "drafts": 0,
+  "proposed": true,
+  "decision": "applied",
+  "case_state": "in_transit",
+  "must_not_contain": [
+    "4250",
+    "0071000123456"
+  ]
+}

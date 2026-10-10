@@ -1,0 +1,48 @@
+{
+  "product_moves": [
+    [
+      "DX-2026-041",
+      "proposed",
+      "propose"
+    ],
+    [
+      "DX-2026-042",
+      "proposed",
+      "import"
+    ],
+    [
+      "DX-2026-041",
+      "pending_bod_review",
+      "pass_sample"
+    ]
+  ],
+  "po_moves": [
+    [
+      "PO-2026-0101",
+      "production"
+    ],
+    [
+      "PO-2026-0102",
+      "rework"
+    ]
+  ],
+  "po_created": [
+    "PO-2026-0103"
+  ],
+  "model_writing": {
+    "sentences": [
+      {
+        "text": "Tuần này có 2 hồ sơ SP mới (DX-2026-041, DX-2026-042).",
+        "cites": [
+          "figure:proposed"
+        ]
+      },
+      {
+        "text": "QC trả 1 PO làm lại: PO-2026-0102.",
+        "cites": [
+          "figure:qc_reworks"
+        ]
+      }
+    ]
+  }
+}
