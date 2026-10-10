@@ -29,6 +29,8 @@ describe("barNav: the navbar a person gets", () => {
       "/supply-chain/po-cases",
       "/supply-chain/attention-queue",
       "/supply-chain/control-tower",
+      // Reports (ticket ai-automation/20) need both case reads.
+      "/supply-chain/reports",
       "/approvals",
     ]);
   });

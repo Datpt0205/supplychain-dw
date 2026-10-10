@@ -37,6 +37,10 @@ import {
   sampleChecklistSchema,
   preProductionChecklistSchema,
   caseAnswerSchema,
+  weeklyReportSchema,
+  weeklySummarySchema,
+  supplierScoreSchema,
+  aiAcceptanceSchema,
   importReportSchema,
   purchaseOrderProposalSchema,
   poStepProposalSchema,
@@ -123,6 +127,10 @@ import {
   type SampleVerdict,
   type PreProductionChecklist,
   type CaseAnswer,
+  type WeeklyReport,
+  type WeeklySummary,
+  type SupplierScore,
+  type AiAcceptance,
   type ImportReport,
   type ImportRow,
   type ImportRowStatus,
@@ -527,6 +535,29 @@ const _caseAnswerMirrorsTheRoute: [
   >,
 ] = [true, true];
 void _caseAnswerMirrorsTheRoute;
+
+// Ticket ai-automation/20: reports.
+const _reportsMirrorTheRoute: [
+  SameType<keyof WeeklyReport, keyof SupplyChainGenerated["WeeklyReportView"]>,
+  SameType<
+    keyof WeeklyReport["figures"][number],
+    keyof SupplyChainGenerated["FigureView"]
+  >,
+  SameType<
+    keyof WeeklySummary,
+    keyof SupplyChainGenerated["WeeklySummaryView"]
+  >,
+  SameType<
+    keyof SupplierScore,
+    keyof SupplyChainGenerated["SupplierScoreView"]
+  >,
+  SameType<keyof AiAcceptance, keyof SupplyChainGenerated["AiAcceptanceView"]>,
+  SameType<
+    keyof AiAcceptance["rows"][number],
+    keyof SupplyChainGenerated["AcceptanceRowView"]
+  >,
+] = [true, true, true, true, true, true];
+void _reportsMirrorTheRoute;
 
 // Ticket ai-automation/14: step 10's PO draft.
 const _purchaseOrderMirrorsTheRoute: [
@@ -1899,6 +1930,46 @@ export class ApiClient {
     );
   }
 
+  /** The week's figures for BGĐ, each naming its cases (ticket ai-automation/20). */
+  getWeeklyReport(day?: string): Promise<WeeklyReport> {
+    const query = day ? `?day=${encodeURIComponent(day)}` : "";
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/reports/weekly${query}`,
+      weeklyReportSchema,
+    );
+  }
+
+  /** The AI's summary of the week: only sentences whose numbers are the
+   * figures they cite. Read-only: no key. */
+  summarizeWeeklyReport(day?: string): Promise<WeeklySummary> {
+    const query = day ? `?day=${encodeURIComponent(day)}` : "";
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/reports/weekly/summary${query}`,
+      weeklySummarySchema,
+    );
+  }
+
+  /** Per supplier, counted by code. */
+  getSupplierScorecard(): Promise<SupplierScore[]> {
+    return this.request(
+      "GET",
+      "/api/v1/supply-chain/reports/suppliers",
+      z.array(supplierScoreSchema),
+    );
+  }
+
+  /** How the drafts the lanes wrote ended, and an estimate of minutes saved. */
+  getAiAcceptance(days?: number): Promise<AiAcceptance> {
+    const query = days ? `?days=${days}` : "";
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/reports/ai-acceptance${query}`,
+      aiAcceptanceSchema,
+    );
+  }
+
   /** Step 1 from a list: the file is stored; AI reads it in the background. */
   uploadProposalList(
     file: File,
@@ -2409,6 +2480,10 @@ export type {
   SampleVerdict,
   PreProductionChecklist,
   CaseAnswer,
+  WeeklyReport,
+  WeeklySummary,
+  SupplierScore,
+  AiAcceptance,
   SupplierMessage,
   SupplierMessagePurpose,
   SupplierMessageStatus,

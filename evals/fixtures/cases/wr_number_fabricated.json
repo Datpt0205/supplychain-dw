@@ -1,0 +1,39 @@
+{
+  "product_moves": [
+    [
+      "DX-2026-041",
+      "proposed",
+      "propose"
+    ],
+    [
+      "DX-2026-042",
+      "proposed",
+      "import"
+    ],
+    [
+      "DX-2026-041",
+      "pending_bod_review",
+      "pass_sample"
+    ]
+  ],
+  "po_moves": [
+    [
+      "PO-2026-0101",
+      "production"
+    ],
+    [
+      "PO-2026-0102",
+      "rework"
+    ]
+  ],
+  "model_writing": {
+    "sentences": [
+      {
+        "text": "QC trả 5 PO làm lại.",
+        "cites": [
+          "figure:qc_reworks"
+        ]
+      }
+    ]
+  }
+}

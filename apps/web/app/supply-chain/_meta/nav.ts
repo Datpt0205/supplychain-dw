@@ -1,4 +1,5 @@
 import {
+  BarChartOutlined,
   ControlOutlined,
   ExperimentOutlined,
   OrderedListOutlined,
@@ -78,6 +79,15 @@ export const supplyChainNav: NavItem[] = [
     hint: "Mọi Hồ sơ PO đang chạy theo trạng thái và NCC",
     icon: ControlOutlined,
     scope: "supply_chain.po_case.read",
+    context: SUPPLY_CHAIN,
+  },
+  {
+    href: "/supply-chain/reports",
+    label: "Báo cáo",
+    hint: "Báo cáo tuần cho BGĐ, điểm NCC và tỷ lệ bản nháp AI được duyệt",
+    icon: BarChartOutlined,
+    // The reports count both kinds of case: the server asks for both reads.
+    scope: "supply_chain.product_case.read",
     context: SUPPLY_CHAIN,
   },
   {

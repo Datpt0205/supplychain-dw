@@ -88,6 +88,49 @@
         "title": "AIWorkResponseView",
         "type": "object"
       },
+      "AcceptanceRowView": {
+        "properties": {
+          "as_is": {
+            "title": "As Is",
+            "type": "integer"
+          },
+          "doc_type": {
+            "title": "Doc Type",
+            "type": "string"
+          },
+          "drafted": {
+            "title": "Drafted",
+            "type": "integer"
+          },
+          "edited": {
+            "title": "Edited",
+            "type": "integer"
+          },
+          "minutes_saved": {
+            "title": "Minutes Saved",
+            "type": "integer"
+          },
+          "open": {
+            "title": "Open",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "doc_type",
+          "drafted",
+          "as_is",
+          "edited",
+          "rejected",
+          "open",
+          "minutes_saved"
+        ],
+        "title": "AcceptanceRowView",
+        "type": "object"
+      },
       "AddOperatorRequest": {
         "properties": {
           "email": {
@@ -250,6 +293,33 @@
           "action"
         ],
         "title": "AdvanceProductCaseRequest",
+        "type": "object"
+      },
+      "AiAcceptanceView": {
+        "properties": {
+          "policy_version": {
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AcceptanceRowView"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "policy_version",
+          "rows"
+        ],
+        "title": "AiAcceptanceView",
         "type": "object"
       },
       "AnswerCitationView": {
@@ -2870,6 +2940,55 @@
           "created_at"
         ],
         "title": "FeedbackView",
+        "type": "object"
+      },
+      "FigureCitationView": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "FigureCitationView",
+        "type": "object"
+      },
+      "FigureView": {
+        "properties": {
+          "cases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "value",
+          "cases"
+        ],
+        "title": "FigureView",
         "type": "object"
       },
       "FindingView": {
@@ -9451,6 +9570,27 @@
         "title": "SuggestionView",
         "type": "object"
       },
+      "SummarySentenceView": {
+        "properties": {
+          "cites": {
+            "items": {
+              "$ref": "#/components/schemas/FigureCitationView"
+            },
+            "title": "Cites",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "cites"
+        ],
+        "title": "SummarySentenceView",
+        "type": "object"
+      },
       "SupplierBankAccountRequest": {
         "additionalProperties": false,
         "properties": {
@@ -9824,6 +9964,71 @@
           "sent_at"
         ],
         "title": "SupplierMessageView",
+        "type": "object"
+      },
+      "SupplierScoreView": {
+        "properties": {
+          "lines_differing": {
+            "title": "Lines Differing",
+            "type": "integer"
+          },
+          "po_completed": {
+            "title": "Po Completed",
+            "type": "integer"
+          },
+          "po_open": {
+            "title": "Po Open",
+            "type": "integer"
+          },
+          "po_total": {
+            "title": "Po Total",
+            "type": "integer"
+          },
+          "qc_reworks": {
+            "title": "Qc Reworks",
+            "type": "integer"
+          },
+          "rounds_passed": {
+            "title": "Rounds Passed",
+            "type": "integer"
+          },
+          "rounds_rejected": {
+            "title": "Rounds Rejected",
+            "type": "integer"
+          },
+          "rounds_revised": {
+            "title": "Rounds Revised",
+            "type": "integer"
+          },
+          "sample_pass_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Pass Rate"
+          },
+          "supplier": {
+            "title": "Supplier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "supplier",
+          "po_total",
+          "po_open",
+          "po_completed",
+          "qc_reworks",
+          "rounds_passed",
+          "rounds_revised",
+          "rounds_rejected",
+          "lines_differing",
+          "sample_pass_rate"
+        ],
+        "title": "SupplierScoreView",
         "type": "object"
       },
       "SupplierSummaryView": {
@@ -11471,6 +11676,59 @@
           "reason"
         ],
         "title": "WaiverDecisionBody",
+        "type": "object"
+      },
+      "WeeklyReportView": {
+        "properties": {
+          "figures": {
+            "items": {
+              "$ref": "#/components/schemas/FigureView"
+            },
+            "title": "Figures",
+            "type": "array"
+          },
+          "week_end": {
+            "format": "date",
+            "title": "Week End",
+            "type": "string"
+          },
+          "week_start": {
+            "format": "date",
+            "title": "Week Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "week_start",
+          "week_end",
+          "figures"
+        ],
+        "title": "WeeklyReportView",
+        "type": "object"
+      },
+      "WeeklySummaryView": {
+        "properties": {
+          "dropped": {
+            "title": "Dropped",
+            "type": "integer"
+          },
+          "report": {
+            "$ref": "#/components/schemas/WeeklyReportView"
+          },
+          "sentences": {
+            "items": {
+              "$ref": "#/components/schemas/SummarySentenceView"
+            },
+            "title": "Sentences",
+            "type": "array"
+          }
+        },
+        "required": [
+          "report",
+          "sentences",
+          "dropped"
+        ],
+        "title": "WeeklySummaryView",
         "type": "object"
       },
       "WorkspaceMemberView": {
@@ -18927,6 +19185,176 @@
           }
         },
         "summary": "Propose From List",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/reports/ai-acceptance": {
+      "get": {
+        "operationId": "get_ai_acceptance_api_v1_supply_chain_reports_ai_acceptance_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "maximum": 366,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiAcceptanceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ai Acceptance",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/reports/suppliers": {
+      "get": {
+        "operationId": "get_supplier_scorecard_api_v1_supply_chain_reports_suppliers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupplierScoreView"
+                  },
+                  "title": "Response Get Supplier Scorecard Api V1 Supply Chain Reports Suppliers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Supplier Scorecard",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/reports/weekly": {
+      "get": {
+        "operationId": "get_weekly_report_api_v1_supply_chain_reports_weekly_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "day",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklyReportView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Weekly Report",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/reports/weekly/summary": {
+      "post": {
+        "operationId": "summarize_weekly_report_api_v1_supply_chain_reports_weekly_summary_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "day",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklySummaryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Summarize Weekly Report",
         "tags": [
           "supply_chain"
         ]

@@ -1333,6 +1333,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/reports/ai-acceptance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ai Acceptance */
+        get: operations["get_ai_acceptance_api_v1_supply_chain_reports_ai_acceptance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/reports/suppliers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Supplier Scorecard */
+        get: operations["get_supplier_scorecard_api_v1_supply_chain_reports_suppliers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/reports/weekly": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Weekly Report */
+        get: operations["get_weekly_report_api_v1_supply_chain_reports_weekly_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/reports/weekly/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Summarize Weekly Report */
+        post: operations["summarize_weekly_report_api_v1_supply_chain_reports_weekly_summary_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/sample-criteria-policy": {
         parameters: {
             query?: never;
@@ -1500,6 +1568,23 @@ export interface components {
             /** Unusable Fields */
             unusable_fields: components["schemas"]["GroundedField"][];
         };
+        /** AcceptanceRowView */
+        AcceptanceRowView: {
+            /** As Is */
+            as_is: number;
+            /** Doc Type */
+            doc_type: string;
+            /** Drafted */
+            drafted: number;
+            /** Edited */
+            edited: number;
+            /** Minutes Saved */
+            minutes_saved: number;
+            /** Open */
+            open: number;
+            /** Rejected */
+            rejected: number;
+        };
         /** AdvancePOCaseRequest */
         AdvancePOCaseRequest: {
             action: components["schemas"]["CaseAction"];
@@ -1527,6 +1612,18 @@ export interface components {
             sku_id?: string | null;
             /** Supplier Name */
             supplier_name?: string | null;
+        };
+        /** AiAcceptanceView */
+        AiAcceptanceView: {
+            /** Policy Version */
+            policy_version: string;
+            /** Rows */
+            rows: components["schemas"]["AcceptanceRowView"][];
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
         };
         /** AnswerCitationView */
         AnswerCitationView: {
@@ -2166,6 +2263,24 @@ export interface components {
          * @enum {string}
          */
         ExtractionStatus: "extracted" | "unreadable" | "refused" | "failed";
+        /** FigureCitationView */
+        FigureCitationView: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
+        /** FigureView */
+        FigureView: {
+            /** Cases */
+            cases: string[];
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: number;
+        };
         /** FindingView */
         FindingView: {
             /** Code */
@@ -3859,6 +3974,13 @@ export interface components {
             /** Value */
             value: string;
         };
+        /** SummarySentenceView */
+        SummarySentenceView: {
+            /** Cites */
+            cites: components["schemas"]["FigureCitationView"][];
+            /** Text */
+            text: string;
+        };
         /** SupplierBankAccountRequest */
         SupplierBankAccountRequest: {
             /** Account Holder */
@@ -3972,6 +4094,29 @@ export interface components {
             supplier_name: string | null;
             /** Template Version */
             template_version: string;
+        };
+        /** SupplierScoreView */
+        SupplierScoreView: {
+            /** Lines Differing */
+            lines_differing: number;
+            /** Po Completed */
+            po_completed: number;
+            /** Po Open */
+            po_open: number;
+            /** Po Total */
+            po_total: number;
+            /** Qc Reworks */
+            qc_reworks: number;
+            /** Rounds Passed */
+            rounds_passed: number;
+            /** Rounds Rejected */
+            rounds_rejected: number;
+            /** Rounds Revised */
+            rounds_revised: number;
+            /** Sample Pass Rate */
+            sample_pass_rate: number | null;
+            /** Supplier */
+            supplier: string;
         };
         /** SupplierSummaryView */
         SupplierSummaryView: {
@@ -4320,6 +4465,29 @@ export interface components {
          * @enum {string}
          */
         Verdict: "pass" | "fail" | "unmeasured";
+        /** WeeklyReportView */
+        WeeklyReportView: {
+            /** Figures */
+            figures: components["schemas"]["FigureView"][];
+            /**
+             * Week End
+             * Format: date
+             */
+            week_end: string;
+            /**
+             * Week Start
+             * Format: date
+             */
+            week_start: string;
+        };
+        /** WeeklySummaryView */
+        WeeklySummaryView: {
+            /** Dropped */
+            dropped: number;
+            report: components["schemas"]["WeeklyReportView"];
+            /** Sentences */
+            sentences: components["schemas"]["SummarySentenceView"][];
+        };
     };
     responses: never;
     parameters: never;
@@ -7150,6 +7318,119 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProposalListDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ai_acceptance_api_v1_supply_chain_reports_ai_acceptance_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiAcceptanceView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_supplier_scorecard_api_v1_supply_chain_reports_suppliers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierScoreView"][];
+                };
+            };
+        };
+    };
+    get_weekly_report_api_v1_supply_chain_reports_weekly_get: {
+        parameters: {
+            query?: {
+                day?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeeklyReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    summarize_weekly_report_api_v1_supply_chain_reports_weekly_summary_post: {
+        parameters: {
+            query?: {
+                day?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeeklySummaryView"];
                 };
             };
             /** @description Validation Error */

@@ -149,6 +149,7 @@ from dw_supply_chain.presentation.import_routes import ImportHandlers
 from dw_supply_chain.presentation.po_step_routes import POStepHandlers
 from dw_supply_chain.presentation.proposal_list_routes import ProposalListHandlers
 from dw_supply_chain.presentation.purchase_order_routes import PurchaseOrderHandlers
+from dw_supply_chain.presentation.report_routes import ReportHandlers
 from dw_supply_chain.presentation.sample_checklist_routes import SampleChecklistHandlers
 from dw_supply_chain.presentation.step_proposal_routes import StepProposalHandlers
 from dw_supply_chain.presentation.supplier_message_routes import SupplierMessageHandlers
@@ -237,6 +238,8 @@ class ApiContainer:
     supply_chain_answer_case_query: AnswerCaseQuery | None = None
     # The read-only case assistant (ticket ai-automation/19).
     supply_chain_ask_about_case: AskAboutCase | None = None
+    # Reports and AI acceptance (ticket ai-automation/20).
+    supply_chain_reports: ReportHandlers | None = None
     supply_chain_get_daily_brief: GetDailyBrief | None = None
     supply_chain_get_brief_policy: GetBriefPolicy | None = None
     supply_chain_set_brief_policy_override: SetBriefPolicyOverride | None = None

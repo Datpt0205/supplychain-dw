@@ -1401,6 +1401,66 @@ export const caseAnswerSchema = z.object({
 });
 export type CaseAnswer = z.infer<typeof caseAnswerSchema>;
 
+// Ticket ai-automation/20: the weekly report, the supplier scorecard and AI
+// acceptance. Every number is code's; a weekly figure names its cases.
+export const reportFigureSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  value: z.number().int(),
+  cases: z.array(z.string()),
+});
+export type ReportFigure = z.infer<typeof reportFigureSchema>;
+
+export const weeklyReportSchema = z.object({
+  week_start: z.string(),
+  week_end: z.string(),
+  figures: z.array(reportFigureSchema),
+});
+export type WeeklyReport = z.infer<typeof weeklyReportSchema>;
+
+export const weeklySummarySchema = z.object({
+  report: weeklyReportSchema,
+  sentences: z.array(
+    z.object({
+      text: z.string(),
+      cites: z.array(z.object({ key: z.string(), label: z.string() })),
+    }),
+  ),
+  dropped: z.number().int(),
+});
+export type WeeklySummary = z.infer<typeof weeklySummarySchema>;
+
+export const supplierScoreSchema = z.object({
+  supplier: z.string(),
+  po_total: z.number().int(),
+  po_open: z.number().int(),
+  po_completed: z.number().int(),
+  qc_reworks: z.number().int(),
+  rounds_passed: z.number().int(),
+  rounds_revised: z.number().int(),
+  rounds_rejected: z.number().int(),
+  lines_differing: z.number().int(),
+  sample_pass_rate: z.number().nullable(),
+});
+export type SupplierScore = z.infer<typeof supplierScoreSchema>;
+
+export const aiAcceptanceSchema = z.object({
+  since: z.string(),
+  policy_version: z.string(),
+  rows: z.array(
+    z.object({
+      doc_type: z.string(),
+      drafted: z.number().int(),
+      as_is: z.number().int(),
+      edited: z.number().int(),
+      rejected: z.number().int(),
+      open: z.number().int(),
+      minutes_saved: z.number().int(),
+    }),
+  ),
+});
+export type AiAcceptance = z.infer<typeof aiAcceptanceSchema>;
+
 // Ticket onboarding/01: the one-time import of a tenant's existing data.
 
 export const importSheetSchema = z.enum([

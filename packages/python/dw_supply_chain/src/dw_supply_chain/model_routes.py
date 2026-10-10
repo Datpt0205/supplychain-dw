@@ -40,6 +40,7 @@ __all__ = [
     "PROPOSAL_LIST_TASK",
     "SAMPLE_EVALUATION_TASK",
     "SUPPLIER_MESSAGE_TASK",
+    "WEEKLY_REPORT_TASK",
     "SupplyChainModelRoutes",
     "extraction_task",
     "load_supply_chain_model_routes",
@@ -61,6 +62,8 @@ BOD_SUBMISSION_TASK = "draft.bod_submission"
 BM04_TASK = "draft.bm04"
 # The case assistant's answer (ticket ai-automation/19).
 CASE_ANSWER_TASK = "draft.case_answer"
+# The weekly report's summary for BGĐ (ticket ai-automation/20).
+WEEKLY_REPORT_TASK = "draft.weekly_report"
 DRAFTING_TASKS = frozenset(
     {
         SUPPLIER_MESSAGE_TASK,
@@ -68,6 +71,7 @@ DRAFTING_TASKS = frozenset(
         BOD_SUBMISSION_TASK,
         BM04_TASK,
         CASE_ANSWER_TASK,
+        WEEKLY_REPORT_TASK,
     }
 )
 

@@ -125,6 +125,7 @@ from dw_supply_chain.testing.product_cases import (
 from dw_supply_chain.testing.proposal_list_eval import grade_proposal_list
 from dw_supply_chain.testing.purchase_order_eval import grade_purchase_order
 from dw_supply_chain.testing.supplier_message_eval import grade_supplier_message
+from dw_supply_chain.testing.weekly_report_eval import grade_weekly_report
 from dw_supply_chain.workflows import advance_product_case_graph as review_graph
 from dw_supply_chain.workflows.brief_summary import PROMPT_ID as BRIEF_PROMPT_ID
 from dw_supply_chain.workflows.brief_summary import PROMPT_VERSION as BRIEF_PROMPT_VERSION
@@ -1031,6 +1032,7 @@ SUPPLY_CHAIN_GRADERS: dict[str, Grader] = {
     "supply_chain.packaging_proof": grade_packaging_proof,
     "supply_chain.pre_production_report": grade_pre_production_report,
     "supply_chain.case_answer": grade_case_answer,
+    "supply_chain.weekly_report": grade_weekly_report,
     "supply_chain.supplier_message": grade_supplier_message,
     "supply_chain.proposal_list": grade_proposal_list,
     "supply_chain.bod_submission": grade_bod_submission,

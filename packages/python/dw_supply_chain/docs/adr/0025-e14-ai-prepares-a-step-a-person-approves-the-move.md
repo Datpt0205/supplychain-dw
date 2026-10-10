@@ -355,3 +355,17 @@ Profile `qwen` là chỗ giữ, chưa đo.
 3. **Không trích được thì nói "không đủ bằng chứng"**, kể cả khi mô hình trả sai schema.
 4. Cổng: `POST /po-cases/{id}/questions`, `POST /product-cases/{id}/questions` (thẻ "Hỏi về hồ sơ");
    Zalo: câu hỏi mở đúng một hồ sơ thì trả lời thêm nội dung, mỗi câu kèm nguồn.
+
+## Sửa đổi 2026-10-10 (lát AI-20; báo cáo và đo AI được duyệt)
+
+1. **Số do code, chữ do AI kiểm với số:** báo cáo tuần (thứ Hai 00:00 tới thứ Hai sau, giờ Việt Nam)
+   đếm từ lịch sử hai loại hồ sơ, mỗi số nêu các hồ sơ được đếm; câu tóm tắt
+   (`summarize_weekly_report@1.0.0`, tác vụ `draft.weekly_report`) chỉ giữ khi mọi số trong câu là số
+   được dẫn. Điểm NCC đếm PO, QC trả làm lại, vòng mẫu, dòng kho đếm lệch; xếp theo số PO, không xếp
+   hạng theo điểm.
+2. **AI được duyệt bao nhiêu:** mỗi dòng dõi bản nháp (phiên bản 1 là của lane) tính một lần: duyệt
+   nguyên, sửa rồi duyệt, từ chối, còn mở. Phút tiết kiệm là ước tính từ chính sách
+   `supply_chain_ai_time_saved@1.0.0` (tenant ghi đè được; số tạm, chờ Elmich đo), trang ghi rõ là ước
+   tính. Đây là đầu vào cho QA-6 (nới bước nào không cần người), không tự nới gì.
+3. Không bảng mới, không ghi gì; đọc cần cả hai quyền đọc hồ sơ. Tỷ lệ việc qua Zalo (slide 13) chưa
+   đo ở lát này: quyết định trên Zalo chưa ghi kênh vào bảng có thể đếm.

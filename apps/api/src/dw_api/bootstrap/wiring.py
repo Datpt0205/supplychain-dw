@@ -52,6 +52,7 @@ from dw_api.bootstrap.paths import (
     SUPPLY_CHAIN_ACTION_DUTIES,
     SUPPLY_CHAIN_ADVANCE_CASE_WORKER,
     SUPPLY_CHAIN_ADVANCE_PRODUCT_CASE_WORKER,
+    SUPPLY_CHAIN_AI_TIME_SAVED,
     SUPPLY_CHAIN_APPROVAL_MATRIX_POLICY,
     SUPPLY_CHAIN_BM04_SCHEMA,
     SUPPLY_CHAIN_BRIEF_POLICY,
@@ -1105,6 +1106,31 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         gateway=one_call_gateway,
         authz=authorization,
         ids=wiring.seam.ids,
+    )
+    # Reports and AI acceptance (ticket ai-automation/20): counts read by code
+    # under RLS; the week's summary one grounded call on the process profile.
+    from dw_supply_chain.adapters.persistence.report_reads import SqlReportReads
+    from dw_supply_chain.ai_time_saved_policy import load_supply_chain_ai_time_saved
+    from dw_supply_chain.application import reports as sc_reports
+    from dw_supply_chain.presentation.report_routes import ReportHandlers
+
+    report_reads = SqlReportReads(wiring.seam.session_factory)
+    weekly_report = sc_reports.GetWeeklyReport(
+        reads=report_reads, authz=authorization, clock=wiring.seam.clock
+    )
+    container.supply_chain_reports = ReportHandlers(
+        weekly=weekly_report,
+        summary=sc_reports.SummarizeWeeklyReport(
+            get=weekly_report, gateway=one_call_gateway, ids=wiring.seam.ids
+        ),
+        suppliers=sc_reports.GetSupplierScorecard(reads=report_reads, authz=authorization),
+        acceptance=sc_reports.GetAiAcceptance(
+            reads=report_reads,
+            authz=authorization,
+            policy_override_repo=policy_override_repo,
+            platform_default_time_saved=load_supply_chain_ai_time_saved(SUPPLY_CHAIN_AI_TIME_SAVED),
+            clock=wiring.seam.clock,
+        ),
     )
     bm04_preparation = Bm04Preparation(schemas=bm04_schemas, profiles=profiles)
     # Step 9 (ticket ai-automation/13): the tenant's code rule, the codes the

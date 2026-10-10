@@ -1,0 +1,27 @@
+{
+  "product_moves": [
+    [
+      "DX-KHAC-001",
+      "proposed",
+      "propose",
+      "other_workspace"
+    ]
+  ],
+  "po_moves": [
+    [
+      "PO-KHAC-001",
+      "rework",
+      "other_workspace"
+    ]
+  ],
+  "model_writing": {
+    "sentences": [
+      {
+        "text": "Có 1 hồ sơ SP mới.",
+        "cites": [
+          "figure:proposed"
+        ]
+      }
+    ]
+  }
+}

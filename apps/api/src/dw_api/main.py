@@ -277,6 +277,17 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # Reports and AI acceptance (ticket ai-automation/20): their own router.
+    if container.supply_chain_reports is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_supply_chain.presentation.report_routes import build_report_router
+
+        app.include_router(
+            build_report_router(
+                container.supply_chain_reports, resolve_access_context=get_access_context
+            )
+        )
+
     # The read-only case assistant (ticket ai-automation/19): its own router
     # on its own guard.
     if container.supply_chain_ask_about_case is not None:
