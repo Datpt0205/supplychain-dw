@@ -12,7 +12,11 @@ import { formatDateTimeFull } from "../../lib/dates";
 import { memberName } from "../../lib/directory";
 import { poCasesHref } from "../../lib/supply-chain/po-case-filter";
 import { productCasesHref } from "../../lib/supply-chain/product-case-filter";
-import { CASE_STATE_LABEL, CaseStateTag } from "./case-state-badge";
+import {
+  CASE_STATE_LABEL,
+  CaseStateTag,
+  IMPORTED_LABEL,
+} from "./case-state-badge";
 import { PoReferenceText } from "./po-reference";
 import { SAMPLE_RESULT_LABEL } from "./product-case-labels";
 import { milestoneLabel } from "./sla-status-badge";
@@ -188,7 +192,11 @@ function GroupCard({
             </Typography.Text>
             {entry.transition ? (
               <Flex gap="small" align="center">
-                <CaseStateTag state={entry.transition.from_state} />
+                {entry.transition.from_state === null ? (
+                  <Typography.Text>{IMPORTED_LABEL}</Typography.Text>
+                ) : (
+                  <CaseStateTag state={entry.transition.from_state} />
+                )}
                 <span aria-hidden="true">→</span>
                 <CaseStateTag state={entry.transition.to_state} />
               </Flex>

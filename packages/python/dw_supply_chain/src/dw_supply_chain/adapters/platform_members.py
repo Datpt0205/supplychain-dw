@@ -52,6 +52,13 @@ class PlatformMemberDirectory:
             m.email.lower() for m in await self.members.list_members(context) if m.email
         )
 
+    async def workspace_member_ids(self, context: AccessContext) -> Mapping[str, uuid.UUID]:
+        return {
+            m.email.lower(): m.user_id
+            for m in await self.members.list_members(context)
+            if m.email and any(w.workspace_id == context.workspace_id for w in m.memberships)
+        }
+
     async def invite(
         self,
         context: AccessContext,

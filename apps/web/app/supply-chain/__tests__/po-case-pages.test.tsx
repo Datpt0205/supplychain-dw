@@ -9,6 +9,7 @@ import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@dw/api-client";
 import type {
+  CaseTransition,
   CaseApprovals,
   MissingUpdateStatus,
   POCase,
@@ -61,6 +62,7 @@ vi.mock("../../../lib/session", () => ({ apiClient: () => api }));
 
 import POCasesPage from "../po-cases/page";
 import POCaseWorkspacePage from "../po-cases/[id]/page";
+import { IMPORTED_LABEL } from "../../../components/supply-chain/case-state-badge";
 
 beforeEach(() => {
   // Step 12's card loads on its own; these tests are about the rest of the page.
@@ -243,17 +245,22 @@ describe("Hồ sơ PO: chi tiết", () => {
     },
     updates = [],
     approvals = { visible: true, total: 0, items: [] },
+    transitions = [],
   }: {
     sla?: SLAEvaluation;
     missing?: MissingUpdateStatus;
     updates?: SupplierUpdate[];
     approvals?: CaseApprovals;
+    transitions?: CaseTransition[];
   } = {}) {
     fresh();
     api.getSLAEvaluation.mockResolvedValue(sla);
     api.getMissingUpdateStatus.mockResolvedValue(missing);
     api.listPOCaseApprovals.mockResolvedValue(approvals);
-    api.listCaseTransitions.mockResolvedValue({ items: [], next_cursor: null });
+    api.listCaseTransitions.mockResolvedValue({
+      items: transitions,
+      next_cursor: null,
+    });
     api.listSupplierUpdates.mockResolvedValue(updates);
     api.listDelayImpactAnalyses.mockResolvedValue([]);
     api.listCaseDocuments.mockResolvedValue([]);
@@ -279,6 +286,21 @@ describe("Hồ sơ PO: chi tiết", () => {
     );
     expect(strip.textContent).toContain("Cần nhắc NCC");
     expect(strip.textContent).toContain("Không có");
+  });
+
+  it("reads an imported case's first history row as brought in, not from a state", async () => {
+    api.getPOCase.mockResolvedValue(poCaseDetail());
+    renderDetail({
+      transitions: [
+        {
+          from_state: null,
+          to_state: "production",
+          reason: "Nạp từ dữ liệu cũ",
+          occurred_at: "2026-08-31T17:00:00Z",
+        },
+      ],
+    });
+    expect(await screen.findAllByText(IMPORTED_LABEL)).not.toHaveLength(0);
   });
 
   it("counts the case's pending approvals as the server filtered them", async () => {

@@ -4,6 +4,10 @@ import { StatusTag, type StatusTone } from "@dw/ui";
 /** Vietnamese label for each `CaseState` the backend can return. The one
  * owner of these words (CONTEXT.md "Trạng thái của Hồ sơ PO" copies it); a
  * state added on the Python side fails the type check here first. */
+/** The first history row of a case the one-time import brought in
+ * (onboarding/02): it has no state before it. */
+export const IMPORTED_LABEL = "Nạp từ dữ liệu cũ";
+
 export const CASE_STATE_LABEL: Record<CaseState, string> = {
   order_requested: "Chờ tạo PO",
   po_created: "Đã tạo PO",

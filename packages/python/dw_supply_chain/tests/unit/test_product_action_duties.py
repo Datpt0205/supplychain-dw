@@ -11,7 +11,11 @@ from pydantic import ValidationError
 
 from dw_supply_chain.action_duties import CaseDuty, load_supply_chain_action_duties
 from dw_supply_chain.domain.po_case import CaseAction
-from dw_supply_chain.domain.product_development_case import GRAPH_ONLY_ACTIONS, ProductAction
+from dw_supply_chain.domain.product_development_case import (
+    GRAPH_ONLY_ACTIONS,
+    IMPORT_ONLY_ACTIONS,
+    ProductAction,
+)
 from dw_supply_chain.policy_files import PRODUCT_ACTION_DUTIES_POLICY_FILE
 from dw_supply_chain.product_action_duties import (
     PRODUCT_ACTION_DUTIES_POLICY_ID,
@@ -61,7 +65,9 @@ _S1_OVERRIDE = {
 
 def test_the_shipped_default_gives_every_step_a_person_takes_a_duty() -> None:
     policy = load_supply_chain_product_action_duties(_SHIPPED)
-    assert set(policy.action_duties) == set(ProductAction) - GRAPH_ONLY_ACTIONS
+    assert (
+        set(policy.action_duties) == set(ProductAction) - GRAPH_ONLY_ACTIONS - IMPORT_ONLY_ACTIONS
+    )
     assert policy.policy_id == PRODUCT_ACTION_DUTIES_POLICY_ID
 
 

@@ -29,6 +29,7 @@ from dw_supply_chain.domain.product_development_case import (
     COMMAND_ONLY_ACTIONS,
     DOCUMENT_REQUIRED_ACTIONS,
     GRAPH_ONLY_ACTIONS,
+    IMPORT_ONLY_ACTIONS,
     PRODUCT_REASON_REQUIRED_ACTIONS,
     ItemCode,
     ItemCodeIssued,
@@ -381,6 +382,7 @@ def test_receive_sample_takes_no_supplier(given: ProductActionInput) -> None:
         - PRODUCT_REASON_REQUIRED_ACTIONS
         - {ProductAction.PROPOSE}
         - COMMAND_ONLY_ACTIONS
+        - IMPORT_ONLY_ACTIONS
     ),
 )
 def test_a_reason_on_a_step_that_takes_none_is_refused(action: ProductAction) -> None:

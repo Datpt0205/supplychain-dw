@@ -299,6 +299,8 @@ class SqlProductCaseRepository:
                 reason=step.reason,
                 actor_id=step.actor_id,
                 document_id=step.document_id,
+                # A declared time (the import's, ticket onboarding/02), else now().
+                **({"occurred_at": step.occurred_at} if step.occurred_at else {}),
             )
         )
         if step.coding is not None:
@@ -306,7 +308,11 @@ class SqlProductCaseRepository:
         if step.opens_round is not None:
             await session.execute(
                 sa.insert(_r).values(
-                    id=uuid.uuid4(), **owner, round_no=step.opens_round, opened_by=step.actor_id
+                    id=uuid.uuid4(),
+                    **owner,
+                    round_no=step.opens_round,
+                    opened_by=step.actor_id,
+                    **({"opened_at": step.occurred_at} if step.occurred_at else {}),
                 )
             )
         closure = step.closes_round
@@ -472,6 +478,8 @@ class SqlProductCaseRepository:
                             sample_round=case.sample_round,
                             version=case.version,
                             created_by=case.created_by,
+                            # Stated only by the import (ticket onboarding/02).
+                            **({"created_at": case.created_at} if case.created_at else {}),
                         )
                         .returning(_c.c.created_at)
                     )

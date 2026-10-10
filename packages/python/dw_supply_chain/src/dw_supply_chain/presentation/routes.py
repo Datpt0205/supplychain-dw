@@ -410,7 +410,8 @@ def _case_action_result_view(result: AdvancePOCaseResult) -> CaseActionResultVie
 
 
 class CaseTransitionView(BaseModel):
-    from_state: CaseState
+    # null only for an imported case's first row (ticket onboarding/02).
+    from_state: CaseState | None
     to_state: CaseState
     reason: str | None
     occurred_at: datetime

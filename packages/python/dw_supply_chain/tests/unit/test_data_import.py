@@ -15,8 +15,9 @@ import io
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -34,15 +35,23 @@ from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.import_workbook import XlsxWorkbookReader, build_template
 from dw_supply_chain.application.commercial import SaveSupplierBankAccount, SaveSupplierContact
 from dw_supply_chain.application.data_import import (
+    PO_CASE_IMPORTED,
+    PRODUCT_CASE_IMPORTED,
     SUPPLY_CHAIN_IMPORT,
     CatalogueItem,
     GetImportTemplate,
     ImportSupplyChainData,
+    KnownProductCase,
     KnownSupplier,
     NewCatalogueItem,
     WorkspaceRef,
 )
-from dw_supply_chain.application.handlers import COMMERCIAL_WRITE
+from dw_supply_chain.application.handlers import (
+    COMMERCIAL_WRITE,
+    PO_CASE_WRITE,
+    PRODUCT_CASE_WRITE,
+)
+from dw_supply_chain.domain.case_import import IMPORT_REASON
 from dw_supply_chain.domain.commercial import (
     NewSupplierBankAccount,
     NewSupplierContact,
@@ -58,6 +67,14 @@ from dw_supply_chain.domain.data_import import (
     RowStatus,
     parse_sheet,
 )
+from dw_supply_chain.domain.po_case import CaseState, POCase
+from dw_supply_chain.domain.product_development_case import (
+    ProductAction,
+    ProductDevelopmentCase,
+    ProductDevelopmentCaseId,
+    ProductDevState,
+)
+from dw_supply_chain.sla_policy import ProductCategory
 
 pytestmark = pytest.mark.unit
 
@@ -260,6 +277,8 @@ class FakeMembers:
     emails: set[str] = field(default_factory=set)
     invited: list[tuple[str, Mapping[uuid.UUID, frozenset[str]]]] = field(default_factory=list)
     allowed: bool = True
+    # The caller's workspace's members by email (ticket onboarding/02).
+    in_workspace: dict[str, uuid.UUID] = field(default_factory=dict)
 
     def _check(self) -> None:
         if not self.allowed:
@@ -276,6 +295,10 @@ class FakeMembers:
     async def member_emails(self, ctx: AccessContext) -> frozenset[str]:
         self._check()
         return frozenset(self.emails)
+
+    async def workspace_member_ids(self, ctx: AccessContext) -> Mapping[str, uuid.UUID]:
+        self._check()
+        return dict(self.in_workspace) if ctx.workspace_id == WORKSPACE else {}
 
     async def invite(
         self,
@@ -294,6 +317,64 @@ class FakeMembers:
 
 
 @dataclass
+class FakeOpenCases:
+    """`OpenCaseImportPort` as RLS answers: a reader sees its own tenant AND
+    workspace; a key taken is refused as the UNIQUE would."""
+
+    products: list[tuple[tuple[uuid.UUID, uuid.UUID], ProductDevelopmentCase]] = field(
+        default_factory=list
+    )
+    pos: list[tuple[tuple[uuid.UUID, uuid.UUID], POCase, datetime]] = field(default_factory=list)
+    steps: list[Any] = field(default_factory=list)
+    audits: list[AuditEvent] = field(default_factory=list)
+
+    async def product_cases(
+        self, ctx: AccessContext, codes: Sequence[str]
+    ) -> Mapping[str, KnownProductCase]:
+        return {
+            c.proposal_code: KnownProductCase(c.id.value, c.category, c.pic_user_id)
+            for scope, c in self.products
+            if _mine(ctx, scope) and c.proposal_code in codes
+        }
+
+    async def po_references(self, ctx: AccessContext, refs: Sequence[str]) -> frozenset[str]:
+        return frozenset(
+            c.po_reference
+            for scope, c, _ in self.pos
+            if _mine(ctx, scope) and c.po_reference in refs and c.po_reference is not None
+        )
+
+    async def add_product_case(
+        self, ctx: AccessContext, case: ProductDevelopmentCase, *, audit: AuditEvent
+    ) -> None:
+        if await self.product_cases(ctx, [case.proposal_code]):
+            raise ConflictError("mã đề xuất đã có")
+        self.steps.extend(case.pop_pending_steps())
+        self.products.append(((ctx.tenant_id, ctx.workspace_id), case))
+        self.audits.append(audit)
+
+    async def add_po_case(
+        self, ctx: AccessContext, case: POCase, *, entered_at: datetime, audit: AuditEvent
+    ) -> None:
+        if await self.po_references(ctx, [case.po_reference or ""]):
+            raise ConflictError("số PO đã có")
+        self.pos.append(((ctx.tenant_id, ctx.workspace_id), case, entered_at))
+        self.audits.append(audit)
+
+    @property
+    def writes(self) -> int:
+        return len(self.products) + len(self.pos)
+
+
+@dataclass
+class StaticCategories:
+    keys: tuple[str, ...] = ("noi", "chao")
+
+    async def handle(self, ctx: AccessContext) -> list[ProductCategory]:
+        return [ProductCategory(key=k, label=k.upper()) for k in self.keys]
+
+
+@dataclass
 class StaticReader:
     sheets: Mapping[str, list[tuple[str | None, ...]]]
 
@@ -306,6 +387,7 @@ class World:
     suppliers: FakeSuppliers = field(default_factory=FakeSuppliers)
     catalogue: FakeCatalogue = field(default_factory=FakeCatalogue)
     members: FakeMembers = field(default_factory=FakeMembers)
+    open_cases: FakeOpenCases = field(default_factory=FakeOpenCases)
 
     def handler(self, sheets: Mapping[str, list[tuple[str | None, ...]]]) -> ImportSupplyChainData:
         authz = ScopeAuthorizationService()
@@ -322,11 +404,18 @@ class World:
             authz=authz,
             ids=ids,
             clock=clock,
+            open_cases=self.open_cases,
+            categories=StaticCategories(),
         )
 
     @property
     def writes(self) -> int:
-        return self.suppliers.writes + self.catalogue.writes + len(self.members.invited)
+        return (
+            self.suppliers.writes
+            + self.catalogue.writes
+            + len(self.members.invited)
+            + self.open_cases.writes
+        )
 
 
 def header(spec_kind: ImportSheet) -> tuple[str | None, ...]:
@@ -689,3 +778,208 @@ async def test_the_template_is_for_whoever_may_import() -> None:
     assert (await template.handle(context()))[:2] == b"PK"
     with pytest.raises(PermissionDeniedError):
         await template.handle(context(frozenset()))
+
+
+# ------------------------------------------------- open cases (ON-02) --
+
+CASES = frozenset({SUPPLY_CHAIN_IMPORT, PRODUCT_CASE_WRITE, PO_CASE_WRITE})
+LAN = uuid.uuid4()
+VN_DAY = datetime(2026, 9, 1, tzinfo=UTC) - timedelta(hours=7)  # 00:00 01/09/2026 giờ VN
+
+
+def product_row(
+    code: str = "DX-2026-041",
+    state: str = "sample_testing",
+    *,
+    category: str = "noi",
+    supplier: str | None = "Minh Phát",
+    sample_round: str | None = "2",
+    pic: str = "lan@elmich.vn",
+    entered: str | None = "01/09/2026",
+    created: str | None = "15/08/2026",
+) -> tuple[str | None, ...]:
+    return (code, "Nồi inox 24cm", category, state, supplier, sample_round, pic, entered, created)
+
+
+def po_row(
+    ref: str = "PO-2026-0101",
+    state: str = "production",
+    *,
+    kind: str | None = "new",
+    code: str | None = None,
+    pic: str | None = None,
+    entered: str | None = "01/09/2026",
+    created: str | None = None,
+) -> tuple[str | None, ...]:
+    return (ref, "Minh Phát", state, kind, code, pic, entered, created)
+
+
+def case_world() -> World:
+    world = World()
+    world.members.in_workspace = {"lan@elmich.vn": LAN}
+    return world
+
+
+def case_sheets(
+    products: Sequence[tuple[str | None, ...]] = (),
+    pos: Sequence[tuple[str | None, ...]] = (),
+) -> dict[str, list[tuple[str | None, ...]]]:
+    sheets: dict[str, list[tuple[str | None, ...]]] = {}
+    if products:
+        sheets["Hồ sơ SP"] = [header(ImportSheet.PRODUCT_CASES), *products]
+    if pos:
+        sheets["Hồ sơ PO"] = [header(ImportSheet.PO_CASES), *pos]
+    return sheets
+
+
+async def test_a_product_case_opens_at_its_state_with_one_backdated_import_row() -> None:
+    world = case_world()
+    report = await world.handler(case_sheets([product_row()])).handle(
+        context(CASES), b"x", apply=True
+    )
+    assert statuses(report, ImportSheet.PRODUCT_CASES) == {2: RowStatus.CREATED}
+    ((_, case),) = world.open_cases.products
+    assert (case.state, case.sample_round, case.pic_user_id) == (
+        ProductDevState.SAMPLE_TESTING,
+        2,
+        LAN,
+    )
+    assert case.created_at == datetime(2026, 8, 15, tzinfo=UTC) - timedelta(hours=7)
+    (step,) = world.open_cases.steps
+    assert (step.action, step.from_state, step.to_state, step.reason) == (
+        ProductAction.IMPORT,
+        None,
+        ProductDevState.SAMPLE_TESTING,
+        IMPORT_REASON,
+    )
+    assert step.occurred_at == VN_DAY and step.opens_round == 2
+    (audit,) = world.open_cases.audits
+    assert audit.action == PRODUCT_CASE_IMPORTED
+    assert audit.details["via"] == "import"
+    assert audit.details["entered_on_declared"] == "01/09/2026"
+
+
+async def test_a_dry_run_opens_nothing_and_a_second_run_finds_the_case() -> None:
+    world = case_world()
+    sheets = case_sheets([product_row()], [po_row()])
+    dry = await world.handler(sheets).handle(context(CASES), b"x", apply=False)
+    assert statuses(dry, ImportSheet.PRODUCT_CASES) == {2: RowStatus.CREATED}
+    assert statuses(dry, ImportSheet.PO_CASES) == {2: RowStatus.CREATED}
+    assert world.writes == 0
+    await world.handler(sheets).handle(context(CASES), b"x", apply=True)
+    again = await world.handler(sheets).handle(context(CASES), b"x", apply=True)
+    assert set(statuses(again, ImportSheet.PRODUCT_CASES).values()) == {RowStatus.EXISTS}
+    assert set(statuses(again, ImportSheet.PO_CASES).values()) == {RowStatus.EXISTS}
+    assert world.open_cases.writes == 2
+
+
+async def test_a_po_case_starts_at_its_state_dated_when_it_entered_it() -> None:
+    world = case_world()
+    report = await world.handler(case_sheets(pos=[po_row(created=None)])).handle(
+        context(CASES), b"x", apply=True
+    )
+    assert statuses(report, ImportSheet.PO_CASES) == {2: RowStatus.CREATED}
+    ((_, case, entered),) = world.open_cases.pos
+    assert (case.state, entered, case.created_at) == (CaseState.PRODUCTION, VN_DAY, VN_DAY)
+    assert world.open_cases.audits[0].action == PO_CASE_IMPORTED
+
+
+async def test_a_po_row_may_name_a_product_case_this_file_opens_and_takes_its_category() -> None:
+    world = case_world()
+    sheets = case_sheets(
+        [product_row(state="item_coding")], [po_row(code="DX-2026-041", pic="lan@elmich.vn")]
+    )
+    dry = await world.handler(sheets).handle(context(CASES), b"x", apply=False)
+    assert statuses(dry, ImportSheet.PO_CASES) == {2: RowStatus.CREATED}
+    await world.handler(sheets).handle(context(CASES), b"x", apply=True)
+    ((_, product),) = world.open_cases.products
+    ((_, po, _),) = world.open_cases.pos
+    assert (po.product_dev_case_id, po.category, po.pic_user_id) == (product.id.value, "noi", LAN)
+
+
+@pytest.mark.parametrize(
+    ("row", "words"),
+    [
+        (product_row(pic="khac@elmich.vn"), "PIC không phải thành viên"),
+        (product_row(category="am_dun"), "Nhóm sản phẩm"),
+        (product_row(state="pending_bod_review"), "bước một người làm tiếp"),
+        (product_row(state="ordered"), "bước một người làm tiếp"),
+        (product_row(state="blocked"), "bước một người làm tiếp"),
+        (product_row(state="dang_test"), "không phải một bước"),
+        (product_row(state="proposed", sample_round="1"), "chưa có mẫu"),
+        (product_row(state="sample_testing", sample_round="0"), "cần số vòng mẫu"),
+        (product_row(state="sample_requested", supplier=None, sample_round=None), "tên NCC"),
+        (product_row(entered="31/02/2026"), "không phải ngày"),
+        (product_row(entered="01/09/2027"), "tương lai"),
+        (product_row(entered="01/08/2026", created="15/08/2026"), "trước ngày tạo"),
+    ],
+)
+async def test_a_product_row_the_import_may_not_write_is_refused_with_its_reason(
+    row: tuple[str | None, ...], words: str
+) -> None:
+    world = case_world()
+    report = await world.handler(case_sheets([row])).handle(context(CASES), b"x", apply=True)
+    (result,) = [r for r in report.rows if r.sheet is ImportSheet.PRODUCT_CASES]
+    assert result.status is RowStatus.REJECTED
+    assert words in " ".join(result.messages), result.messages
+    assert world.open_cases.writes == 0
+
+
+@pytest.mark.parametrize(
+    ("row", "words"),
+    [
+        (po_row(state="completed"), "bước một người làm tiếp"),
+        (po_row(state="order_requested"), "bước một người làm tiếp"),
+        (po_row(kind="gap"), "new hoặc reorder"),
+        (po_row(code="DX-KHONG-CO", pic="lan@elmich.vn"), "Mã đề xuất không có"),
+        (po_row(pic="khac@elmich.vn"), "PIC không phải thành viên"),
+    ],
+)
+async def test_a_po_row_the_import_may_not_write_is_refused_with_its_reason(
+    row: tuple[str | None, ...], words: str
+) -> None:
+    world = case_world()
+    report = await world.handler(case_sheets(pos=[row])).handle(context(CASES), b"x", apply=True)
+    (result,) = [r for r in report.rows if r.sheet is ImportSheet.PO_CASES]
+    assert result.status is RowStatus.REJECTED
+    assert words in " ".join(result.messages), result.messages
+    assert world.open_cases.writes == 0
+
+
+async def test_opening_a_case_needs_the_write_of_its_kind() -> None:
+    world = case_world()
+    report = await world.handler(case_sheets([product_row()], [po_row()])).handle(
+        context(frozenset({SUPPLY_CHAIN_IMPORT})), b"x", apply=True
+    )
+    assert set(statuses(report, ImportSheet.PRODUCT_CASES).values()) == {RowStatus.REJECTED}
+    assert set(statuses(report, ImportSheet.PO_CASES).values()) == {RowStatus.REJECTED}
+    assert world.open_cases.writes == 0
+
+
+async def test_a_case_of_another_workspace_neither_counts_as_there_nor_links() -> None:
+    world = case_world()
+    other = context(CASES, workspace=uuid.uuid4())
+    elsewhere = ProductDevelopmentCase.imported(
+        id=ProductDevelopmentCaseId(uuid.uuid4()),
+        tenant_id=TenantId(TENANT),
+        workspace_id=WorkspaceId(other.workspace_id),
+        proposal_code="DX-2026-041",
+        product_name="Nồi",
+        category="noi",
+        supplier_name=None,
+        state=ProductDevState.PROPOSED,
+        sample_round=0,
+        pic_user_id=LAN,
+        actor_id=LAN,
+        entered_at=VN_DAY,
+        created_at=VN_DAY,
+    )
+    world.open_cases.products.append(((TENANT, other.workspace_id), elsewhere))
+    report = await world.handler(
+        case_sheets(pos=[po_row(code="DX-2026-041", pic="lan@elmich.vn")])
+    ).handle(context(CASES), b"x", apply=True)
+    assert statuses(report, ImportSheet.PO_CASES) == {2: RowStatus.REJECTED}
+    mine = await world.handler(case_sheets([product_row()])).handle(
+        context(CASES), b"x", apply=False
+    )
+    assert statuses(mine, ImportSheet.PRODUCT_CASES) == {2: RowStatus.CREATED}

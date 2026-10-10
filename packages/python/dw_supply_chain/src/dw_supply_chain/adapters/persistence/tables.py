@@ -118,9 +118,12 @@ po_case_state_transitions = sa.Table(
     sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
     sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
     sa.Column("po_case_id", UUID(as_uuid=True), sa.ForeignKey("po_cases.id"), nullable=False),
-    sa.Column("from_state", sa.Text, nullable=False),
+    # NULL only on an imported case's first row, whose action is `import`
+    # (e623edd08e76, ticket onboarding/02).
+    sa.Column("from_state", sa.Text, nullable=True),
     sa.Column("to_state", sa.Text, nullable=False),
     sa.Column("reason", sa.Text, nullable=True),
+    sa.Column("action", sa.Text, nullable=True),
     sa.Column(
         "occurred_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
     ),

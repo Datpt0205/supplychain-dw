@@ -44,6 +44,7 @@ from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence import tables
 from dw_supply_chain.adapters.persistence.suppliers import resolve_supplier
 from dw_supply_chain.application.ports import PO_REFERENCE_PADDING, POCaseListFilter
+from dw_supply_chain.domain.case_import import IMPORT_ACTION, IMPORT_REASON
 from dw_supply_chain.domain.po_case import (
     TERMINAL_STATES,
     CaseState,
@@ -124,6 +125,8 @@ async def insert_po_case(session: AsyncSession, context: AccessContext, case: PO
                 product_dev_case_id=case.product_dev_case_id,
                 pic_user_id=case.pic_user_id,
                 category=case.category,
+                # Stated only by the import (ticket onboarding/02).
+                **({"created_at": case.created_at} if case.created_at else {}),
             )
             .returning(tables.po_cases.c.created_at)
         )
@@ -176,7 +179,7 @@ async def _lines_of(session: AsyncSession, case_id: POCaseId) -> tuple[POCaseLin
 
 def _transition_from_row(row: Row[tuple]) -> CaseTransition:  # type: ignore[type-arg]
     return CaseTransition(
-        from_state=CaseState(row.from_state),
+        from_state=None if row.from_state is None else CaseState(row.from_state),
         to_state=CaseState(row.to_state),
         reason=row.reason,
         occurred_at=row.occurred_at,
@@ -261,6 +264,39 @@ class SqlPOCaseRepository:
                 await self._insert_pending_transitions(session, case)
                 if audit is not None:
                     await SqlAuditRepository(session).append(audit)
+        except IntegrityError as exc:
+            refusal = reference_refusal(exc, case)
+            if refusal is None:
+                raise
+            raise refusal from exc
+        case.created_at = created_at
+
+    async def add_imported(
+        self, context: AccessContext, case: POCase, *, entered_at: datetime, audit: AuditEvent
+    ) -> None:
+        """An open case brought in at its current state (ticket onboarding/02):
+        the row (created when the sheet says), its ONE history row (`import`,
+        no `from_state`, dated when the case entered the state) and the audit,
+        in one transaction. The database refuses a second start row and a
+        start row after any other (`uq_..._one_start`, `refuse_late_start`)."""
+        scope = TenantScope.from_access_context(context)
+        try:
+            async with tenant_session(self.session_factory, scope) as session:
+                created_at = await insert_po_case(session, context, case)
+                await session.execute(
+                    sa.insert(tables.po_case_state_transitions).values(
+                        id=uuid.uuid4(),
+                        tenant_id=case.tenant_id.value,
+                        workspace_id=case.workspace_id.value,
+                        po_case_id=case.id.value,
+                        from_state=None,
+                        to_state=case.state.value,
+                        action=IMPORT_ACTION,
+                        reason=IMPORT_REASON,
+                        occurred_at=entered_at,
+                    )
+                )
+                await SqlAuditRepository(session).append(audit)
         except IntegrityError as exc:
             refusal = reference_refusal(exc, case)
             if refusal is None:

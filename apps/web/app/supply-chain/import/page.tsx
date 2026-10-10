@@ -42,6 +42,8 @@ const SHEET_LABEL: Record<ImportSheet, string> = {
   suppliers: "NCC",
   catalogue: "Danh mục",
   users: "Người dùng",
+  product_cases: "Hồ sơ SP",
+  po_cases: "Hồ sơ PO",
 };
 
 /** Each status in words for a dry run and for a real run, and its tone. */
@@ -271,7 +273,7 @@ export default function SupplyChainImportPage() {
       <PageHeader
         breadcrumb={supplyChainCrumbs("Nạp dữ liệu")}
         title="Nạp dữ liệu có sẵn"
-        subtitle="Một lần, từ mẫu Excel: NCC, danh mục mã hàng và SKU, người dùng. Không AI nào đọc file này; ô thiếu là dòng bị từ chối, không đoán."
+        subtitle="Một lần, từ mẫu Excel: NCC, danh mục mã hàng và SKU, người dùng, hồ sơ đang chạy (mở ở bước hiện tại, ngày khai báo). Không AI nào đọc file này; ô thiếu là dòng bị từ chối, không đoán."
       />
       <Flex vertical gap="middle">
         <Card title="1. Tải mẫu">

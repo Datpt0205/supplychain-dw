@@ -12,8 +12,9 @@ a second layer; each write and its audit event are one transaction.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -26,11 +27,16 @@ from dw_platform.adapters.persistence.tenant_session import TenantScope, tenant_
 from dw_platform.application.access_context import AccessContext
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.adapters.persistence import tables
+from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
+from dw_supply_chain.adapters.persistence.product_case_repository import SqlProductCaseRepository
 from dw_supply_chain.application.data_import import (
     CatalogueItem,
+    KnownProductCase,
     KnownSupplier,
     NewCatalogueItem,
 )
+from dw_supply_chain.domain.po_case import POCase
+from dw_supply_chain.domain.product_development_case import ProductDevelopmentCase
 
 _s = tables.suppliers
 _c = tables.catalogue_items
@@ -181,3 +187,55 @@ class SqlCatalogue:
 
 
 __all__ = ["CATALOGUE_PAIR", "CATALOGUE_SKU", "SqlCatalogue", "SqlSupplierImport"]
+
+
+@dataclass(frozen=True)
+class SqlOpenCaseImport:
+    """Implements `OpenCaseImportPort` (ticket onboarding/02): the lookups by
+    key under the caller's RLS, and the writes through the cases' own
+    repositories, which write the row, its one `import` history row and the
+    audit in one transaction."""
+
+    session_factory: async_sessionmaker[AsyncSession]
+
+    async def product_cases(
+        self, context: AccessContext, codes: Sequence[str]
+    ) -> Mapping[str, KnownProductCase]:
+        if not codes:
+            return {}
+        p = tables.product_dev_cases
+        async with tenant_session(self.session_factory, _scope(context)) as session:
+            rows = (
+                await session.execute(
+                    sa.select(p.c.id, p.c.proposal_code, p.c.category, p.c.pic_user_id).where(
+                        *_mine(p, context), p.c.proposal_code.in_(list(codes))
+                    )
+                )
+            ).all()
+        return {r.proposal_code: KnownProductCase(r.id, r.category, r.pic_user_id) for r in rows}
+
+    async def po_references(self, context: AccessContext, refs: Sequence[str]) -> frozenset[str]:
+        if not refs:
+            return frozenset()
+        c = tables.po_cases
+        async with tenant_session(self.session_factory, _scope(context)) as session:
+            found = (
+                await session.scalars(
+                    sa.select(c.c.po_reference).where(
+                        *_mine(c, context), c.c.po_reference.in_(list(refs))
+                    )
+                )
+            ).all()
+        return frozenset(r for r in found if r is not None)
+
+    async def add_product_case(
+        self, context: AccessContext, case: ProductDevelopmentCase, *, audit: AuditEvent
+    ) -> None:
+        await SqlProductCaseRepository(self.session_factory).add(context, case, audit=audit)
+
+    async def add_po_case(
+        self, context: AccessContext, case: POCase, *, entered_at: datetime, audit: AuditEvent
+    ) -> None:
+        await SqlPOCaseRepository(self.session_factory).add_imported(
+            context, case, entered_at=entered_at, audit=audit
+        )

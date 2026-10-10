@@ -58,6 +58,7 @@ from typing import Self
 from dw_kernel.errors import ConflictError, DomainError, DWError, NotFoundError
 from dw_kernel.ids import EntityId, TenantId, WorkspaceId
 from dw_supply_chain.domain.case_document import CaseDocument, CaseKind, DocumentType
+from dw_supply_chain.domain.case_import import IMPORT_REASON
 from dw_supply_chain.domain.po_case import POCase, POCaseId, POCaseLine
 
 
@@ -142,6 +143,9 @@ class ProductAction(StrEnum):
     # approved, or one step not approved.
     SIGNOFF_APPROVE = "signoff_approve"
     SIGNOFF_REJECT = "signoff_reject"
+    # The one-time import of an open case (ticket onboarding/02): the case's
+    # first history row, at the state the sheet gives. Never a step.
+    IMPORT = "import"
 
 
 # The steps only a workflow applies, after an approval is decided. One owner:
@@ -159,6 +163,27 @@ GRAPH_ONLY_ACTIONS = frozenset(
 # The steps a person takes through a command of their own, never the step
 # command: ĐẶT HÀNG writes the PO case with the step (`PlaceOrder`).
 COMMAND_ONLY_ACTIONS = frozenset({ProductAction.PLACE_ORDER})
+
+# Written only by the one-time import (ticket onboarding/02): no command takes
+# it, no duty names it, no state offers it.
+IMPORT_ONLY_ACTIONS = frozenset({ProductAction.IMPORT})
+
+# Where an open case may be imported: a state a person moves on from, never
+# one an approval holds (BGĐ's review, the sign-off), an interruption (it
+# needs the state it interrupted), or one past the item code and SKUs.
+IMPORTABLE_PRODUCT_STATES = frozenset(
+    {
+        ProductDevState.PROPOSED,
+        ProductDevState.SAMPLE_REQUESTED,
+        ProductDevState.SAMPLE_TESTING,
+        ProductDevState.REVISION_REQUESTED,
+        ProductDevState.PROFILE_IN_PROGRESS,
+        ProductDevState.SUPPLIER_CONFIRMATION,
+        ProductDevState.ITEM_CODING,
+    }
+)
+# Before a sample is in, a case has no round; from testing on, it has one.
+_BEFORE_SAMPLES = frozenset({ProductDevState.PROPOSED, ProductDevState.SAMPLE_REQUESTED})
 
 # Step 9's coding: each leaves the case in `item_coding`, and only there.
 CODING_ACTIONS = frozenset(
@@ -367,7 +392,7 @@ class ProductCaseStep:
     history row, and the round it opens or closes, with the state."""
 
     action: ProductAction
-    # None only for `propose`: the case did not exist before it.
+    # None only for `propose` and `import`: the case did not exist before.
     from_state: ProductDevState | None
     to_state: ProductDevState
     actor_id: uuid.UUID
@@ -380,6 +405,9 @@ class ProductCaseStep:
     # What a coding step (step 9) does to the item code or the SKUs, written
     # in the same transaction as its history row.
     coding: CodingChange | None = None
+    # When it happened, where that is declared rather than now: the import's
+    # date the case entered its state (ticket onboarding/02). None: now.
+    occurred_at: datetime | None = None
 
 
 def document_refusal(case_id: uuid.UUID, action: ProductAction) -> DWError:
@@ -505,6 +533,66 @@ class ProductDevelopmentCase:
                 to_state=ProductDevState.PROPOSED,
                 actor_id=actor_id,
                 reason=None,
+            )
+        )
+        return case
+
+    @classmethod
+    def imported(
+        cls,
+        *,
+        id: ProductDevelopmentCaseId,
+        tenant_id: TenantId,
+        workspace_id: WorkspaceId,
+        proposal_code: str,
+        product_name: str,
+        category: str,
+        supplier_name: str | None,
+        state: ProductDevState,
+        sample_round: int,
+        pic_user_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        entered_at: datetime,
+        created_at: datetime,
+    ) -> Self:
+        """An open case brought in at its current state (ticket onboarding/02;
+        ADR 0027 decision 3): one `import` row, dated when the sheet says the
+        case entered the state, and no row invented for the steps before. A
+        case being tested has its round open since that date; one past its
+        samples carries the round count it had."""
+        if state not in IMPORTABLE_PRODUCT_STATES:
+            raise DomainError(
+                "chỉ nạp hồ sơ ở bước một người làm tiếp", details={"state": state.value}
+            )
+        if state in _BEFORE_SAMPLES and sample_round != 0:
+            raise DomainError("hồ sơ chưa có mẫu không có vòng mẫu", details={"state": state.value})
+        if state not in _BEFORE_SAMPLES and sample_round < 1:
+            raise DomainError("hồ sơ đã có mẫu cần số vòng mẫu", details={"state": state.value})
+        if state is not ProductDevState.PROPOSED and supplier_name is None:
+            raise DomainError("hồ sơ đã liên hệ NCC cần tên NCC", details={"state": state.value})
+        case = cls(
+            id=id,
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            proposal_code=proposal_code,
+            product_name=product_name,
+            category=category,
+            pic_user_id=pic_user_id,
+            created_by=actor_id,
+            supplier_name=supplier_name,
+            state=state,
+            sample_round=sample_round,
+            created_at=created_at,
+        )
+        case._pending_steps.append(
+            ProductCaseStep(
+                action=ProductAction.IMPORT,
+                from_state=None,
+                to_state=state,
+                actor_id=actor_id,
+                reason=IMPORT_REASON,
+                opens_round=sample_round if state is ProductDevState.SAMPLE_TESTING else None,
+                occurred_at=entered_at,
             )
         )
         return case
@@ -1073,9 +1161,10 @@ def apply_product_action(
     the review graph alike. `propose` is not here: it opens a case rather
     than moving one. Who may ask for which action is the callers' to decide
     (`AdvanceProductCase` refuses `GRAPH_ONLY_ACTIONS`)."""
-    if action is ProductAction.PROPOSE:
+    if action is ProductAction.PROPOSE or action in IMPORT_ONLY_ACTIONS:
         raise DomainError(
-            "propose opens a new case; it is not a step on one", details={"action": action.value}
+            f"{action.value} opens a new case; it is not a step on one",
+            details={"action": action.value},
         )
     if action in COMMAND_ONLY_ACTIONS:
         raise DomainError(

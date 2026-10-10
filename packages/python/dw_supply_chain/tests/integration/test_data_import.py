@@ -46,6 +46,7 @@ from dw_supply_chain.adapters.import_workbook import XlsxWorkbookReader
 from dw_supply_chain.adapters.persistence.commercial_repository import SqlSupplierRecords
 from dw_supply_chain.adapters.persistence.data_import_repository import (
     SqlCatalogue,
+    SqlOpenCaseImport,
     SqlSupplierImport,
 )
 from dw_supply_chain.application.commercial import SaveSupplierBankAccount, SaveSupplierContact
@@ -57,6 +58,7 @@ from dw_supply_chain.application.data_import import (
 )
 from dw_supply_chain.application.handlers import COMMERCIAL_WRITE
 from dw_supply_chain.domain.data_import import SHEETS, RowStatus
+from dw_supply_chain.sla_policy import ProductCategory
 
 pytestmark = pytest.mark.integration
 
@@ -188,6 +190,11 @@ async def test_the_supplier_match_is_the_database_s_and_a_code_is_set_once(
     )
 
 
+class _NoCategories:
+    async def handle(self, context: AccessContext) -> list[ProductCategory]:
+        return []
+
+
 class _NoMembers:
     async def workspaces(self, context: AccessContext) -> list[WorkspaceRef]:
         return []
@@ -197,6 +204,9 @@ class _NoMembers:
 
     async def member_emails(self, context: AccessContext) -> frozenset[str]:
         return frozenset()
+
+    async def workspace_member_ids(self, context: AccessContext) -> Mapping[str, uuid.UUID]:
+        return {}
 
     async def invite(
         self,
@@ -261,6 +271,8 @@ async def test_a_dry_run_writes_nothing_and_a_second_run_adds_nothing(
         authz=authz,
         ids=ids,
         clock=clock,
+        open_cases=SqlOpenCaseImport(sessions),
+        categories=_NoCategories(),
     )
     data = _workbook()
     before = await _counts(engine, context)

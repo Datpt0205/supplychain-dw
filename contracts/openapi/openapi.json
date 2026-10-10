@@ -1579,7 +1579,14 @@
       "CaseTransitionView": {
         "properties": {
           "from_state": {
-            "$ref": "#/components/schemas/CaseState"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseState"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "occurred_at": {
             "format": "date-time",
@@ -3193,7 +3200,9 @@
         "enum": [
           "suppliers",
           "catalogue",
-          "users"
+          "users",
+          "product_cases",
+          "po_cases"
         ],
         "title": "ImportSheet",
         "type": "string"
@@ -6433,7 +6442,8 @@
           "bod_approve",
           "bod_reject",
           "signoff_approve",
-          "signoff_reject"
+          "signoff_reject",
+          "import"
         ],
         "title": "ProductAction",
         "type": "string"

@@ -25,6 +25,17 @@ decided where the write happens:
   (changing where a supplier is paid is not an import's job).
 - **Audit.** Every write is audited in its own transaction, the caller as
   actor (`via: import` where this module writes it).
+- **Open cases** (ticket onboarding/02; ADR 0027 decision 3): a product case
+  or a PO case starts at the state its row gives, with ONE history row
+  (`import`, "Nạp từ dữ liệu cũ") dated when the row says it entered that
+  state, and its creation dated as the row says (both declared; the import's
+  day when blank); the SLA clock runs from the declared date. Opening a case
+  needs the write of its kind (`product_case.write`, `po_case.write`), checked
+  once per sheet. The PIC is a member of the caller's workspace, named by
+  email; a product case's Category one of the tenant's. A PO row may name a
+  product case already in the application, or one this file's product sheet
+  opens. A case already there by its key is `exists`: an import never moves
+  one. No model reads any cell.
 """
 
 from __future__ import annotations
@@ -32,6 +43,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, time
 from typing import Any, Protocol
 
 from dw_kernel.errors import (
@@ -53,12 +65,18 @@ from dw_supply_chain.application.commercial import (
     SupplierContactsPort,
     allows,
 )
-from dw_supply_chain.application.handlers import COMMERCIAL_WRITE
+from dw_supply_chain.application.handlers import (
+    COMMERCIAL_WRITE,
+    PO_CASE_WRITE,
+    PRODUCT_CASE_WRITE,
+)
+from dw_supply_chain.domain.case_import import check_dates, imported_po_case
 from dw_supply_chain.domain.commercial import (
     NewSupplierBankAccount,
     NewSupplierContact,
     same_account,
 )
+from dw_supply_chain.domain.daily_brief import VIETNAM
 from dw_supply_chain.domain.data_import import (
     MAX_IMPORT_BYTES,
     SHEETS,
@@ -71,16 +89,26 @@ from dw_supply_chain.domain.data_import import (
     RowStatus,
     SheetProblem,
     first_of_each,
+    parse_day,
     parse_sheet,
     split_list,
     valid_email,
 )
+from dw_supply_chain.domain.po_case import CaseState, OrderKind, POCase, POCaseId
+from dw_supply_chain.domain.product_development_case import (
+    ProductDevelopmentCase,
+    ProductDevelopmentCaseId,
+    ProductDevState,
+)
+from dw_supply_chain.sla_policy import ProductCategory
 
 SUPPLY_CHAIN_IMPORT = "supply_chain.import"
 _RESOURCE = "supply_chain_import"
 SUPPLIER_IMPORTED = "supply_chain.supplier.imported"
 SUPPLIER_CODE_ASSIGNED = "supply_chain.supplier.code_assigned"
 CATALOGUE_ITEM_IMPORTED = "supply_chain.catalogue_item.imported"
+PRODUCT_CASE_IMPORTED = "supply_chain.product_case.imported"
+PO_CASE_IMPORTED = "supply_chain.po_case.imported"
 _VIA = "import"
 _NIL = uuid.UUID(int=0)
 
@@ -186,6 +214,11 @@ class MemberDirectoryPort(Protocol):
 
     async def member_emails(self, context: AccessContext) -> frozenset[str]: ...
 
+    async def workspace_member_ids(self, context: AccessContext) -> Mapping[str, uuid.UUID]:
+        """The members of the caller's workspace, by lower-cased email: who
+        may be an imported case's PIC."""
+        ...
+
     async def invite(
         self,
         context: AccessContext,
@@ -196,6 +229,45 @@ class MemberDirectoryPort(Protocol):
     ) -> bool:
         """True: created; False: already a member of the tenant."""
         ...
+
+
+@dataclass(frozen=True, slots=True)
+class KnownProductCase:
+    id: uuid.UUID
+    category: str
+    pic_user_id: uuid.UUID
+
+
+class OpenCaseImportPort(Protocol):
+    """The caller's workspace's cases (RLS), as the import meets them."""
+
+    async def product_cases(
+        self, context: AccessContext, codes: Sequence[str]
+    ) -> Mapping[str, KnownProductCase]:
+        """The product cases with one of these proposal codes, by code."""
+        ...
+
+    async def po_references(self, context: AccessContext, refs: Sequence[str]) -> frozenset[str]:
+        """Which of these PO references the workspace already has."""
+        ...
+
+    async def add_product_case(
+        self, context: AccessContext, case: ProductDevelopmentCase, *, audit: AuditEvent
+    ) -> None:
+        """The case, its pending `import` row (and round) and the audit, in one
+        transaction; a code taken meanwhile is a `ConflictError`."""
+        ...
+
+    async def add_po_case(
+        self, context: AccessContext, case: POCase, *, entered_at: datetime, audit: AuditEvent
+    ) -> None:
+        """The case, its one `import` row dated `entered_at` and the audit, in
+        one transaction; a reference taken meanwhile is a `ConflictError`."""
+        ...
+
+
+class CategoryListPort(Protocol):
+    async def handle(self, context: AccessContext) -> list[ProductCategory]: ...
 
 
 # --------------------------------------------------------------- handler --
@@ -218,6 +290,9 @@ class ImportSupplyChainData:
     authz: AuthorizationPort
     ids: IdGenerator
     clock: UtcClock
+    # Open cases (ticket onboarding/02).
+    open_cases: OpenCaseImportPort
+    categories: CategoryListPort
 
     async def handle(self, context: AccessContext, data: bytes, *, apply: bool) -> ImportReport:
         await self.authz.require(
@@ -228,6 +303,9 @@ class ImportSupplyChainData:
                 f"file nạp tối đa {MAX_IMPORT_BYTES} byte", details={"max_bytes": MAX_IMPORT_BYTES}
             )
         workbook = self.reader.read(data)
+        # The product cases this file opens (or would, in a dry run), which a
+        # PO row of the same file may name.
+        opened: dict[str, KnownProductCase] = {}
         settle: dict[
             ImportSheet,
             Callable[
@@ -237,6 +315,8 @@ class ImportSupplyChainData:
             ImportSheet.SUPPLIERS: self._suppliers,
             ImportSheet.CATALOGUE: self._catalogue,
             ImportSheet.USERS: self._users,
+            ImportSheet.PRODUCT_CASES: lambda c, r, a: self._product_cases(c, r, a, opened),
+            ImportSheet.PO_CASES: lambda c, r, a: self._po_cases(c, r, a, opened),
         }
         rows: list[RowResult] = []
         problems: list[SheetProblem] = []
@@ -646,6 +726,259 @@ class ImportSupplyChainData:
             ("Mời vào công ty; đăng nhập lần đầu bằng email này sẽ liên kết tài khoản",),
         )
 
+    # -- open cases (ticket onboarding/02) -----------------------------------
+
+    async def _members(self, context: AccessContext) -> Mapping[str, uuid.UUID] | None:
+        try:
+            return await self.members.workspace_member_ids(context)
+        except PermissionDeniedError:
+            return None
+
+    async def _product_cases(
+        self,
+        context: AccessContext,
+        parsed: Sequence[ParsedRow],
+        apply: bool,
+        opened: dict[str, KnownProductCase],
+    ) -> list[RowResult]:
+        sheet = ImportSheet.PRODUCT_CASES
+        rows, results = first_of_each(sheet, parsed, ("proposal_code",), "Mã đề xuất")
+        if not await _may(self.authz, context, PRODUCT_CASE_WRITE):
+            return results + [
+                _refused(sheet, r, r.text("proposal_code"), "Cần quyền mở hồ sơ sản phẩm")
+                for r in rows
+            ]
+        members = await self._members(context)
+        try:
+            categories = {c.key for c in await self.categories.handle(context)}
+        except PermissionDeniedError:
+            categories = set()
+        known = await self.open_cases.product_cases(
+            context, [r.text("proposal_code") for r in rows]
+        )
+        now = self.clock.now()
+        for row in rows:
+            code = row.text("proposal_code")
+            if code in known:
+                results.append(
+                    RowResult(sheet, row.row, code, RowStatus.EXISTS, ("Đã có, bỏ qua",))
+                )
+                continue
+            try:
+                case = self._product_case(context, row, members, categories, now)
+            except _RowRefusedError as refusal:
+                results.append(_refused(sheet, row, code, str(refusal)))
+                continue
+            except DWError as exc:
+                results.append(_refused(sheet, row, code, _words(exc)))
+                continue
+            if apply:
+                try:
+                    await self.open_cases.add_product_case(
+                        context, case, audit=self._case_audit(context, case.id.value, row)
+                    )
+                except DWError as exc:
+                    results.append(_refused(sheet, row, code, _words(exc)))
+                    continue
+            opened[code] = KnownProductCase(case.id.value, case.category, case.pic_user_id)
+            results.append(
+                RowResult(
+                    sheet, row.row, code, RowStatus.CREATED, (f"Mở ở bước {case.state.value}",)
+                )
+            )
+        return results
+
+    def _product_case(
+        self,
+        context: AccessContext,
+        row: ParsedRow,
+        members: Mapping[str, uuid.UUID] | None,
+        categories: set[str],
+        now: datetime,
+    ) -> ProductDevelopmentCase:
+        if members is None:
+            raise _RowRefusedError("Cần quyền xem thành viên để kiểm PIC (platform.members.read)")
+        pic = _pic(row, members)
+        assert pic is not None  # the column is required
+        category = row.text("category").strip()
+        if category not in categories:
+            raise _RowRefusedError("Nhóm sản phẩm không có trong danh sách của công ty")
+        try:
+            state = ProductDevState(row.text("state").strip())
+        except ValueError:
+            raise _RowRefusedError("Bước hiện tại không phải một bước của hồ sơ sản phẩm") from None
+        raw_round = row.get("sample_round")
+        if raw_round is not None and not raw_round.strip().isdigit():
+            raise _RowRefusedError("Vòng mẫu phải là số nguyên")
+        default_round = (
+            0 if state in (ProductDevState.PROPOSED, ProductDevState.SAMPLE_REQUESTED) else 1
+        )
+        entered = _day(row, "entered_on", "Ngày vào bước", now)
+        created = _day(row, "created_on", "Ngày tạo hồ sơ", min(entered, now))
+        check_dates(entered, created, now)
+        return ProductDevelopmentCase.imported(
+            id=ProductDevelopmentCaseId(self.ids.new_uuid()),
+            tenant_id=TenantId(context.tenant_id),
+            workspace_id=WorkspaceId(context.workspace_id),
+            proposal_code=row.text("proposal_code"),
+            product_name=row.text("product_name"),
+            category=category,
+            supplier_name=row.get("supplier_name"),
+            state=state,
+            sample_round=default_round if raw_round is None else int(raw_round),
+            pic_user_id=pic,
+            actor_id=context.principal_id,
+            entered_at=entered,
+            created_at=created,
+        )
+
+    async def _po_cases(
+        self,
+        context: AccessContext,
+        parsed: Sequence[ParsedRow],
+        apply: bool,
+        opened: Mapping[str, KnownProductCase],
+    ) -> list[RowResult]:
+        sheet = ImportSheet.PO_CASES
+        rows, results = first_of_each(sheet, parsed, ("po_reference",), "Số PO")
+        if not await _may(self.authz, context, PO_CASE_WRITE):
+            return results + [
+                _refused(sheet, r, r.text("po_reference"), "Cần quyền mở hồ sơ PO") for r in rows
+            ]
+        members = await self._members(context)
+        taken = await self.open_cases.po_references(context, [r.text("po_reference") for r in rows])
+        codes = sorted({r.text("proposal_code") for r in rows if r.get("proposal_code")})
+        products = {**await self.open_cases.product_cases(context, codes), **opened}
+        now = self.clock.now()
+        for row in rows:
+            ref = row.text("po_reference")
+            if ref in taken:
+                results.append(RowResult(sheet, row.row, ref, RowStatus.EXISTS, ("Đã có, bỏ qua",)))
+                continue
+            try:
+                case, entered = self._po_case(context, row, members, products, now)
+            except _RowRefusedError as refusal:
+                results.append(_refused(sheet, row, ref, str(refusal)))
+                continue
+            except DWError as exc:
+                results.append(_refused(sheet, row, ref, _words(exc)))
+                continue
+            if apply:
+                try:
+                    await self.open_cases.add_po_case(
+                        context,
+                        case,
+                        entered_at=entered,
+                        audit=self._case_audit(context, case.id.value, row, kind="po_case"),
+                    )
+                except DWError as exc:
+                    results.append(_refused(sheet, row, ref, _words(exc)))
+                    continue
+            results.append(
+                RowResult(
+                    sheet, row.row, ref, RowStatus.CREATED, (f"Mở ở bước {case.state.value}",)
+                )
+            )
+        return results
+
+    def _po_case(
+        self,
+        context: AccessContext,
+        row: ParsedRow,
+        members: Mapping[str, uuid.UUID] | None,
+        products: Mapping[str, KnownProductCase],
+        now: datetime,
+    ) -> tuple[POCase, datetime]:
+        try:
+            state = CaseState(row.text("state").strip())
+        except ValueError:
+            raise _RowRefusedError("Bước hiện tại không phải một bước của hồ sơ PO") from None
+        try:
+            kind = OrderKind((row.get("order_kind") or "reorder").strip().lower())
+        except ValueError:
+            raise _RowRefusedError("Loại đơn là new hoặc reorder") from None
+        pic: uuid.UUID | None = None
+        if row.get("pic_email") is not None:
+            if members is None:
+                raise _RowRefusedError(
+                    "Cần quyền xem thành viên để kiểm PIC (platform.members.read)"
+                )
+            pic = _pic(row, members)
+        product: KnownProductCase | None = None
+        code = row.get("proposal_code")
+        if code is not None:
+            product = products.get(code)
+            if product is None:
+                raise _RowRefusedError("Mã đề xuất không có hồ sơ sản phẩm trong workspace này")
+        entered = _day(row, "entered_on", "Ngày vào bước", now)
+        created = _day(row, "created_on", "Ngày tạo hồ sơ", min(entered, now))
+        check_dates(entered, created, now)
+        case = imported_po_case(
+            id=POCaseId(self.ids.new_uuid()),
+            tenant_id=TenantId(context.tenant_id),
+            workspace_id=WorkspaceId(context.workspace_id),
+            po_reference=row.text("po_reference"),
+            supplier_name=row.text("supplier_name"),
+            state=state,
+            order_kind=kind,
+            product_dev_case_id=None if product is None else product.id,
+            pic_user_id=pic,
+            category=None if product is None else product.category,
+            created_at=created,
+        )
+        return case, entered
+
+    def _case_audit(
+        self, context: AccessContext, case_id: uuid.UUID, row: ParsedRow, *, kind: str = ""
+    ) -> AuditEvent:
+        po = kind == "po_case"
+        return self._audit(
+            context,
+            PO_CASE_IMPORTED if po else PRODUCT_CASE_IMPORTED,
+            "po_case" if po else "product_dev_case",
+            case_id,
+            {
+                "row": row.row,
+                "state": row.text("state").strip(),
+                # Declared by the sheet, not observed by the application.
+                "entered_on_declared": row.get("entered_on"),
+                "created_on_declared": row.get("created_on"),
+            },
+        )
+
+
+class _RowRefusedError(Exception):
+    """A row's refusal, in words, while its cells are read."""
+
+
+def _day(row: ParsedRow, key: str, label: str, now: datetime) -> datetime:
+    """A declared day as the start of that day in Vietnam, or now when blank."""
+    raw = row.get(key)
+    if raw is None:
+        return now
+    day = parse_day(raw)
+    if day is None:
+        raise _RowRefusedError(f"{label} không phải ngày (dd/mm/yyyy)")
+    return datetime.combine(day, time(), tzinfo=VIETNAM)
+
+
+def _refused(sheet: ImportSheet, row: ParsedRow, key: str, message: str) -> RowResult:
+    return RowResult(sheet, row.row, key, RowStatus.REJECTED, (message,))
+
+
+def _pic(row: ParsedRow, members: Mapping[str, uuid.UUID]) -> uuid.UUID | None:
+    email = row.get("pic_email")
+    if email is None:
+        return None
+    found = members.get(email.strip().lower())
+    if found is None:
+        raise _RowRefusedError("PIC không phải thành viên workspace này")
+    return found
+
+
+async def _may(authz: AuthorizationPort, context: AccessContext, scope: str) -> bool:
+    return await allows(authz, context, scope, _RESOURCE)
+
 
 @dataclass(frozen=True)
 class GetImportTemplate:
@@ -663,16 +996,21 @@ class GetImportTemplate:
 
 __all__ = [
     "CATALOGUE_ITEM_IMPORTED",
+    "PO_CASE_IMPORTED",
+    "PRODUCT_CASE_IMPORTED",
     "SUPPLIER_CODE_ASSIGNED",
     "SUPPLIER_IMPORTED",
     "SUPPLY_CHAIN_IMPORT",
     "CatalogueImportPort",
     "CatalogueItem",
+    "CategoryListPort",
     "GetImportTemplate",
     "ImportSupplyChainData",
+    "KnownProductCase",
     "KnownSupplier",
     "MemberDirectoryPort",
     "NewCatalogueItem",
+    "OpenCaseImportPort",
     "SupplierImportPort",
     "WorkbookReaderPort",
     "WorkspaceRef",

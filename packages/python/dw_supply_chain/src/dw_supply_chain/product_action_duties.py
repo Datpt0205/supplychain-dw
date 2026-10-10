@@ -34,7 +34,11 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from dw_supply_chain.action_duties import CaseDuty
-from dw_supply_chain.domain.product_development_case import GRAPH_ONLY_ACTIONS, ProductAction
+from dw_supply_chain.domain.product_development_case import (
+    GRAPH_ONLY_ACTIONS,
+    IMPORT_ONLY_ACTIONS,
+    ProductAction,
+)
 
 __all__ = [
     "PRODUCT_ACTION_DUTIES_POLICY_ID",
@@ -80,7 +84,9 @@ class SupplyChainProductActionDuties(BaseModel):
         missing = sorted(
             a.value
             for a in ProductAction
-            if a not in GRAPH_ONLY_ACTIONS and a not in self.action_duties
+            if a not in GRAPH_ONLY_ACTIONS
+            and a not in IMPORT_ONLY_ACTIONS
+            and a not in self.action_duties
         )
         if missing:
             raise ValueError(
@@ -88,7 +94,11 @@ class SupplyChainProductActionDuties(BaseModel):
             )
         # A duty for a step only the review graph applies is read by nothing
         # (failure-modes #1): it would look like a say over who approves.
-        unread = sorted(a.value for a in self.action_duties if a in GRAPH_ONLY_ACTIONS)
+        unread = sorted(
+            a.value
+            for a in self.action_duties
+            if a in GRAPH_ONLY_ACTIONS or a in IMPORT_ONLY_ACTIONS
+        )
         if unread:
             raise ValueError(
                 "action_duties may not name a step only the review graph applies; "

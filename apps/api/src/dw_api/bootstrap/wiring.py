@@ -1468,6 +1468,7 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
     from dw_supply_chain.adapters.import_workbook import XlsxWorkbookReader, build_template
     from dw_supply_chain.adapters.persistence.data_import_repository import (
         SqlCatalogue,
+        SqlOpenCaseImport,
         SqlSupplierImport,
     )
     from dw_supply_chain.adapters.platform_members import PlatformMemberDirectory
@@ -1500,6 +1501,9 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
             authz=authorization,
             ids=wiring.seam.ids,
             clock=wiring.seam.clock,
+            # Open cases at their current state (ticket onboarding/02).
+            open_cases=SqlOpenCaseImport(wiring.seam.session_factory),
+            categories=list_product_categories,
         ),
         template=sc_import.GetImportTemplate(authz=authorization, build=build_template),
     )

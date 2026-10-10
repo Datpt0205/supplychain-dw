@@ -59,6 +59,7 @@ from dw_supply_chain.domain.case_document import DocumentType
 from dw_supply_chain.domain.product_development_case import (
     COMMAND_ONLY_ACTIONS,
     GRAPH_ONLY_ACTIONS,
+    IMPORT_ONLY_ACTIONS,
     ProductAction,
     ProductCaseTransition,
     ProductDevelopmentCase,
@@ -140,6 +141,8 @@ class AdvanceProductCaseRequest(BaseModel):
             raise ValueError(f"{action.value} is an approval's outcome, decided on the approval")
         if action in COMMAND_ONLY_ACTIONS:
             raise ValueError(f"{action.value} is taken at /product-cases/{{case_id}}/order")
+        if action in IMPORT_ONLY_ACTIONS:
+            raise ValueError(f"{action.value} is written only by the one-time import")
         return action
 
 

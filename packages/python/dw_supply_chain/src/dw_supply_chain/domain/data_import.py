@@ -25,6 +25,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import date
 from enum import StrEnum
 
 # A workbook bigger than this is refused before it is opened: the import is a
@@ -42,6 +43,9 @@ class ImportSheet(StrEnum):
     SUPPLIERS = "suppliers"
     CATALOGUE = "catalogue"
     USERS = "users"
+    # Open cases at their current state (ticket onboarding/02).
+    PRODUCT_CASES = "product_cases"
+    PO_CASES = "po_cases"
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +115,52 @@ SHEETS: tuple[SheetSpec, ...] = (
         note=(
             "Vai là mã vai, cách nhau bởi dấu phẩy (ví dụ sc_operator, sc_finance). Workspace"
             " là mã (slug), cách nhau bởi dấu phẩy; để trống là workspace đang nạp."
+        ),
+    ),
+    # Ticket onboarding/02: open cases, each started at the state its row
+    # gives, with one history row dated when it entered that state.
+    SheetSpec(
+        sheet=ImportSheet.PRODUCT_CASES,
+        title="Hồ sơ SP",
+        columns=(
+            Column("proposal_code", "Mã đề xuất", required=True, max_length=64, text=True),
+            Column("product_name", "Tên sản phẩm", required=True, max_length=300),
+            Column("category", "Nhóm sản phẩm", required=True, max_length=64),
+            Column("state", "Bước hiện tại", required=True, max_length=40),
+            Column("supplier_name", "Tên NCC", max_length=200),
+            Column("sample_round", "Vòng mẫu", max_length=4, text=True),
+            Column("pic_email", "Email PIC", required=True, max_length=254),
+            Column("entered_on", "Ngày vào bước", max_length=10, text=True),
+            Column("created_on", "Ngày tạo hồ sơ", max_length=10, text=True),
+        ),
+        note=(
+            "Hồ sơ phát triển đang chạy, mỗi dòng một hồ sơ, khóa là Mã đề xuất. Bước hiện tại"
+            " là một trong: proposed, sample_requested, sample_testing, revision_requested,"
+            " profile_in_progress, supplier_confirmation, item_coding. Nhóm sản phẩm là mã"
+            " nhóm của công ty. PIC phải là thành viên workspace. Ngày (dd/mm/yyyy) là ngày"
+            " khai báo: bỏ trống thì lấy ngày nạp; đồng hồ SLA chạy từ Ngày vào bước."
+        ),
+    ),
+    SheetSpec(
+        sheet=ImportSheet.PO_CASES,
+        title="Hồ sơ PO",
+        columns=(
+            Column("po_reference", "Số PO", required=True, max_length=64, text=True),
+            Column("supplier_name", "Tên NCC", required=True, max_length=200),
+            Column("state", "Bước hiện tại", required=True, max_length=40),
+            Column("order_kind", "Loại đơn", max_length=10),
+            Column("proposal_code", "Mã đề xuất", max_length=64, text=True),
+            Column("pic_email", "Email PIC", max_length=254),
+            Column("entered_on", "Ngày vào bước", max_length=10, text=True),
+            Column("created_on", "Ngày tạo hồ sơ", max_length=10, text=True),
+        ),
+        note=(
+            "Hồ sơ PO đang chạy, khóa là Số PO. Bước hiện tại là một trong: po_created,"
+            " waiting_deposit, deposit_confirmed, pre_production, production, qc, rework,"
+            " in_transit, arrived_port, waiting_payment, payment_completed,"
+            " warehouse_receiving. Loại đơn: new hoặc reorder (trống: reorder). Mã đề xuất"
+            " nối với hồ sơ SP đã có (hoặc ở sheet Hồ sơ SP cùng file); khi có thì cần Email"
+            " PIC. Dòng hàng của PO không nạp ở đây."
         ),
     ),
 )
@@ -304,6 +354,27 @@ def valid_email(value: str) -> bool:
     return bool(_EMAIL.fullmatch(value))
 
 
+_DAY_MONTH_YEAR = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
+
+
+def parse_day(text: str) -> date | None:
+    """A declared date as a sheet writes it: ISO (what the reader makes of a
+    date cell) or day-first `dd/mm/yyyy` (how Elmich writes one). Anything
+    else is None, never a guess."""
+    value = text.strip()
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        pass
+    found = _DAY_MONTH_YEAR.fullmatch(value)
+    if found is None:
+        return None
+    try:
+        return date(int(found[3]), int(found[2]), int(found[1]))
+    except ValueError:
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class RowOutcome:
     """A row's parts as the handler settles them: each part's status and
@@ -346,6 +417,7 @@ __all__ = [
     "SheetProblem",
     "SheetSpec",
     "first_of_each",
+    "parse_day",
     "parse_sheet",
     "split_list",
     "valid_email",

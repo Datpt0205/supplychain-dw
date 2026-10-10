@@ -1916,3 +1916,24 @@ async def test_reassigning_to_the_pic_it_has_is_refused() -> None:
         await _reassign(stack, FakeMembers({WORKSPACE: {case.pic_user_id}})).handle(
             _context(SC_SUPPLY_LEAD), case_id=case.id, new_pic=case.pic_user_id, reason="x"
         )
+
+
+async def test_the_import_action_is_refused_as_a_step_before_anything_is_read() -> None:
+    """`import` is the one-time import's first row (onboarding/02), never a
+    step: refused before the duty policy (which names no duty for it) and the
+    case are read."""
+    stack = Stack()
+    case = await stack.passed()
+    before = stack.cases.rows[case.id.value].state
+    everything = SC_OPERATOR | SC_RND | {"supply_chain.import"}
+    with pytest.raises(DomainError, match="import"):
+        await stack.advance().handle(
+            _context(everything), case_id=case.id, action=ProductAction.IMPORT
+        )
+    assert stack.cases.rows[case.id.value].state is before
+    with pytest.raises(DomainError):
+        await stack.advance().handle(
+            _context(frozenset(), tenant=OTHER_TENANT),
+            case_id=ProductDevelopmentCaseId(uuid.uuid4()),
+            action=ProductAction.IMPORT,
+        )

@@ -39,6 +39,7 @@ import {
   CASE_STATE_LABEL,
   CASE_STATE_META,
   CaseStateTag,
+  IMPORTED_LABEL,
   ORDER_KIND_LABEL,
   stepLabel,
 } from "../../../../components/supply-chain/case-state-badge";
@@ -364,7 +365,13 @@ export default function POCaseWorkspacePage() {
                   content: (
                     <Flex vertical gap={2}>
                       <Flex wrap gap="small" align="center">
-                        <CaseStateTag state={transition.from_state} />
+                        {transition.from_state === null ? (
+                          // The first row of a case the one-time import
+                          // brought in (onboarding/02): no state before it.
+                          <Typography.Text>{IMPORTED_LABEL}</Typography.Text>
+                        ) : (
+                          <CaseStateTag state={transition.from_state} />
+                        )}
                         <span aria-hidden>→</span>
                         <CaseStateTag state={transition.to_state} />
                       </Flex>

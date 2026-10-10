@@ -1792,7 +1792,7 @@ export interface components {
         };
         /** CaseTransitionView */
         CaseTransitionView: {
-            from_state: components["schemas"]["CaseState"];
+            from_state: components["schemas"]["CaseState"] | null;
             /**
              * Occurred At
              * Format: date-time
@@ -2209,7 +2209,7 @@ export interface components {
          * ImportSheet
          * @enum {string}
          */
-        ImportSheet: "suppliers" | "catalogue" | "users";
+        ImportSheet: "suppliers" | "catalogue" | "users" | "product_cases" | "po_cases";
         /** ImportSheetCountView */
         ImportSheetCountView: {
             /** Created */
@@ -2925,7 +2925,7 @@ export interface components {
          *     PO policy or approval keyed by one of them must not reach this case.
          * @enum {string}
          */
-        ProductAction: "propose" | "request_sample" | "receive_sample" | "pass_sample" | "request_revision" | "receive_revised_sample" | "reject_sample" | "complete_profile" | "confirm_with_supplier" | "issue_item_code" | "add_sku" | "remove_sku" | "submit_for_signoff" | "place_order" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "resume" | "cancel" | "bod_approve" | "bod_reject" | "signoff_approve" | "signoff_reject";
+        ProductAction: "propose" | "request_sample" | "receive_sample" | "pass_sample" | "request_revision" | "receive_revised_sample" | "reject_sample" | "complete_profile" | "confirm_with_supplier" | "issue_item_code" | "add_sku" | "remove_sku" | "submit_for_signoff" | "place_order" | "wait_for_external" | "flag_blocked" | "flag_manual_review" | "resume" | "cancel" | "bod_approve" | "bod_reject" | "signoff_approve" | "signoff_reject" | "import";
         /**
          * ProductActionOptionView
          * @description A step the case accepts from its state, what it must carry, and the

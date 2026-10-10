@@ -62,3 +62,26 @@ import-template.xlsx` ghi bằng `scripts/build_import_template.py`, bộ đọc
 7. **Giới hạn:** file ≤ 5 MiB, ≤ 5.000 dòng mỗi sheet, zip giải nén ≤ 64 MiB (từ chối trước
    khi openpyxl mở); dòng trống bỏ qua; ô bắt buộc trống, quá dài, có ký tự điều khiển là dòng
    bị từ chối; tiêu đề lạ hay thiếu là cả sheet không đọc. Không mô hình nào đọc file.
+
+## Sửa đổi 2026-10-10 (lát ON-02; hồ sơ đang chạy)
+
+1. **Hai sheet mới** của cùng mẫu: "Hồ sơ SP" (khóa Mã đề xuất) và "Hồ sơ PO" (khóa Số PO), cùng
+   màn "Nạp dữ liệu", cùng chạy thử rồi nạp thật, cùng quy tắc dòng (đã có thì bỏ qua, xấu thì từ
+   chối kèm lý do, không mô hình nào đọc).
+2. **Mở ở bước hiện tại, một dòng lịch sử** (quyết định 3): hành động `import` (hồ sơ sản phẩm:
+   `ProductAction.IMPORT`; hồ sơ PO: cột `action` mới của lịch sử), không `from_state`, lý do "Nạp từ
+   dữ liệu cũ", ngày giờ là **Ngày vào bước** của sheet (00:00 giờ Việt Nam; trống thì lúc nạp),
+   `created_at` là **Ngày tạo hồ sơ** (trống thì bằng ngày vào bước). Cả hai là ngày khai báo; audit
+   ghi nguyên văn ô (`entered_on_declared`). Không dòng nào được bịa cho các bước trước. Đồng hồ SLA
+   đọc ngày vào bước như mọi dòng lịch sử.
+3. **Bước nạp được:** hồ sơ SP từ `proposed` tới `item_coding`, trừ hai bước approval giữ
+   (`pending_bod_review`, `pending_signoff`), bước gián đoạn và bước đã xong; hồ sơ đang test mẫu mở
+   vòng mẫu đã khai từ ngày vào bước. Hồ sơ PO từ `po_created` tới `warehouse_receiving` (cả
+   `rework`), không `order_requested`, không bước gián đoạn hay đã xong. Dòng hàng của PO không nạp ở
+   lát này (thêm sau qua `create_po`/bước 10 khi cần).
+4. **Ai:** quyền nạp, cộng quyền mở hồ sơ của loại đó (`product_case.write`, `po_case.write`). PIC
+   theo email phải là thành viên workspace của người nạp; nhóm sản phẩm phải có trong danh sách của
+   công ty. Hồ sơ PO có thể nối với hồ sơ SP đã có hoặc do sheet SP cùng file mở, lấy nhóm từ đó.
+5. **CSDL giữ:** `import` chỉ là dòng đầu (chỉ một dòng không `from_state` mỗi hồ sơ, và trigger
+   `refuse_late_start` từ chối dòng bắt đầu khi hồ sơ đã có lịch sử); `import` không gọi được qua API
+   (422 ở route, `DomainError` ở lệnh).

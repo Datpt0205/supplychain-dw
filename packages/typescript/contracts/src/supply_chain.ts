@@ -151,9 +151,10 @@ export const missingUpdateStatusSchema = z.object({
 });
 export type MissingUpdateStatus = z.infer<typeof missingUpdateStatusSchema>;
 
-/** One row of the case's own timeline, oldest first. */
+/** One row of the case's own timeline, oldest first. `from_state` null: the
+ * first row of a case brought in by the one-time import (onboarding/02). */
 export const caseTransitionSchema = z.object({
-  from_state: caseStateSchema,
+  from_state: caseStateSchema.nullable(),
   to_state: caseStateSchema,
   reason: z.string().nullable(),
   occurred_at: z.string(),
@@ -613,6 +614,9 @@ export const productActionSchema = z.enum([
   // page offers.
   "signoff_approve",
   "signoff_reject",
+  // The first row of a case brought in by the one-time import (onboarding/02);
+  // never a step a page offers.
+  "import",
 ]);
 export type ProductAction = z.infer<typeof productActionSchema>;
 
@@ -1384,7 +1388,13 @@ export type PreProductionChecklist = z.infer<
 
 // Ticket onboarding/01: the one-time import of a tenant's existing data.
 
-export const importSheetSchema = z.enum(["suppliers", "catalogue", "users"]);
+export const importSheetSchema = z.enum([
+  "suppliers",
+  "catalogue",
+  "users",
+  "product_cases",
+  "po_cases",
+]);
 export type ImportSheet = z.infer<typeof importSheetSchema>;
 
 export const importRowStatusSchema = z.enum([

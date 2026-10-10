@@ -106,7 +106,7 @@ means platform code, an upstream candidate (ADR 0011).
 | AI-16 | `ai-automation/issues/16-step-12-mkt-and-proof-check.md` (L)              | no      | resolved        | —                                   |
 | AI-17 | `ai-automation/issues/17-steps-13-15-supplier-files.md` (L)               | no      | resolved        | —                                   |
 | AI-18 | `ai-automation/issues/18-step-17-warehouse.md` (M)                        | no      | resolved        | —                                   |
-| ON-02 | `onboarding/issues/02-import-open-cases.md` (M)                           | no      | ready-for-agent | ON-01                               |
+| ON-02 | `onboarding/issues/02-import-open-cases.md` (M)                           | no      | resolved        | —                                   |
 | AI-19 | `ai-automation/issues/19-case-assistant.md` (L)                           | partly  | ready-for-agent | AI-02, AI-04                        |
 | AI-20 | `ai-automation/issues/20-reports-and-acceptance.md` (M)                   | no      | ready-for-agent | AI-05                               |
 | AI-21 | `ai-automation/issues/21-local-ocr.md` (M)                                | no      | needs-info      | Đạt: OCR engine                     |

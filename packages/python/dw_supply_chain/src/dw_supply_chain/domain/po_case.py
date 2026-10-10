@@ -570,7 +570,8 @@ class CaseTransition:
     like `POCase._pending_transitions`, which drains on every save and
     exists only to get a new row written, not to be re-read as history."""
 
-    from_state: CaseState
+    # None only for an imported case's first row (ticket onboarding/02).
+    from_state: CaseState | None
     to_state: CaseState
     reason: str | None
     occurred_at: datetime

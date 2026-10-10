@@ -8,6 +8,7 @@ import {
   type ProductDevState,
   type SampleResult,
 } from "@dw/contracts";
+import { IMPORTED_LABEL } from "./case-state-badge";
 
 /**
  * The one table of Vietnamese labels for a product-development case's states,
@@ -98,6 +99,8 @@ export const PRODUCT_ACTION_LABEL: Record<ProductAction, string> = {
   bod_reject: "BGĐ không duyệt",
   signoff_approve: "Đã ký đủ",
   signoff_reject: "Không ký",
+  // Never a button: the first row of a case the one-time import brought in.
+  import: IMPORTED_LABEL,
 };
 
 /** What a step still lacks (`unmet` of its option), in words. */

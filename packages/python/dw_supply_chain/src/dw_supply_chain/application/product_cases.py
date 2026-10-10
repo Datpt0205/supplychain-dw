@@ -98,6 +98,7 @@ from dw_supply_chain.domain.product_development_case import (
     AWAITING_APPROVAL_STATES,
     COMMAND_ONLY_ACTIONS,
     GRAPH_ONLY_ACTIONS,
+    IMPORT_ONLY_ACTIONS,
     ProductAction,
     ProductActionInput,
     ProductCaseTransition,
@@ -417,6 +418,10 @@ class AdvanceProductCase:
             raise DomainError(
                 f"{action.value} is taken through its own command, not as a plain step",
                 details={"action": action.value},
+            )
+        if action in IMPORT_ONLY_ACTIONS:
+            raise DomainError(
+                "import is written only by the one-time import", details={"action": action.value}
             )
         duties = await resolve_product_action_duties(
             context, self.policy_override_repo, self.platform_default_duties

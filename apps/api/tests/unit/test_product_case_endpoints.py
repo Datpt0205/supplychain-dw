@@ -1870,3 +1870,19 @@ async def test_reassigning_an_ordered_case_is_409() -> None:
 
     assert response.status_code == 409, response.text
     assert world.cases.rows[case.id.value].pic_user_id == case.pic_user_id
+
+
+async def test_the_import_action_is_refused_by_the_route_to_every_caller() -> None:
+    """`import` is written only by the one-time import (onboarding/02): the
+    route's model refuses it (422) even to a caller holding every scope."""
+    world = World()
+    case = world.case(testing=True)
+    before = world.cases.rows[case.id.value].state
+    everything = SC_OPERATOR | SC_RND | {"supply_chain.import"}
+    (response,) = await _send(
+        world.container(everything),
+        [_post(f"/product-cases/{case.id}/transitions", {"action": "import"})],
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "action"]
+    assert world.cases.rows[case.id.value].state is before
