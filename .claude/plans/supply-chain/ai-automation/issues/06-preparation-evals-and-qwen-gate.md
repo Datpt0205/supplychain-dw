@@ -215,7 +215,7 @@ nội dung đã chạy. `luna` nằm trong `ungated_profiles`, nên kết quả 
 not_enough_evidence` ngoài khối `scripted`, nhưng kết quả đó chỉ đúng với câu trả lời kịch bản (bịa
   mục, bịa số, sai schema). Mô hình thật trả lời đúng "BM04 ghi MOQ là 500" dẫn `bm04`, và ở ca chứng từ
   workspace khác trả lời từ mục của chính hồ sơ (`case`, `criterion:*`); chứng từ workspace khác không
-  tới mô hình (`prompt_must_not_contain` đạt). Sửa ở 1.18.0: `outcome` xuống `scripted`, giữ kiểm
+  tới mô hình (`prompt_must_not_contain` đạt). Sửa ở 1.19.0 (1.18.0 là ca OCR của AI-21): `outcome` xuống `scripted`, giữ kiểm
   prompt. Ca thứ năm `qa-normal-why-revision`: mô hình viết "vòng 2" chỉ dẫn `history:0` (số 2 không có
   trong mục đó), code bỏ câu đúng như luật; sửa ở prompt 1.1.0 (câu nêu vòng mẫu dẫn cả `case`) hoặc ca
   dẫn chứng có vòng trong lịch sử.

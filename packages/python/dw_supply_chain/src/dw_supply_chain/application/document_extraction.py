@@ -20,14 +20,19 @@ The order, and what each step refuses:
 3. **Which bytes.** The stored object must hash to the row's `sha256`;
    otherwise the reading is `failed` (the object is not the document).
 4. **Text, in process.** PDF text layers, DOCX, XLSX and EML are read without a
-   model (`DocumentTextPort`). An image, a scan without text, an MSG or an
-   empty text is `unreadable`: nothing is guessed, and no file goes to a model
-   before its identifiers could be masked.
+   model (`DocumentTextPort`); so are an image and a scan without text, by OCR
+   (ticket ai-automation/21). An MSG, an empty text, or an OCR reading with
+   more than `MAX_DOUBTFUL_SHARE` of its lines under `LOW_CONFIDENCE` is
+   `unreadable`: nothing is guessed, and no file goes to a model before its
+   identifiers could be masked.
 5. **Redaction**, then **one structured call** with the text as the prompt's
-   one untrusted variable (ADR 0010), then **grounding** in code. A type whose
+   one untrusted variable (ADR 0010), then **grounding** in code. A quote on a
+   line OCR doubted is a `low_confidence` gap, not a value. A type whose
    beneficiary account matters (an invoice, a transfer receipt: ticket
    ai-automation/15) also gets code's own reading of the account numbers it
-   names, from the text before redaction, kept as digests only.
+   names, from the text before redaction, kept as digests only; from OCR it
+   gets none (`ACCOUNTS_UNREAD_FIELD`): a misread digit would look like a
+   changed account, so a person checks the account by eye.
 
 Errors are recorded, not retried for ever: an invalid model output is
 `refused`, a provider failure after the gateway's own retries is `failed`.
@@ -56,16 +61,20 @@ from dw_supply_chain.application.ports import TenantPlanPort
 from dw_supply_chain.domain.case_document import CaseDocument, CaseDocumentId, DocumentType
 from dw_supply_chain.domain.extraction import (
     ACCOUNTS_FIELD,
+    ACCOUNTS_UNREAD_FIELD,
     BARCODES_FIELD,
     EXTRACTION_SPECS,
+    LOW_CONFIDENCE,
     ExtractionSpec,
     ExtractionStatus,
     account_marks,
     barcodes_in,
+    doubtful_share,
     gaps_json,
     ground,
     is_unreadable,
     redact_identifiers,
+    too_doubtful,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,13 +124,25 @@ class DocumentBytesPort(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class RecognisedLine:
+    """One line OCR recognised, with the engine's confidence (0..1)."""
+
+    text: str
+    confidence: float
+
+
+@dataclass(frozen=True, slots=True)
 class DocumentText:
     text: str
     warnings: tuple[str, ...] = ()
+    # Set only when the text came from OCR: every line the engine recognised,
+    # doubtful ones included. None for a text layer, DOCX, XLSX or EML.
+    recognised: tuple[RecognisedLine, ...] | None = None
 
 
 class DocumentTextPort(Protocol):
-    """A file to text, without a model."""
+    """A file to text, without a model. An OCR reading reports its lines
+    (`DocumentText.recognised`); a reader that cannot finish a file raises."""
 
     def supports(self, content_type: str) -> bool: ...
 
@@ -262,8 +283,31 @@ class ExtractDocuments:
                 error="no readable text",
             )
             return
+        recognised = parsed.recognised
+        if recognised is not None and too_doubtful([line.confidence for line in recognised]):
+            share = doubtful_share([line.confidence for line in recognised])
+            await self._record(
+                context,
+                document,
+                spec,
+                outcome,
+                ExtractionStatus.UNREADABLE,
+                error=f"OCR doubted {share:.0%} of {len(recognised)} lines",
+                ocr=True,
+            )
+            return
 
         redacted = redact_identifiers(parsed.text)
+        # The doubtful lines as the model's text has them: redacted alike.
+        doubtful = (
+            [
+                redact_identifiers(line.text).text
+                for line in recognised
+                if line.confidence < LOW_CONFIDENCE
+            ]
+            if recognised is not None
+            else []
+        )
         run_id = self.ids.new_uuid()
         run_context = RunContext(
             run_id=run_id,
@@ -318,9 +362,13 @@ class ExtractDocuments:
                 error=type(exc).__name__,
             )
             return
-        grounded = ground(reading, spec, redacted.text)
+        grounded = ground(reading, spec, redacted.text, doubtful)
         fields = dict(grounded.fields)
-        if spec.reads_accounts:
+        if spec.reads_accounts and recognised is not None:
+            # From OCR, no account is read (ai-automation/21): one misread
+            # digit would read as a changed account. A person checks it.
+            fields[ACCOUNTS_UNREAD_FIELD] = "ocr"
+        elif spec.reads_accounts:
             # Code's reading of the unredacted text, never the model's: the
             # digests of the accounts the document names, compared with the
             # supplier's master where a step is prepared (ai-automation/15).
@@ -339,6 +387,7 @@ class ExtractDocuments:
             redactions=redacted.count,
             fields=fields,
             gaps=gaps_json(grounded.gaps),
+            ocr=recognised is not None,
         )
 
     async def _record(
@@ -354,6 +403,7 @@ class ExtractDocuments:
         fields: dict[str, Any] | None = None,
         gaps: list[dict[str, str]] | None = None,
         error: str | None = None,
+        ocr: bool = False,
     ) -> None:
         extraction = NewExtraction(
             id=self.ids.new_uuid(),
@@ -385,6 +435,8 @@ class ExtractDocuments:
                 "prompt": spec.prompt_ref,
                 "gaps": len(extraction.gaps),
                 "redactions": redactions,
+                # Whether the text was read by OCR (ticket ai-automation/21).
+                "ocr": ocr,
             },
         )
         try:

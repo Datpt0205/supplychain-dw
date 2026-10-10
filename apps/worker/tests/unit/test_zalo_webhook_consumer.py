@@ -90,6 +90,7 @@ _DEPLOYED: dict[str, object] = {
     "database_url": _DB,
     "embedding_provider": "openai_compatible",
     "qdrant_url": "http://qdrant:6333",
+    "ocr_artifacts_path": "/app/models/ocr",
     "zalo_bot_token": "tok",
     "zalo_link_secret": "sec",
     "zalo_updates_mode": "webhook",

@@ -236,3 +236,35 @@ tin cậy phân biệt được dòng sai; EasyOCR `vi` đo được 96–98%, c
 OCR đi qua `DocumentTextPort` như mọi văn bản khác: che trước lượt gọi, grounding sau; dòng điểm thấp
 thành khoảng trống, không thành giá trị; với loại `reads_accounts`, digest tài khoản không đọc từ
 văn bản OCR.
+
+## Sửa đổi 2026-10-10 (Đạt; AI-21): ảnh và PDF quét đọc bằng Docling + EasyOCR
+
+Đạt chọn **Docling làm đường đọc tài liệu, EasyOCR (`vi`) làm bộ OCR của nó**. Thay điểm 2 của sửa
+đổi AI-02 và điểm 3 của sửa đổi AI-15 cho ảnh và PDF quét; MSG vẫn `unreadable`.
+
+1. **Đo lại trên đúng đường sẽ chạy** (ticket `ai-automation/21`, cùng hai trang thật, ba biến thể):
+   trang sạch 97% / 93% từ có dấu đúng nguyên văn (ngưỡng 90% đạt), quét tốt 96–98%; quét kém
+   28–43%. Docling thêm thứ tự đọc và bảng: 76–84% từ đúng thứ tự trên trang sạch, so với 60–80%
+   của EasyOCR đọc dòng rời (55–73% khi tắt mô hình bảng của Docling). PDF quét đi qua backend
+   pdfium (backend mặc định của Docling chỉ được 77–80% trên cùng bản quét tốt).
+2. **Điểm tin cậy từng dòng có qua Docling** (`parsed_page.textline_cells`), nhưng Docling mặc định
+   **bỏ im lặng** mọi dòng dưới 0,5: bản quét kém khi đó báo 0 dòng nghi ngờ. Adapter đặt ngưỡng
+   của Docling về 0, giữ mọi dòng với điểm của nó; quyết định thuộc về lane.
+3. **Không đọc được:** văn bản có hơn 30% dòng điểm < 0,5 (`MAX_DOUBTFUL_SHARE`) là `unreadable`,
+   không lượt gọi. Đo được: trang tốt 1–9% dòng nghi ngờ, quét kém 37–63%.
+4. **Dòng nghi ngờ trong văn bản đạt:** trường có trích dẫn rơi vào dòng đó là khoảng trống
+   `low_confidence`, không giữ giá trị. Dòng được tìm theo nguyên từ trong văn bản đã che; dòng
+   không tìm thấy nguyên văn thì nghi ngờ ở mọi trích dẫn chứa nó hoặc nằm trong nó.
+5. **Che trước lượt gọi** như PDF có lớp chữ, kể cả dòng nghi ngờ. Với loại `reads_accounts` (PI,
+   hóa đơn, UNC) đọc từ OCR, code **không đọc digest tài khoản** (một chữ số đọc sai sẽ thành "tài
+   khoản khác"): dòng đọc ghi `beneficiary_accounts_unread: "ocr"`, bước nêu `account_not_read` và
+   người so tài khoản bằng mắt.
+6. **Giới hạn:** tối đa 5 trang, 300 giây mỗi chứng từ (`DW_WORKER_OCR_MAX_PAGES`,
+   `DW_WORKER_OCR_TIMEOUT_SECONDS`); quá thì `unreadable`. Lane đọc tuần tự, nên một bản quét 200
+   trang không giữ được lane.
+7. **Trọng số nướng vào image worker** (`/app/models/ocr`: layout, bảng, CRAFT, `latin_g2`);
+   uat/production không khởi động khi thiếu `DW_WORKER_OCR_ARTIFACTS_PATH` hoặc thiếu docling, và
+   Docling không tải gì khi có đường dẫn. Máy dev tải ở lần chạy đầu.
+8. **Nơi đặt:** port `OcrPort` và adapter `DoclingOcrReader` ở `dw_knowledge` (nền tảng, để đưa lên
+   `codebase` sau, ADR 0011); ngưỡng và cách dùng điểm tin cậy ở `dw_supply_chain`; nối ở gốc
+   composition của worker. Lane đề xuất danh sách SP (AI-08) chưa dùng OCR.

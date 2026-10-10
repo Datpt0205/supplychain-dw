@@ -7,6 +7,8 @@ layer lives. Only the composition root imports concrete adapters
 
 from __future__ import annotations
 
+import importlib.util
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,7 +39,13 @@ from dw_knowledge.adapters.embedding_factory import build_embeddings as shared_b
 from dw_knowledge.attachment_policy import load_attachment_policy
 from dw_knowledge.gateway import KnowledgeGateway
 from dw_knowledge.ingest_jobs import IngestJobStore
-from dw_knowledge.ports import DocumentParserPort, EmbeddingPort, ObjectStoragePort, VectorIndexPort
+from dw_knowledge.ports import (
+    DocumentParserPort,
+    EmbeddingPort,
+    ObjectStoragePort,
+    OcrPort,
+    VectorIndexPort,
+)
 from dw_observability.telemetry import TelemetryPort
 from dw_worker.settings import WorkerSettings
 
@@ -45,6 +53,8 @@ if TYPE_CHECKING:
     from minio import Minio
 
     from dw_supply_chain.adapters.storage.minio_case_documents import MinioCaseDocumentStorage
+
+logger = logging.getLogger(__name__)
 
 # The image sets DW_REPO_ROOT=/app; outside a container the checkout root is
 # four levels up from this file.
@@ -122,6 +132,29 @@ def build_case_document_storage(settings: WorkerSettings) -> MinioCaseDocumentSt
 
     return MinioCaseDocumentStorage(
         client=_build_minio_client(settings), bucket=settings.case_documents_bucket
+    )
+
+
+def build_ocr_reader(settings: WorkerSettings) -> OcrPort | None:
+    """Docling with EasyOCR for images and scanned PDFs (supply-chain ticket
+    ai-automation/21), bounded by the settings' page limit and timeout.
+
+    Docling comes with the `parsers` extra. Without it a local process reads
+    no image (the extraction lane records them unreadable, as before OCR); a
+    deployed one refuses to start, because its image always carries it."""
+    if importlib.util.find_spec("docling") is None:
+        if settings.is_deployed:
+            raise RuntimeError(
+                "OCR (docling) is missing from a deployed worker: install the `parsers` extra"
+            )
+        logger.warning("OCR off: docling is not installed (the worker's `parsers` extra)")
+        return None
+    from dw_knowledge.adapters.docling_ocr import DoclingOcrReader
+
+    return DoclingOcrReader(
+        max_pages=settings.ocr_max_pages,
+        timeout_seconds=settings.ocr_timeout_seconds,
+        artifacts_path=settings.ocr_artifacts_path,
     )
 
 

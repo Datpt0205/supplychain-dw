@@ -29,7 +29,7 @@ from __future__ import annotations
 import html
 import re
 import unicodedata
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -69,6 +69,9 @@ class GapReason(StrEnum):
     NOT_A_DATE = "not_a_date"
     NOT_AN_OPTION = "not_an_option"
     NUMBER_MISMATCH = "number_mismatch"
+    # The quote sits on a line OCR read with low confidence (ticket
+    # ai-automation/21): the value may be a misread, so it is not kept.
+    LOW_CONFIDENCE = "low_confidence"
 
 
 # -------------------------------------------------------- model output ------
@@ -656,6 +659,81 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", unescaped).strip().casefold()
 
 
+# ------------------------------------------------------------------ OCR -----
+#
+# Images and scans are read by OCR (ticket ai-automation/21); each line comes
+# with the engine's confidence. Both numbers below were set from a measurement
+# on real Vietnamese pages (Docling + EasyOCR, ticket 21): on a clean page or a
+# good scan 1-9% of lines score under 0.5, on a bad scan 37-63%, where only a
+# fifth to two fifths of the toned words are right.
+
+# A line under this confidence is doubtful.
+LOW_CONFIDENCE = 0.5
+# A document with more than this share of doubtful lines is unreadable: no
+# call is made. Above every good page measured (at most 9%; 15% through a PDF
+# backend this reader no longer uses), below every bad one (at least 37%).
+MAX_DOUBTFUL_SHARE = 0.30
+
+
+def doubtful_share(confidences: Sequence[float]) -> float:
+    """The share of lines under `LOW_CONFIDENCE`; a document with no line at
+    all is wholly doubtful."""
+    if not confidences:
+        return 1.0
+    return sum(1 for c in confidences if c < LOW_CONFIDENCE) / len(confidences)
+
+
+def too_doubtful(confidences: Sequence[float]) -> bool:
+    return doubtful_share(confidences) > MAX_DOUBTFUL_SHARE
+
+
+_WORD = re.compile(r"\w")
+
+
+@dataclass(frozen=True, slots=True)
+class Doubt:
+    """Where the doubtful lines sit in a normalised text.
+
+    A line is found where it stands as whole words (a doubtful "2" is not the
+    "2" inside "2026"), at every place it occurs: which occurrence OCR doubted
+    cannot be told, so each one is doubtful (refusing a value is recoverable).
+    A line the text does not hold as such (the pipeline reassembled it) is
+    doubtful wherever a quote contains it or sits inside it."""
+
+    spans: tuple[tuple[int, int], ...] = ()
+    unlocated: tuple[str, ...] = ()
+
+    @classmethod
+    def of(cls, text: str, lines: Iterable[str]) -> Doubt:
+        spans: list[tuple[int, int]] = []
+        unlocated: list[str] = []
+        for line in {normalize(raw) for raw in lines} - {""}:
+            pattern = re.escape(line)
+            if _WORD.match(line[0]):
+                pattern = r"(?<!\w)" + pattern
+            if _WORD.match(line[-1]):
+                pattern = pattern + r"(?!\w)"
+            found = [(m.start(), m.end()) for m in re.finditer(pattern, text)]
+            if found:
+                spans.extend(found)
+            else:
+                unlocated.append(line)
+        return cls(tuple(spans), tuple(unlocated))
+
+    def covers(self, quote: str, text: str) -> bool:
+        if any(line in quote or quote in line for line in self.unlocated):
+            return True
+        if not self.spans:
+            return False
+        start = text.find(quote)
+        while start != -1:
+            end = start + len(quote)
+            if any(s < end and start < e for s, e in self.spans):
+                return True
+            start = text.find(quote, start + 1)
+        return False
+
+
 # ------------------------------------------------------------ grounding -----
 
 
@@ -678,7 +756,7 @@ class Grounded:
 
 
 def _ground_one(
-    name: str, path: str, cited: Cited, spec: ExtractionSpec, text: str
+    name: str, path: str, cited: Cited, spec: ExtractionSpec, text: str, doubt: Doubt
 ) -> tuple[dict[str, Any] | None, Gap | None]:
     if cited.value is None or not cited.value.strip():
         return None, Gap(path, GapReason.MISSING)
@@ -687,6 +765,8 @@ def _ground_one(
     quote = normalize(cited.quote)
     if quote not in text:
         return None, Gap(path, GapReason.QUOTE_NOT_FOUND)
+    if doubt.covers(quote, text):
+        return None, Gap(path, GapReason.LOW_CONFIDENCE)
     kind = spec.kinds.get(name, FieldKind.TEXT)
     value: Any
     match kind:
@@ -718,7 +798,7 @@ def _ground_one(
 
 
 def _ground_model(
-    reading: BaseModel, spec: ExtractionSpec, text: str, prefix: str = ""
+    reading: BaseModel, spec: ExtractionSpec, text: str, doubt: Doubt, prefix: str = ""
 ) -> tuple[dict[str, Any], list[Gap]]:
     kept: dict[str, Any] = {}
     gaps: list[Gap] = []
@@ -726,7 +806,7 @@ def _ground_model(
         value = getattr(reading, name)
         path = f"{prefix}{name}"
         if isinstance(value, Cited):
-            grounded, gap = _ground_one(name, path, value, spec, text)
+            grounded, gap = _ground_one(name, path, value, spec, text, doubt)
             if grounded is not None:
                 kept[name] = grounded
             if gap is not None:
@@ -736,13 +816,13 @@ def _ground_model(
             for index, item in enumerate(value):
                 item_path = f"{path}[{index}]"
                 if isinstance(item, Cited):
-                    grounded, gap = _ground_one(name, item_path, item, spec, text)
+                    grounded, gap = _ground_one(name, item_path, item, spec, text, doubt)
                     if grounded is not None:
                         items.append(grounded)
                     if gap is not None:
                         gaps.append(gap)
                 elif isinstance(item, BaseModel):
-                    inner, inner_gaps = _ground_model(item, spec, text, f"{item_path}.")
+                    inner, inner_gaps = _ground_model(item, spec, text, doubt, f"{item_path}.")
                     items.append(inner)
                     gaps.extend(inner_gaps)
             kept[name] = items
@@ -785,9 +865,14 @@ def _check_arithmetic(kept: dict[str, Any], gaps: list[Gap]) -> None:
         gaps.append(Gap("total", GapReason.NUMBER_MISMATCH))
 
 
-def ground(reading: BaseModel, spec: ExtractionSpec, text: str) -> Grounded:
-    """Keep what the text proves; name the rest."""
-    kept, gaps = _ground_model(reading, spec, normalize(text))
+def ground(
+    reading: BaseModel, spec: ExtractionSpec, text: str, doubtful_lines: Sequence[str] = ()
+) -> Grounded:
+    """Keep what the text proves; name the rest. `doubtful_lines` are the
+    lines OCR read with low confidence, as redacted as `text` is: a quote on
+    one of them is a `LOW_CONFIDENCE` gap, never a value."""
+    normalized = normalize(text)
+    kept, gaps = _ground_model(reading, spec, normalized, Doubt.of(normalized, doubtful_lines))
     _check_arithmetic(kept, gaps)
     return Grounded(fields=kept, gaps=tuple(gaps))
 
@@ -839,6 +924,11 @@ def redact_identifiers(text: str) -> Redacted:
 # (ticket ai-automation/15). Not a field of any reading model: the model never
 # writes it, and grounding never keeps a key it did not ground.
 ACCOUNTS_FIELD = "beneficiary_accounts"
+# Kept INSTEAD of `ACCOUNTS_FIELD` when the text came from OCR (ticket
+# ai-automation/21): a digit misread would read as a changed account, so code
+# does not read accounts from an image; the value says why ("ocr") and the
+# step asks a person to check the account by eye.
+ACCOUNTS_UNREAD_FIELD = "beneficiary_accounts_unread"
 
 
 def account_numbers_in(text: str) -> list[str]:

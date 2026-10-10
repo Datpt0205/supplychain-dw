@@ -39,7 +39,7 @@ STEP_PREPARATION_WORKER_FILE = "supply_chain_step_preparation.yaml"
 # Which profile each model task runs on (ticket ai-automation/06): read by
 # the worker's extraction lane, and by scripts/model_gate.py for the gate's
 # dataset and threshold.
-MODEL_ROUTES_POLICY_FILE = "supply_chain_model_routes@1.17.0.yaml"
+MODEL_ROUTES_POLICY_FILE = "supply_chain_model_routes@1.18.0.yaml"
 # Minutes each drafted paper saves (ticket ai-automation/20): read by the API's
 # AI acceptance report.
 AI_TIME_SAVED_POLICY_FILE = "supply_chain_ai_time_saved@1.0.0.yaml"

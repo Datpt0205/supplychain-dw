@@ -32,7 +32,11 @@ from enum import StrEnum
 from typing import Any
 
 from dw_supply_chain.domain.case_document import DocumentType
-from dw_supply_chain.domain.extraction import ACCOUNTS_FIELD, ExtractionStatus
+from dw_supply_chain.domain.extraction import (
+    ACCOUNTS_FIELD,
+    ACCOUNTS_UNREAD_FIELD,
+    ExtractionStatus,
+)
 from dw_supply_chain.domain.purchase_order_draft import to_decimal
 from dw_supply_chain.domain.step_proposal import Finding
 
@@ -140,7 +144,7 @@ def source_findings(source: SourceRead) -> list[Finding]:
             Finding(
                 "source_unread",
                 subject,
-                f"Máy không đọc được {words} (ảnh hay bản quét chưa đọc được, chưa có OCR);"
+                f"Máy không đọc được {words} (ảnh hay bản quét quá mờ để OCR đọc chắc);"
                 " người kiểm bằng mắt",
             )
         ]
@@ -154,11 +158,16 @@ class AccountCheck(StrEnum):
     DIFFERS = "differs"
     NO_MASTER = "no_master"
     NOT_STATED = "not_stated"
+    # Read by OCR (ticket ai-automation/21): code does not read an account
+    # from an image, so it cannot say whether it matches.
+    NOT_READ = "not_read"
 
 
 def check_accounts(source: SourceRead, master_digest: str | None) -> AccountCheck:
     """The accounts the document names against the supplier's master: any one
     that is not the master's is a difference."""
+    if source.fields.get(ACCOUNTS_UNREAD_FIELD):
+        return AccountCheck.NOT_READ
     marks = source.fields.get(ACCOUNTS_FIELD)
     digests = [
         m["digest"]
@@ -204,6 +213,15 @@ def account_findings(source: SourceRead, master_digest: str | None) -> list[Find
                     "account_not_stated",
                     subject,
                     f"{words.capitalize()} không nêu số tài khoản thụ hưởng; người kiểm",
+                )
+            ]
+        case AccountCheck.NOT_READ:
+            return [
+                Finding(
+                    "account_not_read",
+                    subject,
+                    f"{words.capitalize()} là ảnh hay bản quét: máy không đọc số tài khoản thụ"
+                    " hưởng từ ảnh; người so bằng mắt với tài khoản trong danh mục NCC",
                 )
             ]
         case AccountCheck.MATCHES:

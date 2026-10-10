@@ -31,6 +31,7 @@ from dw_supply_chain.domain.commercial import PaymentKind, account_digest
 from dw_supply_chain.domain.document_draft import DocumentDraft, content_sha256
 from dw_supply_chain.domain.extraction import (
     ACCOUNTS_FIELD,
+    ACCOUNTS_UNREAD_FIELD,
     ExtractionStatus,
     account_numbers_in,
 )
@@ -39,6 +40,7 @@ from dw_supply_chain.domain.payment_check import (
     OrderedLine,
     PaymentFacts,
     SourceRead,
+    account_findings,
     check_accounts,
     line_findings,
 )
@@ -124,6 +126,21 @@ def test_an_account_other_than_the_master_differs_whatever_else_matches() -> Non
     )
     assert check_accounts(_source([]), master) is AccountCheck.NOT_STATED
     assert check_accounts(_source([MASTER_ACCOUNT]), None) is AccountCheck.NO_MASTER
+
+
+def test_a_paper_read_by_ocr_has_its_account_checked_by_a_person() -> None:
+    # Ticket ai-automation/21: code reads no account from an image, so it says
+    # neither "matches" nor "not stated"; a person compares by eye.
+    ocr = SourceRead(
+        DocumentType.BANK_TRANSFER_RECEIPT,
+        document_id=uuid.uuid4(),
+        status=ExtractionStatus.EXTRACTED,
+        fields={ACCOUNTS_UNREAD_FIELD: "ocr"},
+    )
+    master = account_digest(MASTER_ACCOUNT)
+    assert check_accounts(ocr, master) is AccountCheck.NOT_READ
+    [finding] = account_findings(ocr, master)
+    assert finding.code == "account_not_read" and "bằng mắt" in finding.message
 
 
 def test_invoice_lines_are_matched_by_sku_quantity_and_price() -> None:

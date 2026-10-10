@@ -109,17 +109,17 @@ means platform code, an upstream candidate (ADR 0011).
 | ON-02 | `onboarding/issues/02-import-open-cases.md` (M)                           | no      | resolved        | —                                   |
 | AI-19 | `ai-automation/issues/19-case-assistant.md` (L)                           | partly  | resolved        | —                                   |
 | AI-20 | `ai-automation/issues/20-reports-and-acceptance.md` (M)                   | no      | resolved        | —                                   |
-| AI-21 | `ai-automation/issues/21-local-ocr.md` (M)                                | no      | needs-info      | Đạt: OCR engine                     |
+| AI-21 | `ai-automation/issues/21-local-ocr.md` (M)                                | no      | resolved        | —                                   |
 | UAT-1 | `uat/issues/01-uat-plan-and-training.md` (M)                              | no      | resolved        | —                                   |
 | UAT-2 | `uat/issues/02-uat-with-elmich.md` (S)                                    | —       | ready-for-human | UAT-1, ON-02, H2, ZL                |
 
 **Next:** the AI layer (Đạt, 2026-10-09: "AI does the work, people only
-approve"; spec `supply-chain/ai-automation/spec.md`): AI-01–AI-20, AI-17 item 2, ON-01–02 and UAT-1
+approve"; spec `supply-chain/ai-automation/spec.md`): AI-01–AI-21, AI-17 item 2, ON-01–02 and UAT-1
 resolved 2026-10-09/10 with their integration tests owed (written, not run: no Docker on that
-machine; run them first with `make infra-up && make test-integration`). AI-21 (local OCR) measured and
-stopped: RapidOCR cannot write Vietnamese, Đạt decides on EasyOCR. Live model gate `luna` 2026-10-10 on
+machine; run them first with `make infra-up && make test-integration`). AI-21 (OCR, Đạt: Docling +
+EasyOCR) also owes the worker image build with baked weights. Live model gate `luna` 2026-10-10 on
 dataset 1.17.0: 17/21 tasks (`evals/gates/luna.json`; AI-06 Comments read every miss: four
-`case_answer` case defects and one fix to prompt or case owed to dataset 1.18.0, two dates the model
+`case_answer` case defects and one fix to prompt or case owed to dataset 1.19.0, two dates the model
 left unnormalised, one choice compared case-sensitively owed to code), `qwen` owed. Then UAT-2 with
 Elmich. H2 (the domain the webhook needs; runbook `docs/deploy/host.md`); Z4p
 when a real photo update exists; ZL measures the webhook header (Z3).

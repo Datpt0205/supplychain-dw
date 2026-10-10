@@ -1,0 +1,16 @@
+{
+  "doc_type": "sample_evaluation",
+  "ocr_lines": [
+    [0.71, "BIÊN BẢN ĐÁNH GIÁ MẪU"],
+    [0.22, "V0ng mau: 2"],
+    [0.31, "Ngay dánh gia: 06/1O/2O26"],
+    [0.18, "Ngưòi dánh giá: Phong R&D"],
+    [0.64, "Kết luận: Đạt"]
+  ],
+  "model_reading": {
+    "result": {
+      "value": "pass",
+      "quote": "Kết luận: Đạt"
+    }
+  }
+}

@@ -104,6 +104,7 @@ from dw_worker.composition import (
     build_ingest_components,
     build_model_stack_for,
     build_object_storage,
+    build_ocr_reader,
     build_vector_index,
 )
 from dw_worker.consumers import ConsumerRegistry
@@ -748,6 +749,8 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
                     gates_dir=REPO_ROOT / "evals" / "gates",
                     ids=ids,
                     clock=clock,
+                    # Images and scans, read by OCR (ticket ai-automation/21).
+                    ocr=build_ocr_reader(settings),
                 )
             )
         registry.register(

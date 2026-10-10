@@ -5,7 +5,10 @@ It runs the REAL lane (`ExtractDocuments`), the real redaction and grounding,
 and the SHIPPED extraction prompts; only storage and the model are scripted
 (`testing.extraction`). A case names the document (its type, its text, where it
 is stored), how the queue names it (possibly under another tenant or workspace),
-what the scripted model answers, and what must come out:
+what the scripted model answers, and what must come out. A case with
+`ocr_lines` (each `[confidence, text]`) is an image read by OCR (ticket
+ai-automation/21): its text is the lines joined, each with its confidence,
+through the scripted OCR reader; `document_text` is then not given.
 
 - `model_calls`: how many requests reached the gateway (0 for a document the
   lane must refuse before reading);
@@ -15,6 +18,8 @@ what the scripted model answers, and what must come out:
 - `prompt_must_not_contain`: strings that must not reach the model;
 - `accounts`: the account numbers code must keep the digests of (a paper
   whose beneficiary account matters, ticket ai-automation/15);
+- `accounts_unread`: true when the paper was read by OCR, so code must keep
+  no account digest and say so instead (ticket ai-automation/21);
 - `contained_marker`: text that must sit inside the prompt's one untrusted
   block, never in the system prompt;
 - `scripted`: `fields` and `gaps` that hold only for the case's scripted
@@ -55,6 +60,7 @@ from dw_supply_chain.domain.case_document import (
 from dw_supply_chain.domain.commercial import account_digest
 from dw_supply_chain.domain.extraction import (
     ACCOUNTS_FIELD,
+    ACCOUNTS_UNREAD_FIELD,
     EXTRACTION_SPECS,
     normalize,
     numbers_in,
@@ -63,14 +69,16 @@ from dw_supply_chain.domain.extraction import (
 )
 from dw_supply_chain.testing.extraction import (
     PDF,
+    PNG,
     InMemoryExtractionDocuments,
     InMemoryObjects,
     ListQueue,
-    PlainTextReader,
     RecordingExtractions,
     RecordingGateway,
     ScriptedGateway,
+    ScriptedOcrReader,
     StaticPlans,
+    ocr_image,
 )
 
 _NAMESPACE = uuid.UUID("0f3c7a52-6b1d-4e09-9a7c-2d5e8b1f4a63")
@@ -81,13 +89,26 @@ def _id(kind: str, name: str) -> uuid.UUID:
     return uuid.uuid5(_NAMESPACE, f"{kind}:{name}")
 
 
+def _ocr_lines(input_data: dict[str, Any]) -> list[tuple[float, str]] | None:
+    lines = input_data.get("ocr_lines")
+    return None if lines is None else [(float(c), str(t)) for c, t in lines]
+
+
+def _document_text(input_data: dict[str, Any]) -> str:
+    """The text the lane reads: the file's, or the OCR lines joined."""
+    lines = _ocr_lines(input_data)
+    if lines is None:
+        return str(input_data["document_text"])
+    return "\n".join(text for _, text in lines)
+
+
 async def _run(
     ctx: GraderContext, input_data: dict[str, Any]
 ) -> tuple[ScriptedGateway | RecordingGateway, RecordingExtractions, ExtractionOutcome]:
     doc_type = DocumentType(input_data["doc_type"])
     spec = EXTRACTION_SPECS[doc_type]
-    text: str = input_data["document_text"]
-    data = text.encode("utf-8")
+    lines = _ocr_lines(input_data)
+    data = input_data["document_text"].encode("utf-8") if lines is None else ocr_image(*lines)
     stored = input_data.get("stored_in", {"tenant": "a", "workspace": "w1"})
     queued = input_data.get("queued_as", stored)
     document = CaseDocument(
@@ -98,8 +119,8 @@ async def _run(
         case_id=_id("case", "c1"),
         doc_type=doc_type,
         object_key="supply_chain/eval/document",
-        filename="document.pdf",
-        content_type=PDF,
+        filename="document.pdf" if lines is None else "document.png",
+        content_type=PDF if lines is None else PNG,
         size_bytes=len(data),
         sha256=hashlib.sha256(data).hexdigest(),
         version=1,
@@ -130,7 +151,7 @@ async def _run(
         # check is what is graded.
         documents=InMemoryExtractionDocuments([document], leaky=input_data.get("leaky", False)),
         storage=InMemoryObjects({document.object_key: data}),
-        text=PlainTextReader(),
+        text=ScriptedOcrReader(),
         gateway=gateway,
         extractions=extractions,
         plans=StaticPlans({_id("tenant", t): "professional" for t in ("a", "b")}),
@@ -180,7 +201,7 @@ def grade_document_extraction(
     if rows:
         kept = rows[0].fields
         ungrounded = _ungrounded(
-            kept, normalize(redact_identifiers(input_data["document_text"]).text)
+            kept, normalize(redact_identifiers(_document_text(input_data)).text)
         )
         if ungrounded:
             return GradeResult.fail("kept a field its document does not prove", fields=ungrounded)
@@ -200,6 +221,11 @@ def grade_document_extraction(
                 return GradeResult.fail(
                     "accounts", expected=len(wanted_digests), actual=len(digests)
                 )
+        # Read by OCR: no digest, and the reading says why (ai-automation/21).
+        if expected.get("accounts_unread") and (
+            ACCOUNTS_FIELD in kept or kept.get(ACCOUNTS_UNREAD_FIELD) != "ocr"
+        ):
+            return GradeResult.fail("an account was read from an image")
         named = {(g["field"], g["reason"]) for g in rows[0].gaps}
         for gap in [*expected.get("gaps", []), *scripted.get("gaps", [])]:
             if (gap["field"], gap["reason"]) not in named:

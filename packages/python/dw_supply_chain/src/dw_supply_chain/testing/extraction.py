@@ -29,10 +29,13 @@ from dw_supply_chain.application.document_extraction import (
     DocumentText,
     NewExtraction,
     QueuedDocument,
+    RecognisedLine,
 )
 from dw_supply_chain.domain.case_document import CaseDocument, CaseDocumentId
 
 PDF = "application/pdf"
+PNG = "image/png"
+JPEG = "image/jpeg"
 
 
 @dataclass
@@ -67,6 +70,34 @@ class PlainTextReader:
 
     async def text_of(self, data: bytes, content_type: str, filename: str) -> DocumentText:
         return DocumentText(text=data.decode("utf-8"))
+
+
+def ocr_image(*lines: tuple[float, str]) -> bytes:
+    """The bytes `ScriptedOcrReader` reads back as these OCR lines, each its
+    confidence and its text: an image whose recognition a test decides."""
+    return "\n".join(f"{confidence}\t{text}" for confidence, text in lines).encode("utf-8")
+
+
+class ScriptedOcrReader:
+    """A "PDF" is its UTF-8 text, as `PlainTextReader` reads it; an image is
+    read by "OCR" from bytes `ocr_image` wrote: every line with its confidence,
+    the text the lines joined. It keeps the port's promise: an image it cannot
+    read raises (the lane records it unreadable), and a blank one (no line)
+    reads as an empty text."""
+
+    def supports(self, content_type: str) -> bool:
+        return content_type in (PDF, PNG, JPEG)
+
+    async def text_of(self, data: bytes, content_type: str, filename: str) -> DocumentText:
+        if content_type == PDF:
+            return DocumentText(text=data.decode("utf-8"))
+        lines: list[RecognisedLine] = []
+        for raw in data.decode("utf-8", errors="strict").splitlines():
+            confidence, sep, text = raw.partition("\t")
+            if not sep:
+                raise ValueError("not an image this reader can read")
+            lines.append(RecognisedLine(text=text, confidence=float(confidence)))
+        return DocumentText(text="\n".join(line.text for line in lines), recognised=tuple(lines))
 
 
 @dataclass

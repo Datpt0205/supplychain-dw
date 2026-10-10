@@ -1,8 +1,9 @@
 # 21 — OCR cục bộ cho ảnh và PDF quét
 
-Status: needs-info
-Blocked by: quyết định của Đạt (thêm một bộ OCR khác RapidOCR, xem "Cần quyết")
+Status: resolved
+Blocked by: —
 Area: supply-chain
+Decided: Đạt, 2026-10-10: Docling là đường đọc, EasyOCR (`vi`) là bộ OCR của nó.
 
 ## Mục tiêu
 
@@ -74,7 +75,49 @@ vi: `test_an_unreadable_file_is_recorded_unreadable_with_no_fields_and_no_call` 
 `unreadable`, 0 lượt gọi, không trường). ADR 0021 thêm sửa đổi 2026-10-10 (AI-21) ghi phép đo này.
 Venv trả về đúng lock sau khi đo (`uv sync --all-packages`).
 
-## Cần quyết (Đạt)
+## Đo lần hai: Docling + EasyOCR (2026-10-10, agent, sau quyết định của Đạt)
+
+`easyocr 1.7.2` vào lock qua extra `parsers` của `dw_knowledge` (worker kéo `dw-knowledge[parsers]`).
+Docling 2.128.0 có `EasyOcrOptions(lang=["vi"])`, ảnh vào bằng `InputFormat.IMAGE`, và điểm tin cậy
+từng dòng có trên `page.parsed_page.textline_cells` (`generate_parsed_pages=True`). Cùng hai trang,
+cùng ba biến thể, cùng cách chấm như trên; trọng số tải một lần ở máy dev (HF cache, `~/.EasyOCR`).
+
+| Đường đọc (CPU 4 nhân)                               | Ảnh           | Từ có dấu đúng (tr.1 / tr.3) | Từ đúng     | Dòng < 0,5     | s/trang |
+| ---------------------------------------------------- | ------------- | ---------------------------- | ----------- | -------------- | ------- |
+| **Docling + EasyOCR, adapter đã ship**               | clean         | 0,97 / 0,93                  | 0,84 / 0,76 | 1% / 6%        | 72–100¹ |
+|                                                      | mild (JPEG)   | 0,98 / 0,97                  | 0,86 / 0,83 | 4% / 6%        | 43–47   |
+|                                                      | scan (JPEG)   | 0,28 / 0,29                  | 0,17 / 0,18 | 57% / 63%      | 41–45   |
+|                                                      | mild (PDF)    | 0,96 / 0,93                  | 0,84 / 0,77 | 6% / 8%        | 37–42   |
+|                                                      | scan (PDF)    | 0,34 / 0,43                  | 0,36 / 0,25 | 37% / 47%      | 39–44   |
+| Docling, mô hình bảng tắt                            | clean         | 0,97 / 0,93                  | 0,58 / 0,74 | như trên       | —       |
+| Docling, backend PDF mặc định (docling-parse)        | mild (PDF)    | 0,77 / 0,80                  | 0,53 / 0,68 | 13% / 15%      | —       |
+| Docling, `confidence_threshold` mặc định 0,5         | clean / mild PDF | 0,97 / 0,66 (tr.3)        | —           | **0 / 0**      | —       |
+| EasyOCR đọc dòng rời (đo lần một, để so)             | clean         | 0,97 / 0,97                  | 0,60 / 0,80 | 0 / 8 dòng    | 28      |
+|                                                      | scan          | 0,32 / 0,33                  | 0,20 / 0,22 | 46% / 52%      | 18–21   |
+
+¹ hai trang đầu chạy khi máy còn bận; trang sau 37–47 s. Ngưỡng đặt trước: ≥ 90% từ có dấu trên trang
+sạch (đạt: 97% / 93%) và điểm tin cậy phân biệt dòng sai (đạt: trang tốt ≤ 9% dòng < 0,5, trang kém ≥ 37%).
+
+Đọc từ bảng, và quyết định theo đó:
+
+1. **Docling + EasyOCR đạt; không cần phương án dự phòng "EasyOCR trực tiếp".** Tiếng Việt do EasyOCR
+   (giống hệt đọc rời), Docling thêm thứ tự đọc: từ đúng thứ tự 0,84 so với 0,60 trên trang 1 (bảng
+   nhiều cột); tắt mô hình bảng thì về 0,58. Đó là lý do Docling được chọn, và nó có thật.
+2. **Docling mặc định bỏ im lặng dòng < 0,5** (`EasyOcrOptions.confidence_threshold`): khi đó bản
+   quét kém báo 0 dòng nghi ngờ, và PDF quét tốt mất chữ (0,66) mà không ai biết (failure-modes #0).
+   Adapter đặt ngưỡng 0, giữ mọi dòng với điểm; lane quyết.
+3. **PDF quét đi qua backend pdfium** (`PyPdfiumDocumentBackend`): backend mặc định đọc cùng bản quét
+   tốt chỉ 77–80%; cùng file đó render bằng pdfium rồi EasyOCR đọc 97%, nên lỗi ở backend, không ở
+   file. Với pdfium: 96% / 93%.
+4. **Ngưỡng `MAX_DOUBTFUL_SHARE` = 30%** dòng < 0,5 (`LOW_CONFIDENCE`) thì `unreadable`: trên mọi
+   trang tốt đo được (≤ 9%), dưới mọi trang kém (≥ 37%). Biên phía kém hẹp nhất là PDF quét kém tr.1
+   (37%); adapter đã ship chấm đúng cả 10 biến thể (6 đọc, 4 `unreadable`).
+5. **Giới hạn:** 5 trang, 300 s mỗi chứng từ (`DW_WORKER_OCR_MAX_PAGES`, `DW_WORKER_OCR_TIMEOUT_SECONDS`):
+   chứng từ PI/hóa đơn/UNC 1–3 trang; 5 × ~50 s vừa 300 s. Quá trang thì Docling từ chối trước khi đọc
+   (`max_num_pages`); quá giờ thì Docling dừng giữa các trang (`document_timeout`) và adapter coi
+   `PARTIAL_SUCCESS` là từ chối: cả hai thành `unreadable`.
+
+## Đã quyết (Đạt, 2026-10-10): Docling + EasyOCR, theo bốn điểm dưới
 
 EasyOCR `vi` đạt ngưỡng trên trang sạch và quét tốt (96–98% từ có dấu), và điểm tin cậy của nó CÓ
 phân biệt bản kém (55/120 và 73/141 dòng < 0,5 trên `scan`, nơi chỉ còn 1/3 từ đúng). Nó chưa
@@ -98,3 +141,33 @@ khoản trong ảnh bị che trước lượt gọi: mock gateway không thấy 
 
 - 2026-10-10 (agent): mở và đóng phần đo trong cùng phiên; số liệu ở trên, script đo không đưa vào
   repo (dữ liệu là tài liệu nội bộ của Elmich, đọc từ máy của Đạt).
+- 2026-10-10 (agent, sau quyết định của Đạt): làm theo bốn điểm, đo lần hai ở trên.
+    - **Nền tảng (`dw_knowledge`, để đưa lên `codebase` sau):** `OcrPort`, `OcrLine`, `OcrReading`
+      trong `ports.py`; adapter `adapters/docling_ocr.py` (`DoclingOcrReader`: Docling + EasyOCR `vi`,
+      ngưỡng Docling 0, PDF qua pdfium, `max_num_pages`, `document_timeout`, `artifacts_path` thì tắt
+      tải). `docling` và `easyocr` khai ở extra `parsers` của `dw_knowledge` (một chủ phiên bản);
+      worker kéo `dw-knowledge[parsers]`. Trước đó `docling` được khai ở worker mà không ai import
+      (failure-modes #1); nay adapter đọc nó.
+    - **Supply chain:** `DocumentText.recognised` (dòng + điểm); domain `LOW_CONFIDENCE` 0,5,
+      `MAX_DOUBTFUL_SHARE` 0,30, `Doubt` (vị trí dòng nghi ngờ trong văn bản đã che, theo nguyên từ),
+      `GapReason.LOW_CONFIDENCE`, `ACCOUNTS_UNREAD_FIELD`; lane: quá ngưỡng thì `unreadable` trước
+      khi che và gọi, che cả dòng nghi ngờ, trích dẫn trên dòng nghi ngờ thành khoảng trống, loại
+      `reads_accounts` từ OCR không đọc digest; audit ghi `ocr`. `payment_check`: `NOT_READ` và phát
+      hiện `account_not_read` ("người so bằng mắt"), nhãn web cùng tên.
+    - **Worker:** `InProcessDocumentText(ocr=...)`: PDF có lớp chữ đọc từ lớp chữ, chỉ PDF không lớp
+      chữ và ảnh qua OCR; `build_ocr_reader` ở `composition.py` (không có docling: local tắt OCR,
+      uat/production dừng khi khởi động); settings `ocr_artifacts_path`, `ocr_max_pages` (5),
+      `ocr_timeout_seconds` (300); `validate_for_profile` đòi `ocr_artifacts_path` ở uat/production.
+      Lane đề xuất danh sách SP (AI-08) không dùng OCR (không có ngưỡng điểm ở lane đó).
+    - **Image worker:** bước nướng trọng số (`download_models(... with_easyocr=True,
+      easyocr_languages=["vi"])` vào `/app/models/ocr`) và `DW_WORKER_OCR_ARTIFACTS_PATH`.
+    - **Dataset** `supply_chain_preparation@1.18.0` (295 ca, routes 1.18.0): `prep-ocr-clean-eval`,
+      `prep-ocr-bad-scan-eval`, `prep-ocr-injection-eval`, `pay-ocr-account-unc`; grader đọc
+      `ocr_lines` qua `ScriptedOcrReader` và kiểm `accounts_unread`. Sửa ca `case_answer` của AI-06
+      chuyển sang 1.19.0.
+    - **Còn nợ (Docker để dành cho Đạt):** build image worker (bước nướng trọng số chưa chạy; kiểm
+      `/app/models/ocr` có layout, tableformer, `EasyOcr/craft_mlt_25k.pth`, `EasyOcr/latin_g2.pth` và
+      worker khởi động với `HF_HUB_OFFLINE=1`); integration lane trích xuất với một ảnh thật trong
+      bucket; scan image bằng trivy (image nặng thêm opencv, scikit-image). Ca thực tế chưa đo: ảnh
+      chụp điện thoại (nghiêng, bóng), PDF nhiều trang trộn lớp chữ và ảnh (hôm nay chỉ OCR khi
+      không có lớp chữ nào), mã vạch đọc từ ảnh (`reads_barcodes`: chữ số sai thì kiểm checksum báo).

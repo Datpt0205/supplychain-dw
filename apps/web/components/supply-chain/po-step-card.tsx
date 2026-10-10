@@ -37,6 +37,8 @@ const FINDING_LABEL: Record<string, { label: string; tone: StatusTone }> = {
   account_differs: { label: "Tài khoản khác danh mục", tone: "err" },
   account_no_master: { label: "NCC chưa có tài khoản", tone: "warn" },
   account_not_stated: { label: "Không nêu tài khoản", tone: "warn" },
+  // Read by OCR (ai-automation/21): the account is checked by eye.
+  account_not_read: { label: "Tài khoản: người so bằng mắt", tone: "warn" },
   beneficiary_missing: { label: "Thiếu tài khoản thụ hưởng", tone: "warn" },
   amount_differs: { label: "Số tiền khác", tone: "err" },
   amount_unstated: { label: "Không nêu số tiền", tone: "warn" },

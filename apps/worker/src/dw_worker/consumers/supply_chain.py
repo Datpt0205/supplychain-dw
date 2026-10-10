@@ -66,6 +66,7 @@ from dw_agent_runtime.ports import ModelGateway
 from dw_agent_runtime.registry import GraphRegistry, WorkerRegistry
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_knowledge.adapters.office_parsers import InProcessDocumentParser
+from dw_knowledge.ports import OcrPort
 from dw_observability.telemetry import TelemetryPort
 from dw_platform.adapters.persistence.approval_queries import SqlPendingApprovalQuery
 from dw_platform.adapters.persistence.directory import SqlWorkspaceDirectory
@@ -155,6 +156,7 @@ from dw_supply_chain.application.document_drafts import (
 from dw_supply_chain.application.document_extraction import (
     DocumentText,
     ExtractDocuments,
+    RecognisedLine,
 )
 from dw_supply_chain.application.document_orphan_sweep import SweepOrphanDocuments
 from dw_supply_chain.application.follow_up_retention import PruneClosedFollowUps
@@ -292,17 +294,34 @@ def build_stage_one_report_consumer(lane: SendStageOneReport) -> Callable[[], Aw
 @dataclass(frozen=True)
 class InProcessDocumentText:
     """`DocumentTextPort` over `dw_knowledge`'s in-process readers: PDF text
-    layers, DOCX, XLSX, EML. Nothing here calls a model, so a file's
-    identifiers are masked before any model sees its text."""
+    layers, DOCX, XLSX, EML, and, given `ocr`, images and PDFs without a text
+    layer (ticket ai-automation/21). Nothing here calls a model, so a file's
+    identifiers are masked before any model sees its text. An OCR reading
+    carries its lines and their confidence; the lane decides what they are
+    worth."""
 
     parser: InProcessDocumentParser = field(default_factory=InProcessDocumentParser)
+    ocr: OcrPort | None = None
 
     def supports(self, content_type: str) -> bool:
-        return self.parser.supports(content_type, "")
+        return self.parser.supports(content_type, "") or (
+            self.ocr is not None and self.ocr.supports(content_type)
+        )
 
     async def text_of(self, data: bytes, content_type: str, filename: str) -> DocumentText:
-        parsed = await self.parser.parse(data, content_type, filename)
-        return DocumentText(text=parsed.text, warnings=parsed.warnings)
+        if self.parser.supports(content_type, ""):
+            parsed = await self.parser.parse(data, content_type, filename)
+            # A PDF with a text layer is read from it; only one without (a
+            # scan) goes to OCR.
+            if parsed.text.strip() or self.ocr is None or not self.ocr.supports(content_type):
+                return DocumentText(text=parsed.text, warnings=parsed.warnings)
+        if self.ocr is None:
+            raise ValueError(f"no in-process reader for {content_type!r}")
+        reading = await self.ocr.read(data, content_type)
+        return DocumentText(
+            text=reading.text,
+            recognised=tuple(RecognisedLine(line.text, line.confidence) for line in reading.lines),
+        )
 
 
 def build_document_extraction(
@@ -315,13 +334,15 @@ def build_document_extraction(
     gates_dir: Path,
     ids: IdGenerator,
     clock: UtcClock,
+    ocr: OcrPort | None = None,
 ) -> ExtractDocuments:
     """The extraction lane (ticket ai-automation/02). `gateway` is the
     process's one-call gateway (`ModelStack.one_call`): the plan's daily
     allowance is checked before each call and the call's spend recorded.
     A document type routed to another profile (`supply_chain_model_routes`)
     runs there; a route to a profile that has not passed the model gate stops
-    the worker at start, naming it."""
+    the worker at start, naming it. `ocr` reads images and scans (ticket
+    ai-automation/21); without it they are recorded unreadable."""
     routes = load_supply_chain_model_routes(
         configs_dir / "policies" / MODEL_ROUTES_POLICY_FILE, gates_dir
     )
@@ -329,7 +350,7 @@ def build_document_extraction(
         queue=SqlExtractionQueue(sessions),
         documents=SqlCaseDocumentRepository(sessions),
         storage=storage,
-        text=InProcessDocumentText(),
+        text=InProcessDocumentText(ocr=ocr),
         gateway=gateway,
         extractions=SqlDocumentExtractionRepository(sessions),
         plans=SqlTenantPlans(sessions),

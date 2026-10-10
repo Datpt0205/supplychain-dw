@@ -125,6 +125,18 @@ class WorkerSettings(BaseSettings):
         validation_alias=AliasChoices("DW_WORKER_CASE_DOCUMENTS_BUCKET", "CASE_DOCUMENTS_BUCKET"),
     )
 
+    # OCR of images and scanned PDFs in the extraction lane (supply-chain
+    # ticket ai-automation/21): Docling with EasyOCR, from the `parsers` extra.
+    # Where the weights are baked (the worker image sets it); unset, the engines
+    # download them on first use, which only a local or test profile may do.
+    ocr_artifacts_path: Path | None = None
+    # The lane reads one document at a time: a document over this many pages
+    # is refused before any page is read, and one that runs past the timeout is
+    # refused (unreadable, a person reads it). Measured 37-50 s a page on a
+    # 4-core CPU, so five pages fit five minutes.
+    ocr_max_pages: int = Field(default=5, ge=1, le=50)
+    ocr_timeout_seconds: float = Field(default=300.0, ge=10, le=3600)
+
     # Which Qdrant collection this process reads and writes. Named explicitly
     # because the collection's vector width is fixed at creation: moving to a
     # different embedding model means a new collection and a reindex, and
@@ -349,6 +361,12 @@ class WorkerSettings(BaseSettings):
             raise RuntimeError(
                 f"a vector store is required in the {self.profile} profile - "
                 "the in-memory index is not durable"
+            )
+        if self.ocr_artifacts_path is None:
+            # A deployed worker never downloads model weights at run time.
+            raise RuntimeError(
+                f"DW_WORKER_OCR_ARTIFACTS_PATH (baked OCR weights) is required in the "
+                f"{self.profile} profile"
             )
         if (
             self.zalo_poll_enabled or self.zalo_webhook_drain_enabled
