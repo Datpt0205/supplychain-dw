@@ -110,7 +110,7 @@ means platform code, an upstream candidate (ADR 0011).
 | AI-19 | `ai-automation/issues/19-case-assistant.md` (L)                           | partly  | resolved        | —                                   |
 | AI-20 | `ai-automation/issues/20-reports-and-acceptance.md` (M)                   | no      | resolved        | —                                   |
 | AI-21 | `ai-automation/issues/21-local-ocr.md` (M)                                | no      | needs-info      | Đạt: OCR engine                     |
-| UAT-1 | `uat/issues/01-uat-plan-and-training.md` (M)                              | no      | ready-for-agent | AI-05                               |
+| UAT-1 | `uat/issues/01-uat-plan-and-training.md` (M)                              | no      | resolved        | —                                   |
 | UAT-2 | `uat/issues/02-uat-with-elmich.md` (S)                                    | —       | ready-for-human | UAT-1, ON-02, H2, ZL                |
 
 **Next:** the AI layer (Đạt, 2026-10-09: "AI does the work, people only
