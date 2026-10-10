@@ -45,6 +45,7 @@ IMPORT_TO_DIST = {
     "docx": "python-docx",
     "openpyxl": "openpyxl",
     "pypdf": "pypdf",
+    "docling": "docling",
     "langchain": "langchain",
     "langchain_core": "langchain-core",
     "langchain_openai": "langchain-openai",

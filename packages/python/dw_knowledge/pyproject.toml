@@ -26,6 +26,15 @@ dependencies = [
 # Heavy multi-format parsing + OCR stack (torch, layout + OCR models). Installed
 # ONLY in the worker image where ingestion runs — never in the API image.
 parsers = [
+    # Docling reads images and scanned PDFs in process
+    # (`adapters.docling_ocr`, supply-chain ticket ai-automation/21): layout and
+    # reading order, with EasyOCR as its OCR engine. Docling's default engine,
+    # RapidOCR, cannot write Vietnamese tone marks (its dictionaries lack 88 of
+    # 120 toned vowels); EasyOCR's `latin_g2` recogniser can (96-98% of toned
+    # words on a clean page). Both Apache-2.0/MIT. Their weights are baked into
+    # the worker image, never downloaded at run time when deployed.
+    "docling>=2.15,<3",
+    "easyocr>=1.7.2,<2",
 ]
 
 [build-system]

@@ -183,6 +183,14 @@ ignore_missing_imports = true
 module = ["openpyxl", "openpyxl.*"]
 ignore_missing_imports = true
 
+# Docling comes with the worker's optional `parsers` extra, which CI does not
+# install; dw_knowledge's OCR adapter (supply-chain ticket ai-automation/21)
+# imports it lazily and treats what it returns as untyped either way.
+[[tool.mypy.overrides]]
+module = ["docling", "docling.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
 # ---------------------------------------------------------------------------
 # pytest
 # ---------------------------------------------------------------------------

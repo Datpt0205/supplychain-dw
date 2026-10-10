@@ -92,6 +92,38 @@ class DocumentParserPort(Protocol):
 
 
 @dataclass(frozen=True)
+class OcrLine:
+    """One line the OCR engine recognised, with the engine's own confidence
+    (0..1). Every recognised line is reported, the doubtful ones included: a
+    reader that dropped them would hide exactly what a caller must see."""
+
+    text: str
+    confidence: float
+
+
+@dataclass(frozen=True)
+class OcrReading:
+    """What OCR read from an image or a scan: the text in reading order (the
+    pipeline's assembly of lines into paragraphs and table rows) and every
+    line it recognised, each with its confidence."""
+
+    text: str
+    lines: tuple[OcrLine, ...]
+    page_count: int
+
+
+class OcrPort(Protocol):
+    """Images and scanned pages to text, in process, without a model.
+
+    Raises on a file it will not read (too many pages, out of time, not an
+    image): a caller records that as unreadable, never as an empty text."""
+
+    def supports(self, content_type: str) -> bool: ...
+
+    async def read(self, data: bytes, content_type: str) -> OcrReading: ...
+
+
+@dataclass(frozen=True)
 class RerankCandidate:
     id: str
     text: str

@@ -43,7 +43,10 @@ dependencies = [
 # worker image only; the knowledge ingest consumer degrades to plaintext when
 # absent, so a lean deployment can skip several gigabytes of wheels.
 parsers = [
-    "docling>=2.15,<3",
+    # Docling with EasyOCR, declared by dw_knowledge, whose OCR adapter imports
+    # them (`dw_knowledge.adapters.docling_ocr`, supply-chain ticket
+    # ai-automation/21): one owner of their versions.
+    "dw-knowledge[parsers]",
     # Declared explicitly so the CPU-only index override in the root
     # [tool.uv.sources] applies (docling pulls torch transitively otherwise,
     # which would resolve the multi-GB CUDA wheels from PyPI).
