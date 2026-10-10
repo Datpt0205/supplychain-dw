@@ -32,6 +32,12 @@ question". What this module adds is only the reply, built by code from the
 * a PO the asker cannot see — another tenant's, another workspace's — reads
   exactly as one that does not exist: the lookup never returns it.
 
+When the question opens ONE case and the command has the case assistant
+(ticket ai-automation/19), the reply also answers the question from that
+case's own records, sentence by sentence with what each cites, or says there
+is not enough evidence. It runs as a chat: under the chat's ceiling (no
+document read) and with no price, whatever the asker holds on the portal.
+
 A request to change something is not a question; the reading comes back
 unsupported and the reply says the chat only asks, with the portal's link.
 A product case the asker cannot see — another tenant's, another
@@ -41,6 +47,7 @@ workspace's — reads exactly as one that does not exist, as a PO does.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
@@ -51,8 +58,10 @@ from pydantic import ValidationError
 from dw_agent_runtime.model.budget import BudgetExceededError
 from dw_kernel.errors import InfrastructureError, PermissionDeniedError, QuotaExceededError
 from dw_platform.application.access_context import AccessContext
+from dw_supply_chain.application.case_assistant import AnswerChannel, AskAboutCase, CitedAnswer
 from dw_supply_chain.application.case_query import AnswerCaseQuery, CaseQueryAnswer
 from dw_supply_chain.application.handlers import PO_CASE_READ, PRODUCT_CASE_READ
+from dw_supply_chain.domain.case_document import CaseKind
 from dw_supply_chain.domain.case_query import CaseQueryOutcome, GroundedField
 from dw_supply_chain.domain.po_case import CaseState, POCase
 from dw_supply_chain.domain.product_development_case import (
@@ -74,6 +83,7 @@ Reply = Callable[[str], Awaitable[None]]
 # What `AnswerCaseQuery` requires: `ListPOCases` for a PO question, and
 # `ListProductCases` (and the Category list) for a product-case one.
 QA_CEILING = frozenset({PO_CASE_READ, PRODUCT_CASE_READ})
+ASSISTANT_UNAVAILABLE = "Chưa trả lời được nội dung câu hỏi lúc này; xem trên cổng."
 
 # How many cases one reply names (ticket 06 step 4); the rest is a link.
 MAX_LISTED = 10
@@ -339,6 +349,29 @@ def _product_answer(answer: CaseQueryAnswer, web_url: str) -> str:
     return "\n".join(lines)
 
 
+ASSISTANT_HEADER = "Trả lời từ hồ sơ (AI viết, đã kiểm dẫn chứng):"
+
+
+def assistant_text(answer: CitedAnswer) -> str:
+    """The assistant's answer in a chat: each kept sentence with the labels of
+    what it cites, or the sentence saying there is not enough evidence."""
+    if not answer.answered:
+        return answer.text
+    lines = [ASSISTANT_HEADER]
+    for sentence in answer.sentences:
+        sources = ", ".join(dict.fromkeys(answer.sources.get(k, k) for k in sentence.cites))
+        lines.append(f"- {sentence.text} (nguồn: {sources})")
+    return "\n".join(lines)
+
+
+def _opened(answer: CaseQueryAnswer) -> tuple[CaseKind, uuid.UUID] | None:
+    if answer.plan.outcome is CaseQueryOutcome.OPEN and answer.opened is not None:
+        return CaseKind.PO, answer.opened.id.value
+    if answer.plan.outcome is CaseQueryOutcome.PRODUCT_OPEN and answer.opened_product is not None:
+        return CaseKind.PRODUCT, answer.opened_product.id.value
+    return None
+
+
 # ---- the command ------------------------------------------------------------------
 
 
@@ -350,6 +383,9 @@ class ZaloCaseQueryCommand:
     # The web app's public URL; every case named is linked to its page.
     web_url: str
     model_timeout_seconds: float = MODEL_CALL_TIMEOUT_SECONDS
+    # The case assistant (ticket ai-automation/19): answers the question about
+    # the one case it opened. None: the reply names the case only.
+    assistant: AskAboutCase | None = None
 
     @property
     def ceiling(self) -> frozenset[str]:
@@ -381,5 +417,35 @@ class ZaloCaseQueryCommand:
         except (InfrastructureError, TimeoutError):
             await reply(f"{NOT_UNDERSTOOD}\n{read_only_hint(self.web_url)}")
             return True
-        await reply(answer_text(answer, self.web_url))
+        text = answer_text(answer, self.web_url)
+        opened = _opened(answer)
+        if self.assistant is not None and opened is not None:
+            text = f"{text}\n{await self._assist(context, opened, message.text)}"
+        await reply(text)
         return True
+
+    async def _assist(
+        self, context: AccessContext, opened: tuple[CaseKind, uuid.UUID], question: str
+    ) -> str:
+        assert self.assistant is not None
+        kind, case_id = opened
+        try:
+            answer = await asyncio.wait_for(
+                self.assistant.handle(
+                    context,
+                    case_kind=kind,
+                    case_id=case_id,
+                    question=question,
+                    channel=AnswerChannel.ZALO,
+                ),
+                timeout=self.model_timeout_seconds,
+            )
+        except (
+            PermissionDeniedError,
+            QuotaExceededError,
+            BudgetExceededError,
+            InfrastructureError,
+            TimeoutError,
+        ):
+            return ASSISTANT_UNAVAILABLE
+        return assistant_text(answer)

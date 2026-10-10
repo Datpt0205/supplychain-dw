@@ -29,6 +29,7 @@ from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.ports import Uuid4Generator
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
+from dw_supply_chain.application.case_assistant import AskAboutCase
 from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.handlers import (
     PO_CASE_READ,
@@ -269,11 +270,30 @@ def test_the_command_can_reach_no_write_handler() -> None:
         "PRODUCT_CASE_READ",
         "AnswerCaseQuery",
         "CaseQueryAnswer",
+        # The read-only case assistant (ticket ai-automation/19).
+        "AnswerChannel",
+        "AskAboutCase",
+        "CitedAnswer",
     }
     assert {f.name for f in fields(ZaloCaseQueryCommand)} == {
         "answer",
         "web_url",
         "model_timeout_seconds",
+        "assistant",
+    }
+    # The assistant's collaborators read: cases, history, documents, their
+    # readings, the BM04, the sample measurements; it writes nothing.
+    assert {f.name for f in fields(AskAboutCase)} == {
+        "po_cases",
+        "product_cases",
+        "documents",
+        "readings",
+        "profiles",
+        "sample",
+        "gateway",
+        "authz",
+        "ids",
+        "model_profile",
     }
     assert {f.name for f in fields(AnswerCaseQuery)} == {
         "po_case_repo",

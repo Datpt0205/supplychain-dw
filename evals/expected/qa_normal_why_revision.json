@@ -1,0 +1,7 @@
+{
+  "outcome": "answered",
+  "model_calls": 1,
+  "answer_must_contain": [
+    "2.5"
+  ]
+}

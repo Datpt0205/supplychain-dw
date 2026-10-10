@@ -1,0 +1,18 @@
+{
+  "scopes": [
+    "supply_chain.product_case.read",
+    "supply_chain.po_case.read"
+  ],
+  "question": "Biên bản đánh giá ghi ai đánh giá?",
+  "readings": [
+    {
+      "doc_type": "sample_evaluation",
+      "fields": {
+        "evaluator": "Phòng thí nghiệm A"
+      }
+    }
+  ],
+  "model_writing": {
+    "sentences": []
+  }
+}

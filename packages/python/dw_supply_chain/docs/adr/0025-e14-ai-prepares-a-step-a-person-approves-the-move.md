@@ -338,3 +338,20 @@ Profile `qwen` là chỗ giữ, chưa đo.
    nháp render với kết luận R&D chọn, lưu, ghi chứng từ và xác nhận bản nháp trong một giao dịch
    (`DraftFiler`, `SqlDraftFilings`), rồi bước ghi với chứng từ đó. Bước thất bại sau đó để lại chứng
    từ đã lưu, như một file tải lên.
+
+## Sửa đổi 2026-10-10 (lát AI-19; trợ lý hồ sơ chỉ đọc)
+
+1. **Một lượt gọi có căn cứ, không phải agent dùng tool.** Ticket 19 viết tool spec, toolset và
+   `build_agent`; lát này chọn cách hẹp hơn: code gom bằng chứng của MỘT hồ sơ (lịch sử 30 dòng mới
+   nhất, BM04, số đo vòng mẫu, trường đã đọc của 20 chứng từ mới nhất), một lượt gọi
+   (`answer_case_question@1.0.0`, tác vụ `draft.case_answer`), code giữ câu qua `ground_sentences`.
+   Lý do: câu hỏi chỉ đọc về một hồ sơ không cần vòng lặp; mọi thứ mô hình thấy là thứ code đã chọn
+   theo quyền người hỏi, nên không có tool nào để agent gọi sai, không có `prepare_step` để từ chối.
+   Khi cần hỏi xuyên nhiều hồ sơ, agent qua tool là lát sau.
+2. **Không rộng hơn người hỏi:** đọc của loại hồ sơ trước khi đọc gì; nội dung chứng từ chỉ với
+   `document.read`; giá (`PRICE_FIELDS`, chứng từ in số tiền) chỉ trên cổng với `commercial.read`,
+   không bao giờ qua Zalo (QE-20 tạm: nội dung không giá được qua Zalo, Đạt 2026-10-10). Zalo chạy
+   dưới trần hai quyền đọc của kênh, nên không thấy chứng từ.
+3. **Không trích được thì nói "không đủ bằng chứng"**, kể cả khi mô hình trả sai schema.
+4. Cổng: `POST /po-cases/{id}/questions`, `POST /product-cases/{id}/questions` (thẻ "Hỏi về hồ sơ");
+   Zalo: câu hỏi mở đúng một hồ sơ thì trả lời thêm nội dung, mỗi câu kèm nguồn.

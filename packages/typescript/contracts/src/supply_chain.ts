@@ -1386,6 +1386,21 @@ export type PreProductionChecklist = z.infer<
   typeof preProductionChecklistSchema
 >;
 
+// Ticket ai-automation/19: the read-only case assistant. Every sentence is
+// AI-written and kept only because it checks out against what it cites.
+export const caseAnswerSchema = z.object({
+  answered: z.boolean(),
+  text: z.string(),
+  sentences: z.array(
+    z.object({
+      text: z.string(),
+      cites: z.array(z.object({ key: z.string(), label: z.string() })),
+    }),
+  ),
+  dropped: z.number().int(),
+});
+export type CaseAnswer = z.infer<typeof caseAnswerSchema>;
+
 // Ticket onboarding/01: the one-time import of a tenant's existing data.
 
 export const importSheetSchema = z.enum([

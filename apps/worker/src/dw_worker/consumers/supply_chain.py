@@ -144,6 +144,7 @@ from dw_supply_chain.application.bm04_prefill import (
     Bm04Writer,
 )
 from dw_supply_chain.application.bod_submissions import PrepareBodSubmission
+from dw_supply_chain.application.case_assistant import AskAboutCase
 from dw_supply_chain.application.case_query import AnswerCaseQuery
 from dw_supply_chain.application.commercial import Bm04SchemaSource
 from dw_supply_chain.application.daily_report import SendStageOneReport
@@ -197,6 +198,7 @@ from dw_supply_chain.item_code_rule_policy import load_supply_chain_item_code_ru
 from dw_supply_chain.model_routes import (
     BM04_TASK,
     BOD_SUBMISSION_TASK,
+    CASE_ANSWER_TASK,
     PROPOSAL_LIST_TASK,
     SAMPLE_EVALUATION_TASK,
     SUPPLIER_MESSAGE_TASK,
@@ -1115,6 +1117,29 @@ def build_zalo_case_query_command(
             ids=ids,
         ),
         web_url=web_url,
+        # The case assistant (ticket ai-automation/19) answers the question
+        # about the one case a reply opens, as a chat: no document, no price.
+        assistant=AskAboutCase(
+            po_cases=repo,
+            product_cases=product_cases,
+            documents=SqlCaseDocumentRepository(sessions),
+            readings=SqlExtractionReadings(sessions),
+            profiles=SqlProductProfileRepository(sessions),
+            sample=SamplePreparation(
+                measurements=SqlSampleMeasurements(sessions),
+                policy_override_repo=SqlPolicyOverrideRepository(sessions),
+                platform_default_criteria=load_supply_chain_sample_criteria(
+                    configs_dir / "policies" / SAMPLE_CRITERIA_POLICY_FILE
+                ),
+            ),
+            gateway=gateway,
+            authz=authz,
+            ids=ids,
+            model_profile=load_supply_chain_model_routes(
+                configs_dir / "policies" / MODEL_ROUTES_POLICY_FILE,
+                configs_dir.parent / "evals" / "gates",
+            ).profile_for(CASE_ANSWER_TASK),
+        ),
     )
 
 

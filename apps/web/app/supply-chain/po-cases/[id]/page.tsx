@@ -55,6 +55,7 @@ import {
 import { OriginTag } from "../../../../components/supply-chain/origin-tag";
 import { PackagingDesignCard } from "../../../../components/supply-chain/packaging-design-card";
 import { PreProductionCard } from "../../../../components/supply-chain/pre-production-card";
+import { CaseAssistantCard } from "../../../../components/supply-chain/case-assistant-card";
 import { DraftsCard } from "../../../../components/supply-chain/drafts-card";
 import { PurchaseOrderCard } from "../../../../components/supply-chain/purchase-order-card";
 import { POStepCard } from "../../../../components/supply-chain/po-step-card";
@@ -544,6 +545,7 @@ export default function POCaseWorkspacePage() {
 
         <POCommercialCard caseId={id} />
 
+        <CaseAssistantCard caseKind="po" caseId={id} />
         <DraftsCard caseKind="po" caseId={id} />
         <SupplierMessagesCard caseKind="po" caseId={id} />
 

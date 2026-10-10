@@ -81,6 +81,7 @@ from dw_platform.application.support_access import (
     SupportScopeCatalog,
 )
 from dw_platform.application.tenant_members import TenantMembersService
+from dw_supply_chain.application.case_assistant import AskAboutCase
 from dw_supply_chain.application.case_documents import (
     DownloadCaseDocument,
     ListCaseDocuments,
@@ -234,6 +235,8 @@ class ApiContainer:
     supply_chain_get_attention_queue: GetAttentionQueue | None = None
     supply_chain_get_portfolio_summary: GetPortfolioSummary | None = None
     supply_chain_answer_case_query: AnswerCaseQuery | None = None
+    # The read-only case assistant (ticket ai-automation/19).
+    supply_chain_ask_about_case: AskAboutCase | None = None
     supply_chain_get_daily_brief: GetDailyBrief | None = None
     supply_chain_get_brief_policy: GetBriefPolicy | None = None
     supply_chain_set_brief_policy_override: SetBriefPolicyOverride | None = None

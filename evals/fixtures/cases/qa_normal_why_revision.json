@@ -1,0 +1,33 @@
+{
+  "history": [
+    [
+      "receive_sample",
+      "sample_requested",
+      "sample_testing",
+      null
+    ],
+    [
+      "request_revision",
+      "sample_testing",
+      "revision_requested",
+      "Độ dày đáy 2.5 mm, chuẩn từ 3 mm"
+    ]
+  ],
+  "scopes": [
+    "supply_chain.product_case.read",
+    "supply_chain.po_case.read",
+    "supply_chain.document.read"
+  ],
+  "question": "vì sao mẫu vòng 2 không đạt?",
+  "model_writing": {
+    "sentences": [
+      {
+        "text": "Vòng 2 cần chỉnh sửa vì độ dày đáy 2.5 mm, chuẩn từ 3 mm.",
+        "cites": [
+          "history:0",
+          "case"
+        ]
+      }
+    ]
+  }
+}

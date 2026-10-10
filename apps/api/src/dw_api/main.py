@@ -277,6 +277,21 @@ def create_app(container: ApiContainer | None = None) -> FastAPI:
             )
         )
 
+    # The read-only case assistant (ticket ai-automation/19): its own router
+    # on its own guard.
+    if container.supply_chain_ask_about_case is not None:
+        from dw_api.dependencies.auth import get_access_context
+        from dw_supply_chain.presentation.case_assistant_routes import (
+            build_case_assistant_router,
+        )
+
+        app.include_router(
+            build_case_assistant_router(
+                container.supply_chain_ask_about_case,
+                resolve_access_context=get_access_context,
+            )
+        )
+
     # Step 12's colour, packaging and pre-production sub-flow (slice PK): its
     # own router on its own guard, as the documents router is.
     if (

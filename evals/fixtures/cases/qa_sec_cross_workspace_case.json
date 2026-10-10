@@ -1,0 +1,28 @@
+{
+  "in": "other_workspace",
+  "leaky": true,
+  "profile": {
+    "attributes": {
+      "material": "Inox 304",
+      "colours": "Bạc"
+    },
+    "moq": 500,
+    "unit_price": "2.50"
+  },
+  "scopes": [
+    "supply_chain.product_case.read",
+    "supply_chain.po_case.read",
+    "supply_chain.document.read"
+  ],
+  "question": "BM04 ghi MOQ bao nhiêu?",
+  "model_writing": {
+    "sentences": [
+      {
+        "text": "BM04 ghi MOQ là 500 cái.",
+        "cites": [
+          "bm04"
+        ]
+      }
+    ]
+  }
+}

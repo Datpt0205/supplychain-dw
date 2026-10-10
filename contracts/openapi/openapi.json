@@ -252,6 +252,45 @@
         "title": "AdvanceProductCaseRequest",
         "type": "object"
       },
+      "AnswerCitationView": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "AnswerCitationView",
+        "type": "object"
+      },
+      "AnswerSentenceView": {
+        "properties": {
+          "cites": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerCitationView"
+            },
+            "title": "Cites",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "cites"
+        ],
+        "title": "AnswerSentenceView",
+        "type": "object"
+      },
       "ApprovalView": {
         "properties": {
           "approval_type": {
@@ -1306,6 +1345,37 @@
         "title": "CaseActionResultView",
         "type": "object"
       },
+      "CaseAnswerView": {
+        "properties": {
+          "answered": {
+            "title": "Answered",
+            "type": "boolean"
+          },
+          "dropped": {
+            "title": "Dropped",
+            "type": "integer"
+          },
+          "sentences": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerSentenceView"
+            },
+            "title": "Sentences",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answered",
+          "text",
+          "sentences",
+          "dropped"
+        ],
+        "title": "CaseAnswerView",
+        "type": "object"
+      },
       "CaseApprovalView": {
         "properties": {
           "action": {
@@ -1522,6 +1592,23 @@
           "question"
         ],
         "title": "CaseQueryRequest",
+        "type": "object"
+      },
+      "CaseQuestionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "CaseQuestionRequest",
         "type": "object"
       },
       "CaseState": {
@@ -16675,6 +16762,59 @@
         ]
       }
     },
+    "/api/v1/supply-chain/po-cases/{case_id}/questions": {
+      "post": {
+        "operationId": "ask_about_po_case_api_v1_supply_chain_po_cases__case_id__questions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseAnswerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ask About Po Case",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
     "/api/v1/supply-chain/po-cases/{case_id}/sla-evaluation": {
       "get": {
         "operationId": "get_sla_evaluation_route_api_v1_supply_chain_po_cases__case_id__sla_evaluation_get",
@@ -17993,6 +18133,59 @@
           }
         },
         "summary": "Save Product Profile",
+        "tags": [
+          "supply_chain"
+        ]
+      }
+    },
+    "/api/v1/supply-chain/product-cases/{case_id}/questions": {
+      "post": {
+        "operationId": "ask_about_product_case_api_v1_supply_chain_product_cases__case_id__questions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseAnswerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ask About Product Case",
         "tags": [
           "supply_chain"
         ]

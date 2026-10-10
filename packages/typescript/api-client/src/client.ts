@@ -36,6 +36,7 @@ import {
   proposalListDetailSchema,
   sampleChecklistSchema,
   preProductionChecklistSchema,
+  caseAnswerSchema,
   importReportSchema,
   purchaseOrderProposalSchema,
   poStepProposalSchema,
@@ -121,6 +122,7 @@ import {
   type SampleChecklistRow,
   type SampleVerdict,
   type PreProductionChecklist,
+  type CaseAnswer,
   type ImportReport,
   type ImportRow,
   type ImportRowStatus,
@@ -515,6 +517,16 @@ const _preProductionChecklistMirrorsTheRoute: [
   >,
 ] = [true];
 void _preProductionChecklistMirrorsTheRoute;
+
+// Ticket ai-automation/19: the case assistant's answer.
+const _caseAnswerMirrorsTheRoute: [
+  SameType<keyof CaseAnswer, keyof SupplyChainGenerated["CaseAnswerView"]>,
+  SameType<
+    keyof CaseAnswer["sentences"][number],
+    keyof SupplyChainGenerated["AnswerSentenceView"]
+  >,
+] = [true, true];
+void _caseAnswerMirrorsTheRoute;
 
 // Ticket ai-automation/14: step 10's PO draft.
 const _purchaseOrderMirrorsTheRoute: [
@@ -1871,6 +1883,22 @@ export class ApiClient {
     );
   }
 
+  /** A question about one case, answered from its own records with what
+   * each sentence cites (ticket ai-automation/19). Read-only: no key. */
+  askAboutCase(
+    caseKind: "po" | "product",
+    caseId: string,
+    question: string,
+  ): Promise<CaseAnswer> {
+    const segment = caseKind === "po" ? "po-cases" : "product-cases";
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/${segment}/${encodeURIComponent(caseId)}/questions`,
+      caseAnswerSchema,
+      { body: { question } },
+    );
+  }
+
   /** Step 1 from a list: the file is stored; AI reads it in the background. */
   uploadProposalList(
     file: File,
@@ -2380,6 +2408,7 @@ export type {
   SampleChecklistRow,
   SampleVerdict,
   PreProductionChecklist,
+  CaseAnswer,
   SupplierMessage,
   SupplierMessagePurpose,
   SupplierMessageStatus,

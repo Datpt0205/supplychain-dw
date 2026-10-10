@@ -799,6 +799,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/po-cases/{case_id}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask About Po Case */
+        post: operations["ask_about_po_case_api_v1_supply_chain_po_cases__case_id__questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/po-cases/{case_id}/sla-evaluation": {
         parameters: {
             query?: never;
@@ -1094,6 +1111,23 @@ export interface paths {
         put?: never;
         /** Save Product Profile */
         post: operations["save_product_profile_api_v1_supply_chain_product_cases__case_id__profile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/product-cases/{case_id}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask About Product Case */
+        post: operations["ask_about_product_case_api_v1_supply_chain_product_cases__case_id__questions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1494,6 +1528,20 @@ export interface components {
             /** Supplier Name */
             supplier_name?: string | null;
         };
+        /** AnswerCitationView */
+        AnswerCitationView: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
+        /** AnswerSentenceView */
+        AnswerSentenceView: {
+            /** Cites */
+            cites: components["schemas"]["AnswerCitationView"][];
+            /** Text */
+            text: string;
+        };
         /** ApprovePOStepRequest */
         ApprovePOStepRequest: {
             /** Content Sha256 */
@@ -1665,6 +1713,17 @@ export interface components {
              */
             status: "applied" | "pending_approval";
         };
+        /** CaseAnswerView */
+        CaseAnswerView: {
+            /** Answered */
+            answered: boolean;
+            /** Dropped */
+            dropped: number;
+            /** Sentences */
+            sentences: components["schemas"]["AnswerSentenceView"][];
+            /** Text */
+            text: string;
+        };
         /** CaseApprovalView */
         CaseApprovalView: {
             /** Action */
@@ -1760,6 +1819,11 @@ export interface components {
         CaseQueryOutcome: "list" | "open" | "not_understood" | "supplier_not_found" | "supplier_ambiguous" | "po_reference_missing" | "po_not_found" | "po_ambiguous" | "product_list" | "product_open" | "proposal_code_missing" | "category_not_found" | "category_ambiguous" | "pic_not_found" | "pic_ambiguous" | "product_not_found" | "product_ambiguous";
         /** CaseQueryRequest */
         CaseQueryRequest: {
+            /** Question */
+            question: string;
+        };
+        /** CaseQuestionRequest */
+        CaseQuestionRequest: {
             /** Question */
             question: string;
         };
@@ -5831,6 +5895,41 @@ export interface operations {
             };
         };
     };
+    ask_about_po_case_api_v1_supply_chain_po_cases__case_id__questions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseQuestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseAnswerView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_sla_evaluation_route_api_v1_supply_chain_po_cases__case_id__sla_evaluation_get: {
         parameters: {
             query?: never;
@@ -6587,6 +6686,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductProfileView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_about_product_case_api_v1_supply_chain_product_cases__case_id__questions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseQuestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseAnswerView"];
                 };
             };
             /** @description Validation Error */

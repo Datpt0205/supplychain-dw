@@ -1090,6 +1090,22 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         policy_override_repo=policy_override_repo,
         platform_default_criteria=load_supply_chain_sample_criteria(SUPPLY_CHAIN_SAMPLE_CRITERIA),
     )
+    # The read-only case assistant (ticket ai-automation/19): one case's own
+    # records as evidence, one grounded model call, nothing written. On the
+    # process's own profile (no route is set for `draft.case_answer`).
+    from dw_supply_chain.application.case_assistant import AskAboutCase
+
+    container.supply_chain_ask_about_case = AskAboutCase(
+        po_cases=po_case_repo,
+        product_cases=product_case_repo,
+        documents=document_repo,
+        readings=SqlExtractionReadings(wiring.seam.session_factory),
+        profiles=profiles,
+        sample=sample_preparation,
+        gateway=one_call_gateway,
+        authz=authorization,
+        ids=wiring.seam.ids,
+    )
     bm04_preparation = Bm04Preparation(schemas=bm04_schemas, profiles=profiles)
     # Step 9 (ticket ai-automation/13): the tenant's code rule, the codes the
     # application and the imported catalogue hold, and the BM04's variants.
