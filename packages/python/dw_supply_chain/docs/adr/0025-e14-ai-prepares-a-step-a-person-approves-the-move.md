@@ -317,3 +317,24 @@ Profile `qwen` là chỗ giữ, chưa đo.
    PO step soạn MỘT `discrepancy_report` cho mỗi hồ sơ có dòng chênh trong 30 ngày gần nhất và báo
    Cung ứng; lane thư soạn MỘT thư `discrepancy_claim` dẫn đúng các dòng đó (không giá); người gửi.
    Biên bản là bản nháp xem trước, sửa, tải về, như yêu cầu sửa của AI-16.
+
+## Sửa đổi 2026-10-10 (tạm, lát AI-17 mục 2; biên bản test trước SX như vòng mẫu)
+
+1. **Số đo của R&D** (`pre_production_measurements`, migration `2bb10bdd4420`: chỉ thêm, workspace
+   RLS, `dw_app` SELECT/INSERT): cùng danh sách tiêu chí của vòng mẫu (`supply_chain_sample_criteria`
+   theo nhóm của hồ sơ sản phẩm; không có hồ sơ sản phẩm thì danh sách mặc định), theo **lần test**
+   (lần đầu, cộng một mỗi lần Không đạt trong lịch sử bước 12). Nhập cần duty của bước Đạt test (R&D),
+   chỉ khi đã nhận mẫu và test chưa đạt. Phép so là `sample_evaluation.judge`, một chỗ.
+2. **Biên bản** (`pre_production_test_report@1.0.0`): lane bước 12 soạn khi mọi tiêu chí của lần test
+   đã có số: bảng của code, ghi chú do mô hình viết bằng CHÍNH prompt và grounding của biên bản vòng
+   mẫu (`draft_sample_evaluation@1.0.0`, tác vụ `draft.sample_evaluation`), chỉ giữ câu dẫn đúng bằng
+   chứng; mô hình không trả lời thì biên bản chỉ có bảng. Ngày, người test và kết luận để trống. Một
+   bản cho mỗi bộ số; số sửa sau thì soạn bản mới. R&D được báo.
+3. **Gợi ý cạnh ô trống:** Không đạt khi một tiêu chí trượt, Đạt khi mọi tiêu chí đạt, không gợi ý khi
+   còn tiêu chí chưa đo; không chọn sẵn.
+4. **Biên bản thành chứng từ ở bước Đạt / Không đạt:** bước test nhận `draft_id` thay cho file tải
+   lên. Bản nháp phải là bản mở của hồ sơ này, đúng loại, và bảng tiêu chí phải đúng bằng kết quả của
+   số đo hiện tại (số đổi sau khi soạn, hay bảng bị sửa tay: từ chối). Bước được kiểm mở trước; bản
+   nháp render với kết luận R&D chọn, lưu, ghi chứng từ và xác nhận bản nháp trong một giao dịch
+   (`DraftFiler`, `SqlDraftFilings`), rồi bước ghi với chứng từ đó. Bước thất bại sau đó để lại chứng
+   từ đã lưu, như một file tải lên.

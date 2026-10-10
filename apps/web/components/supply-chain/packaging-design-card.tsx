@@ -22,6 +22,7 @@ import { LoadError } from "../load-error";
 import type { DocumentType } from "@dw/contracts";
 import type {
   CaseDocument,
+  DocumentDraft,
   PackagingAction,
   PackagingDesign,
   PackagingStepOption,
@@ -37,6 +38,7 @@ import { useCachedResource } from "../../lib/use-cached-resource";
 import { DOC_TYPE_LABEL } from "./case-documents-card";
 import { CASE_STATE_LABEL } from "./case-state-badge";
 import { CASE_DUTY_LABEL } from "./product-case-labels";
+import { TEST_SUGGESTION_LABEL } from "./pre-production-card";
 
 /** The one table of names for step 12's sub-steps (slice PK). */
 export const PACKAGING_ACTION_LABEL: Record<PackagingAction, string> = {
@@ -65,6 +67,13 @@ const TEST_LABEL: Record<PreProductionTest, [string, StatusTone]> = {
 
 const OFFLINE = "Không có kết nối mạng. Kết nối lại rồi thử lại.";
 const REPORT = "pre_production_test_report" as const;
+const TEST_ACTIONS: PackagingAction[] = [
+  "pass_pre_production_test",
+  "fail_pre_production_test",
+];
+// The paper a test step names: an uploaded document or the drafted record.
+const DOC = "doc:";
+const DRAFT = "draft:";
 const CONTENT = "packaging_content" as const;
 
 /** The paper a step is taken on, and when it must have been uploaded. */
@@ -346,7 +355,8 @@ function History({ design }: { design: PackagingDesign }) {
 
 interface StepValues {
   reason?: string;
-  documentId?: string;
+  // `doc:<id>` (an uploaded report) or `draft:<id>` (the record AI drafted).
+  paper?: string;
 }
 
 function StepModal({
@@ -366,8 +376,39 @@ function StepModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reports, setReports] = useState<CaseDocument[] | null>(null);
+  const [records, setRecords] = useState<DocumentDraft[]>([]);
+  const [suggestion, setSuggestion] = useState<string | null>(null);
   const label = PACKAGING_ACTION_LABEL[option.action];
   const paper = STEP_PAPER[option.action] ?? { type: REPORT, since: "" };
+  const isTest = TEST_ACTIONS.includes(option.action);
+
+  useEffect(() => {
+    if (!isTest) return;
+    let cancelled = false;
+    // The record AI drafted (ticket ai-automation/17), and code's suggestion
+    // beside the empty choice: shown, never chosen for the person.
+    void Promise.all([
+      apiClient().listCaseDrafts("po", caseId),
+      apiClient().getPreProductionChecklist(caseId),
+    ])
+      .then(([drafts, checklist]) => {
+        if (cancelled) return;
+        setRecords(
+          drafts.filter((d) => d.doc_type === REPORT && d.status === "open"),
+        );
+        setSuggestion(
+          checklist.suggestion
+            ? (TEST_SUGGESTION_LABEL[checklist.suggestion] ?? null)
+            : null,
+        );
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) setError(errorMessage(caught));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [caseId, isTest]);
 
   useEffect(() => {
     if (!option.requires_document) return;
@@ -387,10 +428,12 @@ function StepModal({
   }, [caseId, option.requires_document, paper.type]);
 
   const submit = async (values: StepValues) => {
+    const named = values.paper ?? "";
     const input = {
       action: option.action,
       reason: values.reason,
-      documentId: values.documentId,
+      documentId: named.startsWith(DOC) ? named.slice(DOC.length) : undefined,
+      draftId: named.startsWith(DRAFT) ? named.slice(DRAFT.length) : undefined,
     };
     setSubmitting(true);
     setError(null);
@@ -433,11 +476,22 @@ function StepModal({
             <Input.TextArea rows={3} />
           </Form.Item>
         )}
+        {isTest && (
+          <Typography.Paragraph>
+            Gợi ý của hệ thống theo số đo:{" "}
+            {suggestion ?? "chưa đủ số đo để gợi ý"}. R&D tự chọn bước; gợi ý
+            không được chọn sẵn.
+          </Typography.Paragraph>
+        )}
         {option.requires_document && (
           <Form.Item
-            name="documentId"
+            name="paper"
             label={DOC_TYPE_LABEL[paper.type]}
-            extra={`Tải ${DOC_TYPE_LABEL[paper.type]} lên ở mục Chứng từ của hồ sơ này, ${paper.since}.`}
+            extra={
+              isTest
+                ? `Chọn biên bản AI soạn (mục Bản nháp, hệ thống lưu thành chứng từ khi ghi bước) hoặc file tải lên ở mục Chứng từ, ${paper.since}.`
+                : `Tải ${DOC_TYPE_LABEL[paper.type]} lên ở mục Chứng từ của hồ sơ này, ${paper.since}.`
+            }
             rules={[
               { required: true, message: `Chọn ${DOC_TYPE_LABEL[paper.type]}` },
             ]}
@@ -445,10 +499,16 @@ function StepModal({
             <Select
               aria-label={DOC_TYPE_LABEL[paper.type]}
               loading={reports === null && error === null}
-              options={(reports ?? []).map((d) => ({
-                value: d.id,
-                label: `${d.filename} · v${d.version} · ${formatDateTime(d.uploaded_at)}`,
-              }))}
+              options={[
+                ...records.map((d) => ({
+                  value: `${DRAFT}${d.id}`,
+                  label: `Biên bản AI soạn · v${d.version} · ${formatDateTime(d.created_at)}`,
+                })),
+                ...(reports ?? []).map((d) => ({
+                  value: `${DOC}${d.id}`,
+                  label: `${d.filename} · v${d.version} · ${formatDateTime(d.uploaded_at)}`,
+                })),
+              ]}
             />
           </Form.Item>
         )}

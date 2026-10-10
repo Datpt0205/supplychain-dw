@@ -88,3 +88,37 @@ khác không thấy); `test_rls_coverage.py`, `test_privileges.py`; lần đọc
 
 Chưa làm, ghi lại: OCR cho ảnh và bản quét (báo cáo QC, packing list hay gửi dạng ảnh: bước nêu máy không
 đọc được, người kiểm); biên bản test trước SX do AI soạn; nhắc theo ETA; đóng cont thành bước (QE-15).
+
+**2026-10-10, mục 2 làm xong (agent): biên bản test trước SX như biên bản vòng mẫu (AI-09).**
+
+- R&D nhập số đo mẫu trước SX theo cùng tiêu chí của vòng mẫu (nhóm của hồ sơ sản phẩm; không có thì
+  danh sách mặc định), theo lần test (lần đầu, +1 mỗi lần Không đạt): bảng `pre_production_measurements`
+  (migration `2bb10bdd4420`, chỉ thêm, workspace RLS FORCE, `dw_app` SELECT/INSERT), route `GET
+.../pre-production-checklist`, `POST .../pre-production-measurements`; cần duty của bước Đạt test
+  (R&D), chỉ khi đã nhận mẫu và test chưa đạt. Web: thẻ "Số đo test trước SX (lần n)" trên trang Hồ sơ
+  PO (bảng tiêu chí dùng chung với thẻ vòng mẫu: `ChecklistTable`).
+- Lane bước 12 (`supply_chain_packaging_papers`) soạn `pre_production_test_report@1.0.0` khi mọi tiêu
+  chí có số: bảng của code, ghi chú do mô hình viết bằng chính prompt/grounding của biên bản vòng mẫu
+  (`draft_sample_evaluation@1.0.0`, tác vụ `draft.sample_evaluation`, `EvaluationWriter` có
+  `subject_kind=po_case`, `purpose=pre_production_test`); mô hình lỗi thì chỉ bảng; một bản cho mỗi bộ
+  số; R&D được báo. Ngày, người test, kết luận để trống.
+- Gợi ý cạnh ô trống (Không đạt khi một tiêu chí trượt, Đạt khi đủ đạt, không gợi ý khi còn chưa đo),
+  hiện trên thẻ và trong hộp Đạt / Không đạt, không chọn sẵn.
+- Bước Đạt / Không đạt nhận `draft_id`: bản nháp mở của hồ sơ, đúng loại, bảng đúng bằng kết quả số đo
+  hiện tại (số đổi hay bảng sửa tay: 409); bước kiểm mở trước, rồi `DraftFiler` render với kết luận R&D
+  chọn, `SqlDraftFilings` ghi chứng từ + xác nhận + audit một giao dịch, rồi bước ghi với chứng từ đó.
+  Web: hộp bước liệt kê "Biên bản AI soạn" cạnh file tải lên.
+- Dataset `supply_chain_preparation@1.15.0` (routes 1.15.0, +10 ca `pp-*`, 269; grader
+  `supply_chain.pre_production_report`, bất biến live: mỗi khóa dẫn là khóa mô hình được xem, mỗi số
+  trong ghi chú có trong bằng chứng, không số tài khoản). ADR 0025 sửa đổi (AI-17 mục 2); `process.md`
+  hàng 13 cột AI.
+- Mutation (mỗi guard bỏ đi thì đỏ, unit `test_pre_production_test.py`): 18/18 đỏ sau khi thêm 6 test
+  cho 6 kẻ sống sót lần đầu (bản nháp khác loại; bỏ `require_open`; bỏ kiểm bước mở trước khi lưu; bỏ
+  kiểm test mở khi nhập số (test cũ đỏ vì lý do khác: tiêu chí không thuộc danh sách); bỏ kiểm
+  workspace lớp hai của hồ sơ PO và của hồ sơ sản phẩm (cần store rò)). Eval: bỏ grounding, soạn khi
+  chưa đủ số, store số đo quên RLS, bỏ bằng chứng tiêu chí: 4/4 đỏ. Web: bỏ lọc bản nháp mở: đỏ.
+- Nợ (không Docker): `tests/integration/test_pre_production_measurements.py` (xuyên tenant/workspace,
+  CHECK), `test_privileges.py` (bảng mới chỉ thêm), `test_rls_coverage.py`, migration chạy thật,
+  `test_packaging_designs.py` với `draft_id` qua Postgres. Ba bản sao "draft thành chứng từ" cũ
+  (`po_steps`, `purchase_orders`, `step_proposals`) chưa chuyển sang `DraftFiler`: ghi lại, không sửa
+  trong lát này.

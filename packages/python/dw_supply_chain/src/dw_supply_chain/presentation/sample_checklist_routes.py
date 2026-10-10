@@ -67,7 +67,8 @@ class MeasurementRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500, pattern=_NO_NUL)
 
 
-def _rows(results: Sequence[CriterionResult]) -> list[ChecklistRowView]:
+def checklist_rows(results: Sequence[CriterionResult]) -> list[ChecklistRowView]:
+    """A sample round's or a pre-production test's rows, one shape."""
     return [
         ChecklistRowView(
             key=r.criterion.key,
@@ -90,7 +91,7 @@ def _view(checklist: SampleChecklist) -> SampleChecklistView:
         case_id=checklist.case.id.value,
         sample_round=checklist.case.sample_round,
         can_record=checklist.can_record,
-        rows=_rows(checklist.results),
+        rows=checklist_rows(checklist.results),
     )
 
 

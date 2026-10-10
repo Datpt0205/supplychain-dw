@@ -16,6 +16,15 @@ What each command decides, and where:
   caller's RLS; whether it is this case's report since the sample is the
   domain's rule (`PackagingDesign._step_document`). A named document the caller
   cannot read is the same refusal as one never named.
+- **The record R&D drafted** (ticket ai-automation/17, item 2): a test step
+  may name the pre-production test report the packaging lane drafted instead
+  of an uploaded one. It must be this case's open draft of that type, and its
+  criteria table must be exactly what R&D's values of this attempt judge to
+  (a value corrected since, or a table edited by hand, is refused: the record
+  prints code's comparison). The step is checked open first; the draft is
+  then filed (rendered with the conclusion R&D chose, stored, recorded and
+  confirmed in one transaction) and the step taken with it. A step that then
+  fails leaves the filed report on the case, as an upload would.
 - **The record:** the design row, its history row and the audit event are one
   transaction. Approving the colour writes "đã báo TP MKT" into the history and
   tells the case's PIC, after the step is saved.
@@ -35,14 +44,18 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Protocol
 
-from dw_kernel.errors import NotFoundError, PermissionDeniedError
+from dw_kernel.errors import ConflictError, DomainError, NotFoundError, PermissionDeniedError
 from dw_kernel.ports import IdGenerator, UtcClock
 from dw_platform.application.access_context import AccessContext
 from dw_platform.application.ports import AuthorizationPort, PolicyOverridePort
+from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.action_duties import CaseDuty, SupplyChainActionDuties
+from dw_supply_chain.application.document_drafts import DraftFiler, NewDraftDecision
 from dw_supply_chain.application.handlers import (
     ACTION_DUTIES_READ,
     ACTION_DUTIES_WRITE,
@@ -55,15 +68,23 @@ from dw_supply_chain.application.handlers import (
 )
 from dw_supply_chain.application.po_case_audit import PO_CASE_RESOURCE, po_case_audit
 from dw_supply_chain.application.ports import (
+    NewCaseDocument,
     PackagingDesignRepositoryPort,
     POCaseRepositoryPort,
     ReviewNotifierPort,
     ScopeHoldersPort,
 )
+from dw_supply_chain.application.pre_production_test import PreProductionTestSources, drafted_for
 from dw_supply_chain.application.product_cases import ProductDocumentLookupPort
 from dw_supply_chain.application.production_gate import resolve_packaging_policy
-from dw_supply_chain.application.step_preparation import CaseDocumentListPort
-from dw_supply_chain.domain.case_document import CaseDocumentId, CaseKind, DocumentType
+from dw_supply_chain.application.step_preparation import CaseDocumentListPort, CaseDraftsPort
+from dw_supply_chain.domain.case_document import (
+    CaseDocument,
+    CaseDocumentId,
+    CaseKind,
+    DocumentType,
+)
+from dw_supply_chain.domain.document_draft import DocumentDraft
 from dw_supply_chain.domain.packaging_design import (
     ACTION_DOCUMENT_TYPE,
     MKT_ACTIONS,
@@ -74,9 +95,33 @@ from dw_supply_chain.domain.packaging_design import (
     document_refusal,
 )
 from dw_supply_chain.domain.po_case import CaseState, POCase, POCaseId
+from dw_supply_chain.domain.pre_production_test import TEST_ACTIONS
 from dw_supply_chain.packaging_policy import PACKAGING_POLICY_ID, SupplyChainPackagingPolicy
 
 logger = logging.getLogger(__name__)
+
+# What the filed record prints as its conclusion: the step R&D chose.
+_CONCLUSION = {
+    PackagingAction.PASS_PRE_PRODUCTION_TEST: "Đạt",
+    PackagingAction.FAIL_PRE_PRODUCTION_TEST: "Không đạt",
+}
+
+
+class DraftFilingsPort(Protocol):
+    """A draft filed as a case document: the document row (naming its draft),
+    the draft's confirmation and the audit events, in one transaction. A
+    version already decided refuses the whole (`ConflictError`)."""
+
+    async def record(
+        self,
+        context: AccessContext,
+        *,
+        document: NewCaseDocument,
+        confirmation: NewDraftDecision,
+        draft_id: uuid.UUID,
+        audits: Sequence[AuditEvent],
+    ) -> None: ...
+
 
 _PACKAGING_POLICY_RESOURCE = "packaging_policy"
 
@@ -250,6 +295,12 @@ class TakePackagingStep:
     notifier: ReviewNotifierPort
     ids: IdGenerator
     clock: UtcClock
+    # The pre-production test report drafted by the packaging lane, filed
+    # when R&D takes the test with it (ticket ai-automation/17, item 2).
+    drafts: CaseDraftsPort
+    test: PreProductionTestSources
+    filer: DraftFiler
+    filings: DraftFilingsPort
 
     async def handle(
         self,
@@ -259,7 +310,13 @@ class TakePackagingStep:
         action: PackagingAction,
         reason: str | None = None,
         document_id: uuid.UUID | None = None,
+        draft_id: uuid.UUID | None = None,
     ) -> PackagingDesign:
+        if draft_id is not None and (action not in TEST_ACTIONS or document_id is not None):
+            raise DomainError(
+                "chỉ bước test trước SX nhận biên bản AI soạn, và thay cho file tải lên",
+                details={"action": action.value},
+            )
         duties = await resolve_action_duties(
             context, self.policy_override_repo, self.platform_default_duties
         )
@@ -281,6 +338,8 @@ class TakePackagingStep:
         )
         mkt = policy.require_packaging_content
         now: datetime = self.clock.now()
+        if draft_id is not None:
+            document = await self._file(context, case, design, action, reason, draft_id)
         design.take(
             action,
             case_in_pre_production=case.state is CaseState.PRE_PRODUCTION,
@@ -349,6 +408,79 @@ class TakePackagingStep:
             except Exception:
                 logger.exception("packaging: the PIC was not told of the colour approval")
         return design
+
+    async def _file(
+        self,
+        context: AccessContext,
+        case: POCase,
+        design: PackagingDesign,
+        action: PackagingAction,
+        reason: str | None,
+        draft_id: uuid.UUID,
+    ) -> CaseDocument:
+        """The drafted record filed as this case's report, once the step is
+        known to be open: the domain re-checks everything when it is taken."""
+        if case.state is not CaseState.PRE_PRODUCTION or not design.test_open:
+            raise ConflictError(
+                f"không thể {action.value} ở bước con hiện tại",
+                details={"case_id": str(case.id), "action": action.value},
+            )
+        text = (reason or "").strip()
+        if action in REASON_REQUIRED_ACTIONS and not text:
+            raise DomainError("this action requires a reason", details={"action": action.value})
+        draft = await self._draft(context, case, action, draft_id)
+        if not drafted_for(draft, await self.test.results(context, case)):
+            raise ConflictError(
+                "số đo đã đổi hoặc bảng tiêu chí đã bị sửa sau khi soạn biên bản; dùng bản "
+                "nháp mới nhất",
+                details={"case_id": str(case.id), "draft_id": str(draft.id)},
+            )
+        conclusion = _CONCLUSION[action] + (f": {text}" if text else "")
+        filled: dict[str, str] = {"conclusion": conclusion}
+        if not (draft.fields.get("tested_on") or {}).get("value"):
+            filled["tested_on"] = self.clock.now().date().isoformat()
+        document, confirmation = await self.filer.file(context, draft, filled)
+        await self.filings.record(
+            context,
+            document=document,
+            confirmation=confirmation,
+            draft_id=draft.id,
+            audits=[
+                po_case_audit(
+                    context,
+                    self.ids,
+                    self.clock,
+                    case.id,
+                    "pre_production_report.filed",
+                    {
+                        "draft_id": str(draft.id),
+                        "lineage_id": str(draft.lineage_id),
+                        "document_id": str(document.id),
+                        "sha256": document.sha256,
+                    },
+                ),
+            ],
+        )
+        filed = await self.documents.get(context, document.id)
+        if filed is None:
+            raise document_refusal(case.id.value, action)
+        return filed
+
+    async def _draft(
+        self, context: AccessContext, case: POCase, action: PackagingAction, draft_id: uuid.UUID
+    ) -> DocumentDraft:
+        draft = await self.drafts.get(context, draft_id)
+        if (
+            draft is None
+            or draft.tenant_id != context.tenant_id
+            or draft.workspace_id != context.workspace_id
+            or draft.case_kind is not CaseKind.PO
+            or draft.case_id != case.id.value
+            or draft.doc_type is not DocumentType.PRE_PRODUCTION_TEST_REPORT
+        ):
+            raise document_refusal(case.id.value, action)
+        draft.require_open()
+        return draft
 
 
 @dataclass(frozen=True)

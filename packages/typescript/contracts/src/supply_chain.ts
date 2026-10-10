@@ -1368,6 +1368,20 @@ export const sampleChecklistSchema = z.object({
 });
 export type SampleChecklist = z.infer<typeof sampleChecklistSchema>;
 
+// Ticket ai-automation/17, item 2: step 12's pre-production test, measured
+// against the same criteria; the suggestion is code's, never preselected.
+export const preProductionChecklistSchema = z.object({
+  case_id: z.string().uuid(),
+  attempt: z.number().int(),
+  open: z.boolean(),
+  can_record: z.boolean(),
+  suggestion: packagingActionSchema.nullable(),
+  rows: z.array(sampleChecklistRowSchema),
+});
+export type PreProductionChecklist = z.infer<
+  typeof preProductionChecklistSchema
+>;
+
 // Ticket onboarding/01: the one-time import of a tenant's existing data.
 
 export const importSheetSchema = z.enum(["suppliers", "catalogue", "users"]);

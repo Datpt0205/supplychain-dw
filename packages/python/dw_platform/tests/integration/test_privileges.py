@@ -800,6 +800,8 @@ async def test_ai_drafting_tables_are_append_only(db_urls: DatabaseUrls) -> None
                 "supply_chain.proposal_list_decisions",
                 # Migration 1021f7fe88f0 (ticket ai-automation/09).
                 "supply_chain.sample_measurements",
+                # Migration 2bb10bdd4420 (ticket ai-automation/17, item 2).
+                "supply_chain.pre_production_measurements",
             ):
                 for verb, held in (
                     ("SELECT", True),

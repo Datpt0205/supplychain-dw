@@ -709,6 +709,25 @@ sample_measurements = sa.Table(
     ),
 )
 
+# What R&D measured on a PO case's pre-production sample (2bb10bdd4420,
+# ticket ai-automation/17 item 2), append-only, per test attempt.
+pre_production_measurements = sa.Table(
+    "pre_production_measurements",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("workspace_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("po_case_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("attempt", sa.Integer, nullable=False),
+    sa.Column("criterion", sa.Text, nullable=False),
+    sa.Column("value", sa.Text, nullable=False),
+    sa.Column("note", sa.Text, nullable=True),
+    sa.Column("entered_by", UUID(as_uuid=True), nullable=False),
+    sa.Column(
+        "entered_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    ),
+)
+
 # The tenant's item and SKU catalogue as imported (ADR 0027, ticket
 # onboarding/01): one row per SKU, or per item code without one. Step 9's
 # duplicate check reads it beside `item_codes` and `skus`.

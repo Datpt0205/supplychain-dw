@@ -26,6 +26,7 @@ route reaches it, and it checks the case like every other handler.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -58,7 +59,8 @@ from dw_supply_chain.application.handlers import (
     DOCUMENT_READ,
     DOCUMENT_WRITE,
 )
-from dw_supply_chain.domain.case_document import CaseKind, DocumentType
+from dw_supply_chain.application.ports import CaseDocumentStoragePort, NewCaseDocument
+from dw_supply_chain.domain.case_document import CaseDocumentId, CaseKind, DocumentType, ObjectKey
 from dw_supply_chain.domain.commercial import PRICE_FIELDS
 from dw_supply_chain.domain.document_draft import (
     DRAFT_TEMPLATES,
@@ -778,7 +780,60 @@ class RenderDocumentDraft:
         )
 
 
+@dataclass(frozen=True)
+class DraftFiler:
+    """A draft made a stored file: its template rendered over its fields (with
+    what the step decided in `filled`, e.g. the conclusion a person chose),
+    the bytes put under a key the server builds, and the document row and the
+    draft's confirmation the caller records in its own transaction. The
+    object is put first, as an upload is: a row that then fails leaves an
+    object the orphan sweep removes."""
+
+    templates: DraftTemplatesPort
+    renderer: DocumentRendererPort
+    storage: CaseDocumentStoragePort
+    ids: IdGenerator
+
+    async def file(
+        self,
+        context: AccessContext,
+        draft: DocumentDraft,
+        filled: Mapping[str, Any] | None = None,
+    ) -> tuple[NewCaseDocument, NewDraftDecision]:
+        template = await self.templates.resolve(context, draft.template_id, draft.template_version)
+        fields = {**draft.fields, **{n: {"value": v} for n, v in (filled or {}).items()}}
+        rendered = self.renderer.render(template, template_values(fields, hide_prices=False))
+        document_id = self.ids.new_uuid()
+        key = ObjectKey.build(
+            tenant_id=context.tenant_id,
+            workspace_id=context.workspace_id,
+            case_kind=draft.case_kind,
+            case_id=draft.case_id,
+            document_id=document_id,
+        ).value
+        await self.storage.put(key, rendered.data, rendered.content_type)
+        document = NewCaseDocument(
+            id=CaseDocumentId(document_id),
+            case_kind=draft.case_kind,
+            case_id=draft.case_id,
+            doc_type=draft.doc_type,
+            object_key=key,
+            filename=f"{template.spec.title}.{rendered.extension}",
+            content_type=rendered.content_type,
+            size_bytes=len(rendered.data),
+            sha256=hashlib.sha256(rendered.data).hexdigest(),
+        )
+        confirmation = NewDraftDecision(
+            id=self.ids.new_uuid(),
+            draft_id=draft.id,
+            decision=DraftDecision.CONFIRMED,
+            reason=None,
+        )
+        return document, confirmation
+
+
 __all__ = [
+    "DraftFiler",
     "DraftReading",
     "FieldInput",
     "GetDocumentDraft",

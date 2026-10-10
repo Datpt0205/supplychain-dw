@@ -13,9 +13,17 @@
     * a design revision request for the newest packaging design proof the
       extraction lane read while the design is not approved, one item per
       finding of the proof check, when there is any.
+    * the pre-production test report (ticket ai-automation/17, item 2) once
+      the sample is in, the test not passed and R&D has measured every
+      criterion of this attempt: code's criteria table, and the notes the
+      model wrote only where they check out against what they cite (the
+      same prompt and grounding as a sample round's record, ticket
+      ai-automation/09); without a model, or when it does not answer, the
+      record carries the table alone. Drafted once per set of results.
   A request is drafted once per source document (its `sources` name it), and
   the holders of the step's duty are told; a rejected draft is a person's no.
-  No model is asked: the model's part is reading the proof.
+  The model words only the test report's notes; reading the proof is the
+  extraction lane's.
 - **The proof check** (`GetPackagingProof`): the newest proof on the case, its
   reading, and what code finds against the label rules, the BM04 and the PO's
   SKUs (`domain.proof_check`). No price in any of it.
@@ -56,11 +64,20 @@ from dw_supply_chain.application.ports import (
     ReviewNotifierPort,
     ScopeHoldersPort,
 )
+from dw_supply_chain.application.pre_production_test import (
+    PreProductionResults,
+    PreProductionTestSources,
+    drafted_for,
+    report_evidence,
+    report_values,
+)
 from dw_supply_chain.application.production_gate import resolve_packaging_policy
 from dw_supply_chain.application.purchase_orders import POCaseStorePort
 from dw_supply_chain.application.step_preparation import (
+    EVALUATION_PROMPT,
     CaseDocumentListPort,
     CaseDraftsPort,
+    EvaluationWriterPort,
     ExtractionReadingsPort,
     WorkspacesWithCasesPort,
     resolve_step_preparation,
@@ -75,6 +92,7 @@ from dw_supply_chain.domain.packaging_design import (
 from dw_supply_chain.domain.payment_check import SourceRead
 from dw_supply_chain.domain.po_case import CaseState, POCase, POCaseId
 from dw_supply_chain.domain.proof_check import proof_findings
+from dw_supply_chain.domain.sample_evaluation import ground_evaluation
 from dw_supply_chain.domain.step_proposal import Finding
 from dw_supply_chain.packaging_policy import SupplyChainPackagingPolicy
 from dw_supply_chain.step_preparation_policy import SupplyChainStepPreparation
@@ -234,6 +252,10 @@ class PreparePackagingPapers:
     holders: ScopeHoldersPort
     notifier: ReviewNotifierPort
     clock: UtcClock
+    # R&D's values of the pre-production test, and the model that words the
+    # record's notes (None: the record carries code's table alone).
+    test: PreProductionTestSources
+    writer: EvaluationWriterPort | None = None
 
     async def run(self) -> PackagingPaperCount:
         count = PackagingPaperCount()
@@ -326,7 +348,55 @@ class PreparePackagingPapers:
                 )
                 await self._tell(context, case, PackagingAction.REQUEST_DESIGN_REVISION)
                 drafted += 1
+        if design.test_open:
+            results = await self.test.results(context, case)
+            if results.complete and not any(
+                d.doc_type is DocumentType.PRE_PRODUCTION_TEST_REPORT and drafted_for(d, results)
+                for d in drafts
+            ):
+                await self._test_report(context, case, attributes, results)
+                drafted += 1
         return drafted
+
+    async def _test_report(
+        self,
+        context: AccessContext,
+        case: POCase,
+        attributes: Mapping[str, Any] | None,
+        results: PreProductionResults,
+    ) -> None:
+        notes: tuple[Any, ...] = ()
+        if self.writer is not None:
+            evidence = report_evidence(case, results)
+            writing = await self.writer.write(context, case_id=case.id.value, evidence=evidence)
+            if writing is not None:
+                notes = ground_evaluation(writing, evidence, results.results).notes
+        await self.prepare_draft.handle(
+            context,
+            case_kind=CaseKind.PO,
+            case_id=case.id.value,
+            doc_type=DocumentType.PRE_PRODUCTION_TEST_REPORT,
+            values=report_values(case, results, attributes, notes),
+            prompt=None
+            if self.writer is None
+            else (EVALUATION_PROMPT.prompt_id, EVALUATION_PROMPT.prompt_version),
+        )
+        duties = await resolve_action_duties(
+            context, self.policy_override_repo, self.platform_default_duties
+        )
+        await notify_duty_holders(
+            context,
+            holders=self.holders,
+            notifier=self.notifier,
+            duty=duties.duty_for(PackagingAction.PASS_PRE_PRODUCTION_TEST),
+            source_key=f"supply_chain.pre_production_report:{case.id}:{results.digest}",
+            title=f"Biên bản test trước SX đã soạn: {case.supplier_name}",
+            body=(
+                "Hệ thống đã so số đo với chuẩn và soạn biên bản; R&D xem rồi chọn Đạt hoặc "
+                "Không đạt với biên bản này."
+            ),
+            link=po_case_link(case.id.value),
+        )
 
     async def _draft(
         self,

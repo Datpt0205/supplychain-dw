@@ -55,6 +55,7 @@ const api = {
   listSupplierMessages: vi.fn(),
   getPurchaseOrderProposal: vi.fn(),
   getPOStepProposal: vi.fn(),
+  getPreProductionChecklist: vi.fn(),
 };
 vi.mock("../../../lib/session", () => ({ apiClient: () => api }));
 
@@ -72,6 +73,8 @@ beforeEach(() => {
   api.getPurchaseOrderProposal.mockReturnValue(new Promise(() => {}));
   // And the PO step card (tickets ai-automation/15-18).
   api.getPOStepProposal.mockReturnValue(new Promise(() => {}));
+  // And step 12's pre-production test (ticket ai-automation/17).
+  api.getPreProductionChecklist.mockReturnValue(new Promise(() => {}));
 });
 
 afterEach(() => {

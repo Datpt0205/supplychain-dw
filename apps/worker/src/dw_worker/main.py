@@ -564,10 +564,23 @@ def build_registry(settings: WorkerSettings) -> ConsumerRegistry:
         po_steps = build_po_steps_consumer(
             build_po_steps(sessions, configs_dir=REPO_ROOT / "configs", ids=ids, clock=clock)
         )
-        # Step 12's papers (ticket ai-automation/16): code only, no bucket.
+        # Step 12's papers (ticket ai-automation/16): code, no bucket; the
+        # pre-production test report's notes worded by the model (ticket
+        # ai-automation/17, item 2), through the one-call gateway.
         packaging_papers = build_packaging_papers_consumer(
             build_packaging_papers(
-                sessions, configs_dir=REPO_ROOT / "configs", ids=ids, clock=clock
+                sessions,
+                configs_dir=REPO_ROOT / "configs",
+                ids=ids,
+                clock=clock,
+                gateway=build_one_call_gateway(
+                    build_model_stack_for(settings, sessions, clock=clock, telemetry=telemetry),
+                    sessions,
+                    allowance=PlanEntitlementService(DEFAULT_PLANS),
+                    clock=clock,
+                ),
+                model_profile=settings.model_profile,
+                gates_dir=REPO_ROOT / "evals" / "gates",
             )
         )
         if step_stack is not None:

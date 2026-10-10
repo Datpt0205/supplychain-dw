@@ -40,6 +40,7 @@ from sqlalchemy.pool import NullPool
 from supply_chain_harness import REPO_ROOT, DatabaseUrls
 from test_case_documents import _add, _Db
 
+from dw_agent_runtime.adapters.docx_templates import DocxRenderer
 from dw_kernel.errors import ConflictError, NotFoundError, PermissionDeniedError
 from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.ports import SystemClock, Uuid4Generator
@@ -52,10 +53,19 @@ from dw_supply_chain.action_duties import CaseDuty, load_supply_chain_action_dut
 from dw_supply_chain.adapters.persistence.case_document_repository import (
     SqlCaseDocumentRepository,
 )
+from dw_supply_chain.adapters.persistence.document_draft_repository import (
+    SqlDocumentDraftRepository,
+)
+from dw_supply_chain.adapters.persistence.draft_filings import SqlDraftFilings
 from dw_supply_chain.adapters.persistence.packaging_design_repository import (
     SqlPackagingDesignRepository,
 )
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
+from dw_supply_chain.adapters.persistence.pre_production_measurements import (
+    SqlPreProductionMeasurements,
+)
+from dw_supply_chain.adapters.persistence.product_case_repository import SqlProductCaseRepository
+from dw_supply_chain.application.document_drafts import DraftFiler
 from dw_supply_chain.application.handlers import (
     DOCUMENT_READ,
     DOCUMENT_WRITE,
@@ -69,6 +79,7 @@ from dw_supply_chain.application.packaging_designs import (
     TakePackagingStep,
 )
 from dw_supply_chain.application.po_case_audit import po_case_audit
+from dw_supply_chain.application.pre_production_test import PreProductionTestSources
 from dw_supply_chain.application.production_gate import ProductionGateResolver
 from dw_supply_chain.approval_matrix import load_supply_chain_approval_matrix
 from dw_supply_chain.domain.case_document import DocumentType
@@ -81,6 +92,11 @@ from dw_supply_chain.domain.packaging_design import (
 from dw_supply_chain.domain.po_case import CaseAction, CaseState, POCase, POCaseId
 from dw_supply_chain.packaging_policy import load_supply_chain_packaging_policy
 from dw_supply_chain.testing.po_papers import open_paper_gate
+from dw_supply_chain.testing.step_preparation import (
+    ELMICH_CRITERIA,
+    InMemoryStorage,
+    PlatformTemplates,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -179,6 +195,21 @@ def _take(db: _Db, notices: _Notices | None = None) -> TakePackagingStep:
         notifier=notices or _Notices(),
         ids=Uuid4Generator(),
         clock=SystemClock(),
+        drafts=SqlDocumentDraftRepository(db.sessions),
+        test=PreProductionTestSources(
+            measurements=SqlPreProductionMeasurements(db.sessions),
+            designs=SqlPackagingDesignRepository(db.sessions),
+            product_cases=SqlProductCaseRepository(db.sessions),
+            policy_override_repo=SqlPolicyOverrideRepository(db.sessions),
+            platform_default_criteria=ELMICH_CRITERIA,
+        ),
+        filer=DraftFiler(
+            templates=PlatformTemplates(),
+            renderer=DocxRenderer(),
+            storage=InMemoryStorage(),
+            ids=Uuid4Generator(),
+        ),
+        filings=SqlDraftFilings(db.sessions),
     )
 
 

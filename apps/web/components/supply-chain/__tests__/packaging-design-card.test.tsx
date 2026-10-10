@@ -24,12 +24,16 @@ const getPackagingDesign = vi.fn();
 const takePackagingStep = vi.fn();
 const listCaseDocuments = vi.fn();
 const getPackagingProof = vi.fn();
+const listCaseDrafts = vi.fn();
+const getPreProductionChecklist = vi.fn();
 vi.mock("../../../lib/session", () => ({
   apiClient: () => ({
     getPackagingDesign,
     takePackagingStep,
     listCaseDocuments,
     getPackagingProof,
+    listCaseDrafts,
+    getPreProductionChecklist,
   }),
 }));
 
@@ -186,6 +190,15 @@ describe("PackagingDesignCard", () => {
 
   it("passes the test on the chosen report and shows a refusal in the server's words", async () => {
     getPackagingDesign.mockResolvedValue(design());
+    listCaseDrafts.mockResolvedValue([]);
+    getPreProductionChecklist.mockResolvedValue({
+      case_id: CASE_ID,
+      attempt: 1,
+      open: true,
+      can_record: true,
+      suggestion: null,
+      rows: [],
+    });
     listCaseDocuments.mockResolvedValue([
       {
         id: REPORT_ID,
@@ -251,6 +264,7 @@ describe("PackagingDesignCard", () => {
         action: "pass_pre_production_test",
         reason: undefined,
         documentId: REPORT_ID,
+        draftId: undefined,
       },
       expect.any(String),
     );
@@ -266,6 +280,76 @@ describe("PackagingDesignCard", () => {
     // The same payload retried keeps its key: one step, not two.
     const keys = takePackagingStep.mock.calls.map((call) => call[2]);
     expect(keys[0]).toBe(keys[1]);
+  });
+
+  it("offers the record AI drafted beside the uploads and shows code's suggestion unchosen", async () => {
+    getPackagingDesign.mockResolvedValue(design());
+    listCaseDocuments.mockResolvedValue([]);
+    const DRAFT_ID = "55555555-5555-4555-8555-555555555555";
+    listCaseDrafts.mockResolvedValue([
+      {
+        id: DRAFT_ID,
+        doc_type: "pre_production_test_report",
+        status: "open",
+        version: 1,
+        created_at: "2026-10-09T03:00:00Z",
+      },
+      {
+        id: "66666666-6666-4666-8666-666666666666",
+        doc_type: "pre_production_test_report",
+        status: "rejected",
+        version: 1,
+        created_at: "2026-10-08T03:00:00Z",
+      },
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        doc_type: "design_revision_request",
+        status: "open",
+        version: 1,
+        created_at: "2026-10-08T03:00:00Z",
+      },
+    ]);
+    getPreProductionChecklist.mockResolvedValue({
+      case_id: CASE_ID,
+      attempt: 1,
+      open: true,
+      can_record: true,
+      suggestion: "fail_pre_production_test",
+      rows: [],
+    });
+    takePackagingStep.mockResolvedValueOnce(design());
+    const onStep = renderCard();
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: PACKAGING_ACTION_LABEL.pass_pre_production_test,
+      }),
+    );
+    expect(
+      await screen.findByText(/Gợi ý của hệ thống theo số đo: Không đạt/),
+    ).toBeTruthy();
+    fireEvent.mouseDown(
+      await screen.findByRole("combobox", { name: "Biên bản test trước SX" }),
+    );
+    // Only the open record of this type: a rejected one, or another type, is not a paper.
+    expect(await screen.findAllByTitle(/Biên bản AI soạn/)).toHaveLength(1);
+    fireEvent.click(screen.getByTitle(/Biên bản AI soạn/));
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: PACKAGING_ACTION_LABEL.pass_pre_production_test,
+      })[1]!,
+    );
+    await waitFor(() => expect(onStep).toHaveBeenCalled());
+    expect(takePackagingStep).toHaveBeenCalledWith(
+      CASE_ID,
+      {
+        action: "pass_pre_production_test",
+        reason: undefined,
+        documentId: undefined,
+        draftId: DRAFT_ID,
+      },
+      expect.any(String),
+    );
   });
 
   it("shows MKT's pack and what the proof check found, in words", async () => {

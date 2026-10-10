@@ -251,6 +251,12 @@ class PackagingDesign:
             and self.design_status is not ReviewStatus.APPROVED
         )
 
+    @property
+    def test_open(self) -> bool:
+        """The pre-production test may be taken (and measured for): the
+        sample is in and the test is not passed."""
+        return self._test_open()
+
     def _test_open(self) -> bool:
         return (
             self.pre_production_sample_received_at is not None

@@ -71,6 +71,12 @@ DRAFT_TEMPLATES: Mapping[DocumentType, tuple[str, str]] = {
     DocumentType.USER_MANUAL: ("supply_chain.user_manual", "1.0.0"),
     DocumentType.COLOUR_REVISION_REQUEST: ("supply_chain.colour_revision_request", "1.0.0"),
     DocumentType.DESIGN_REVISION_REQUEST: ("supply_chain.design_revision_request", "1.0.0"),
+    # Step 12's pre-production test (ticket ai-automation/17, item 2): R&D's
+    # record, filed when R&D passes or fails the test with it.
+    DocumentType.PRE_PRODUCTION_TEST_REPORT: (
+        "supply_chain.pre_production_test_report",
+        "1.0.0",
+    ),
     # Step 14 (ticket ai-automation/17): QC failed by the numbers.
     DocumentType.REWORK_REQUEST: ("supply_chain.rework_request", "1.0.0"),
     DocumentType.WAREHOUSE_RECEIPT: ("supply_chain.warehouse_receipt", "1.0.0"),

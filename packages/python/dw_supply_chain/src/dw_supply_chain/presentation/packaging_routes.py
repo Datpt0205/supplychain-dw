@@ -9,9 +9,14 @@ the same `Idempotency-Key` it returns the first answer.
 `GET /po-cases/{id}/packaging-proof` — the newest packaging design proof and
 what code finds in it against the label rules, the BM04 and the PO's SKUs
 (ticket ai-automation/16). No price.
+`GET /po-cases/{id}/pre-production-checklist` — the criteria R&D measures the
+pre-production sample against, this attempt's values, code's verdicts and its
+suggestion beside the empty pass / fail (ticket ai-automation/17, item 2).
+`POST /po-cases/{id}/pre-production-measurements` — R&D enters one value.
 
 The request names a step from the closed `PackagingAction` set, a reason and a
-document id; never a case state, a duty, a tenant or a person.
+document id or the id of the drafted report; never a case state, a duty, a
+tenant or a person.
 """
 
 import uuid
@@ -32,6 +37,11 @@ from dw_supply_chain.application.packaging_designs import (
     TakePackagingStep,
 )
 from dw_supply_chain.application.packaging_papers import GetPackagingProof
+from dw_supply_chain.application.pre_production_test import (
+    GetPreProductionChecklist,
+    PreProductionChecklist,
+    RecordPreProductionMeasurement,
+)
 from dw_supply_chain.domain.case_document import DocumentType
 from dw_supply_chain.domain.extraction import ExtractionStatus
 from dw_supply_chain.domain.packaging_design import (
@@ -43,6 +53,11 @@ from dw_supply_chain.domain.packaging_design import (
 from dw_supply_chain.domain.po_case import CaseState, POCaseId
 from dw_supply_chain.packaging_policy import SupplyChainPackagingPolicy
 from dw_supply_chain.presentation.routes import SupportsIdempotentRecord
+from dw_supply_chain.presentation.sample_checklist_routes import (
+    ChecklistRowView,
+    MeasurementRequest,
+    checklist_rows,
+)
 
 AccessContextResolver = Callable[..., object]
 IdempotencyResolver = Callable[..., object]
@@ -116,8 +131,33 @@ class TakePackagingStepRequest(BaseModel):
     action: PackagingAction
     # No NUL: PostgreSQL text cannot hold one (a 422, not a 500).
     reason: str | None = Field(default=None, max_length=2000, pattern=r"^[^\x00]*$")
-    # The pre-production test report the test step is taken on.
+    # The pre-production test report the test step is taken on: an uploaded
+    # document, or the report the packaging lane drafted (filed by the step).
     document_id: uuid.UUID | None = None
+    draft_id: uuid.UUID | None = None
+
+
+class PreProductionChecklistView(BaseModel):
+    case_id: uuid.UUID
+    # The first test, plus one per failed test.
+    attempt: int
+    # The sample is in and the test not passed.
+    open: bool
+    can_record: bool
+    # Code's suggestion beside the empty choice; null while one is unmeasured.
+    suggestion: PackagingAction | None
+    rows: list[ChecklistRowView]
+
+
+def _checklist_view(checklist: PreProductionChecklist) -> PreProductionChecklistView:
+    return PreProductionChecklistView(
+        case_id=checklist.case.id.value,
+        attempt=checklist.results.attempt,
+        open=checklist.open,
+        can_record=checklist.can_record,
+        suggestion=checklist.results.suggestion,
+        rows=checklist_rows(checklist.results.results),
+    )
 
 
 def _state(design: PackagingDesign) -> dict[str, object]:
@@ -176,6 +216,8 @@ def build_packaging_router(
     set_policy: SetPackagingPolicyOverride,
     *,
     get_proof: GetPackagingProof,
+    get_checklist: GetPreProductionChecklist,
+    record_measurement: RecordPreProductionMeasurement,
     resolve_access_context: AccessContextResolver,
     resolve_idempotency: IdempotencyResolver,
 ) -> APIRouter:
@@ -202,8 +244,39 @@ def build_packaging_router(
             action=body.action,
             reason=body.reason,
             document_id=body.document_id,
+            draft_id=body.draft_id,
         )
         return await idempotency.record(PackagingStateView.model_validate(_state(design)))
+
+    @router.get(
+        "/po-cases/{case_id}/pre-production-checklist", response_model=PreProductionChecklistView
+    )
+    async def get_pre_production_checklist(
+        case_id: uuid.UUID, context: require_access_context
+    ) -> PreProductionChecklistView:
+        return _checklist_view(await get_checklist.handle(context, POCaseId(case_id)))
+
+    @router.post(
+        "/po-cases/{case_id}/pre-production-measurements",
+        response_model=PreProductionChecklistView,
+    )
+    async def record_pre_production_measurement(
+        case_id: uuid.UUID,
+        body: MeasurementRequest,
+        context: require_access_context,
+        idempotency: require_idempotency,
+    ) -> PreProductionChecklistView:
+        """R&D enters one value; a correction is a newer value."""
+        await record_measurement.handle(
+            context,
+            POCaseId(case_id),
+            criterion=body.criterion,
+            value=body.value,
+            note=body.note,
+        )
+        return await idempotency.record(
+            _checklist_view(await get_checklist.handle(context, POCaseId(case_id)))
+        )
 
     @router.get("/po-cases/{case_id}/packaging-proof", response_model=PackagingProofView)
     async def get_packaging_proof(

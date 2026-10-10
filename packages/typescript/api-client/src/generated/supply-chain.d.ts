@@ -728,6 +728,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supply-chain/po-cases/{case_id}/pre-production-checklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pre Production Checklist */
+        get: operations["get_pre_production_checklist_api_v1_supply_chain_po_cases__case_id__pre_production_checklist_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supply-chain/po-cases/{case_id}/pre-production-measurements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Pre Production Measurement
+         * @description R&D enters one value; a correction is a newer value.
+         */
+        post: operations["record_pre_production_measurement_api_v1_supply_chain_po_cases__case_id__pre_production_measurements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supply-chain/po-cases/{case_id}/purchase-order": {
         parameters: {
             query?: never;
@@ -2799,6 +2836,23 @@ export interface components {
             /** Update Overdue Count */
             update_overdue_count: number;
         };
+        /** PreProductionChecklistView */
+        PreProductionChecklistView: {
+            /** Attempt */
+            attempt: number;
+            /** Can Record */
+            can_record: boolean;
+            /**
+             * Case Id
+             * Format: uuid
+             */
+            case_id: string;
+            /** Open */
+            open: boolean;
+            /** Rows */
+            rows: components["schemas"]["ChecklistRowView"][];
+            suggestion: components["schemas"]["PackagingAction"] | null;
+        };
         /**
          * PreProductionTest
          * @enum {string}
@@ -4150,6 +4204,8 @@ export interface components {
             action: components["schemas"]["PackagingAction"];
             /** Document Id */
             document_id?: string | null;
+            /** Draft Id */
+            draft_id?: string | null;
             /** Reason */
             reason?: string | null;
         };
@@ -5624,6 +5680,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["POCaseView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pre_production_checklist_api_v1_supply_chain_po_cases__case_id__pre_production_checklist_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreProductionChecklistView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_pre_production_measurement_api_v1_supply_chain_po_cases__case_id__pre_production_measurements_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retrying with the same key returns the first response instead of acting twice; reusing it for a different request is a 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeasurementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreProductionChecklistView"];
                 };
             };
             /** @description Validation Error */

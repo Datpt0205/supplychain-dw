@@ -35,6 +35,7 @@ import {
   proposalListSummarySchema,
   proposalListDetailSchema,
   sampleChecklistSchema,
+  preProductionChecklistSchema,
   importReportSchema,
   purchaseOrderProposalSchema,
   poStepProposalSchema,
@@ -119,6 +120,7 @@ import {
   type SampleChecklist,
   type SampleChecklistRow,
   type SampleVerdict,
+  type PreProductionChecklist,
   type ImportReport,
   type ImportRow,
   type ImportRowStatus,
@@ -504,6 +506,15 @@ const _sampleChecklistMirrorsTheRoute: [
   SameType<SampleVerdict, SupplyChainGenerated["Verdict"]>,
 ] = [true, true, true];
 void _sampleChecklistMirrorsTheRoute;
+
+// Ticket ai-automation/17, item 2: the pre-production test's checklist.
+const _preProductionChecklistMirrorsTheRoute: [
+  SameType<
+    keyof PreProductionChecklist,
+    keyof SupplyChainGenerated["PreProductionChecklistView"]
+  >,
+] = [true];
+void _preProductionChecklistMirrorsTheRoute;
 
 // Ticket ai-automation/14: step 10's PO draft.
 const _purchaseOrderMirrorsTheRoute: [
@@ -1716,16 +1727,23 @@ export class ApiClient {
     );
   }
 
-  /** Takes one step of step 12's sub-flow; a test step names its report. */
+  /** Takes one step of step 12's sub-flow; a test step names its report:
+   * an uploaded one, or the record AI drafted (filed by the step). */
   takePackagingStep(
     caseId: string,
-    input: { action: PackagingAction; reason?: string; documentId?: string },
+    input: {
+      action: PackagingAction;
+      reason?: string;
+      documentId?: string;
+      draftId?: string;
+    },
     idempotencyKey: string,
   ): Promise<PackagingState> {
     const body: TakePackagingStepBody = {
       action: input.action,
       reason: input.reason?.trim() || null,
       document_id: input.documentId ?? null,
+      draft_id: input.draftId ?? null,
     };
     return this.request(
       "POST",
@@ -1825,6 +1843,30 @@ export class ApiClient {
       "POST",
       `/api/v1/supply-chain/product-cases/${encodeURIComponent(caseId)}/sample-measurements`,
       sampleChecklistSchema,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Step 12's pre-production test: the criteria, R&D's values of this
+   * attempt, code's verdicts and its suggestion. */
+  getPreProductionChecklist(caseId: string): Promise<PreProductionChecklist> {
+    return this.request(
+      "GET",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/pre-production-checklist`,
+      preProductionChecklistSchema,
+    );
+  }
+
+  /** R&D enters one value of the pre-production test. */
+  recordPreProductionMeasurement(
+    caseId: string,
+    body: { criterion: string; value: string; note: string | null },
+    idempotencyKey: string,
+  ): Promise<PreProductionChecklist> {
+    return this.request(
+      "POST",
+      `/api/v1/supply-chain/po-cases/${encodeURIComponent(caseId)}/pre-production-measurements`,
+      preProductionChecklistSchema,
       { body, idempotencyKey },
     );
   }
@@ -2337,6 +2379,7 @@ export type {
   SampleChecklist,
   SampleChecklistRow,
   SampleVerdict,
+  PreProductionChecklist,
   SupplierMessage,
   SupplierMessagePurpose,
   SupplierMessageStatus,

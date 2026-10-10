@@ -106,6 +106,9 @@ from dw_supply_chain.adapters.persistence.packaging_design_repository import (
     SqlPackagingDesignRepository,
 )
 from dw_supply_chain.adapters.persistence.po_case_repository import SqlPOCaseRepository
+from dw_supply_chain.adapters.persistence.pre_production_measurements import (
+    SqlPreProductionMeasurements,
+)
 from dw_supply_chain.adapters.persistence.product_case_repository import (
     SqlProductCaseRepository,
     SqlWorkspacesAwaitingApproval,
@@ -158,11 +161,13 @@ from dw_supply_chain.application.follow_up_sweep import SweepFollowUps
 from dw_supply_chain.application.handlers import ListPOCases, ListProductCategories
 from dw_supply_chain.application.item_coding import ItemCodingPreparation
 from dw_supply_chain.application.packaging_papers import (
+    PACKAGING_PAPERS_LANE,
     PackagingSources,
     PreparePackagingPapers,
 )
 from dw_supply_chain.application.po_steps import POStepSources, PreparePOSteps
 from dw_supply_chain.application.ports import CaseDocumentObjectListingPort
+from dw_supply_chain.application.pre_production_test import PreProductionTestSources
 from dw_supply_chain.application.product_cases import ListProductCases, ProposeProductCase
 from dw_supply_chain.application.product_reviews import (
     EnsureProductApproval,
@@ -950,20 +955,42 @@ def build_packaging_papers(
     configs_dir: Path,
     ids: IdGenerator,
     clock: UtcClock,
+    gateway: ModelGateway | None = None,
+    model_profile: str | None = None,
+    gates_dir: Path | None = None,
 ) -> PreparePackagingPapers:
     """The lane `supply_chain_packaging_papers` (ticket ai-automation/16):
     step 12's skeletons and revision requests, by code, from the BM04 and the
-    proof the extraction lane read. No model, no bucket."""
+    proof the extraction lane read; and the pre-production test report (ticket
+    ai-automation/17, item 2) from R&D's values, its notes worded by the model
+    (given `gateway`, the process's one-call gateway, on the route the sample
+    round's record takes: the same prompt). No bucket."""
     registry = DocTemplateRegistry(inspector=DocxTemplateInspector())
     registry.load_directory(configs_dir / "doc_templates")
     templates = TenantDocTemplates(registry=registry, overrides=SqlDocTemplateOverrides(sessions))
     drafts = SqlDocumentDraftRepository(sessions)
     po_cases = SqlPOCaseRepository(sessions)
     policies = configs_dir / "policies"
+    designs = SqlPackagingDesignRepository(sessions)
+    writer = None
+    if gateway is not None:
+        routes = load_supply_chain_model_routes(
+            policies / MODEL_ROUTES_POLICY_FILE, gates_dir or configs_dir.parent / "evals" / "gates"
+        )
+        writer = EvaluationWriter(
+            gateway=gateway,
+            plans=SqlTenantPlans(sessions),
+            ids=ids,
+            worker_id=PACKAGING_PAPERS_LANE,
+            worker_version="1.0.0",
+            model_profile=routes.profile_for(SAMPLE_EVALUATION_TASK) or model_profile,
+            subject_kind="po_case",
+            purpose="pre_production_test",
+        )
     return PreparePackagingPapers(
         workspaces=SqlWorkspacesWithCases(sessions),
         cases=po_cases,
-        designs=SqlPackagingDesignRepository(sessions),
+        designs=designs,
         sources=PackagingSources(
             profiles=SqlProductProfileRepository(sessions),
             documents=SqlCaseDocumentRepository(sessions),
@@ -990,6 +1017,16 @@ def build_packaging_papers(
         holders=SqlScopeHolders(sessions),
         notifier=SqlNotificationRepository(sessions),
         clock=clock,
+        test=PreProductionTestSources(
+            measurements=SqlPreProductionMeasurements(sessions),
+            designs=designs,
+            product_cases=SqlProductCaseRepository(sessions),
+            policy_override_repo=SqlPolicyOverrideRepository(sessions),
+            platform_default_criteria=load_supply_chain_sample_criteria(
+                policies / SAMPLE_CRITERIA_POLICY_FILE
+            ),
+        ),
+        writer=writer,
     )
 
 

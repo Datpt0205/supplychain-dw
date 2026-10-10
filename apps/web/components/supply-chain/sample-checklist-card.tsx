@@ -89,6 +89,68 @@ function Entry({
 }
 
 /**
+ * The criteria table both checklists share (a sample round's, ticket
+ * ai-automation/09; the pre-production test's, ticket ai-automation/17): the
+ * standard, the value entered, code's verdict and a field to enter a new one.
+ */
+export function ChecklistTable({
+  rows,
+  locked,
+  busy,
+  onSave,
+}: {
+  rows: SampleChecklistRow[];
+  locked: string | null;
+  busy: string | null;
+  onSave: (row: SampleChecklistRow, value: string) => void;
+}) {
+  const columns: TableColumnsType<SampleChecklistRow> = [
+    { title: "Tiêu chí", key: "label", render: (_, row) => row.label },
+    { title: "Chuẩn", key: "standard", render: (_, row) => row.standard },
+    {
+      title: "Đã nhập",
+      key: "value",
+      render: (_, row) =>
+        row.value === null
+          ? null
+          : row.kind === "check"
+            ? VERDICT_LABEL[row.value === "pass" ? "pass" : "fail"][0]
+            : `${row.value}${row.unit ? ` ${row.unit}` : ""}`,
+    },
+    {
+      title: "Kết quả",
+      key: "verdict",
+      render: (_, row) => {
+        const [label, tone] = VERDICT_LABEL[row.verdict];
+        return <StatusTag tone={tone}>{label}</StatusTag>;
+      },
+    },
+    {
+      title: "Nhập mới",
+      key: "entry",
+      render: (_, row) => (
+        <Entry
+          row={row}
+          locked={locked}
+          busy={busy === row.key}
+          onSave={(value) => onSave(row, value)}
+        />
+      ),
+    },
+  ];
+  return (
+    <Table<SampleChecklistRow>
+      rowKey="key"
+      size="small"
+      columns={columns}
+      dataSource={rows}
+      pagination={false}
+      scroll={{ x: "max-content" }}
+    />
+  );
+}
+
+/**
  * Bước 3-5 (ticket ai-automation/09): R&D nhập số đo theo từng tiêu chí của
  * nhóm sản phẩm; hệ thống so với chuẩn và hiện Đạt / Không đạt / Chưa đo. Biên
  * bản, phiếu chỉnh sửa và gợi ý kết luận AI chuẩn bị đều đọc đúng bảng này; số
@@ -138,53 +200,16 @@ export function SampleChecklistCard({ caseId }: { caseId: string }) {
     }
   };
 
-  const columns: TableColumnsType<SampleChecklistRow> = [
-    { title: "Tiêu chí", key: "label", render: (_, row) => row.label },
-    { title: "Chuẩn", key: "standard", render: (_, row) => row.standard },
-    {
-      title: "Đã nhập",
-      key: "value",
-      render: (_, row) =>
-        row.value === null
-          ? null
-          : row.kind === "check"
-            ? VERDICT_LABEL[row.value === "pass" ? "pass" : "fail"][0]
-            : `${row.value}${row.unit ? ` ${row.unit}` : ""}`,
-    },
-    {
-      title: "Kết quả",
-      key: "verdict",
-      render: (_, row) => {
-        const [label, tone] = VERDICT_LABEL[row.verdict];
-        return <StatusTag tone={tone}>{label}</StatusTag>;
-      },
-    },
-    {
-      title: "Nhập mới",
-      key: "entry",
-      render: (_, row) => (
-        <Entry
-          row={row}
-          locked={locked}
-          busy={busy === row.key}
-          onSave={(value) => void save(row, value)}
-        />
-      ),
-    },
-  ];
-
   return (
     <Card title={`Số đo vòng mẫu ${checklist.sample_round}`}>
       <Flex vertical gap="small">
         {refusal && <Alert type="error" showIcon title={refusal} />}
         {locked && <Typography.Text>{locked}</Typography.Text>}
-        <Table<SampleChecklistRow>
-          rowKey="key"
-          size="small"
-          columns={columns}
-          dataSource={checklist.rows}
-          pagination={false}
-          scroll={{ x: "max-content" }}
+        <ChecklistTable
+          rows={checklist.rows}
+          locked={locked}
+          busy={busy}
+          onSave={(row, value) => void save(row, value)}
         />
       </Flex>
     </Card>

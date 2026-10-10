@@ -793,19 +793,6 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
         platform_default_policy=platform_default_packaging_policy,
         documents=document_repo,
     )
-    container.supply_chain_take_packaging_step = TakePackagingStep(
-        po_cases=po_case_repo,
-        designs=packaging_design_repo,
-        documents=document_repo,
-        authz=authorization,
-        policy_override_repo=policy_override_repo,
-        platform_default_duties=platform_default_action_duties,
-        platform_default_policy=platform_default_packaging_policy,
-        holders=SqlScopeHolders(wiring.seam.session_factory),
-        notifier=SqlNotificationRepository(wiring.seam.session_factory),
-        ids=wiring.seam.ids,
-        clock=wiring.seam.clock,
-    )
     container.supply_chain_get_packaging_policy = GetPackagingPolicy(
         policy_override_repo=policy_override_repo,
         platform_default_policy=platform_default_packaging_policy,
@@ -1420,6 +1407,59 @@ def _build_container(settings: ApiSettings | None) -> ApiContainer:
             ids=wiring.seam.ids,
             clock=wiring.seam.clock,
         ),
+    )
+
+    # Step 12's pre-production test (ticket ai-automation/17, item 2): R&D's
+    # values judged by the sample criteria, and the drafted report filed when
+    # R&D takes the test with it.
+    from dw_supply_chain.adapters.persistence.draft_filings import SqlDraftFilings
+    from dw_supply_chain.adapters.persistence.pre_production_measurements import (
+        SqlPreProductionMeasurements,
+    )
+    from dw_supply_chain.application import pre_production_test as sc_pre_production
+
+    pre_production_measurements = SqlPreProductionMeasurements(wiring.seam.session_factory)
+    pre_production = sc_pre_production.PreProductionTestSources(
+        measurements=pre_production_measurements,
+        designs=packaging_design_repo,
+        product_cases=product_case_repo,
+        policy_override_repo=policy_override_repo,
+        platform_default_criteria=sample_preparation.platform_default_criteria,
+    )
+    record_pre_production = sc_pre_production.RecordPreProductionMeasurement(
+        cases=po_case_repo,
+        store=pre_production_measurements,
+        test=pre_production,
+        authz=authorization,
+        platform_default_duties=platform_default_action_duties,
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+    )
+    container.supply_chain_record_pre_production = record_pre_production
+    container.supply_chain_get_pre_production = sc_pre_production.GetPreProductionChecklist(
+        record=record_pre_production, authz=authorization
+    )
+    container.supply_chain_take_packaging_step = TakePackagingStep(
+        po_cases=po_case_repo,
+        designs=packaging_design_repo,
+        documents=document_repo,
+        authz=authorization,
+        policy_override_repo=policy_override_repo,
+        platform_default_duties=platform_default_action_duties,
+        platform_default_policy=platform_default_packaging_policy,
+        holders=SqlScopeHolders(wiring.seam.session_factory),
+        notifier=SqlNotificationRepository(wiring.seam.session_factory),
+        ids=wiring.seam.ids,
+        clock=wiring.seam.clock,
+        drafts=draft_repo,
+        test=pre_production,
+        filer=sc_drafts.DraftFiler(
+            templates=tenant_templates,
+            renderer=DocxRenderer(),
+            storage=document_storage,
+            ids=wiring.seam.ids,
+        ),
+        filings=SqlDraftFilings(wiring.seam.session_factory),
     )
 
     # The one-time import (ADR 0027, ticket onboarding/01): suppliers with

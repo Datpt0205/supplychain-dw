@@ -419,6 +419,36 @@ TEMPLATES: list[dict[str, Any]] = [
         ],
     },
     {
+        "template_id": "supply_chain.pre_production_test_report",
+        "title": "BIÊN BẢN TEST TRƯỚC SẢN XUẤT",
+        "doc_type": "pre_production_test_report",
+        "description": (
+            "Bước 12: R&D test mẫu trước sản xuất theo từng tiêu chí của nhóm sản phẩm; bảng do"
+            " hệ thống so số đo với chuẩn, kết luận là bước Đạt / Không đạt R&D chọn."
+        ),
+        "fields": [
+            _f("po_reference", "Số PO", required=True),
+            _f("product_name", "Tên sản phẩm"),
+            _f("supplier_name", "Nhà cung cấp", required=True),
+            _f("test_attempt", "Lần test", "number"),
+            _f("tested_on", "Ngày test", "date", required=True),
+            _f("tester", "Người test"),
+            _table(
+                "criteria",
+                "Tiêu chí test",
+                [
+                    ("criterion", "Tiêu chí", "text"),
+                    ("standard", "Chuẩn", "text"),
+                    ("measured", "Đo được", "text"),
+                    ("result", "Kết quả", "text"),
+                ],
+                required=True,
+            ),
+            _f("conclusion", "Kết luận", required=True),
+            _f("notes", "Ghi chú"),
+        ],
+    },
+    {
         "template_id": "supply_chain.warehouse_receipt",
         "title": "PHIẾU NHẬP KHO",
         "doc_type": "warehouse_receipt",

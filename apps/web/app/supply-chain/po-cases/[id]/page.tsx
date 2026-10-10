@@ -53,6 +53,7 @@ import {
 } from "../../../../components/supply-chain/missing-update-badge";
 import { OriginTag } from "../../../../components/supply-chain/origin-tag";
 import { PackagingDesignCard } from "../../../../components/supply-chain/packaging-design-card";
+import { PreProductionCard } from "../../../../components/supply-chain/pre-production-card";
 import { DraftsCard } from "../../../../components/supply-chain/drafts-card";
 import { PurchaseOrderCard } from "../../../../components/supply-chain/purchase-order-card";
 import { POStepCard } from "../../../../components/supply-chain/po-step-card";
@@ -545,6 +546,7 @@ export default function POCaseWorkspacePage() {
             caseResource.reload();
           }}
         />
+        <PreProductionCard caseId={id} />
 
         <CaseDocumentsCard
           caseKind="po"

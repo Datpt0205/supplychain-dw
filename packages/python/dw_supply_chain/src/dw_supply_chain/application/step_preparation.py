@@ -288,7 +288,9 @@ EVALUATION_PROMPT = WritingPrompt("supply_chain.draft_sample_evaluation", "1.0.0
 class EvaluationWriter:
     """Implements `EvaluationWriterPort`: one structured call through the
     process's one-call gateway, as the preparation lane itself. A refused or
-    failed call is no writing: the drafts carry code's rows and gaps."""
+    failed call is no writing: the drafts carry code's rows and gaps. The
+    pre-production test (step 12, ticket ai-automation/17) is worded by the
+    same prompt about a PO case: `subject_kind` and `purpose` say which."""
 
     gateway: ModelGateway
     plans: TenantPlanPort
@@ -296,6 +298,8 @@ class EvaluationWriter:
     worker_id: str
     worker_version: str
     model_profile: str | None = None
+    subject_kind: str = "product_dev_case"
+    purpose: str = "sample_evaluation"
 
     async def write(
         self, context: AccessContext, *, case_id: uuid.UUID, evidence: Sequence[EvidenceItem]
@@ -319,11 +323,11 @@ class EvaluationWriter:
                     roles=frozenset(),
                     scopes=frozenset(),
                     trace_id=str(run_id),
-                    subject_ref=f"product_dev_case:{case_id}",
+                    subject_ref=f"{self.subject_kind}:{case_id}",
                 ),
                 EVALUATION_PROMPT,
                 EvaluationWriting,
-                task={"purpose": "sample_evaluation"},
+                task={"purpose": self.purpose},
                 evidence=evidence,
                 model_profile=self.model_profile,
             )
@@ -333,7 +337,7 @@ class EvaluationWriter:
             InfrastructureError,
             BudgetExceededError,
         ) as exc:
-            logger.warning("sample evaluation: no model writing (%s)", type(exc).__name__)
+            logger.warning("%s: no model writing (%s)", self.purpose, type(exc).__name__)
             return None
 
 

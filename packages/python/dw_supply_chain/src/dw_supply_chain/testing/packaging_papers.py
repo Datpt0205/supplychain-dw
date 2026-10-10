@@ -1,7 +1,10 @@
 """An in-memory world for step 12's papers and MKT's steps (ticket
 ai-automation/16): their unit tests and the `supply_chain.packaging_proof`
 eval grader run the REAL `PreparePackagingPapers`, `GetPackagingProof` and
-`TakePackagingStep` over it, with the shipped templates.
+`TakePackagingStep` over it, with the shipped templates. The pre-production
+test (ticket ai-automation/17, item 2) adds R&D's values, the product case
+whose Category picks the criteria, and the model that words the record
+(`gateway`: None wires no writer).
 
 Every store keeps its port's promise: a reader sees only its own tenant AND
 workspace (RLS); a design is saved over the version it was read at.
@@ -16,6 +19,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
 
+from dw_agent_runtime.adapters.docx_templates import DocxRenderer
 from dw_kernel.errors import ConflictError
 from dw_kernel.ids import TenantId, WorkspaceId
 from dw_kernel.ports import FixedClock, Uuid4Generator
@@ -23,7 +27,11 @@ from dw_platform.application.access_context import AccessContext
 from dw_platform.application.authorization import ScopeAuthorizationService
 from dw_platform.domain.audit import AuditEvent
 from dw_supply_chain.action_duties import CaseDuty
-from dw_supply_chain.application.document_drafts import PrepareDocumentDraft
+from dw_supply_chain.application.document_drafts import (
+    DraftFiler,
+    NewDraftDecision,
+    PrepareDocumentDraft,
+)
 from dw_supply_chain.application.handlers import PO_CASE_READ, duty_scope
 from dw_supply_chain.application.packaging_designs import GetPackagingDesign, TakePackagingStep
 from dw_supply_chain.application.packaging_papers import (
@@ -32,7 +40,14 @@ from dw_supply_chain.application.packaging_papers import (
     PreparePackagingPapers,
     packaging_lane_context,
 )
-from dw_supply_chain.application.step_preparation import StoredReading
+from dw_supply_chain.application.ports import NewCaseDocument
+from dw_supply_chain.application.pre_production_test import (
+    GetPreProductionChecklist,
+    NewPreProductionMeasurement,
+    PreProductionTestSources,
+    RecordPreProductionMeasurement,
+)
+from dw_supply_chain.application.step_preparation import EvaluationWriter, StoredReading
 from dw_supply_chain.domain.case_document import (
     CaseDocument,
     CaseDocumentId,
@@ -45,8 +60,18 @@ from dw_supply_chain.domain.extraction import (
     EXTRACTION_SPECS,
     ExtractionStatus,
 )
-from dw_supply_chain.domain.packaging_design import PackagingDesign, PackagingHistoryEntry
+from dw_supply_chain.domain.packaging_design import (
+    PackagingDesign,
+    PackagingHistoryEntry,
+    ReviewStatus,
+)
 from dw_supply_chain.domain.po_case import CaseState, OrderKind, POCase, POCaseId, POCaseLine
+from dw_supply_chain.domain.product_development_case import (
+    ProductDevelopmentCase,
+    ProductDevelopmentCaseId,
+    ProductDevState,
+)
+from dw_supply_chain.domain.sample_evaluation import Measurement
 from dw_supply_chain.packaging_policy import load_supply_chain_packaging_policy
 from dw_supply_chain.testing.po_steps import Overrides
 from dw_supply_chain.testing.purchase_orders import (
@@ -59,12 +84,16 @@ from dw_supply_chain.testing.purchase_orders import (
     _Workspaces,
 )
 from dw_supply_chain.testing.step_preparation import (
+    ELMICH_CRITERIA,
     REPO_ROOT,
     InMemoryDocuments,
     InMemoryDrafts,
     InMemoryProfiles,
     InMemoryReadings,
+    InMemoryStepCases,
+    InMemoryStorage,
     PlatformTemplates,
+    _StaticPlans,
 )
 
 ELMICH_PACKAGING = load_supply_chain_packaging_policy(
@@ -72,6 +101,7 @@ ELMICH_PACKAGING = load_supply_chain_packaging_policy(
 )
 ORDERING = duty_scope(CaseDuty.ORDERING)
 MKT = duty_scope(CaseDuty.MKT)
+RND = duty_scope(CaseDuty.RND)
 BM04 = {
     "product_name": "Nồi inox 3 đáy 24cm",
     "material": "Inox 304",
@@ -131,6 +161,84 @@ class InMemoryDesigns:
 
 
 @dataclass
+class InMemoryPreProductionMeasurements:
+    """`PreProductionMeasurementStorePort`: a reader sees its own tenant AND
+    workspace, unless `leaky` (an adapter that forgot RLS)."""
+
+    rows: list[tuple[uuid.UUID, uuid.UUID, NewPreProductionMeasurement, datetime]] = field(
+        default_factory=list
+    )
+    audits: list[AuditEvent] = field(default_factory=list)
+    leaky: bool = False
+
+    async def for_attempt(
+        self, context: AccessContext, po_case_id: uuid.UUID, attempt: int
+    ) -> list[Measurement]:
+        return [
+            Measurement(
+                id=m.id,
+                sample_round=m.attempt,
+                criterion=m.criterion,
+                value=m.value,
+                note=m.note,
+                entered_by=uuid.uuid4(),
+                entered_at=at,
+            )
+            for tenant, workspace, m, at in self.rows
+            if m.po_case_id == po_case_id
+            and m.attempt == attempt
+            and (self.leaky or (tenant, workspace) == (context.tenant_id, context.workspace_id))
+        ]
+
+    async def add(
+        self, context: AccessContext, measurement: NewPreProductionMeasurement, *, audit: AuditEvent
+    ) -> None:
+        at = NOW + timedelta(seconds=len(self.rows))
+        self.rows.append((context.tenant_id, context.workspace_id, measurement, at))
+        self.audits.append(audit)
+
+
+@dataclass
+class InMemoryFilings:
+    """`DraftFilingsPort`: the confirmation and the document together, or
+    neither (a version already decided refuses the whole)."""
+
+    drafts: InMemoryDrafts
+    documents: InMemoryDocuments
+    audits: list[AuditEvent] = field(default_factory=list)
+
+    async def record(
+        self,
+        context: AccessContext,
+        *,
+        document: NewCaseDocument,
+        confirmation: NewDraftDecision,
+        draft_id: uuid.UUID,
+        audits: Sequence[AuditEvent],
+    ) -> None:
+        self.drafts.record_decision(context, confirmation)
+        self.documents.rows.append(
+            CaseDocument(
+                id=document.id,
+                tenant_id=context.tenant_id,
+                workspace_id=context.workspace_id,
+                case_kind=document.case_kind,
+                case_id=document.case_id,
+                doc_type=document.doc_type,
+                object_key=document.object_key,
+                filename=document.filename,
+                content_type=document.content_type,
+                size_bytes=document.size_bytes,
+                sha256=document.sha256,
+                version=1,
+                uploaded_by=context.principal_id,
+                uploaded_at=NOW,
+            )
+        )
+        self.audits.extend(audits)
+
+
+@dataclass
 class PackagingWorld:
     tenant_id: uuid.UUID = field(default_factory=uuid.uuid4)
     workspace_id: uuid.UUID = field(default_factory=uuid.uuid4)
@@ -143,9 +251,19 @@ class PackagingWorld:
     templates: PlatformTemplates = field(default_factory=PlatformTemplates)
     notifier: RecordingNotifier = field(default_factory=RecordingNotifier)
     clock: FixedClock = field(default_factory=lambda: FixedClock(NOW))
+    measurements: InMemoryPreProductionMeasurements = field(
+        default_factory=InMemoryPreProductionMeasurements
+    )
+    product_cases: InMemoryStepCases = field(default_factory=InMemoryStepCases)
+    storage: InMemoryStorage = field(default_factory=InMemoryStorage)
+    # The model that words the test report's notes: a gateway whose
+    # `generate_structured` answers; None wires no writer.
+    gateway: Any = None
+    model_profile: str | None = None
     person: uuid.UUID = field(default_factory=uuid.uuid4)
     buyer: uuid.UUID = field(default_factory=uuid.uuid4)
     marketer: uuid.UUID = field(default_factory=uuid.uuid4)
+    tester: uuid.UUID = field(default_factory=uuid.uuid4)
     overrides: Overrides = field(init=False)
 
     def __post_init__(self) -> None:
@@ -180,7 +298,44 @@ class PackagingWorld:
         )
 
     def holders(self) -> StaticHolders:
-        return StaticHolders({ORDERING: [self.buyer], MKT: [self.marketer]})
+        return StaticHolders({ORDERING: [self.buyer], MKT: [self.marketer], RND: [self.tester]})
+
+    def test(self) -> PreProductionTestSources:
+        return PreProductionTestSources(
+            measurements=self.measurements,
+            designs=self.designs,
+            product_cases=self.product_cases,
+            policy_override_repo=self.overrides,
+            platform_default_criteria=ELMICH_CRITERIA,
+        )
+
+    def writer(self) -> EvaluationWriter | None:
+        if self.gateway is None:
+            return None
+        return EvaluationWriter(
+            gateway=self.gateway,
+            plans=_StaticPlans(),
+            ids=Uuid4Generator(),
+            worker_id="supply_chain_packaging_papers",
+            worker_version="1.0.0",
+            model_profile=self.model_profile,
+            subject_kind="po_case",
+            purpose="pre_production_test",
+        )
+
+    def record(self) -> RecordPreProductionMeasurement:
+        return RecordPreProductionMeasurement(
+            cases=self.store,
+            store=self.measurements,
+            test=self.test(),
+            authz=ScopeAuthorizationService(),
+            platform_default_duties=PLATFORM_DUTIES,
+            ids=Uuid4Generator(),
+            clock=self.clock,
+        )
+
+    def checklist(self) -> GetPreProductionChecklist:
+        return GetPreProductionChecklist(record=self.record(), authz=ScopeAuthorizationService())
 
     def lane(self) -> PreparePackagingPapers:
         return PreparePackagingPapers(
@@ -203,6 +358,8 @@ class PackagingWorld:
             holders=self.holders(),
             notifier=self.notifier,
             clock=self.clock,
+            test=self.test(),
+            writer=self.writer(),
         )
 
     def proof_page(self) -> GetPackagingProof:
@@ -227,6 +384,15 @@ class PackagingWorld:
             notifier=self.notifier,
             ids=Uuid4Generator(),
             clock=self.clock,
+            drafts=self.drafts,
+            test=self.test(),
+            filer=DraftFiler(
+                templates=self.templates,
+                renderer=DocxRenderer(),
+                storage=self.storage,
+                ids=Uuid4Generator(),
+            ),
+            filings=InMemoryFilings(self.drafts, self.documents),
         )
 
     def page(self) -> GetPackagingDesign:
@@ -359,6 +525,67 @@ class PackagingWorld:
         )
         return document
 
+    def add_product(
+        self, case: POCase, *, category: str = "noi", workspace: uuid.UUID | None = None
+    ) -> ProductDevelopmentCase:
+        """The PO case's product case, whose Category picks the criteria."""
+        assert case.product_dev_case_id is not None
+        product = ProductDevelopmentCase(
+            id=ProductDevelopmentCaseId(case.product_dev_case_id),
+            tenant_id=case.tenant_id,
+            workspace_id=WorkspaceId(workspace or case.workspace_id.value),
+            proposal_code="DX-2026-041",
+            product_name="Nồi inox 3 đáy 24cm",
+            category=category,
+            pic_user_id=uuid.uuid4(),
+            created_by=uuid.uuid4(),
+            supplier_name=case.supplier_name,
+            state=ProductDevState.ORDERED,
+            sample_round=1,
+            round_opened_at=NOW - timedelta(days=60),
+            stage_entered_at=NOW - timedelta(days=30),
+            version=9,
+            created_at=NOW - timedelta(days=90),
+        )
+        self.product_cases.cases[product.id.value] = product
+        return product
+
+    def receive_sample(self, case: POCase) -> PackagingDesign:
+        """Colour and design approved, the pre-production sample in."""
+        return self.set_design(
+            case,
+            colour_status=ReviewStatus.APPROVED,
+            design_status=ReviewStatus.APPROVED,
+            pre_production_sample_received_at=NOW - timedelta(days=1),
+        )
+
+    def measure(
+        self,
+        case: POCase,
+        criterion: str,
+        value: str,
+        *,
+        attempt: int = 1,
+        workspace: uuid.UUID | None = None,
+        tenant: uuid.UUID | None = None,
+        note: str | None = None,
+    ) -> None:
+        self.measurements.rows.append(
+            (
+                tenant or case.tenant_id.value,
+                workspace or case.workspace_id.value,
+                NewPreProductionMeasurement(
+                    id=uuid.uuid4(),
+                    po_case_id=case.id.value,
+                    attempt=attempt,
+                    criterion=criterion,
+                    value=value,
+                    note=note,
+                ),
+                NOW - timedelta(minutes=30) + timedelta(seconds=len(self.measurements.rows)),
+            )
+        )
+
     def drafted(self, doc_type: DocumentType) -> list[Any]:
         return [d for d in self.drafts.rows if d.doc_type is doc_type]
 
@@ -399,7 +626,10 @@ __all__ = [
     "FULL_PROOF",
     "MKT",
     "ORDERING",
+    "RND",
     "InMemoryDesigns",
+    "InMemoryFilings",
+    "InMemoryPreProductionMeasurements",
     "PackagingWorld",
     "drafted_values",
     "proof_fields",
