@@ -114,15 +114,14 @@ means platform code, an upstream candidate (ADR 0011).
 | UAT-2 | `uat/issues/02-uat-with-elmich.md` (S)                                    | —       | ready-for-human | UAT-1, ON-02, H2, ZL                |
 
 **Next:** the AI layer (Đạt, 2026-10-09: "AI does the work, people only
-approve"; spec `supply-chain/ai-automation/spec.md`): AI-01–AI-18 and ON-01
+approve"; spec `supply-chain/ai-automation/spec.md`): AI-01–AI-20, AI-17 item 2, ON-01–02 and UAT-1
 resolved 2026-10-09/10 with their integration tests owed (written, not run: no Docker on that
-machine; run them first with `make infra-up && make test-integration`), and the
-live model gate: `luna` read case by case 2026-10-09 (three live runs; 8/8 tasks
-pass on dataset 1.5.0, before/after in AI-06's Comments), then once more live
-2026-10-10 on dataset 1.9.0: 9/9 tasks pass, and after AI-15..AI-18 on dataset
-1.13.0: 14/19 tasks (every AI-17 reader passes; the five misses are one case each,
-four of them case defects owed to dataset 1.14.0, AI-06's Comments;
-`evals/gates/luna.json`; steps 9, 10 and 17 ask no model), `qwen` owed; next AI-19. H2 (the domain the webhook needs; runbook `docs/deploy/host.md`); Z4p
+machine; run them first with `make infra-up && make test-integration`). AI-21 (local OCR) measured and
+stopped: RapidOCR cannot write Vietnamese, Đạt decides on EasyOCR. Live model gate `luna` 2026-10-10 on
+dataset 1.17.0: 17/21 tasks (`evals/gates/luna.json`; AI-06 Comments read every miss: four
+`case_answer` case defects and one fix to prompt or case owed to dataset 1.18.0, two dates the model
+left unnormalised, one choice compared case-sensitively owed to code), `qwen` owed. Then UAT-2 with
+Elmich. H2 (the domain the webhook needs; runbook `docs/deploy/host.md`); Z4p
 when a real photo update exists; ZL measures the webhook header (Z3).
 Platform hardening and the FCI rerank land from `platform/main` once the
 platform repo merges them (2026-10-06).

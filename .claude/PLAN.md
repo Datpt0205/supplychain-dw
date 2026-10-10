@@ -9,7 +9,7 @@ a feature is checked. Detail lives in the area file; history lives in git.
 
 | Area                                       | File                                | State                     |
 | ------------------------------------------ | ----------------------------------- | ------------------------- |
-| Supply chain (Elmich), this product        | `.claude/plans/supply-chain.md`     | 1–17 run; AI layer next   |
+| Supply chain (Elmich), this product        | `.claude/plans/supply-chain.md`     | 1–17 run; AI layer done   |
 | Ops hardening (inherited from `codebase`)  | `.claude/plans/ops-hardening.md`    | Done; numbers owed        |
 | Agent runtime, memory (inherited)          | `.claude/plans/platform-runtime.md` | Done but for named gaps   |
 | Web UI shell, Ant Design v6 (inherited)    | `.claude/plans/web-ui.md`           | antd everywhere, CSP done |
@@ -19,7 +19,7 @@ Inherited areas came with the platform seed (`codebase` `main`, `bf553f4`) and
 change here only when work in this repo touches them; their upstream copy is
 the reference after each `git merge platform/main`.
 
-## Now (2026-10-09)
+## Now (2026-10-10)
 
 - **This is the Elmich product repo** (`supplychain-dw`), built on the
   platform seed. Everything is built here; generic pieces stay in platform
@@ -32,13 +32,11 @@ the reference after each `git merge platform/main`.
   0014 revised), read-only questions (Z6).
 - **Done 2026-10-05/08** on `feat/elmich-a-d-s1`: P, ENV, U, Z1–Z6, A, D, S1–S8,
   W, P2–P4, PK, H, HR1–HR6; steps 1–17 run end to end (slice log in the area file).
-- **AI layer (Đạt, 2026-10-09):** AI prepares each step (drafts, reads supplier
-  files, checks) and raises "move to step X with documents Y"; a person approves
-  (ADR 0025–0029, E14–E18). Tickets AI-01–AI-20, ON-01–02, UAT-1–2 in
-  `supply-chain/ai-automation/`, `onboarding/`, `uat/`. AI-01–AI-18, ON-01 resolved
-  2026-10-09/10 (integration owed: run `make test-integration` first; `luna` gate
-  live 2026-10-10 on dataset 1.13.0: 14/19 tasks, the five misses one case each, four
-  of them case defects to fix in 1.14.0, AI-06 Comments; `qwen` owed). Next: AI-19 onward.
+- **AI layer (Đạt, 2026-10-09):** AI prepares each step, a person approves
+  (ADR 0025–0029). AI-01–AI-20, ON-01–02, UAT-1 resolved 2026-10-10; AI-21 (OCR)
+  needs Đạt (RapidOCR cannot write Vietnamese). Integration owed (`make
+test-integration` first). `luna` gate live on dataset 1.17.0: 17/21, misses read
+  in AI-06 (fixes owed to 1.18.0 and code); `qwen` owed. Next: UAT-2 with Elmich.
 - **Run locally:** `make infra-up`, `make db-migrate`, seed
   (`DW_API_PROFILE=local uv run python scripts/seed_supply_chain_demo.py seed`,
   then `scripts/keycloak_dev_users.py`), `make dev`, open http://localhost:3200.
